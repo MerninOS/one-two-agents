@@ -7,24 +7,31 @@ ten agents is the "One Two Coffee Lab Agent System" tech spec.
 
 ## Agents
 
-| Route | Schedule (UTC) | What it does |
+| Route | Schedule | What it does |
 | --- | --- | --- |
-| `/api/agents/cfo` | daily 11:30 (5:30 AM CST) | Yesterday's revenue, orders, AOV, repeat rate, green cost and margin from Shopify, cash from Mercury → `kpi_snapshots`. Plain code, no model |
-| `/api/agents/chief_of_staff` | weekdays 12:45 (6:45 AM CST) | Morning brief → a Notion page. Numbers come from code; Claude writes only the Watch list and today's focus, with a rules fallback when the API can't be reached |
+| `/api/agents/cfo` | daily 5:30 AM Central | Yesterday's revenue, orders, AOV, repeat rate, green cost and margin from Shopify, cash from Mercury → `kpi_snapshots`. Plain code, no model |
+| `/api/agents/chief_of_staff` | weekdays 6:45 AM Central | Morning brief → a Notion page. Numbers come from code; Claude writes only the Watch list and today's focus, with a rules fallback when the API can't be reached |
 | `/api/agents/wholesale_hunter` | manual only | Claude searches the web for a few new wholesale/private label prospects in Austin, Lakeway and Bee Cave, scores fit, writes a first-touch email → `wholesale_leads`, Gmail drafts (if `GMAIL_*` is set) and a Notion page. Never sends. About $1 a run |
 
 The old paths `/api/agents/brief` and `/api/agents/hunter` still work.
 
-- Every call needs `Authorization: Bearer $CRON_SECRET` (Vercel Cron sends it).
+- Every call needs `Authorization: Bearer $CRON_SECRET` (Vercel Schedules send it).
 - Add `?trigger=manual` when running one by hand, so `agent_runs` records it as manual.
 - Add `?dryRun=1` to read real data without writing anything or calling a model: no
   `agent_runs` row, no Supabase, Notion or Gmail writes. Good for checking a deploy.
-- `agents.enabled = false` pauses an agent: crons still fire and are logged as skipped at $0.
-  The CFO snapshot and brief are paused until launch.
+- Schedules are Vercel Schedules (`schedules` in `vercel.json`, the replacement for Cron
+  Jobs), named `cfo` and `chief-of-staff`, in `America/Chicago` time so daylight saving
+  doesn't shift them. **Both are disabled while the agents are in development.** A disabled
+  schedule stays disabled across deploys:
+  ```bash
+  vercel schedules list
+  vercel schedules disable cfo        # or enable; no redeploy needed
+  vercel schedules invoke cfo         # run once now, even while disabled
+  ```
+- `agents.enabled = false` is a second off switch: a firing is logged as skipped at $0.
+  The CFO snapshot and brief are also off there until launch.
 - `agents.daily_budget_usd` caps model spend per agent per UTC day.
-- The Hunter is scheduled for Feb 29 only so Vercel lists it with a Run button
-  (Settings → Cron Jobs); the route skips that leap-day firing.
-- Vercel Cron runs in UTC, so local times shift an hour later during daylight saving.
+- The Hunter has no schedule and skips any call without `?trigger=manual`.
 - `GET /api/health` (same bearer) shows which settings are present and whether Supabase answers.
 
 ```bash
