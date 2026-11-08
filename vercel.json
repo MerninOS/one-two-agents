@@ -1,18 +1,18 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "framework": "nextjs",
-  "crons": [
-    {
+  "schedules": {
+    "cfo": {
+      "schedule": "30 5 * * *",
+      "timezone": "America/Chicago",
       "path": "/api/agents/cfo",
-      "schedule": "30 11 * * *"
+      "requestMethod": "GET"
     },
-    {
+    "chief-of-staff": {
+      "schedule": "45 6 * * 1-5",
+      "timezone": "America/Chicago",
       "path": "/api/agents/chief_of_staff",
-      "schedule": "45 12 * * 1-5"
-    },
-    {
-      "path": "/api/agents/wholesale_hunter",
-      "schedule": "0 14 29 2 *"
+      "requestMethod": "GET"
     }
-  ]
+  }
 }
