@@ -20,14 +20,15 @@ export function needs(f: Floor, now = Date.now()): Need[] {
     if (f.ok && stateOf(a, f.agents[a.id], f.runs, f.spentToday[a.id] ?? 0) === "over") out.push({ pri: "High", title: `${a.name} reached today’s budget`, sub: "Further runs today are skipped.", href: `/agents/${a.id}?tab=settings`, agentId: a.id });
     if (f.ok && !f.agents[a.id]) out.push({ pri: "High", title: `${a.name} isn’t in the agents table`, sub: "Apply the migrations to the one-two-agents Supabase project.", href: `/agents/${a.id}`, agentId: a.id });
   }
+  if (f.photosWaiting) out.push({ pri: "Medium", title: `${f.photosWaiting} charge${f.photosWaiting === 1 ? "" : "s"} need a receipt photo`, sub: "Quinn couldn’t find a receipt. The list is on Quinn’s profile and the latest Books page in Notion.", href: "/agents/bookkeeper", agentId: "bookkeeper" });
   for (const i of INTEGRATIONS) {
     if (f.health[i.id] || i.id === "supabase") continue;
     const users = BUILT.filter((a) => ACCESS[a.id]?.[i.id]);
     if (!users.length) continue;
     out.push({
-      pri: i.id === "gmail" ? "Low" : "Medium",
+      pri: i.id === "gmail" || i.id === "gmail_read" ? "Low" : "Medium",
       title: `Connect ${i.name}`,
-      sub: i.id === "gmail" ? "Rowan’s drafts land in Notion only until Gmail is connected." : `${users.map((u) => u.name).join(" and ")} ${users.length > 1 ? "need" : "needs"} it.`,
+      sub: i.id === "gmail" ? "Rowan’s drafts land in Notion only until Gmail is connected." : i.id === "gmail_read" ? "Quinn can’t look for receipts in email until the read-only Gmail token is set." : `${users.map((u) => u.name).join(" and ")} ${users.length > 1 ? "need" : "needs"} it.`,
       href: "/integrations",
       agentId: users[0].id,
     });

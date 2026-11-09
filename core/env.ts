@@ -33,6 +33,9 @@ export const env = {
   gmailClientId: v("GMAIL_CLIENT_ID"),
   gmailClientSecret: v("GMAIL_CLIENT_SECRET"),
   gmailRefreshToken: v("GMAIL_REFRESH_TOKEN"),
+  // Bookkeeper's own refresh token for the same mailbox with only gmail.readonly: it searches
+  // for receipts and never drafts or sends. Blank = no receipt search.
+  gmailReceiptsRefreshToken: v("GMAIL_RECEIPTS_REFRESH_TOKEN"),
 
   // Public storefront, named in outreach drafts.
   siteUrl: (v("SITE_URL") || "https://onetwocoffeelab.com").replace(/\/+$/, ""),

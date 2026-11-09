@@ -5,13 +5,14 @@ import { env } from "@/core/env";
 
 export const hasGmail = () => !!(env.gmailClientId && env.gmailClientSecret && env.gmailRefreshToken);
 
-async function accessToken() {
+/** An access token for the mailbox. Pass the Bookkeeper's read-only refresh token to read; the default is the compose-only one. */
+export async function accessToken(refreshToken = env.gmailRefreshToken) {
   const res = await fetch("https://oauth2.googleapis.com/token", {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
     body: new URLSearchParams({
       client_id: env.gmailClientId!, client_secret: env.gmailClientSecret!,
-      refresh_token: env.gmailRefreshToken!, grant_type: "refresh_token",
+      refresh_token: refreshToken!, grant_type: "refresh_token",
     }),
     cache: "no-store",
   });

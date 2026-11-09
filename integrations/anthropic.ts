@@ -9,6 +9,7 @@ export { Anthropic };
 export const MODELS = {
   opus: "claude-opus-5-5",
   sonnet: "claude-sonnet-5-5",
+  haiku: "claude-haiku-5-5",
 } as const;
 type Model = (typeof MODELS)[keyof typeof MODELS];
 
@@ -16,13 +17,15 @@ type Model = (typeof MODELS)[keyof typeof MODELS];
 const PRICES: Record<Model, { in: number; out: number }> = {
   "claude-opus-5-5": { in: 4 / 1e6, out: 20 / 1e6 },
   "claude-sonnet-5-5": { in: 2 / 1e6, out: 10 / 1e6 },
+  // prompts up to 100K tokens; Bookkeeper's are a few thousand
+  "claude-haiku-5-5": { in: 0.1 / 1e6, out: 0.5 / 1e6 },
 };
 export const WEB_SEARCH_USD = 0.01; // per search
 
 export const claude = () => new Anthropic(); // reads ANTHROPIC_API_KEY
 
 /** Every input token a response billed, cache reads and writes included. */
-export const inputTokens = (u: Anthropic.Beta.BetaUsage) =>
+export const inputTokens = (u: Anthropic.Beta.BetaUsage | Anthropic.Usage) =>
   u.input_tokens + (u.cache_read_input_tokens ?? 0) + (u.cache_creation_input_tokens ?? 0);
 
 export const costUsd = (model: Model, tokensIn: number, tokensOut: number, searches = 0) =>

@@ -9,7 +9,7 @@ export default async function Approvals() {
       <div className="row"><h1 className="h1" style={{ flex: 1 }}>Approvals</h1><Later /></div>
       <div className="card dashed" style={{ padding: 40, textAlign: "center", alignItems: "center", gap: 6 }}>
         <span style={{ fontSize: 16, fontWeight: 600 }}>No approvals yet.</span>
-        <span style={{ fontSize: 13.5 }} className="ink2">Draft-tier agents will queue actions here. Items older than 72 hours expire as stale. Until then, Rowan’s drafts are in the Notion page each run creates.</span>
+        <span style={{ fontSize: 13.5 }} className="ink2">Draft-tier agents will queue actions here. Items older than 72 hours expire as stale. Until then, Rowan’s drafts are in the Notion page each run creates, and Quinn’s proposed receipts and categories are on Quinn’s profile and the Books page in Notion.</span>
       </div>
       <span className="sub">Example, so the layout is ready</span>
       <div className="card" style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: 22, opacity: 0.9, padding: 22 }}>

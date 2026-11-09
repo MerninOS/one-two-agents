@@ -3,7 +3,7 @@
 // from the tech spec and CLAUDE.md; the live switches (enabled, budget) come from Supabase.
 
 export type Tier = "Report" | "Draft" | "Act";
-export type IntegrationId = "shopify" | "mercury" | "notion" | "gmail" | "claude" | "web" | "supabase" | "github";
+export type IntegrationId = "shopify" | "mercury" | "notion" | "gmail" | "gmail_read" | "claude" | "web" | "supabase" | "github";
 export type Level = "read" | "draft" | "write" | "uses";
 
 export interface Schedule {
@@ -82,9 +82,22 @@ export const CREW: CrewMember[] = [
     ],
     schedule: { kind: "manual" },
   },
-  { id: "bookkeeper", name: "Quinn", role: "Bookkeeper", icon: "receipt", built: false, phase: 2, tier: "Draft", trigger: "When a receipt email arrives",
-    job: "Receipts and categories on business charges, mileage, home office, tax packet.",
-    mandate: "I’ll match receipts and categories to business charges and keep the tax packet ready. You approve every entry." },
+  {
+    id: "bookkeeper", name: "Quinn", role: "Bookkeeper", hue: "#F6B8C9", icon: "receipt", built: true, tier: "Draft",
+    model: "claude-haiku-5-5", since: "Nov 9", estCostLabel: "A few cents", writes: "expense_docs rows, receipt files, 1 Notion page when something changed",
+    mandate: "I find the receipt behind every business charge, suggest a category, and ask you for a photo only when it matters. I never change Mercury myself: you approve every entry.",
+    job: "Pulls business charges from Mercury, finds receipts in Gmail, suggests categories from Mercury’s own list, lists charges that need a photo, and closes each month on the 3rd.",
+    works: "You approve every Mercury change. Morgan reads my categories once I ship.",
+    how: [
+      ["Method", "Code decides every match: exact amount, date within 3 days, merchant name. Haiku only reads receipts and suggests a category from Mercury’s list."],
+      ["Reads", "Mercury charges and categories (business org, read only). Gmail receipts in zak@ when the read-only token is set."],
+      ["Writes", "Its own tables (expense_docs, trips, home_office, tax_packets), receipt files in Supabase Storage, a Notion page when something changed."],
+      ["Mercury", "Receipt, category and memo are proposals only. Nothing is written to Mercury until the approval gateway exists."],
+      ["Photos", "Asked for at $75 and up, lodging, or stores that sell personal things too. After 30 days a charge stays as bank record only."],
+      ["Shift", "Manual only until launch. Planned daily at 6:00 AM CT, after Morgan’s snapshot. Month close on the 3rd."],
+    ],
+    schedule: { kind: "manual" },
+  },
   { id: "blend_coach", name: "Sage", role: "Blend Coach", icon: "sliders-horizontal", built: false, phase: 3, tier: "Draft", trigger: "When a Shopify order is fulfilled + 5 days",
     job: "Post-purchase check-ins, blend ratio tweaks, reorder timing.",
     mandate: "I’ll check in after a bag lands, suggest blend tweaks and time the reorder. You approve what goes out." },
@@ -122,9 +135,10 @@ export const TIERS: Record<Tier, string> = {
 export interface Integration { id: IntegrationId; name: string; sub: string; icon: string; scope: string }
 export const INTEGRATIONS: Integration[] = [
   { id: "shopify", name: "Shopify", sub: "Store", icon: "shopping-bag", scope: "Read-only app “One Two Agents (read)”. Scopes: read products, inventory, orders, locations, customers." },
-  { id: "mercury", name: "Mercury", sub: "Bank", icon: "landmark", scope: "Read-only token for the business accounts. Balances and transactions." },
+  { id: "mercury", name: "Mercury", sub: "Bank", icon: "landmark", scope: "Read-only token for the business accounts. Balances, transactions and categories. Receipt, category and memo changes wait for the approval gateway." },
   { id: "notion", name: "Notion", sub: "Pages", icon: "file-text", scope: "Creates pages under one parent page (“Morning briefs”) only." },
   { id: "gmail", name: "Gmail", sub: "Drafts", icon: "mail", scope: "Drafts only (compose scope) in zak@onetwocoffeelab.com. Can never send." },
+  { id: "gmail_read", name: "Gmail receipts", sub: "Read only", icon: "inbox", scope: "A separate read-only token (gmail.readonly) for zak@onetwocoffeelab.com. Searches for receipts. Can’t draft, send, label or delete. Email is untrusted data." },
   { id: "claude", name: "Claude API", sub: "Model", icon: "cpu", scope: "The model. Spend is read from the run log." },
   { id: "web", name: "Web search and fetch", sub: "Public web", icon: "globe", scope: "Reads public web pages. Untrusted: a page never chooses a recipient, URL, product or category." },
   { id: "supabase", name: "Supabase", sub: "Agent database", icon: "database", scope: "Each agent writes only its own tables. Service role, server only." },
@@ -136,7 +150,13 @@ export const ACCESS: Record<string, Partial<Record<IntegrationId, [Level, string
   cfo: { shopify: ["read", "Orders, products, inventory"], mercury: ["read", "Balances"], supabase: ["write", "Its own table kpi_snapshots"] },
   chief_of_staff: { shopify: ["read", "Open orders, green lots"], claude: ["uses", "claude-sonnet-5-5"], notion: ["write", "One page per brief under Morning briefs"], supabase: ["read", "The run log and kpi_snapshots"] },
   wholesale_hunter: { claude: ["uses", "claude-opus-5-5"], web: ["read", "Web search and fetch. Untrusted."], shopify: ["read", "Our coffees and green lots, so it only claims real facts"], supabase: ["write", "Its own table wholesale_leads"], notion: ["write", "One page per run"], gmail: ["draft", "Drafts when Gmail is set up. Never sends."] },
-  bookkeeper: { mercury: ["draft", "Receipt, category and memo on existing Mercury and QuickBooks transactions. Zak approves. Nothing else."] },
+  bookkeeper: {
+    mercury: ["draft", "Reads charges and categories. Receipt, category and memo on existing transactions are proposals Zak approves, applied only once the gateway exists."],
+    gmail_read: ["read", "Receipt emails in zak@, read only. Untrusted: an email never picks a charge or category."],
+    claude: ["uses", "claude-haiku-5-5"],
+    supabase: ["write", "Its own tables expense_docs, trips, home_office, tax_packets and the private receipts bucket"],
+    notion: ["write", "One page when something changed, and the month close"],
+  },
   green_buyer: { web: ["read", "Importer offer pages and market reports. Report only."] },
   conversion_optimizer: { shopify: ["read", "Orders and reports, still read-only."], web: ["read", "The live site and PageSpeed Insights. Untrusted."], claude: ["uses", "claude-opus-5-5 and claude-sonnet-5-5"], notion: ["write", "The Site experiments page"], supabase: ["write", "Its own experiment tables"], github: ["draft", "Pull requests on agent/* branches of MerninOS/blended. You merge every PR."] },
 };
