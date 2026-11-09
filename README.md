@@ -39,11 +39,27 @@ curl -H "Authorization: Bearer $CRON_SECRET" "https://one-two-agents.vercel.app/
 curl -H "Authorization: Bearer $CRON_SECRET" "https://one-two-agents.vercel.app/api/agents/chief_of_staff?dryRun=1"
 ```
 
+## Control Room
+
+The dashboard at `/` ("mission control"): the crew, live floor, run log and replays, access
+matrix and integrations, built from the Claude Design file "Agent Control Room". Spec:
+`docs/control-room.md`.
+
+- Sign in with `DASHBOARD_PASSWORD`. Unset means nobody gets in. `/api/*` is unaffected.
+- It never starts anything on its own. Dry runs (free, write nothing) always work, and so do
+  taking an agent off duty and "Pause all agents".
+- Real runs, putting an agent back on the crew and raising a budget need
+  `DASHBOARD_CONTROLS=on`. Real runs go through `withRun`, so they respect `enabled` and budgets.
+- Agent names (Avery, Morgan, Rowan…) and mandates live in `dashboard/crew.ts`.
+- Memory, run steps, gateway decisions and approvals show as "coming later" until their tables exist.
+
 ## Layout
 
 ```
+app/(room)/                Control Room pages (login in app/login, guarded by proxy.ts)
 app/api/agents/[agent]/   one route for every agent: auth, trigger, run log
 app/api/health/           settings present + Supabase reachable
+dashboard/                Control Room data, actions, session and components
 agents/                   one folder per agent, plus registry.ts (see agents/README.md)
 core/                     env, Supabase client, withRun (log, enabled flag, budget), time helpers, gateway (reserved)
 integrations/             Shopify (read-only), Mercury (read-only), Notion, Gmail (drafts only), Anthropic

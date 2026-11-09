@@ -1,6 +1,6 @@
 import type { NextConfig } from "next";
 
-// API routes only: agent jobs behind /api/agents/[agent], run by Vercel Cron or by hand.
+// Agent jobs behind /api/agents/[agent] (Vercel Schedules or by hand), and the Control Room dashboard.
 const nextConfig: NextConfig = {};
 
 export default nextConfig;

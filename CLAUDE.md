@@ -1,7 +1,7 @@
 # One Two Coffee Lab agents
 
-Agents that help run One Two Coffee Lab (onetwocoffeelab.com). Next.js 16 app with API
-routes only, deployed as the Vercel project `one-two-agents`, schedules (Vercel Schedules, not Cron Jobs) in `vercel.json`,
+Agents that help run One Two Coffee Lab (onetwocoffeelab.com). Next.js 16 app: agent API routes plus the Control Room dashboard (`dashboard/`,
+`app/(room)/`; see `docs/control-room.md`), deployed as the Vercel project `one-two-agents`, schedules (Vercel Schedules, not Cron Jobs) in `vercel.json`,
 state in the Supabase project `one-two-agents`. The storefront is a separate repo
 (`MerninOS/blended`); this repo never imports from it. See README.md for layout.
 
