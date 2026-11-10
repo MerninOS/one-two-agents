@@ -1,11 +1,11 @@
 import Link from "next/link";
 import { cookies } from "next/headers";
-import { BUILT, CREW, INTEGRATIONS, PLANNED } from "@/dashboard/crew";
+import { BUILT, BY_ID, CREW, INTEGRATIONS, PLANNED } from "@/dashboard/crew";
 import { getFloor } from "@/dashboard/data";
 import { longDay } from "@/dashboard/format";
 import { needs } from "@/dashboard/needs";
-import { STATE_LOOK, stateOf } from "@/dashboard/status";
-import { RailLink, SideLink, ThemeToggle } from "@/dashboard/components/client";
+import { STATE_LOOK, isLive, stateOf } from "@/dashboard/status";
+import { LiveRefresher, RailLink, SideLink, ThemeToggle, type RecentRun } from "@/dashboard/components/client";
 import { Icon } from "@/dashboard/components/Icon";
 
 export default async function RoomLayout({ children }: { children: React.ReactNode }) {
@@ -18,6 +18,10 @@ export default async function RoomLayout({ children }: { children: React.ReactNo
     return { a, st, badge: open.filter((n) => n.agentId === a.id).length };
   });
   const firstBuilt = BUILT[0].id;
+  // runs from the last 10 minutes, so the refresher can poll while one is live and say when it ends
+  const recent: RecentRun[] = floor.runs
+    .filter((r) => floor.now - Date.parse(r.started_at) < 10 * 6e4)
+    .map((r) => ({ id: r.id, name: BY_ID[r.agent_id]?.name ?? r.agent_id, status: r.status, live: isLive(r, floor.now) }));
   const nav = [
     { label: "Floor", items: [{ href: "/", match: "/", icon: "layout-dashboard", label: "Mission control" }, { href: "/runs/latest", match: "/runs/*", icon: "history", label: "Run replay" }, { href: "/runs", match: "/runs", icon: "list", label: "Run log" }] },
     { label: "Crew", items: [{ href: `/agents/${firstBuilt}`, match: "/agents/*", tab: "!memory", icon: "users", label: "Crew profiles", count: `${BUILT.length} + ${PLANNED.length}` }, { href: `/agents/${firstBuilt}?tab=memory`, match: "/agents/*", tab: "memory", icon: "brain", label: "Memory", note: "Later", noteColor: "var(--mut)" }] },
@@ -60,6 +64,7 @@ export default async function RoomLayout({ children }: { children: React.ReactNo
             <SideLink href="/settings" match="/settings" icon="settings" label="Settings" />
           </aside>
           <main className="main">{children}</main>
+          <LiveRefresher runs={recent} />
         </div>
       </div>
     </div>

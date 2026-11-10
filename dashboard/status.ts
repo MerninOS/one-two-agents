@@ -5,10 +5,10 @@ import type { AgentRow, Run, RunStatus } from "./data";
 /** True until Zak launches. Paused agents then read "Off duty until launch". */
 export const PRE_LAUNCH = true;
 
-export interface Look { label: string; dot: string; bg: string; fg: string }
+export interface Look { label: string; dot: string; bg: string; fg: string; pulse?: boolean }
 
 export const RUN_LOOK: Record<RunStatus, Look> = {
-  running: { label: "Running", dot: "var(--acc)", bg: "var(--acc-soft)", fg: "var(--acc-ink)" },
+  running: { label: "Running", dot: "var(--acc)", bg: "var(--acc-soft)", fg: "var(--acc-ink)", pulse: true },
   ok: { label: "OK", dot: "var(--mint)", bg: "var(--mint-soft)", fg: "var(--mint-ink)" },
   skipped: { label: "Skipped", dot: "var(--mut2)", bg: "var(--soft)", fg: "var(--ink2)" },
   failed: { label: "Failed", dot: "var(--red)", bg: "var(--red-soft)", fg: "var(--red-ink)" },
@@ -32,7 +32,7 @@ export function stateOf(a: CrewMember, row: AgentRow | undefined, runs: Run[], s
 export const STATE_LOOK: Record<AgentState, Look> = {
   planned: { label: "Joining after launch", dot: "var(--mut2)", bg: "var(--soft)", fg: "var(--mut)" },
   missing: { label: "Not in the database", dot: "var(--red)", bg: "var(--red-soft)", fg: "var(--red-ink)" },
-  running: { label: "Working now", dot: "var(--acc)", bg: "var(--acc-soft)", fg: "var(--acc-ink)" },
+  running: { label: "Working now", dot: "var(--acc)", bg: "var(--acc-soft)", fg: "var(--acc-ink)", pulse: true },
   paused: { label: PRE_LAUNCH ? "Off duty until launch" : "Off duty", dot: "var(--mut)", bg: "var(--soft)", fg: "var(--ink2)" },
   over: { label: "Budget reached today", dot: "var(--red)", bg: "var(--red-soft)", fg: "var(--red-ink)" },
   manual: { label: "On call", dot: "var(--ink2)", bg: "var(--soft)", fg: "var(--ink)" },

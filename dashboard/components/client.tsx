@@ -38,7 +38,7 @@ export function RailLink({ id, title, icon, planned, running, badge }: { id: str
   const sel = usePathname() === `/agents/${id}`;
   return (
     <Link href={`/agents/${id}`} title={title} className="rail-item">
-      <span className={"rail-av" + (sel ? " sel" : planned ? " planned" : running ? " running" : "")}>
+      <span className={"rail-av" + (sel ? " sel" : planned ? " planned" : "") + (running ? " running" : "")}>
         <Icon name={icon} size={planned ? 18 : 20} style={planned && !sel ? { opacity: 0.55 } : undefined} />
       </span>
       <span className={"rail-dot" + (sel ? " sel" : "")} />
@@ -73,20 +73,23 @@ function Modal({ c, busy, onCancel, onGo }: { c: Confirm; busy: boolean; onCance
   );
 }
 
-/** A button that (optionally) confirms, runs a server action, then toasts the result and refreshes. */
-export function ActionButton({ action, confirm, className, children, disabled, title }: { action: Act; confirm?: Confirm; className?: string; children: React.ReactNode; disabled?: boolean; title?: string }) {
+/** A button that (optionally) confirms, runs a server action, then toasts the result and refreshes. The confirm closes as soon as it's accepted. */
+export function ActionButton({ action, confirm, className, children, disabled, title, busyLabel }: { action: Act; confirm?: Confirm; className?: string; children: React.ReactNode; disabled?: boolean; title?: string; busyLabel?: React.ReactNode }) {
   const [open, setOpen] = useState(false);
   const [toast, setToast] = useState<ActionResult | null>(null);
   const [busy, start] = useTransition();
   const router = useRouter();
-  const go = () => start(async () => {
-    let res: ActionResult;
-    try { res = await action(); } catch (e) { res = { ok: false, text: e instanceof Error ? e.message : "Something went wrong." }; }
-    setOpen(false); setToast(res); router.refresh();
-  });
+  const go = () => {
+    setOpen(false);
+    start(async () => {
+      let res: ActionResult;
+      try { res = await action(); } catch (e) { res = { ok: false, text: e instanceof Error ? e.message : "Something went wrong." }; }
+      setToast(res); router.refresh();
+    });
+  };
   return (
     <>
-      <button className={className} disabled={disabled || busy} title={title} onClick={() => (confirm ? setOpen(true) : go())}>{busy && !confirm ? "Working…" : children}</button>
+      <button className={className} disabled={disabled || busy} title={title} onClick={() => (confirm ? setOpen(true) : go())}>{busy && busyLabel ? busyLabel : busy && !confirm ? "Working…" : children}</button>
       {open && confirm && <Modal c={confirm} busy={busy} onCancel={() => setOpen(false)} onGo={go} />}
       <Toast t={toast} onDone={() => setToast(null)} />
     </>
@@ -144,6 +147,41 @@ export function BudgetForm({ current, save, controls }: { current: number; save:
         </ActionButton>
       </div>
       {blocked && <span className="sub">Raising a budget needs DASHBOARD_CONTROLS=on. Lowering it always works.</span>}
+    </div>
+  );
+}
+
+export interface RecentRun { id: string; name: string; status: string; live: boolean }
+
+/**
+ * Keeps the floor current while an agent works: refreshes the server data every few seconds while any
+ * run is live, and says so when one finishes. Mounted once in the room layout, so it follows Zak around.
+ */
+export function LiveRefresher({ runs }: { runs: RecentRun[] }) {
+  const router = useRouter();
+  const anyLive = runs.some((r) => r.live);
+  const [seen, setSeen] = useState(runs);
+  const [done, setDone] = useState<RecentRun | null>(null);
+  // compare with the last render's runs (React's "adjust state on prop change" pattern)
+  if (seen !== runs) {
+    const finished = runs.find((r) => !r.live && seen.some((p) => p.id === r.id && p.live));
+    setSeen(runs);
+    if (finished) setDone(finished);
+  }
+  useEffect(() => {
+    if (!anyLive) return;
+    const h = setInterval(() => { if (document.visibilityState === "visible") router.refresh(); }, 4000);
+    return () => clearInterval(h);
+  }, [anyLive, router]);
+  useEffect(() => { if (!done) return; const h = setTimeout(() => setDone(null), 10000); return () => clearTimeout(h); }, [done]);
+  if (!done) return null;
+  const color = done.status === "ok" ? "var(--mint)" : done.status === "failed" ? "var(--red)" : "var(--mut2)";
+  const word = done.status === "ok" ? "finished" : done.status === "failed" ? "failed" : done.status === "skipped" ? "was skipped" : "stopped";
+  return (
+    <div className="toast" role="status">
+      <span className="dot" style={{ background: color }} />
+      <span>{done.name}’s run {word}.</span>
+      <Link href={`/runs/${done.id}`} onClick={() => setDone(null)} style={{ fontWeight: 600, color: "inherit", textDecoration: "underline" }}>See the run</Link>
     </div>
   );
 }

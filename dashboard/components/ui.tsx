@@ -4,17 +4,17 @@ import { linkParts } from "../format";
 import type { Look } from "../status";
 import { Icon } from "./Icon";
 
-export function Avatar({ a, size = 30 }: { a: CrewMember; size?: number }) {
+export function Avatar({ a, size = 30, working }: { a: CrewMember; size?: number; working?: boolean }) {
   const icon = Math.round(size * 0.46);
   return (
-    <span className={"av" + (a.built ? "" : " planned")} style={{ width: size, height: size, background: a.built ? a.hue : undefined }}>
+    <span className={"av" + (a.built ? "" : " planned") + (working ? " working" : "")} title={working ? `${a.name} is working` : undefined} style={{ width: size, height: size, background: a.built ? a.hue : undefined }}>
       <Icon name={a.icon} size={icon} style={a.built ? undefined : { opacity: 0.55 }} />
     </span>
   );
 }
 
 export function Pill({ look, sm }: { look: Look; sm?: boolean }) {
-  return <span className={"pill" + (sm ? " sm" : "")} style={{ background: look.bg, color: look.fg }}><span className="dot" style={{ background: look.dot, width: sm ? 6 : 7, height: sm ? 6 : 7 }} />{look.label}</span>;
+  return <span className={"pill" + (sm ? " sm" : "")} style={{ background: look.bg, color: look.fg }}><span className={"dot" + (look.pulse ? " pulse" : "")} style={{ background: look.dot, width: sm ? 6 : 7, height: sm ? 6 : 7 }} />{look.label}</span>;
 }
 
 export const Later = ({ children = "COMING LATER" }: { children?: React.ReactNode }) => <span className="later">{children}</span>;
