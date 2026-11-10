@@ -62,6 +62,7 @@ export function RunCanvas({ a, run, leads }: { a: CrewMember; run: Run | null; l
         <div className="node" style={{ left: 284, top: 184, width: 220, height: 150, opacity: o(3), boxShadow: live ? "0 0 0 2px var(--acc)" : undefined, animation: live ? "acrPulse 2.4s ease-in-out infinite" : undefined }}>
           <NodeHead icon="cpu" title={usesModel || a.model?.startsWith("claude") ? "Thinking" : "Computing"} />
           <span style={{ color: "var(--ink2)" }}>{a.model}</span>
+          {a.id === "bookkeeper" && <div className="row wrap" style={{ gap: 6 }}><span className="pill sm" style={{ background: "var(--soft)", fontWeight: 500 }}>read receipt</span><span className="pill sm" style={{ background: "var(--soft)", fontWeight: 500 }}>pick category</span></div>}
           {a.id === "wholesale_hunter" && <div className="row wrap" style={{ gap: 6 }}><span className="pill sm" style={{ background: "var(--soft)", fontWeight: 500 }}>web_search</span><span className="pill sm" style={{ background: "var(--soft)", fontWeight: 500 }}>web_fetch</span></div>}
           <span style={{ flex: 1 }} />
           <span className="muted" style={{ fontSize: 11.5 }}>{run ? (usesModel ? `${num(run.tokens_in)} in · ${num(run.tokens_out)} out` : "No model tokens") : "—"}</span>

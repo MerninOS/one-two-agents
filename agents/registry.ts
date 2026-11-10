@@ -4,6 +4,7 @@ import "server-only";
 // in vercel.json if it runs on a schedule.
 import type { RunResult } from "@/core/runs";
 import { runCfoSnapshot } from "./cfo";
+import { runBookkeeper } from "./bookkeeper";
 import { runBrief } from "./chief-of-staff";
 import { runHunter } from "./wholesale-hunter";
 
@@ -21,6 +22,9 @@ export const AGENTS: Record<string, AgentDef> = {
   chief_of_staff: { job: ({ dryRun }) => runBrief({ dryRun }) },
   // ~$1 of Claude credit a run, so it has no schedule and never runs on its own.
   wholesale_hunter: { job: ({ runId, dryRun }) => runHunter(runId, { dryRun }), manualOnly: true },
+  // Manual only until launch (planned daily 6:00 AM CT, after the CFO snapshot). Reads Mercury,
+  // proposes Mercury changes but never makes them; a few cents of Haiku a run.
+  bookkeeper: { job: ({ runId, dryRun }) => runBookkeeper(runId, { dryRun }), manualOnly: true },
 };
 
 /** Old route names from the storefront repo, still accepted. */

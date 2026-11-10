@@ -9,7 +9,7 @@ A "mission control" for the agents, light and dark themes, Plus Jakarta Sans, wh
 - **Top bar:** "12" logo, crew rail (one round avatar per agent; 3 built, a divider, 8 planned with dashed rings), theme toggle, bell, date pill, Zak's avatar.
 - **Sidebar:** Floor (Mission control, Run replay, Run log), Crew (Crew profiles, Memory), Trust (Access, Approvals), System (Integrations), Settings at the bottom.
 - **Screens:** Mission control (greeting, stat chips, "Live floor" workflow canvas, Needs you, Shift board, Spend by agent, Memory per agent, Joining the crew), Agent profile with tabs (Profile, Memory, Runs and replays, Access, Shift, Settings), Run replay (dark header with scrubber, money breakdown, step timeline, gateway inspector), Run log (filters, search, totals), Access matrix, Integrations, Approvals, Settings. A confirm modal and a toast are shared.
-- Agents are personas: Avery (Chief of Staff), Morgan (CFO), Rowan (Wholesale Hunter); planned: Quinn, Sage, Blair, Sol, Remy, Jules, Ellis (Conversion Optimizer), Kit.
+- Agents are personas: Avery (Chief of Staff), Morgan (CFO), Rowan (Wholesale Hunter), Quinn (Bookkeeper, built 2026-11-09, off until launch); planned: Sage, Blair, Sol, Remy, Jules, Ellis (Conversion Optimizer), Kit.
 
 ## 2. What exists in the backend today, and what doesn't
 

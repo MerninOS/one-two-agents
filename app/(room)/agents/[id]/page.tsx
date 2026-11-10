@@ -2,7 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { dryRun, realRun, setBudget, setEnabled } from "@/dashboard/actions";
 import { ACCESS, BY_ID, HARD_RULES, INTEGRATIONS, TIERS, type CrewMember } from "@/dashboard/crew";
-import { getFloor, getPipeline, type Floor } from "@/dashboard/data";
+import { getBooks, getFloor, getPipeline, type Books, type Floor } from "@/dashboard/data";
 import { budget, dur, hm, m2, m4, md, when } from "@/dashboard/format";
 import { nextRuns, schedSentence, schedWords } from "@/dashboard/schedule";
 import { controlsOn } from "@/dashboard/session";
@@ -33,6 +33,7 @@ export default async function AgentPage({ params, searchParams }: { params: Prom
   const st = stateOf(a, row, f.runs, f.spentToday[id] ?? 0);
   const controls = controlsOn();
   const pipeline = id === "wholesale_hunter" ? await getPipeline() : null;
+  const books = id === "bookkeeper" ? await getBooks() : null;
   const runs = f.runs.filter((r) => r.agent_id === id);
 
   return (
@@ -46,7 +47,7 @@ export default async function AgentPage({ params, searchParams }: { params: Prom
         </div>
       )}
 
-      {a.built && tab === "profile" && <Stats a={a} f={f} pipelineTotal={pipeline?.total} />}
+      {a.built && tab === "profile" && <Stats a={a} f={f} pipelineTotal={pipeline?.total} books={books} />}
 
       <div className="row wrap" style={{ gap: 6 }}>
         {TABS.map(([k, l]) => <Link key={k} href={`/agents/${id}${k === "profile" ? "" : `?tab=${k}`}`} className="btn sm" style={{ height: 38, fontSize: 13.5, background: tab === k ? "var(--ink)" : "var(--soft)", color: tab === k ? "var(--ws)" : "var(--ink)" }}>{l}</Link>)}
@@ -63,6 +64,7 @@ export default async function AgentPage({ params, searchParams }: { params: Prom
           </div>
           <div className="stack">
             <Journal a={a} f={f} />
+            {id === "bookkeeper" && <BooksCard books={books} />}
             {pipeline && (
               <div className="card" style={{ gap: 12 }}>
                 <div className="card-h"><span className="card-t">Pipeline</span><span className="sub">{pipeline.total} businesses</span></div>
@@ -132,7 +134,7 @@ function crewSwitch(a: CrewMember, f: Floor, controls: boolean) {
 function HeroFull({ a, f, controls }: { a: CrewMember; f: Floor; controls: boolean }) {
   const row = f.agents[a.id];
   const st = stateOf(a, row, f.runs, f.spentToday[a.id] ?? 0);
-  const realLabel = `Real run · ${a.estCostLabel === "About $1" ? "~$1" : a.estCostLabel === "$0" ? "$0" : "~$0.003"}`;
+  const realLabel = `Real run · ${a.estCostLabel === "About $1" ? "~$1" : a.estCostLabel === "$0" ? "$0" : a.estCostLabel === "A few cents" ? "~$0.05" : "~$0.003"}`;
   return (
     <div className="card" style={{ padding: 28, borderRadius: 24, display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))", gap: 28 }}>
       <div className="row" style={{ gap: 22, alignItems: "flex-start", minWidth: 0 }}>
@@ -191,7 +193,7 @@ function HeroFull({ a, f, controls }: { a: CrewMember; f: Floor; controls: boole
   );
 }
 
-function Stats({ a, f, pipelineTotal }: { a: CrewMember; f: Floor; pipelineTotal?: number }) {
+function Stats({ a, f, pipelineTotal, books }: { a: CrewMember; f: Floor; pipelineTotal?: number; books?: Books | null }) {
   const runs = f.runs.filter((r) => r.agent_id === a.id);
   const ok = runs.filter((r) => r.status === "ok").length, fl = runs.filter((r) => r.status === "failed").length, sk = runs.filter((r) => r.status === "skipped").length;
   const spend30 = runs.filter((r) => f.now - Date.parse(r.started_at) < 30 * 864e5).reduce((s, r) => s + r.cost_usd, 0);
@@ -199,7 +201,9 @@ function Stats({ a, f, pipelineTotal }: { a: CrewMember; f: Floor; pipelineTotal
   const b = f.agents[a.id]?.daily_budget_usd ?? 0;
   const stats: [string, string, string][] = [
     ["Runs", String(runs.length), `${ok} OK · ${fl} failed · ${sk} skipped`],
-    a.id === "wholesale_hunter" ? ["Leads in pipeline", pipelineTotal == null ? "—" : String(pipelineTotal), "in wholesale_leads"] : [a.id === "cfo" ? "Snapshots written" : "Briefs posted", String(ok), "last 60 days"],
+    a.id === "wholesale_hunter" ? ["Leads in pipeline", pipelineTotal == null ? "—" : String(pipelineTotal), "in wholesale_leads"]
+      : a.id === "bookkeeper" ? ["Receipt coverage", books?.coverage == null ? "—" : `${books.coverage}%`, books ? `${books.total} charges in expense_docs · target 95%` : "expense_docs not there yet"]
+      : [a.id === "cfo" ? "Snapshots written" : "Briefs posted", String(ok), "last 60 days"],
     ["Skipped while off duty", String(sk), "logged at $0"],
     ["30-day spend", m4(spend30), `of ${m2(b * 30)} budget`],
     ["Last real run", last ? md(last.started_at) : "—", last ? `${hm(last.started_at)} CT · ${dur(last.started_at, last.ended_at)} · ${m4(last.cost_usd)}` : "none yet"],
@@ -211,6 +215,33 @@ function Stats({ a, f, pipelineTotal }: { a: CrewMember; f: Floor; pipelineTotal
           <span className="sub">{l}</span><span style={{ fontSize: 24, fontWeight: 600, letterSpacing: "-.02em" }}>{v}</span><span style={{ fontSize: 12 }} className="ink2">{s}</span>
         </div>
       ))}
+    </div>
+  );
+}
+
+const BOOK_STATUS: [string, string, string][] = [
+  ["matched", "receipt on file", "var(--mint)"], ["bank_record_only", "bank record only", "var(--yel)"], ["needs_photo", "need a photo", "var(--acc)"],
+  ["open", "not checked yet", "var(--mut2)"], ["personal", "personal", "var(--pink)"], ["not_needed", "own-account moves", "var(--track)"],
+];
+
+function BooksCard({ books }: { books: Books | null }) {
+  if (!books) return <div className="card" style={{ gap: 8 }}><span className="card-t">Receipts</span><span className="muted" style={{ fontSize: 13.5, lineHeight: 1.5 }}>The expense_docs table isn’t there yet. Apply the bookkeeper migration to the one-two-agents Supabase project.</span></div>;
+  const shown = BOOK_STATUS.filter(([k]) => books.statuses[k]);
+  return (
+    <div className="card" style={{ gap: 12 }}>
+      <div className="card-h"><span className="card-t">Receipts</span><span className="sub">{books.total} charges · {books.proposals} proposed Mercury changes</span></div>
+      <div className="row wrap" style={{ gap: 14, fontSize: 12.5 }}>
+        {shown.map(([k, l, c]) => <span key={k} className="row" style={{ gap: 6 }}><span style={{ width: 3, height: 12, borderRadius: 2, background: c }} /><b style={{ fontWeight: 600 }}>{books.statuses[k]}</b> {l}</span>)}
+        {!books.total && <span className="muted">No charges yet. Quinn hasn’t run.</span>}
+      </div>
+      {books.total > 0 && <div className="bar" style={{ height: 36 }}>{shown.map(([k, , c]) => <span key={k} style={{ flex: books.statuses[k], background: c }} />)}</div>}
+      {books.waiting.length > 0 && (
+        <div style={{ display: "flex", flexDirection: "column" }}>
+          <span className="sub" style={{ marginBottom: 4 }}>Waiting on a photo</span>
+          {books.waiting.map((w) => <div key={`${w.date}-${w.merchant}-${w.amount_usd}`} className="row rule" style={{ justifyContent: "space-between", padding: "8px 0", fontSize: 13 }}><span>{md(`${w.date}T12:00:00Z`)} · {w.merchant}</span><b style={{ fontWeight: 600 }}>{m2(w.amount_usd)}</b></div>)}
+        </div>
+      )}
+      <span className="sub">Proposals are not applied to Mercury until the approval gateway exists. Record keeping, not tax advice.</span>
     </div>
   );
 }

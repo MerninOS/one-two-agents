@@ -9,7 +9,7 @@ auth, the run log, the enabled flag and the daily budget for all of them.
 | CFO | `cfo` | `cfo/` | Live, off until launch (schedule disabled, paused in DB). Daily 5:30 AM CT |
 | Chief of Staff | `chief_of_staff` | `chief-of-staff/` | Live, off until launch (schedule disabled, paused in DB). Weekdays 6:45 AM CT |
 | Wholesale Hunter | `wholesale_hunter` | `wholesale-hunter/` | Live, manual runs only (~$1 a run) |
-| Bookkeeper | `bookkeeper` | `bookkeeper/` | Planned (phase 2) |
+| Bookkeeper | `bookkeeper` | `bookkeeper/` | Built, off until launch (manual only, `enabled = false`, no schedule). Planned daily 6:00 AM CT. Mercury writes wait for the gateway |
 | Blend Coach | `blend_coach` | `blend-coach/` | Planned (phase 3) |
 | Roast Planner | `roast_planner` | `roast-planner/` | Planned (phase 3) |
 | Green Buyer | `green_buyer` | `green-buyer/` | Planned (phase 3, after launch) |
