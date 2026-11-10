@@ -18,7 +18,7 @@ export function RunTable({ runs, showAgent = true, foot }: { runs: Run[]; showAg
           <div key={r.id} className={"tbl-row" + (r.status === "failed" ? " fail" : "")} style={cols}>
             <span style={{ justifySelf: "start" }}><Pill look={RUN_LOOK[r.status]} sm /></span>
             {showAgent && <span className="row" style={{ gap: 8, minWidth: 0 }}>{a && <Avatar a={a} size={24} />}<span style={{ fontWeight: 600, whiteSpace: "nowrap" }}>{a?.name ?? r.agent_id}</span></span>}
-            <span className="ink2">{r.trigger === "cron" ? "Schedule" : r.trigger === "manual" ? "Manual" : r.trigger}</span>
+            <span className="ink2">{r.trigger === "cron" ? "Schedule" : r.trigger === "manual" ? "Manual" : r.trigger === "approval" ? "Approval" : r.trigger}</span>
             <span className="ink2" title={utcStr(r.started_at)} style={{ whiteSpace: "nowrap" }}>{when(r.started_at)}</span>
             <span>{dur(r.started_at, r.ended_at)}</span>
             <span style={{ fontWeight: 600 }}>{m4(r.cost_usd)}</span>

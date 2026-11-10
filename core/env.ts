@@ -23,6 +23,10 @@ export const env = {
   // Mercury read-only token (business org). Agents never move money.
   mercuryToken: v("MERCURY_API_TOKEN"),
   // "all" (every non-credit account the token sees) or comma-separated account IDs; blank = cash not reported.
+  // A second Mercury token used only by the tool gateway (core/gateway) to apply approved
+  // receipt, category and memo changes on existing transactions. Blank = approvals are
+  // recorded but nothing is written to Mercury.
+  mercuryWriteToken: v("MERCURY_WRITE_TOKEN"),
   mercuryAccountIds: (v("MERCURY_ACCOUNT_IDS") ?? "").split(",").map((s) => s.trim()).filter(Boolean),
 
   // Notion internal integration, shared only with the page briefs and lead lists go under.

@@ -69,3 +69,13 @@ export async function mercuryCategories(): Promise<MercuryCategory[]> {
   const j: { categories?: MercuryCategory[] } = await mercuryGet("/categories?limit=1000");
   return (j.categories ?? []).filter((c) => c.id && c.name);
 }
+
+/** One transaction by id, live (GET /transaction/{id}); null when Mercury doesn't know it. The gateway re-checks against this before any write. */
+export async function mercuryTransaction(id: string): Promise<MercuryTxn | null> {
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)) return null;
+  if (!env.mercuryToken) throw new Error("MERCURY_API_TOKEN is not set");
+  const res = await fetch(`https://api.mercury.com/api/v1/transaction/${id}`, { headers: { Authorization: `Bearer ${env.mercuryToken}`, Accept: "application/json" }, cache: "no-store" });
+  if (res.status === 404) return null;
+  if (!res.ok) throw new Error(`Mercury ${res.status} on /transaction`);
+  return res.json() as Promise<MercuryTxn>;
+}

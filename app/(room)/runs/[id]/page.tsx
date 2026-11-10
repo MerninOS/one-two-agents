@@ -33,13 +33,13 @@ export default async function Replay({ params }: { params: Promise<{ id: string 
     { label: a.id === "wholesale_hunter" ? "Web searches" : "Other", amount: rest, sub: a.id === "wholesale_hunter" ? `about ${Math.round(rest / 0.01)} at $0.01` : "", color: "var(--ink2)" },
   ];
 
-  const title = run.status === "skipped" ? `Skipped · ${when(run.started_at)}` : run.status === "failed" ? `Failed · ${when(run.started_at)}` : `${run.trigger === "manual" ? "Manual" : "Scheduled"} run · ${when(run.started_at)}`;
+  const title = run.status === "skipped" ? `Skipped · ${when(run.started_at)}` : run.status === "failed" ? `Failed · ${when(run.started_at)}` : `${run.trigger === "manual" ? "Manual" : run.trigger === "approval" ? "Approval" : "Scheduled"} run · ${when(run.started_at)}`;
   const stats = [
     ["Started", `${when(run.started_at)} CT`, utcStr(run.started_at)],
     ["Duration", dur(run.started_at, run.ended_at), ""],
     ["Cost", m4(run.cost_usd), ""],
     ["Tokens", `${num(run.tokens_in)} in · ${num(run.tokens_out)} out`, ""],
-    ["Trigger", run.trigger === "cron" ? "Vercel Schedule" : run.trigger === "manual" ? "Zak pressed Run" : run.trigger, ""],
+    ["Trigger", run.trigger === "cron" ? "Vercel Schedule" : run.trigger === "manual" ? "Zak pressed Run" : run.trigger === "approval" ? "Zak approved changes (gateway)" : run.trigger, ""],
   ];
 
   return (

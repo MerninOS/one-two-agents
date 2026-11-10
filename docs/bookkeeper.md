@@ -4,7 +4,7 @@ Agent 10 in the tech spec ("One Two Coffee Lab Agent System Tech Spec.md", secti
 
 ## 1. What ships in this first build
 
-Quinn keeps the evidence for every business charge so tax time is an export, not a scramble. This build does the daily part and the monthly close. It **writes nothing to Mercury or QuickBooks**: the tech spec allows Bookkeeper attachment, category and memo writes only once the tool gateway enforces them, and the gateway is not built. Until then every Mercury change is a *proposal* stored in Supabase and listed on a Notion page.
+Quinn keeps the evidence for every business charge so tax time is an export, not a scramble. This build does the daily part and the monthly close. Quinn **never writes to Mercury or QuickBooks itself**: every Mercury change is a *proposal* stored in Supabase. At the end of each real run the proposals go to the tool gateway (`core/gateway`), which queues one approval per charge in the Control Room and applies only what Zak approves (receipt, category, memo on the existing transaction). See `core/gateway/README.md`.
 
 | Part | In this build | Later |
 | --- | --- | --- |
@@ -15,7 +15,7 @@ Quinn keeps the evidence for every business charge so tax time is an export, not
 | Read candidate receipt emails | claude-haiku-5-5 extracts merchant, total, date (structured output). Code decides the match | |
 | Save matched receipt to Supabase Storage (`receipts` bucket, private, kept 7 years) | Yes: the PDF/image attachment if there is one, else the email text | |
 | Suggest a category | claude-haiku-5-5 picks from Mercury's own custom category list (the chart of accounts until One Two has a QuickBooks company). Code rejects anything not on the list. Never on a charge that already has a category | QuickBooks chart of accounts |
-| Write receipt, category, memo to Mercury | **No.** Stored as `proposal_status = 'proposed'` | Gateway executes after Zak approves (Draft tier), then exact matches can earn Act |
+| Write receipt, category, memo to Mercury | Through the gateway only, after Zak approves in the Control Room (Draft tier) | Exact matches can earn Act |
 | "Receipts needed" list | A section of the daily Notion page | Notion database with photo upload, email to zak+receipts@ |
 | Monthly close (on the 3rd, for last month) | Numbers in code: charges, spend, receipt coverage, uncategorized, open photo asks, miles. Notion page | Sonnet-written open-items note |
 | Mileage and home office | Tables, policies and the math in `domain/books.ts` (IRS standard rate, simplified $5/sq ft up to 300 sq ft, actual-expense share) | Trip entry (QuickBooks tracker export / Notion form), home office inputs |

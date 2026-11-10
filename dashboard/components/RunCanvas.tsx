@@ -42,7 +42,7 @@ export function RunCanvas({ a, run, leads }: { a: CrewMember; run: Run | null; l
 
         <div className="node" style={{ left: 24, top: 24, width: 200, height: 112, opacity: o(0) }}>
           <NodeHead icon="play" title="Trigger" />
-          <Line c="var(--acc)">{!run ? "No real run yet" : run.trigger === "manual" ? "Zak pressed Run" : "Vercel Schedule"}</Line>
+          <Line c="var(--acc)">{!run ? "No real run yet" : run.trigger === "manual" ? "Zak pressed Run" : run.trigger === "approval" ? "Zak approved changes" : "Vercel Schedule"}</Line>
           <Line c="var(--mut2)" mut>{run ? `Real run · ${when(run.started_at)} CT` : "Dry runs aren’t logged"}</Line>
         </div>
 

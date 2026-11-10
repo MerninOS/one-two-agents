@@ -41,6 +41,8 @@ export interface Floor {
   health: Record<IntegrationId, boolean>;
   /** Charges waiting on a receipt photo (Quinn); null when expense_docs isn't there yet. */
   photosWaiting: number | null;
+  /** Approvals waiting on Zak; null when the approvals table isn't there yet. */
+  approvalsPending: number | null;
 }
 
 const RUN_COLS = "id, agent_id, trigger, started_at, ended_at, status, tokens_in, tokens_out, cost_usd, summary, error";
@@ -70,13 +72,14 @@ export const getFloor = cache(async (): Promise<Floor> => {
   await requireSession();
   const h = health();
   const now = Date.now();
-  const empty: Floor = { ok: false, now, agents: {}, runs: [], spentToday: {}, health: h, photosWaiting: null };
+  const empty: Floor = { ok: false, now, agents: {}, runs: [], spentToday: {}, health: h, photosWaiting: null, approvalsPending: null };
   if (!h.supabase) return { ...empty, problem: "SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY are not set, so there is nothing to show yet." };
   const since = new Date(now - 60 * 864e5).toISOString();
-  const [a, r, ph] = await Promise.all([
+  const [a, r, ph, ap] = await Promise.all([
     db().from("agents").select("id, name, model, schedule, enabled, daily_budget_usd"),
     db().from("agent_runs").select(RUN_COLS).gte("started_at", since).order("started_at", { ascending: false }).limit(1000),
     db().from("expense_docs").select("id", { count: "exact", head: true }).eq("status", "needs_photo"),
+    db().from("approvals").select("id", { count: "exact", head: true }).eq("status", "pending"),
   ]);
   if (a.error || r.error) return { ...empty, problem: `Supabase: ${(a.error ?? r.error)?.message}` };
   const agents = Object.fromEntries((a.data ?? []).map((x) => [x.id, { ...x, daily_budget_usd: Number(x.daily_budget_usd) } as AgentRow]));
@@ -84,7 +87,7 @@ export const getFloor = cache(async (): Promise<Floor> => {
   const d0 = budgetDayStart(new Date(now)).getTime();
   const spentToday: Record<string, number> = Object.fromEntries(BUILT.map((b) => [b.id, 0]));
   for (const run of runs) if (Date.parse(run.started_at) >= d0) spentToday[run.agent_id] = (spentToday[run.agent_id] ?? 0) + run.cost_usd;
-  return { ok: true, now, agents, runs, spentToday, health: h, photosWaiting: ph.error ? null : ph.count ?? 0 };
+  return { ok: true, now, agents, runs, spentToday, health: h, photosWaiting: ph.error ? null : ph.count ?? 0, approvalsPending: ap.error ? null : ap.count ?? 0 };
 });
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -140,5 +143,54 @@ export async function getBooks(): Promise<Books | null> {
     proposals: (data ?? []).filter((d) => d.proposal_status === "proposed").length,
     waiting: (data ?? []).filter((d) => d.status === "needs_photo").slice(0, 8).map((d) => ({ date: d.date, merchant: d.merchant, amount_usd: Number(d.amount_usd) })),
     coverage: counted.length ? Math.round((covered / counted.length) * 1000) / 10 : null,
+  };
+}
+
+// ---- Approvals and the gateway log
+
+export interface ApprovalItem {
+  id: string;
+  action_id: string;
+  agent_id: string;
+  title: string;
+  reasoning: string | null;
+  status: string;
+  created_at: string;
+  decided_at: string | null;
+  preview: { date?: string; merchant?: string; amount_usd?: number; receipt_path?: string | null; category?: string | null; note?: string | null };
+  /** A 10-minute signed link to the receipt file, so Zak can check it before approving. */
+  receipt_url: string | null;
+  action_status: string;
+  action_reason: string | null;
+}
+export interface GatewayAction { id: string; agent_id: string; tool: string; action_type: string; target: string; status: string; reason: string | null; created_at: string; executed_at: string | null; run_id: string | null; exec_run_id: string | null }
+export interface ApprovalsView { pending: ApprovalItem[]; waiting: ApprovalItem[]; decided: ApprovalItem[]; log: GatewayAction[]; staleHours: number }
+
+/** The approvals queue, approved changes waiting to be applied, recent decisions and the gateway log. Null until the tables exist. */
+export async function getApprovals(): Promise<ApprovalsView | null> {
+  await requireSession();
+  if (!health().supabase) return null;
+  const [ap, log, pol] = await Promise.all([
+    db().from("approvals").select("id, action_id, agent_id, title, reasoning, status, created_at, decided_at, preview, agent_actions(status, reason)").order("created_at", { ascending: false }).limit(200),
+    db().from("agent_actions").select("id, agent_id, tool, action_type, target, status, reason, created_at, executed_at, run_id, exec_run_id").order("created_at", { ascending: false }).limit(60),
+    db().from("policies").select("value_json").eq("key", "approval_expiry_hours").maybeSingle(),
+  ]);
+  if (ap.error || log.error) return null;
+  const items: ApprovalItem[] = await Promise.all((ap.data ?? []).map(async (r) => {
+    const act = (Array.isArray(r.agent_actions) ? r.agent_actions[0] : r.agent_actions) as { status: string; reason: string | null } | null;
+    const preview = (r.preview ?? {}) as ApprovalItem["preview"];
+    let receipt_url: string | null = null;
+    if (preview.receipt_path && r.status === "pending") {
+      const { data } = await db().storage.from("receipts").createSignedUrl(preview.receipt_path, 600);
+      receipt_url = data?.signedUrl ?? null;
+    }
+    return { id: r.id, action_id: r.action_id, agent_id: r.agent_id, title: r.title, reasoning: r.reasoning, status: r.status, created_at: r.created_at, decided_at: r.decided_at, preview, receipt_url, action_status: act?.status ?? "?", action_reason: act?.reason ?? null };
+  }));
+  return {
+    pending: items.filter((i) => i.status === "pending").reverse(), // oldest first
+    waiting: items.filter((i) => i.status === "approved" && ["approved", "executing", "failed"].includes(i.action_status)),
+    decided: items.filter((i) => i.status !== "pending" && !(i.status === "approved" && ["approved", "executing", "failed"].includes(i.action_status))).slice(0, 30),
+    log: (log.data ?? []) as GatewayAction[],
+    staleHours: Number(pol.data?.value_json) || 72,
   };
 }

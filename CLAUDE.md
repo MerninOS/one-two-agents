@@ -12,7 +12,8 @@ This version of Next.js has breaking changes from older versions: read the guide
 
 - No agent moves money: no transfers, payments or card actions. Mercury and QuickBooks
   are read-only, except attachment, category and memo on an existing transaction, and
-  only for CFO and Bookkeeper, once the gateway enforces it.
+  only for CFO and Bookkeeper, only through the tool gateway (`core/gateway`) after Zak
+  approves. Only the gateway may import `integrations/mercury-write.ts` (lint enforces it).
 - Shopify is read-only here. `scripts/validate-graphql.mjs` fails on any mutation. An
   agent that needs Shopify writes gets its own separately scoped app.
 - No email or DM is ever sent. Outreach is a Gmail draft (gmail.compose scope) that Zak sends.

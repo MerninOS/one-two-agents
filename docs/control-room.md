@@ -28,7 +28,7 @@ A "mission control" for the agents, light and dark themes, Plus Jakarta Sans, wh
 | Access matrix, hard rules, mandates | Tech spec + CLAUDE.md | Static config in code |
 | Memory (orders, facts, lessons, notes, working, don't repeat) | Nothing | "Coming later" panels; standing orders and "don't repeat" (lead domains) shown where real data exists |
 | Run steps, gateway decisions, quarantine | Nothing (needs run transcripts) | Replay shows the design's "Steps need run transcripts" state |
-| Approvals queue | Nothing (`approvals` table not built) | Design's empty state, example card disabled |
+| Approvals queue | `approvals` + `agent_actions` (gateway) | Pending cards with Approve / Reject / Approve all, approved-not-applied with Apply now and Retry, decided list, gateway log |
 | Journal / Teach | Nothing | Hidden until the memory store exists (no fake saves) |
 
 No sample data ships. Where the design used sample numbers, the build shows the real number or an honest empty state.

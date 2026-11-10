@@ -241,7 +241,7 @@ function BooksCard({ books }: { books: Books | null }) {
           {books.waiting.map((w) => <div key={`${w.date}-${w.merchant}-${w.amount_usd}`} className="row rule" style={{ justifyContent: "space-between", padding: "8px 0", fontSize: 13 }}><span>{md(`${w.date}T12:00:00Z`)} · {w.merchant}</span><b style={{ fontWeight: 600 }}>{m2(w.amount_usd)}</b></div>)}
         </div>
       )}
-      <span className="sub">Proposals are not applied to Mercury until the approval gateway exists. Record keeping, not tax advice.</span>
+      <span className="sub">{books.proposals ? <><Link href="/approvals">Review proposals in Approvals</Link>. </> : null}Nothing goes to Mercury until you approve it. Record keeping, not tax advice.</span>
     </div>
   );
 }

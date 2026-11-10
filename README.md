@@ -11,7 +11,7 @@ ten agents is the "One Two Coffee Lab Agent System" tech spec.
 | --- | --- | --- |
 | `/api/agents/cfo` | daily 5:30 AM Central | Yesterday's revenue, orders, AOV, repeat rate, green cost and margin from Shopify, cash from Mercury → `kpi_snapshots`. Plain code, no model |
 | `/api/agents/chief_of_staff` | weekdays 6:45 AM Central | Morning brief → a Notion page. Numbers come from code; Claude writes only the Watch list and today's focus, with a rules fallback when the API can't be reached |
-| `/api/agents/bookkeeper` | manual only until launch (planned daily 6:00 AM Central) | Business charges from Mercury → `expense_docs`, receipts found in Gmail (read-only token) saved to the private `receipts` bucket, category suggestions from Mercury's own list, charges that need a photo, month close on the 3rd → a Notion page. Haiku reads receipts; code decides every match. **Never writes to Mercury**: receipt, category and memo are proposals until the gateway exists. A few cents a run. Ships off (`agents.enabled = false`) |
+| `/api/agents/bookkeeper` | manual only until launch (planned daily 6:00 AM Central) | Business charges from Mercury → `expense_docs`, receipts found in Gmail (read-only token) saved to the private `receipts` bucket, category suggestions from Mercury's own list, charges that need a photo, month close on the 3rd → a Notion page. Haiku reads receipts; code decides every match. **Never writes to Mercury itself**: receipt, category and memo are proposals that the tool gateway applies after Zak approves them in the Control Room. A few cents a run. Ships off (`agents.enabled = false`) |
 | `/api/agents/wholesale_hunter` | manual only | Claude searches the web for a few new wholesale/private label prospects in Austin, Lakeway and Bee Cave, scores fit, writes a first-touch email → `wholesale_leads`, Gmail drafts (if `GMAIL_*` is set) and a Notion page. Never sends. About $1 a run |
 
 The old paths `/api/agents/brief` and `/api/agents/hunter` still work.
@@ -52,7 +52,10 @@ matrix and integrations, built from the Claude Design file "Agent Control Room".
 - Real runs, putting an agent back on the crew and raising a budget need
   `DASHBOARD_CONTROLS=on`. Real runs go through `withRun`, so they respect `enabled` and budgets.
 - Agent names (Avery, Morgan, Rowan…) and mandates live in `dashboard/crew.ts`.
-- Memory, run steps, gateway decisions and approvals show as "coming later" until their tables exist.
+- Approvals (`/approvals`): Quinn's proposed Mercury changes, one card per charge, plus the gateway log.
+  Approving writes to Mercury only when `MERCURY_WRITE_TOKEN` is set, `DASHBOARD_CONTROLS=on` and
+  Quinn is on duty; otherwise the approval is kept and applied later. See `core/gateway/README.md`.
+- Memory and run steps show as "coming later" until their tables exist.
 
 ## Layout
 
@@ -62,8 +65,8 @@ app/api/agents/[agent]/   one route for every agent: auth, trigger, run log
 app/api/health/           settings present + Supabase reachable
 dashboard/                Control Room data, actions, session and components
 agents/                   one folder per agent, plus registry.ts (see agents/README.md)
-core/                     env, Supabase client, withRun (log, enabled flag, budget), time helpers, gateway (reserved)
-integrations/             Shopify (read-only), Mercury (read-only), Notion, Gmail (drafts only; receipts read-only), Anthropic
+core/                     env, Supabase client, withRun (log, enabled flag, budget), time helpers, the tool gateway
+integrations/             Shopify (read-only), Mercury (read-only; mercury-write.ts is gateway-only), Notion, Gmail (drafts only; receipts read-only), Anthropic
 domain/                   coffee constants and green math (copied from the storefront), bookkeeping rules (books.ts)
 supabase/migrations/      agent tables
 ```

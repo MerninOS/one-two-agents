@@ -3,8 +3,9 @@ import "server-only";
 // that backs it (already in Mercury, or found in Gmail), a category suggestion, and a
 // short list of charges that need a photo. On the 3rd it also closes last month.
 //
-// Mercury stays read-only: a receipt, category or memo for Mercury is stored on the row
-// as a proposal and is only applied once the tool gateway exists and Zak approves it.
+// Quinn never writes to Mercury: a receipt, category or memo is stored on the row as a
+// proposal and handed to the tool gateway (core/gateway), which applies it only after Zak
+// approves it in the Control Room.
 // Emails are untrusted: Haiku only reads fields off them, code decides every match.
 import { db } from "@/core/db";
 import type { RunResult } from "@/core/runs";
@@ -19,6 +20,7 @@ import { GmailReader, hasGmailRead, type Mail } from "@/integrations/gmail-read"
 import { hasMercury, mercuryCategories, mercuryTransactions, type MercuryCategory, type MercuryTxn } from "@/integrations/mercury";
 import { divider, h2, h3, li, notionPage, p as para, type Block } from "@/integrations/notion";
 import { env } from "@/core/env";
+import { queueBookkeeperProposals } from "@/core/gateway";
 import { PICK_CATEGORY, READ_RECEIPT } from "./prompt";
 
 const MODEL = MODELS.haiku;
@@ -318,7 +320,11 @@ export async function runBookkeeper(runId?: string, opts: { dryRun?: boolean } =
     if (e) throw new Error(`Could not update ${d.merchant}: ${e.message}`);
   }
 
-  // 5. Notion: a page only when there is something to look at.
+  // 5. Hand every proposal to the gateway: one approval per charge in the Control Room.
+  // Quinn never writes to Mercury; the gateway applies only what Zak approves.
+  const gate = await queueBookkeeperProposals(runId ?? null);
+
+  // 6. Notion: a page only when there is something to look at.
   const waiting = [...all.values()].filter((d) => d.status === "needs_photo").sort((a, b) => b.date.localeCompare(a.date));
   const proposals = [...all.values()].filter((d) => d.proposal_status === "proposed");
   const close = today.slice(8) === "03" ? await closeMonth(today, p) : null;
@@ -329,7 +335,7 @@ export async function runBookkeeper(runId?: string, opts: { dryRun?: boolean } =
       ...(close?.blocks ?? []),
       h2(`${newlyMatched.length} receipt${newlyMatched.length === 1 ? "" : "s"} found`),
       ...(newlyMatched.length ? newlyMatched.map((d) => li(`${d.date} · ${d.merchant} · ${usd(d.amount_usd)}: attach to Mercury${d.proposal_category ? `, category ${d.proposal_category}` : ""}`)) : [para("None new today.")]),
-      para(`${proposals.length} proposed Mercury change${proposals.length === 1 ? "" : "s"} wait for your approval. Nothing is written to Mercury until the approval gateway is built.`),
+      para(`${proposals.length} proposed Mercury change${proposals.length === 1 ? "" : "s"} wait for your approval in the Control Room (Approvals). Nothing is written to Mercury until you approve it.`),
       h2(`Receipts needed (${waiting.length})`),
       ...(waiting.length ? waiting.slice(0, 40).map((d) => li(`${d.date} · ${d.merchant} · ${usd(d.amount_usd)}`)) : [para("Nothing waiting on a photo.")]),
       ...(notes.length ? [h3("Couldn’t check"), ...notes.slice(0, 10).map((n) => li(n))] : []),
@@ -346,6 +352,7 @@ export async function runBookkeeper(runId?: string, opts: { dryRun?: boolean } =
       `${newlyMatched.length} receipts found${gmailReady ? ` (${toSearch.length} searched)` : " (Gmail receipt search not set up)"}`,
       `${waiting.length} need a photo`,
       `${picks.size} category suggestions`,
+      `${gate.queued} sent for approval${gate.refused ? ` (${gate.refused} refused by the gateway)` : ""}`,
       `coverage ${covered == null ? "n/a" : `${covered}%`}`,
       ...(close ? [close.summary] : []),
       ...(notes.length ? [`${notes.length} couldn't be checked`] : []),
