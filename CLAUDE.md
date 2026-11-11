@@ -10,13 +10,33 @@ This version of Next.js has breaking changes from older versions: read the guide
 
 ## Hard rules (from the agent system tech spec; never relax them in code)
 
-- No agent moves money: no transfers, payments or card actions. Mercury and QuickBooks
-  are read-only, except attachment, category and memo on an existing transaction, and
-  only for CFO and Bookkeeper, only through the tool gateway (`core/gateway`) after Zak
-  approves. Only the gateway may import `integrations/mercury-write.ts` (lint enforces it).
+The tool gateway (`core/gateway`) exists with one action type so far: receipt, category
+and memo on an existing Mercury transaction (Bookkeeper and CFO, Draft). No send, payment
+or publish action type is built, so no agent gets one of those integrations: drafts only.
+
+
+- Sending, buying and posting are allowed only as gateway action types, and every new
+  action type starts at Draft: an approval card in the Control Room that Zak taps. An
+  action type moves up (Draft, then Act with an undo window, then Act) only after 28 of
+  its last 30 approvals went through unedited and Zak confirms the promotion card. A
+  "wrong" rejection, complaint, unsubscribe spike, cap breach or breaker trip drops it
+  back to Draft. No code path may send, pay or post outside the gateway.
+- Money: only within `policies.max_purchase_usd` (start $500) and
+  `policies.max_monthly_spend_usd` (start $1,500), only to payees in `vendors` (Zak adds
+  rows; a new payee is always Draft and never promoted), as Mercury send-money requests.
+  No card actions, no transfers to personal accounts, no void or delete of a transaction,
+  bill, invoice or account. Writes to existing transactions are limited to attachment,
+  category and memo, by CFO and Bookkeeper. Each kind of write gets its own token, held
+  only by the gateway: only `core/gateway` may import `integrations/mercury-write.ts`
+  (lint enforces it).
 - Shopify is read-only here. `scripts/validate-graphql.mjs` fails on any mutation. An
   agent that needs Shopify writes gets its own separately scoped app.
-- No email or DM is ever sent. Outreach is a Gmail draft (gmail.compose scope) that Zak sends.
+- Email: first contact with a person who has never heard from One Two is always Draft
+  and never promoted. Follow-ups and replies on an existing thread can be promoted. Daily
+  cap `policies.max_emails_per_day` (start 20); an unsubscribe or "stop" reply ends all
+  messages to that person, in code. Emails to Zak go only to an address fixed in config.
+- Posts: publishing is Draft until promoted, the approval shows the exact caption and
+  media, and no agent edits or deletes a published post. No agent signs or accepts terms.
 - No deletes of products, customers, orders or Klaviyo profiles.
 - External messages only claim facts about lots, origins or certifications that come
   from Shopify data, never from the model.

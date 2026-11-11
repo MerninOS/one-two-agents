@@ -112,7 +112,7 @@ export default async function MissionControl() {
                 return (
                   <div key={a.id} className="shift-grid rule" style={{ padding: "6px 0", marginTop: 6 }}>
                     <Link href={`/agents/${a.id}?tab=shift`} className="row" style={{ gap: 9, color: "var(--ink)", minWidth: 0 }}>
-                      <Avatar a={a} />
+                      <Avatar a={a} working={states.find((x) => x.a.id === a.id)?.st === "running"} />
                       <span style={{ display: "flex", flexDirection: "column", minWidth: 0 }}><span style={{ fontSize: 13, fontWeight: 600 }}>{a.name}</span><span className="clip muted" style={{ fontSize: 11 }}>{schedWords(a.schedule)}{row?.enabled ? "" : " · will skip"}</span></span>
                     </Link>
                     {days.map((d) => {

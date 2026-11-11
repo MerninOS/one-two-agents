@@ -4,6 +4,7 @@
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
+import { after } from "next/server";
 import { AGENTS } from "@/agents/registry";
 import { db } from "@/core/db";
 import { withRun } from "@/core/runs";
@@ -42,16 +43,30 @@ export async function dryRun(agentId: string): Promise<ActionResult> {
   } catch (e) { return fail(e); }
 }
 
-/** A real run, logged in agent_runs as manual. withRun still skips it when the agent is off duty or over budget. */
+/**
+ * A real run, logged in agent_runs as manual. withRun still skips it when the agent is off duty or over budget.
+ * The run keeps going in the background (after()), so this returns as soon as its row is written and the
+ * dashboard stays usable; the layout polls until the row finishes. A skip or a failure to start comes back at once.
+ */
 export async function realRun(agentId: string): Promise<ActionResult> {
   await requireSession();
   if (!controlsOn()) return { ok: false, text: CONTROLS_OFF };
   if (!known(agentId)) return { ok: false, text: "Unknown agent." };
-  try {
-    const res = await withRun(agentId, "manual", (runId) => AGENTS[agentId].job({ runId }));
-    revalidatePath("/", "layout");
-    return { ok: res.status === "ok", text: `${BY_ID[agentId].name}: ${res.status === "skipped" ? "skipped, " : ""}${res.summary}` };
-  } catch (e) { revalidatePath("/", "layout"); return fail(e); }
+  const name = BY_ID[agentId].name;
+  // one at a time: a row still "running" inside the 6 minute window means a run is going
+  const { data: going } = await db().from("agent_runs").select("id").eq("agent_id", agentId).eq("status", "running").gte("started_at", new Date(Date.now() - 6 * 6e4).toISOString()).limit(1);
+  if (going?.length) return { ok: false, text: `${name} is already working. Wait for that run to finish.` };
+
+  let markStarted: () => void = () => {};
+  const started = new Promise<null>((resolve) => { markStarted = () => resolve(null); });
+  const run = withRun(agentId, "manual", (runId) => { markStarted(); return AGENTS[agentId].job({ runId }); })
+    .then((res) => ({ res }), (err: unknown) => { console.error(`[control-room] ${agentId} run failed`, err); return { err }; });
+  after(run);
+  const first = await Promise.race([started, run]);
+  revalidatePath("/", "layout");
+  if (first === null) return { ok: true, text: `${name} is working. Keep using the app; ${name} pulses until the run is done.` };
+  if ("err" in first) return fail(first.err);
+  return { ok: first.res.status === "ok", text: `${name}: ${first.res.status === "skipped" ? "skipped, " : ""}${first.res.summary}` };
 }
 
 export async function setEnabled(agentId: string, on: boolean): Promise<ActionResult> {

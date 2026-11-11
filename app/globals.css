@@ -44,7 +44,11 @@ h1, h2, h3, p { margin: 0; }
 .rail-av { width: 48px; height: 48px; border-radius: 999px; display: grid; place-items: center; background: var(--soft); color: var(--ink); transition: background .2s; }
 .rail-av.planned { color: var(--mut); border: 1.5px dashed var(--mut2); }
 .rail-av.sel { background: var(--acc); color: #111114; box-shadow: 0 8px 20px rgba(242, 136, 75, .35); border: 0; }
-.rail-av.running { box-shadow: 0 0 0 2px var(--acc); }
+.rail-av.running, .av.working { animation: acrRing 1.8s ease-in-out infinite; }
+@keyframes acrRing { 0%, 100% { box-shadow: 0 0 0 2px var(--acc), 0 0 0 2px rgba(242, 136, 75, .5) } 60% { box-shadow: 0 0 0 2px var(--acc), 0 0 0 11px rgba(242, 136, 75, 0) } }
+.dot.pulse { animation: acrDot 1.2s ease-in-out infinite; }
+@keyframes acrDot { 0%, 100% { opacity: 1; transform: scale(1) } 50% { opacity: .35; transform: scale(.7) } }
+@media (prefers-reduced-motion: reduce) { .rail-av.running, .av.working, .dot.pulse { animation: none; box-shadow: 0 0 0 2px var(--acc); } .dot.pulse { box-shadow: none; } }
 .rail-dot { width: 5px; height: 5px; border-radius: 999px; background: transparent; }
 .rail-dot.sel { background: var(--acc); }
 .rail-sep { width: 1px; height: 36px; background: var(--bd); margin: 8px 6px 0; flex: none; }

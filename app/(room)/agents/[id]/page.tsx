@@ -12,7 +12,8 @@ import { Icon } from "@/dashboard/components/Icon";
 import { RunTable } from "@/dashboard/components/RunTable";
 import { Avatar, Later, LockList, Pill, Summary } from "@/dashboard/components/ui";
 
-// A real Wholesale Hunter run takes a few minutes; the server action runs inside this page.
+// A real Wholesale Hunter run takes a few minutes. realRun returns at once and finishes the run in after(),
+// which lives as long as this page's function allows.
 export const maxDuration = 300;
 
 const TABS = [["profile", "Profile"], ["memory", "Memory"], ["runs", "Runs and replays"], ["access", "Access"], ["shift", "Shift"], ["settings", "Settings"]] as const;
@@ -40,7 +41,7 @@ export default async function AgentPage({ params, searchParams }: { params: Prom
     <>
       {tab === "profile" ? <HeroFull a={a} f={f} controls={controls} /> : (
         <div className="row wrap" style={{ gap: 14 }}>
-          <Avatar a={a} size={48} />
+          <Avatar a={a} size={48} working={st === "running"} />
           <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 2, minWidth: 200 }}><span style={{ fontSize: 24, fontWeight: 600, letterSpacing: "-.02em" }}>{a.name}</span><span className="muted" style={{ fontSize: 13 }}>{a.role} · {a.built ? `on the crew since ${a.since}` : `joining after launch · phase ${a.phase}`}</span></div>
           <Pill look={STATE_LOOK[st]} />
           {a.built && <DryRun action={dryRun.bind(null, id)} compact />}
@@ -138,7 +139,7 @@ function HeroFull({ a, f, controls }: { a: CrewMember; f: Floor; controls: boole
   return (
     <div className="card" style={{ padding: 28, borderRadius: 24, display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))", gap: 28 }}>
       <div className="row" style={{ gap: 22, alignItems: "flex-start", minWidth: 0 }}>
-        <span style={{ boxShadow: "0 12px 30px rgba(17,17,26,.10)", borderRadius: 999 }}><Avatar a={a} size={96} /></span>
+        <span style={{ boxShadow: "0 12px 30px rgba(17,17,26,.10)", borderRadius: 999 }}><Avatar a={a} size={96} working={st === "running"} /></span>
         <div style={{ display: "flex", flexDirection: "column", gap: 10, minWidth: 0 }}>
           <div className="row wrap">
             <h1 style={{ fontSize: 34, fontWeight: 600, letterSpacing: "-.03em", lineHeight: 1.1 }}>{a.name}</h1>
@@ -159,10 +160,10 @@ function HeroFull({ a, f, controls }: { a: CrewMember; f: Floor; controls: boole
           <>
             <div className="row wrap" style={{ gap: 8 }}>
               <DryRun action={dryRun.bind(null, a.id)} />
-              <ActionButton className="btn dark" action={realRun.bind(null, a.id)} disabled={!controls || !row}
-                title={controls ? undefined : "Real runs need DASHBOARD_CONTROLS=on"}
+              <ActionButton className="btn dark" action={realRun.bind(null, a.id)} disabled={!controls || !row || st === "running"} busyLabel="Starting…"
+                title={!controls ? "Real runs need DASHBOARD_CONTROLS=on" : st === "running" ? `${a.name} is working. One run at a time.` : undefined}
                 confirm={{ title: `Run ${a.name} for real?`, body: row?.enabled ? `${a.name} reads real data and writes: ${a.writes}. Logged in the run log.` : `${a.name} is off duty, so this run is logged as skipped at $0.`, lines: [{ k: "Expected cost", v: row?.enabled ? a.estCostLabel ?? "?" : "$0" }, { k: "Spent today", v: `${m4(f.spentToday[a.id] ?? 0)} of ${m2(row?.daily_budget_usd ?? 0)}` }, ...(a.id === "wholesale_hunter" && !f.health.gmail ? [{ k: "Note", v: "Gmail isn’t connected, so drafts land in Notion only." }] : [])], confirmLabel: "Run for real", kind: "dark" }}>
-                {realLabel}
+                {st === "running" ? <><span className="dot pulse" style={{ background: "var(--acc)" }} />Working…</> : realLabel}
               </ActionButton>
             </div>
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>

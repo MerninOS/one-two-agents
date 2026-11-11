@@ -10,6 +10,10 @@ import a write integration: `integrations/mercury-write.ts` can only be imported
 - `index.ts`: `propose` (refuse, or record in `agent_actions` and queue in `approvals`),
   `queueBookkeeperProposals`, `decide`, `expireStale`, `retry`, `applyApproved`.
 
+Sending, payments and posting are allowed by the tech spec only as gateway action types
+with approval levels and caps (see CLAUDE.md). None of them is built yet, so no agent has
+one of those integrations.
+
 ## The one write tool so far: `mercury.annotate_transaction`
 
 Receipt attachment, category and memo on a Mercury transaction that already exists. Only

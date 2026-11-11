@@ -70,8 +70,8 @@ export const CREW: CrewMember[] = [
   {
     id: "wholesale_hunter", name: "Rowan", role: "Wholesale Hunter", hue: "#F5D35C", icon: "compass", built: true, tier: "Draft",
     model: "claude-opus-5-5 + web search", since: "Oct 29", estCostLabel: "About $1", writes: "wholesale_leads, 1 Notion page, Gmail drafts if set up",
-    mandate: "I find cafés, restaurants and offices around Austin that would pour One Two, and write the first hello. You send it. I never do.",
-    job: "Finds a few new wholesale prospects in Austin, Lakeway and Bee Cave, scores fit, writes a first-touch email as a draft. Never sends.",
+    mandate: "I find cafés, restaurants and offices around Austin that would pour One Two, and write the first hello. You approve every first email before it goes out.",
+    job: "Finds a few new wholesale prospects in Austin, Lakeway and Bee Cave, scores fit, writes a first-touch email as a draft. First emails always wait for your approval.",
     works: "You review and send every draft. Avery reads each run.",
     how: [
       ["Voice", "Plain and short. Opens with the coffee. Signs as Zak."],
@@ -149,7 +149,7 @@ export const INTEGRATIONS: Integration[] = [
 export const ACCESS: Record<string, Partial<Record<IntegrationId, [Level, string]>>> = {
   cfo: { shopify: ["read", "Orders, products, inventory"], mercury: ["read", "Balances"], supabase: ["write", "Its own table kpi_snapshots"] },
   chief_of_staff: { shopify: ["read", "Open orders, green lots"], claude: ["uses", "claude-sonnet-5-5"], notion: ["write", "One page per brief under Morning briefs"], supabase: ["read", "The run log and kpi_snapshots"] },
-  wholesale_hunter: { claude: ["uses", "claude-opus-5-5"], web: ["read", "Web search and fetch. Untrusted."], shopify: ["read", "Our coffees and green lots, so it only claims real facts"], supabase: ["write", "Its own table wholesale_leads"], notion: ["write", "One page per run"], gmail: ["draft", "Drafts when Gmail is set up. Never sends."] },
+  wholesale_hunter: { claude: ["uses", "claude-opus-5-5"], web: ["read", "Web search and fetch. Untrusted."], shopify: ["read", "Our coffees and green lots, so it only claims real facts"], supabase: ["write", "Its own table wholesale_leads"], notion: ["write", "One page per run"], gmail: ["draft", "Drafts when Gmail is set up. First emails always need your approval."] },
   bookkeeper: {
     mercury: ["draft", "Reads charges and categories. Receipt, category and memo on existing transactions are proposals Zak approves; the gateway applies them."],
     gmail_read: ["read", "Receipt emails in zak@, read only. Untrusted: an email never picks a charge or category."],
@@ -162,9 +162,11 @@ export const ACCESS: Record<string, Partial<Record<IntegrationId, [Level, string
 };
 
 export const HARD_RULES = [
-  "Never moves money: no transfers, payments or card actions.",
-  "Writes to Mercury only through the gateway: receipt, category and memo on an existing charge, after Zak approves.",
-  "Never sends an email or DM. Outreach is a draft Zak sends.",
+  "Never sends, buys or posts without the approval its trust level needs. Every new action starts as an approval card.",
+  "Earns trust per action: 28 of the last 30 approved unedited, then you confirm the promotion. One bad call drops it back.",
+  "Spends only within caps ($500 a purchase, $1,500 a month) and only to vendors you added. No card actions.",
+  "First email to a new person always waits for you. Unsubscribes end all messages.",
+  "Writes to Mercury only through the gateway: receipt, category and memo on an existing charge, after you approve.",
   "Never writes to Shopify.",
   "Never deletes products, customers, orders or Klaviyo profiles.",
   "Never claims a fact about a lot, origin or certification that isn’t in Shopify.",
