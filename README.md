@@ -12,7 +12,7 @@ ten agents is the "One Two Coffee Lab Agent System" tech spec.
 | `/api/agents/cfo` | daily 5:30 AM Central | Yesterday's revenue, orders, AOV, repeat rate, green cost and margin from Shopify, cash from Mercury → `kpi_snapshots`. Plain code, no model |
 | `/api/agents/chief_of_staff` | weekdays 6:45 AM Central | Morning brief → a Notion page. Numbers come from code; Claude writes only the Watch list and today's focus, with a rules fallback when the API can't be reached |
 | `/api/agents/bookkeeper` | manual only until launch (planned daily 6:00 AM Central) | Business charges from Mercury → `expense_docs`, receipts found in Gmail (read-only token) saved to the private `receipts` bucket, category suggestions from Mercury's own list, charges that need a photo, month close on the 3rd → a Notion page. Haiku reads receipts; code decides every match. **Never writes to Mercury**: receipt, category and memo are proposals until the gateway exists. A few cents a run. Ships off (`agents.enabled = false`) |
-| `/api/agents/wholesale_hunter` | manual only | Claude searches the web for a few new wholesale/private label prospects in Austin, Lakeway and Bee Cave, scores fit, writes a first-touch email → `wholesale_leads`, Gmail drafts (if `GMAIL_*` is set) and a Notion page. Never sends. About $1 a run |
+| `/api/agents/wholesale_hunter` | manual only | Claude searches the web for a few new wholesale/private label prospects in Austin, Lakeway and Bee Cave, scores fit, writes a first-touch email → `wholesale_leads`, Gmail drafts (if `GMAIL_*` is set) and a Notion page. Drafts only; nothing is sent. About $1 a run |
 
 The old paths `/api/agents/brief` and `/api/agents/hunter` still work.
 
