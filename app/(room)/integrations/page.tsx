@@ -8,7 +8,7 @@ const EXTRA: Partial<Record<string, string>> = {
   gmail: "Set GMAIL_CLIENT_ID, GMAIL_CLIENT_SECRET and GMAIL_REFRESH_TOKEN (gmail.compose only) to get Rowan’s drafts in Gmail.",
   gmail_read: "Set GMAIL_RECEIPTS_REFRESH_TOKEN: a refresh token for zak@onetwocoffeelab.com from the same OAuth client, granted only gmail.readonly.",
   mercury: "Needs MERCURY_API_TOKEN and MERCURY_ACCOUNT_IDS (all, or a comma list). Quinn only needs the token.",
-  notion: "Needs NOTION_TOKEN and NOTION_BRIEF_PARENT_ID, and the page shared with the integration.",
+  notion: "Needs NOTION_TOKEN and NOTION_BRIEF_PARENT_ID, and the page shared with the integration. Set NOTION_BRIEFS_DB_ID as well so Avery’s brief is a row in the Briefs database.",
   github: "Planned for Ellis (Conversion Optimizer). Nothing uses it yet.",
 };
 
