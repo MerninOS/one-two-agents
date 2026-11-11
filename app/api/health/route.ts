@@ -12,6 +12,7 @@ export async function GET(req: Request) {
     anthropic: !!process.env.ANTHROPIC_API_KEY,
     mercury: !!(env.mercuryToken && env.mercuryAccountIds.length),
     notion: !!(env.notionToken && env.notionBriefParent),
+    email: !!(env.resendKey && env.briefFrom && env.briefTo),
     gmail: !!(env.gmailClientId && env.gmailClientSecret && env.gmailRefreshToken),
   };
   let agents: { id: string; enabled: boolean }[] | string = "not checked";

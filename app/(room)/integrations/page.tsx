@@ -4,6 +4,7 @@ import { Icon } from "@/dashboard/components/Icon";
 import { Avatar } from "@/dashboard/components/ui";
 
 const EXTRA: Partial<Record<string, string>> = {
+  email: "Set RESEND_API_KEY, BRIEF_FROM (a sender on a domain verified in Resend) and BRIEF_TO to get Avery’s brief by email. Until then it goes to Notion only.",
   gmail: "Set GMAIL_CLIENT_ID, GMAIL_CLIENT_SECRET and GMAIL_REFRESH_TOKEN (gmail.compose only) to get Rowan’s drafts in Gmail.",
   gmail_read: "Set GMAIL_RECEIPTS_REFRESH_TOKEN: a refresh token for zak@onetwocoffeelab.com from the same OAuth client, granted only gmail.readonly.",
   mercury: "Needs MERCURY_API_TOKEN and MERCURY_ACCOUNT_IDS (all, or a comma list). Quinn only needs the token.",

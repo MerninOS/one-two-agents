@@ -27,9 +27,9 @@ export function needs(f: Floor, now = Date.now()): Need[] {
     const users = BUILT.filter((a) => ACCESS[a.id]?.[i.id]);
     if (!users.length) continue;
     out.push({
-      pri: i.id === "gmail" || i.id === "gmail_read" ? "Low" : "Medium",
+      pri: i.id === "gmail" || i.id === "gmail_read" || i.id === "email" ? "Low" : "Medium",
       title: `Connect ${i.name}`,
-      sub: i.id === "gmail" ? "Rowan’s drafts land in Notion only until Gmail is connected." : i.id === "gmail_read" ? "Quinn can’t look for receipts in email until the read-only Gmail token is set." : `${users.map((u) => u.name).join(" and ")} ${users.length > 1 ? "need" : "needs"} it.`,
+      sub: i.id === "email" ? "Avery’s brief goes to Notion only until email is set up." : i.id === "gmail" ? "Rowan’s drafts land in Notion only until Gmail is connected." : i.id === "gmail_read" ? "Quinn can’t look for receipts in email until the read-only Gmail token is set." : `${users.map((u) => u.name).join(" and ")} ${users.length > 1 ? "need" : "needs"} it.`,
       href: "/integrations",
       agentId: users[0].id,
     });

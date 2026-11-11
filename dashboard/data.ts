@@ -58,6 +58,7 @@ export function health(): Record<IntegrationId, boolean> {
     claude: !!process.env.ANTHROPIC_API_KEY,
     mercury: !!(env.mercuryToken && env.mercuryAccountIds.length),
     notion: !!(env.notionToken && env.notionBriefParent),
+    email: !!(env.resendKey && env.briefFrom && env.briefTo),
     gmail: !!(env.gmailClientId && env.gmailClientSecret && env.gmailRefreshToken),
     gmail_read: !!(env.gmailClientId && env.gmailClientSecret && env.gmailReceiptsRefreshToken),
     // web search runs through the Claude API key

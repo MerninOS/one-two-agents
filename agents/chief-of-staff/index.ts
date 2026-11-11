@@ -1,17 +1,22 @@
 import "server-only";
 // Chief of Staff morning brief. Everything with a number in it is worked out
 // here in code; the model only reads those facts and writes the Watch list and
-// one recommended focus. The brief lands as a Notion page.
+// one recommended focus. The brief goes to Zak by email (docs/avery-email.md), with a
+// Notion page as the archive; either one alone also works.
 import { G_PER_LB } from "@/domain/coffee";
 import { db } from "@/core/db";
 import type { RunResult } from "@/core/runs";
+import { env } from "@/core/env";
 import { chicagoDate, dayTitle } from "@/core/time";
 import { Anthropic, MODELS, claude, costUsd, inputTokens } from "@/integrations/anthropic";
+import { emailZak, hasEmail } from "@/integrations/email";
 import { h2, li, notionPage, p, type Block } from "@/integrations/notion";
 import { getInventoryLots } from "@/integrations/shopify/lots";
 import { getBoardOrders, greenLedger } from "@/integrations/shopify/orders";
 import { getRoastLoss } from "@/integrations/shopify/settings";
 import { fetchStockCoffees } from "@/integrations/shopify/stock";
+import { BY_ID } from "@/dashboard/crew";
+import { briefEmail, type BriefView, type Kpi } from "./email";
 import { SOP } from "./prompt";
 
 const MODEL = MODELS.sonnet;
@@ -36,9 +41,13 @@ const pct = (n: number | null | undefined) => (n == null ? "n/a" : `${Math.round
 
 async function facts() {
   const [lots, stock, loss] = await Promise.all([getInventoryLots(), fetchStockCoffees(), getRoastLoss()]);
-  const [{ data: kpis }, { data: runs }, orders, ledger] = await Promise.all([
+  const dayAgo = new Date(Date.now() - 864e5).toISOString();
+  const [{ data: kpis }, { data: runs }, { data: pending }, { count: newDrafts }, orders, ledger] = await Promise.all([
     db().from("kpi_snapshots").select("*").order("date", { ascending: false }).limit(8),
-    db().from("agent_runs").select("agent_id, status, summary, error, started_at").gte("started_at", new Date(Date.now() - 864e5).toISOString()).order("started_at"),
+    db().from("agent_runs").select("id, agent_id, status, summary, error, started_at").gte("started_at", dayAgo).order("started_at"),
+    // the approvals table arrives with the gateway migration; without it this is just empty
+    db().from("approvals").select("created_at").eq("status", "pending").order("created_at").limit(500),
+    db().from("wholesale_leads").select("id", { count: "exact", head: true }).not("gmail_draft_id", "is", null).gte("created_at", dayAgo),
     getBoardOrders(),
     greenLedger({ stock, lots, loss }, 30),
   ]);
@@ -61,6 +70,8 @@ async function facts() {
     },
     lowGreen: cover.filter((c) => c.daysOfCover != null && c.daysOfCover < COVER_WARN_DAYS),
     agentRuns: runs ?? [],
+    approvals: { pending: pending?.length ?? 0, oldestHours: pending?.length ? (Date.now() - Date.parse(pending[0].created_at)) / 36e5 : null },
+    newDrafts: newDrafts ?? 0,
     neverDeducted: ledger.filter((r) => r.state === "missing").map((r) => r.name),
   };
 }
@@ -135,15 +146,46 @@ export async function runBrief(opts: { dryRun?: boolean } = {}): Promise<RunResu
       fallback = ` (model unavailable, rules used: ${e.message.slice(0, 120)})`;
     }
   }
+  const view = (notionUrl?: string): BriefView => ({
+    today: f.today,
+    yesterday: (f.yesterday as Kpi | null) ?? null,
+    earlier: f.lastWeek as Kpi[],
+    openOrders: f.openOrders,
+    neverDeducted: f.neverDeducted,
+    runs: f.agentRuns,
+    approvals: f.approvals,
+    newDrafts: f.newDrafts,
+    watch: judgment.watch,
+    focus: judgment.focus,
+    dashboardUrl: env.dashboardUrl,
+    notionUrl,
+    names: Object.fromEntries(Object.values(BY_ID).map((a) => [a.id, a.name])),
+  });
+  const email = hasEmail(), notion = !!(env.notionToken && env.notionBriefParent);
   if (opts.dryRun) {
-    return { status: "ok", summary: `[dry run, not posted] ${f.openOrders.paid} paid orders, ${f.lowGreen.length} low lots, ${f.agentRuns.length} runs in 24h. Focus: ${judgment.focus.action}` };
+    const { subject, html } = briefEmail(view());
+    const to = email ? "would email it" : notion ? "email not set up, would post to Notion only" : "no email or Notion set up";
+    return { status: "ok", summary: `[dry run, nothing sent] "${subject}" (${Math.round(html.length / 1024)} KB, ${to}). ${f.approvals.pending} approvals pending, ${f.lowGreen.length} low lots, ${f.agentRuns.length} runs in 24h.` };
   }
-  const url = await notionPage(`Morning brief · ${dayTitle(f.today)}`, briefBlocks(f, judgment));
+  if (!email && !notion) throw new Error("Nowhere to send the brief: set RESEND_API_KEY, BRIEF_FROM and BRIEF_TO for email, or NOTION_TOKEN and NOTION_BRIEF_PARENT_ID for Notion");
+
+  // Notion first, so the email can link to its copy. A Notion failure never stops the email.
+  let url: string | undefined, notionError = "";
+  if (notion) {
+    try { url = await notionPage(`Morning brief · ${dayTitle(f.today)}`, briefBlocks(f, judgment)); }
+    catch (e) { if (!email) throw e; notionError = ` Notion page failed: ${(e instanceof Error ? e.message : String(e)).slice(0, 120)}.`; }
+  }
+  let sent = "";
+  if (email) {
+    const m = briefEmail(view(url));
+    const id = await emailZak(m.subject, m.html, m.text);
+    sent = `Brief emailed (${id}).`;
+  }
   const tokensIn = usage ? inputTokens(usage) : 0;
   const tokensOut = usage?.output_tokens ?? 0;
   return {
     status: "ok",
-    summary: `Brief posted: ${url}. Focus: ${judgment.focus.action}${fallback}`,
+    summary: `${sent}${url ? `${sent ? " Notion copy" : "Brief posted"}: ${url}.` : ""}${notionError} Focus: ${judgment.focus.action}${fallback}`.trim(),
     tokensIn, tokensOut,
     costUsd: costUsd(MODEL, tokensIn, tokensOut),
   };
