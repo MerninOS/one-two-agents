@@ -58,6 +58,10 @@ export function cashChange(y: Kpi | null, earlier: Kpi[]): Change | null {
   return { text: `${d > 0 ? "+" : d < 0 ? "-" : ""}$${Math.abs(d).toLocaleString("en-US")} since ${day}`, dir: d > 0 ? "up" : d < 0 ? "down" : "flat" };
 }
 
+const shortDay = (date: string) => new Date(`${date}T12:00:00Z`).toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" });
+/** True when the newest snapshot is for the day before the brief; false when Morgan hasn't run and it is older. */
+const isYesterday = (v: BriefView) => !!v.yesterday && Date.parse(`${v.today}T12:00:00Z`) - Date.parse(`${v.yesterday.date}T12:00:00Z`) === 864e5;
+
 interface Item { text: string; href?: string }
 
 function waiting(v: BriefView): Item[] {
@@ -89,7 +93,7 @@ function ranLine(v: BriefView) {
 
 export function briefSubject(v: BriefView) {
   const action = oneLine(v.focus.action).slice(0, 80);
-  const rev = v.yesterday ? ` · ${usd(v.yesterday.revenue)} yesterday` : "";
+  const rev = v.yesterday ? ` · ${usd(v.yesterday.revenue)} ${isYesterday(v) ? "yesterday" : `on ${shortDay(v.yesterday.date)}`}` : "";
   return `${weekday(v.today)}: ${action}${rev}`;
 }
 
@@ -131,7 +135,7 @@ export function briefEmail(v: BriefView): { subject: string; html: string; text:
     label("Waiting on you") +
     (todo.length ? rows(todo) : `<p style="margin:0;font:15px/22px ${FONT};color:${C.ink2}">Nothing is waiting on you.</p>`) +
     // numbers
-    label(y ? `Numbers · ${weekday(y.date, "long")}` : "Numbers") +
+    label(y ? `Numbers · ${isYesterday(v) ? weekday(y.date, "long") : `${shortDay(y.date)}, the latest snapshot`}` : "Numbers") +
     (y
       ? `<table role="presentation" cellpadding="0" cellspacing="6" width="100%"><tr>` +
         stat("Revenue", usd(y.revenue), "no earlier days to compare", rev) +
@@ -155,7 +159,7 @@ export function briefEmail(v: BriefView): { subject: string; html: string; text:
     `Morning brief · ${longDay(v.today)}`, "",
     "TODAY'S FOCUS", `${action}. ${reason}`, ...(v.dashboardUrl ? [`Control Room: ${v.dashboardUrl}`] : []), "",
     "WAITING ON YOU", ...(todo.length ? todo.map((i) => `- ${i.text}${i.href ? ` (${i.href})` : ""}`) : ["Nothing is waiting on you."]), "",
-    "NUMBERS",
+    y && !isYesterday(v) ? `NUMBERS (${shortDay(y.date)}, the latest snapshot)` : "NUMBERS",
     ...(y
       ? [`Revenue ${usd(y.revenue)}${rev ? ` (${rev.text})` : ""}`, `Orders ${y.orders}${y.orders ? `, AOV ${usd(y.aov)}` : ""}`, `Cash ${usd(y.cash_usd)}${cash ? ` (${cash.text})` : ""}`, `Repeat rate ${pct(y.repeat_rate)}, green margin ${pct(y.green_margin)}`]
       : ["No snapshot yet. Morgan runs at 5:30 AM CT."]), "",
