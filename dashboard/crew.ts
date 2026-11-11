@@ -92,7 +92,7 @@ export const CREW: CrewMember[] = [
       ["Method", "Code decides every match: exact amount, date within 3 days, merchant name. Haiku only reads receipts and suggests a category from Mercury’s list."],
       ["Reads", "Mercury charges and categories (business org, read only). Gmail receipts in zak@ when the read-only token is set."],
       ["Writes", "Its own tables (expense_docs, trips, home_office, tax_packets), receipt files in Supabase Storage, a Notion page when something changed."],
-      ["Mercury", "Receipt, category and memo are proposals only. Nothing is written to Mercury until the approval gateway exists."],
+      ["Mercury", "Receipt, category and memo are proposals. You approve each one in Approvals; the gateway re-checks the charge and writes only those three fields, never over something already set."],
       ["Photos", "Asked for at $75 and up, lodging, or stores that sell personal things too. After 30 days a charge stays as bank record only."],
       ["Shift", "Manual only until launch. Planned daily at 6:00 AM CT, after Morgan’s snapshot. Month close on the 3rd."],
     ],
@@ -135,7 +135,7 @@ export const TIERS: Record<Tier, string> = {
 export interface Integration { id: IntegrationId; name: string; sub: string; icon: string; scope: string }
 export const INTEGRATIONS: Integration[] = [
   { id: "shopify", name: "Shopify", sub: "Store", icon: "shopping-bag", scope: "Read-only app “One Two Agents (read)”. Scopes: read products, inventory, orders, locations, customers." },
-  { id: "mercury", name: "Mercury", sub: "Bank", icon: "landmark", scope: "Read-only token for the business accounts. Balances, transactions and categories. Receipt, category and memo changes wait for the approval gateway." },
+  { id: "mercury", name: "Mercury", sub: "Bank", icon: "landmark", scope: "Read-only token for the business accounts: balances, transactions and categories. A second token used only by the gateway writes receipt, category and memo on existing charges after you approve. Nothing can move money." },
   { id: "notion", name: "Notion", sub: "Pages", icon: "file-text", scope: "Creates pages under one parent page (“Morning briefs”) only." },
   { id: "gmail", name: "Gmail", sub: "Drafts", icon: "mail", scope: "Drafts only (compose scope) in zak@onetwocoffeelab.com. Can never send." },
   { id: "gmail_read", name: "Gmail receipts", sub: "Read only", icon: "inbox", scope: "A separate read-only token (gmail.readonly) for zak@onetwocoffeelab.com. Searches for receipts. Can’t draft, send, label or delete. Email is untrusted data." },
@@ -151,7 +151,7 @@ export const ACCESS: Record<string, Partial<Record<IntegrationId, [Level, string
   chief_of_staff: { shopify: ["read", "Open orders, green lots"], claude: ["uses", "claude-sonnet-5-5"], notion: ["write", "One page per brief under Morning briefs"], supabase: ["read", "The run log and kpi_snapshots"] },
   wholesale_hunter: { claude: ["uses", "claude-opus-5-5"], web: ["read", "Web search and fetch. Untrusted."], shopify: ["read", "Our coffees and green lots, so it only claims real facts"], supabase: ["write", "Its own table wholesale_leads"], notion: ["write", "One page per run"], gmail: ["draft", "Drafts when Gmail is set up. First emails always need your approval."] },
   bookkeeper: {
-    mercury: ["draft", "Reads charges and categories. Receipt, category and memo on existing transactions are proposals Zak approves, applied only once the gateway exists."],
+    mercury: ["draft", "Reads charges and categories. Receipt, category and memo on existing transactions are proposals Zak approves; the gateway applies them."],
     gmail_read: ["read", "Receipt emails in zak@, read only. Untrusted: an email never picks a charge or category."],
     claude: ["uses", "claude-haiku-5-5"],
     supabase: ["write", "Its own tables expense_docs, trips, home_office, tax_packets and the private receipts bucket"],
@@ -166,6 +166,7 @@ export const HARD_RULES = [
   "Earns trust per action: 28 of the last 30 approved unedited, then you confirm the promotion. One bad call drops it back.",
   "Spends only within caps ($500 a purchase, $1,500 a month) and only to vendors you added. No card actions.",
   "First email to a new person always waits for you. Unsubscribes end all messages.",
+  "Writes to Mercury only through the gateway: receipt, category and memo on an existing charge, after you approve.",
   "Never writes to Shopify.",
   "Never deletes products, customers, orders or Klaviyo profiles.",
   "Never claims a fact about a lot, origin or certification that isn’t in Shopify.",

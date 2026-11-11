@@ -8,6 +8,7 @@ import { after } from "next/server";
 import { AGENTS } from "@/agents/registry";
 import { db } from "@/core/db";
 import { withRun } from "@/core/runs";
+import { applyApproved, decide, queueBookkeeperProposals, retry, writeBlocker } from "@/core/gateway";
 import { BUILT, BY_ID } from "./crew";
 import { requireSession } from "./data";
 import { SESSION_COOKIE, SESSION_DAYS, checkPassword, controlsOn, newSessionToken } from "./session";
@@ -100,4 +101,81 @@ export async function setBudget(agentId: string, value: number): Promise<ActionR
   if (error) return fail(error.message);
   revalidatePath("/", "layout");
   return { ok: true, text: `Budget saved: $${v.toFixed(2)} a day.` };
+}
+
+// ---- Approvals. Deciding only records Zak's choice. Writing the approved change to Mercury
+// also needs DASHBOARD_CONTROLS=on and MERCURY_WRITE_TOKEN, and the agent on duty (withRun).
+
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const BY = "zak (control room)";
+
+/** Why approved changes can't go to Mercury from here right now, or null. */
+const applyBlocker = () => (!controlsOn() ? "Approved, not applied yet: DASHBOARD_CONTROLS is off." : writeBlocker());
+
+async function applyNow(ids?: string[]): Promise<ActionResult> {
+  const blocked = applyBlocker();
+  if (blocked) return { ok: true, text: blocked.startsWith("Approved") ? blocked : `Approved, not applied yet: ${blocked}` };
+  return applyApproved(ids);
+}
+
+export async function approve(approvalId: string): Promise<ActionResult> {
+  await requireSession();
+  if (!UUID.test(approvalId)) return { ok: false, text: "Unknown approval." };
+  try {
+    const actionId = await decide(approvalId, "approve", BY);
+    if (!actionId) { revalidatePath("/", "layout"); return { ok: false, text: "That item was already decided or has expired." }; }
+    const res = await applyNow([actionId]);
+    revalidatePath("/", "layout");
+    return res;
+  } catch (e) { revalidatePath("/", "layout"); return fail(e); }
+}
+
+export async function reject(approvalId: string): Promise<ActionResult> {
+  await requireSession();
+  if (!UUID.test(approvalId)) return { ok: false, text: "Unknown approval." };
+  try {
+    const actionId = await decide(approvalId, "reject", BY);
+    revalidatePath("/", "layout");
+    return actionId ? { ok: true, text: "Rejected. Quinn won’t propose this change again." } : { ok: false, text: "That item was already decided or has expired." };
+  } catch (e) { return fail(e); }
+}
+
+export async function approveAll(approvalIds: string[]): Promise<ActionResult> {
+  await requireSession();
+  const ids = approvalIds.filter((i) => UUID.test(i)).slice(0, 200);
+  try {
+    const actionIds: string[] = [];
+    for (const id of ids) { const a = await decide(id, "approve", BY); if (a) actionIds.push(a); }
+    const res = actionIds.length ? await applyNow(actionIds) : { ok: false, text: "Nothing left to approve." };
+    revalidatePath("/", "layout");
+    return actionIds.length ? { ok: res.ok, text: `Approved ${actionIds.length}. ${res.text}` } : res;
+  } catch (e) { revalidatePath("/", "layout"); return fail(e); }
+}
+
+/** Applies everything approved that is still waiting (also after a failure was put back with Retry). */
+export async function applyWaiting(): Promise<ActionResult> {
+  await requireSession();
+  try { const res = await applyNow(); revalidatePath("/", "layout"); return res; } catch (e) { revalidatePath("/", "layout"); return fail(e); }
+}
+
+export async function retryAction(actionId: string): Promise<ActionResult> {
+  await requireSession();
+  if (!UUID.test(actionId)) return { ok: false, text: "Unknown action." };
+  try {
+    const back = await retry(actionId);
+    if (!back) return { ok: false, text: "Only a failed change can be retried." };
+    const res = await applyNow([actionId]);
+    revalidatePath("/", "layout");
+    return res;
+  } catch (e) { return fail(e); }
+}
+
+/** Turns Quinn's saved proposals into approvals. Writes only Supabase, never Mercury. */
+export async function queueQuinn(): Promise<ActionResult> {
+  await requireSession();
+  try {
+    const r = await queueBookkeeperProposals(null);
+    revalidatePath("/", "layout");
+    return { ok: true, text: r.queued || r.refused ? `${r.queued} new approval${r.queued === 1 ? "" : "s"} from Quinn${r.refused ? `, ${r.refused} refused by the gateway (see the log)` : ""}.` : "No new proposals from Quinn." };
+  } catch (e) { return fail(e); }
 }

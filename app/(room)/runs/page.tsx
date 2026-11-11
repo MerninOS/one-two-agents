@@ -11,7 +11,7 @@ export default async function RunLog({ searchParams }: { searchParams: Promise<Q
   const f = await getFloor();
   const agent = BUILT.some((a) => a.id === sp.agent) ? sp.agent! : "all";
   const status = ["ok", "failed", "skipped", "running"].includes(sp.status ?? "") ? sp.status! : "all";
-  const trigger = ["cron", "manual"].includes(sp.trigger ?? "") ? sp.trigger! : "all";
+  const trigger = ["cron", "manual", "approval"].includes(sp.trigger ?? "") ? sp.trigger! : "all";
   const q = (sp.q ?? "").trim().slice(0, 100);
   const match = (r: Run) => (agent === "all" || r.agent_id === agent) && (status === "all" || r.status === status) && (trigger === "all" || r.trigger === trigger)
     && (!q || `${r.summary ?? ""} ${r.error ?? ""}`.toLowerCase().includes(q.toLowerCase()));
@@ -34,7 +34,7 @@ export default async function RunLog({ searchParams }: { searchParams: Promise<Q
       <div className="row wrap" style={{ gap: 14 }}>
         {seg("agent", agent, [["all", "All agents"], ...BUILT.map((a) => [a.id, a.name] as [string, string])])}
         {seg("status", status, [["all", "Any status"], ["ok", "OK"], ["failed", "Failed"], ["skipped", "Skipped"]])}
-        {seg("trigger", trigger, [["all", "Any trigger"], ["cron", "Schedule"], ["manual", "Manual"]])}
+        {seg("trigger", trigger, [["all", "Any trigger"], ["cron", "Schedule"], ["manual", "Manual"], ["approval", "Approval"]])}
         <form action="/runs" style={{ flex: 1, minWidth: 200, display: "flex" }}>
           {agent !== "all" && <input type="hidden" name="agent" value={agent} />}
           {status !== "all" && <input type="hidden" name="status" value={status} />}

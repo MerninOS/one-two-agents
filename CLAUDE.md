@@ -10,8 +10,9 @@ This version of Next.js has breaking changes from older versions: read the guide
 
 ## Hard rules (from the agent system tech spec; never relax them in code)
 
-The gateway that enforces the send, buy and post rules is not built yet, so until it is,
-no agent gets a send, payment or publish integration: drafts only.
+The tool gateway (`core/gateway`) exists with one action type so far: receipt, category
+and memo on an existing Mercury transaction (Bookkeeper and CFO, Draft). No send, payment
+or publish action type is built, so no agent gets one of those integrations: drafts only.
 
 
 - Sending, buying and posting are allowed only as gateway action types, and every new
@@ -26,7 +27,8 @@ no agent gets a send, payment or publish integration: drafts only.
   No card actions, no transfers to personal accounts, no void or delete of a transaction,
   bill, invoice or account. Writes to existing transactions are limited to attachment,
   category and memo, by CFO and Bookkeeper. Each kind of write gets its own token, held
-  only by the gateway.
+  only by the gateway: only `core/gateway` may import `integrations/mercury-write.ts`
+  (lint enforces it).
 - Shopify is read-only here. `scripts/validate-graphql.mjs` fails on any mutation. An
   agent that needs Shopify writes gets its own separately scoped app.
 - Email: first contact with a person who has never heard from One Two is always Draft
