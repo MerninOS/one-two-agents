@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useState, useTransition } from "react";
 import type { ActionResult } from "../actions";
+import { SEEN_COOKIE, parseSeen } from "../seen";
 import { Icon } from "./Icon";
 
 export function ThemeToggle({ initial, wide }: { initial: "light" | "dark"; wide?: boolean }) {
@@ -16,6 +17,20 @@ export function ThemeToggle({ initial, wide }: { initial: "light" | "dark"; wide
   };
   if (wide) return <button className="btn ghost sm" onClick={flip}>Switch light / dark</button>;
   return <button className="round" title="Switch theme" onClick={flip}><Icon name={theme === "dark" ? "sun" : "moon"} /></button>;
+}
+
+/** Rendered only while an agent has run alerts Zak hasn't looked at: notes the look, then refreshes so the badge clears. */
+export function MarkSeen({ agentId, at }: { agentId: string; at: number }) {
+  const router = useRouter();
+  useEffect(() => {
+    const raw = document.cookie.split("; ").find((c) => c.startsWith(SEEN_COOKIE + "="))?.slice(SEEN_COOKIE.length + 1);
+    const seen = parseSeen(raw);
+    if ((seen[agentId] ?? 0) >= at) return;
+    seen[agentId] = at;
+    document.cookie = `${SEEN_COOKIE}=${encodeURIComponent(JSON.stringify(seen))}; path=/; max-age=31536000; samesite=lax`;
+    router.refresh();
+  }, [agentId, at, router]);
+  return null;
 }
 
 /** Sidebar link, active when the path matches (a trailing * matches a prefix) and, if given, the tab matches. */

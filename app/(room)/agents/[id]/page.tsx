@@ -1,3 +1,6 @@
+import { cookies } from "next/headers";
+import { needs } from "@/dashboard/needs";
+import { SEEN_COOKIE, parseSeen } from "@/dashboard/seen";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { dryRun, realRun, setBudget, setEnabled } from "@/dashboard/actions";
@@ -7,7 +10,7 @@ import { budget, dur, hm, m2, m4, md, when } from "@/dashboard/format";
 import { nextRuns, schedSentence, schedWords } from "@/dashboard/schedule";
 import { controlsOn } from "@/dashboard/session";
 import { STATE_LOOK, combined, stateOf } from "@/dashboard/status";
-import { ActionButton, BudgetForm, DryRun, SwitchButton } from "@/dashboard/components/client";
+import { ActionButton, BudgetForm, DryRun, MarkSeen, SwitchButton } from "@/dashboard/components/client";
 import { Icon } from "@/dashboard/components/Icon";
 import { RunTable } from "@/dashboard/components/RunTable";
 import { Avatar, Later, LockList, Pill, Summary } from "@/dashboard/components/ui";
@@ -36,9 +39,11 @@ export default async function AgentPage({ params, searchParams }: { params: Prom
   const pipeline = id === "wholesale_hunter" ? await getPipeline() : null;
   const books = id === "bookkeeper" ? await getBooks() : null;
   const runs = f.runs.filter((r) => r.agent_id === id);
+  const unseen = needs(f, f.now, parseSeen((await cookies()).get(SEEN_COOKIE)?.value)).some((n) => n.run && n.agentId === id);
 
   return (
     <>
+      {unseen && <MarkSeen agentId={id} at={f.now} />}
       {tab === "profile" ? <HeroFull a={a} f={f} controls={controls} /> : (
         <div className="row wrap" style={{ gap: 14 }}>
           <Avatar a={a} size={48} working={st === "running"} />

@@ -1,3 +1,5 @@
+import { cookies } from "next/headers";
+import { SEEN_COOKIE, parseSeen } from "@/dashboard/seen";
 import Link from "next/link";
 import { chicagoDate } from "@/core/time";
 import { BUILT, BY_ID, INTEGRATIONS, PLANNED } from "@/dashboard/crew";
@@ -13,7 +15,7 @@ import { Avatar, Later, Pill } from "@/dashboard/components/ui";
 export default async function MissionControl() {
   const f = await getFloor();
   const now = f.now;
-  const open = needs(f, now);
+  const open = needs(f, now, parseSeen((await cookies()).get(SEEN_COOKIE)?.value));
   const today = chicagoDate(0, new Date(now));
   const todayRuns = f.runs.filter((r) => chicagoDate(0, new Date(r.started_at)) === today);
   const ok = todayRuns.filter((r) => r.status === "ok").length, sk = todayRuns.filter((r) => r.status === "skipped").length, fl = todayRuns.filter((r) => r.status === "failed").length;
