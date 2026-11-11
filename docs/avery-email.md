@@ -1,7 +1,8 @@
 # Avery: the morning brief by email
 
 Avery (Chief of Staff) emails the morning brief to Zak on weekdays at 6:45 AM CT. The
-email is the brief; the Notion page stays as the archive until the Briefs database exists.
+email is the brief; Notion is the archive: one row per day in the Briefs database
+(`docs/avery-briefs-database.md`), or a page per day while that isn't set up.
 
 ## Why
 
@@ -28,7 +29,7 @@ revenue. With no snapshot: `Thu: Reorder Guji`.
    margin on one line under them.
 4. **Watch.** Up to five items.
 5. **What ran.** One line ("4 runs, all OK") unless a run failed; failures are listed.
-6. **Footer.** Link to the Notion archive page when one was written.
+6. **Footer.** Link to the Notion copy (the day's row in the Briefs database) when one was written.
 
 ## Rules it keeps
 
@@ -49,7 +50,7 @@ revenue. With no snapshot: `Thu: Reorder Guji`.
 
 | Settings | Result |
 | --- | --- |
-| Email and Notion set | Notion page written, then the email sent with a link to it |
+| Email and Notion set | Notion row (or page) written, then the email sent with a link to it |
 | Email only | Email sent |
 | Notion only | Notion page only, as before |
 | Neither | The run fails and says which settings are missing |
@@ -80,6 +81,5 @@ revenue. With no snapshot: `Thu: Reorder Guji`.
 
 ## Not in this change
 
-- The Notion Briefs database (one row a day) that replaces the page per day.
 - Phone push with the top 3.
 - Morgan's Monday CFO section and alerts.

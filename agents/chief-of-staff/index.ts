@@ -2,7 +2,8 @@ import "server-only";
 // Chief of Staff morning brief. Everything with a number in it is worked out
 // here in code; the model only reads those facts and writes the Watch list and
 // one recommended focus. The brief goes to Zak by email (docs/avery-email.md), with a
-// Notion page as the archive; either one alone also works.
+// Notion copy as the archive: a row in the Briefs database (docs/avery-briefs-database.md),
+// or a page per day when that isn't set up. Either the email or Notion alone also works.
 import { G_PER_LB } from "@/domain/coffee";
 import { db } from "@/core/db";
 import type { RunResult } from "@/core/runs";
@@ -10,7 +11,7 @@ import { env } from "@/core/env";
 import { chicagoDate, dayTitle } from "@/core/time";
 import { Anthropic, MODELS, claude, costUsd, inputTokens } from "@/integrations/anthropic";
 import { emailZak, hasEmail } from "@/integrations/email";
-import { h2, li, notionPage, p, type Block } from "@/integrations/notion";
+import { h2, li, notionArchive, notionPage, notionRow, notionRowOn, notionSetProps, p, prop, type Block, type Props } from "@/integrations/notion";
 import { getInventoryLots } from "@/integrations/shopify/lots";
 import { getBoardOrders, greenLedger } from "@/integrations/shopify/orders";
 import { getRoastLoss } from "@/integrations/shopify/settings";
@@ -131,6 +132,42 @@ export function briefBlocks(f: Facts, j: Judgment): Block[] {
   ];
 }
 
+/** The day's row in the Briefs database. Every value is a fact computed above; "Focus done" is Zak's and only carried over. */
+export function briefRow(f: Facts, j: Judgment, focusDone: boolean): Props {
+  const y = f.yesterday;
+  return {
+    Name: prop.title(dayTitle(f.today)),
+    Date: prop.date(f.today),
+    Focus: prop.text(`${j.focus.action}. ${j.focus.reason}`.replace(/\s+/g, " ").trim()),
+    "Focus done": prop.check(focusDone),
+    Revenue: prop.num(y?.revenue),
+    Orders: prop.num(y?.orders),
+    AOV: prop.num(y?.aov),
+    Cash: prop.num(y?.cash_usd),
+    "Repeat rate": prop.num(y?.repeat_rate),
+    "Green margin": prop.num(y?.green_margin),
+    "Numbers from": prop.date(y?.date),
+    "Approvals waiting": prop.num(f.approvals.pending),
+    "Failed runs": prop.num(f.agentRuns.filter((r) => r.status === "failed").length),
+    Emailed: prop.check(false),
+  };
+}
+
+/**
+ * Writes today's row. A second run on the same day replaces the first row (the old one goes
+ * to Notion's trash) and keeps Zak's "Focus done" tick, so there is one row per day.
+ */
+async function writeBriefRow(databaseId: string, f: Facts, j: Judgment) {
+  const old = await notionRowOn(databaseId, "Date", f.today);
+  const row = await notionRow(databaseId, briefRow(f, j, old?.properties["Focus done"]?.checkbox ?? false), briefBlocks(f, j));
+  let note = "";
+  if (old) {
+    try { await notionArchive(old.id); }
+    catch (e) { note = ` The earlier row for today could not be removed: ${(e instanceof Error ? e.message : String(e)).slice(0, 100)}.`; }
+  }
+  return { id: row.id, url: row.url, note };
+}
+
 export async function runBrief(opts: { dryRun?: boolean } = {}): Promise<RunResult> {
   const f = await facts();
   let judgment: Judgment, usage: Anthropic.Beta.BetaUsage | null = null, fallback = "";
@@ -161,25 +198,38 @@ export async function runBrief(opts: { dryRun?: boolean } = {}): Promise<RunResu
     notionUrl,
     names: Object.fromEntries(Object.values(BY_ID).map((a) => [a.id, a.name])),
   });
-  const email = hasEmail(), notion = !!(env.notionToken && env.notionBriefParent);
+  const briefsDb = env.notionToken ? env.notionBriefsDb : undefined;
+  const email = hasEmail(), notion = !!(env.notionToken && (briefsDb || env.notionBriefParent));
   if (opts.dryRun) {
     const { subject, html } = briefEmail(view());
     const to = email ? "would email it" : notion ? "email not set up, would post to Notion only" : "no email or Notion set up";
-    return { status: "ok", summary: `[dry run, nothing sent] "${subject}" (${Math.round(html.length / 1024)} KB, ${to}). ${f.approvals.pending} approvals pending, ${f.lowGreen.length} low lots, ${f.agentRuns.length} runs in 24h.` };
+    // reading the database is free and proves the id and the sharing are right before a real run
+    let archive = notion ? " Notion: would add a page under Morning briefs." : "";
+    if (briefsDb) {
+      try { archive = ` Briefs database: reachable, ${await notionRowOn(briefsDb, "Date", f.today) ? "would replace today's row" : "would add today's row"}.`; }
+      catch (e) { archive = ` Briefs database can't be read: ${(e instanceof Error ? e.message : String(e)).slice(0, 140)}.`; }
+    }
+    return { status: "ok", summary: `[dry run, nothing sent] "${subject}" (${Math.round(html.length / 1024)} KB, ${to}).${archive} ${f.approvals.pending} approvals pending, ${f.lowGreen.length} low lots, ${f.agentRuns.length} runs in 24h.` };
   }
-  if (!email && !notion) throw new Error("Nowhere to send the brief: set RESEND_API_KEY, BRIEF_FROM and BRIEF_TO for email, or NOTION_TOKEN and NOTION_BRIEF_PARENT_ID for Notion");
+  if (!email && !notion) throw new Error("Nowhere to send the brief: set RESEND_API_KEY, BRIEF_FROM and BRIEF_TO for email, or NOTION_TOKEN and NOTION_BRIEFS_DB_ID (or NOTION_BRIEF_PARENT_ID) for Notion");
 
   // Notion first, so the email can link to its copy. A Notion failure never stops the email.
-  let url: string | undefined, notionError = "";
+  let url: string | undefined, rowId: string | undefined, notionError = "";
   if (notion) {
-    try { url = await notionPage(`Morning brief · ${dayTitle(f.today)}`, briefBlocks(f, judgment)); }
-    catch (e) { if (!email) throw e; notionError = ` Notion page failed: ${(e instanceof Error ? e.message : String(e)).slice(0, 120)}.`; }
+    try {
+      if (briefsDb) {
+        const row = await writeBriefRow(briefsDb, f, judgment);
+        url = row.url; rowId = row.id; notionError = row.note;
+      } else url = await notionPage(`Morning brief · ${dayTitle(f.today)}`, briefBlocks(f, judgment));
+    } catch (e) { if (!email) throw e; notionError = ` Notion ${briefsDb ? "row" : "page"} failed: ${(e instanceof Error ? e.message : String(e)).slice(0, 120)}.`; }
   }
   let sent = "";
   if (email) {
     const m = briefEmail(view(url));
     const id = await emailZak(m.subject, m.html, m.text);
     sent = `Brief emailed (${id}).`;
+    // the row is written before the send, so it is only marked once the email has gone
+    if (rowId) await notionSetProps(rowId, { Emailed: prop.check(true) }).catch(() => { notionError += " The row's Emailed box could not be ticked."; });
   }
   const tokensIn = usage ? inputTokens(usage) : 0;
   const tokensOut = usage?.output_tokens ?? 0;
