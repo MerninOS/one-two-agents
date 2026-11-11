@@ -4,14 +4,16 @@ import { BUILT, BY_ID, CREW, INTEGRATIONS, PLANNED } from "@/dashboard/crew";
 import { getFloor } from "@/dashboard/data";
 import { longDay } from "@/dashboard/format";
 import { needs } from "@/dashboard/needs";
+import { SEEN_COOKIE, parseSeen } from "@/dashboard/seen";
 import { STATE_LOOK, isLive, stateOf } from "@/dashboard/status";
 import { LiveRefresher, RailLink, SideLink, ThemeToggle, type RecentRun } from "@/dashboard/components/client";
 import { Icon } from "@/dashboard/components/Icon";
 
 export default async function RoomLayout({ children }: { children: React.ReactNode }) {
   const floor = await getFloor();
-  const theme = (await cookies()).get("cr_theme")?.value === "dark" ? "dark" : "light";
-  const open = needs(floor, floor.now);
+  const jar = await cookies();
+  const theme = jar.get("cr_theme")?.value === "dark" ? "dark" : "light";
+  const open = needs(floor, floor.now, parseSeen(jar.get(SEEN_COOKIE)?.value));
   const notSetUp = INTEGRATIONS.filter((i) => !floor.health[i.id]).length;
   const rail = CREW.map((a) => {
     const st = stateOf(a, floor.agents[a.id], floor.runs, floor.spentToday[a.id] ?? 0);

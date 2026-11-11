@@ -1,20 +1,30 @@
 // "Needs you": things on the floor that want Zak, worked out from real runs and settings.
 import { ACCESS, BUILT, BY_ID, INTEGRATIONS } from "./crew";
 import type { Floor } from "./data";
+import type { Seen } from "./seen";
 import { stateOf } from "./status";
 
 export type Priority = "High" | "Medium" | "Low";
-export interface Need { pri: Priority; title: string; sub: string; href: string; agentId?: string }
+/** `run` marks an alert about one run. Those clear once Zak opens the agent or the run; the rest stay until fixed. */
+export interface Need { pri: Priority; title: string; sub: string; href: string; agentId?: string; run?: boolean }
 
-export function needs(f: Floor, now = Date.now()): Need[] {
+export function needs(f: Floor, now = Date.now(), seen: Seen = {}): Need[] {
   const out: Need[] = [];
+  // the latest real (not dry) run that worked, per agent: a failure before it is old news
+  const lastOk: Record<string, number> = {};
+  for (const r of f.runs) {
+    if (r.status !== "ok" || r.summary?.startsWith("[dry run")) continue;
+    lastOk[r.agent_id] = Math.max(lastOk[r.agent_id] ?? 0, Date.parse(r.started_at));
+  }
   if (!f.ok) out.push({ pri: "High", title: "Can’t read the agent database", sub: f.problem ?? "", href: "/integrations" });
   for (const r of f.runs) {
     const a = BY_ID[r.agent_id];
     if (!a) continue;
-    const age = now - Date.parse(r.started_at);
-    if (r.status === "failed" && age < 864e5) out.push({ pri: "High", title: `${a.name}’s run failed`, sub: r.error ?? r.summary ?? "", href: `/runs/${r.id}`, agentId: a.id });
-    if (r.status === "running" && age > 6 * 6e4 && age < 7 * 864e5) out.push({ pri: "Medium", title: `${a.name}’s run never finished`, sub: "It passed the 5 minute limit without writing a result.", href: `/runs/${r.id}`, agentId: a.id });
+    const at = Date.parse(r.started_at);
+    const age = now - at;
+    if (at <= (seen[a.id] ?? 0) || at < (lastOk[a.id] ?? 0)) continue;
+    if (r.status === "failed" && age < 864e5) out.push({ pri: "High", title: `${a.name}’s run failed`, sub: r.error ?? r.summary ?? "", href: `/runs/${r.id}`, agentId: a.id, run: true });
+    if (r.status === "running" && age > 6 * 6e4 && age < 7 * 864e5) out.push({ pri: "Medium", title: `${a.name}’s run never finished`, sub: "It passed the 5 minute limit without writing a result.", href: `/runs/${r.id}`, agentId: a.id, run: true });
   }
   for (const a of BUILT) {
     if (f.ok && stateOf(a, f.agents[a.id], f.runs, f.spentToday[a.id] ?? 0) === "over") out.push({ pri: "High", title: `${a.name} reached today’s budget`, sub: "Further runs today are skipped.", href: `/agents/${a.id}?tab=settings`, agentId: a.id });

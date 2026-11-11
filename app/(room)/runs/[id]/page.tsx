@@ -1,3 +1,6 @@
+import { cookies } from "next/headers";
+import { needs } from "@/dashboard/needs";
+import { SEEN_COOKIE, parseSeen } from "@/dashboard/seen";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { costUsd, MODELS } from "@/integrations/anthropic";
@@ -6,7 +9,7 @@ import { BY_ID } from "@/dashboard/crew";
 import { getFloor, getRun, leadsForRun } from "@/dashboard/data";
 import { dur, m4, num, utcStr, when } from "@/dashboard/format";
 import { RUN_LOOK } from "@/dashboard/status";
-import { DryRun } from "@/dashboard/components/client";
+import { DryRun, MarkSeen } from "@/dashboard/components/client";
 import { Icon } from "@/dashboard/components/Icon";
 import { RunCanvas } from "@/dashboard/components/RunCanvas";
 import { Avatar, Summary } from "@/dashboard/components/ui";
@@ -18,6 +21,7 @@ export default async function Replay({ params }: { params: Promise<{ id: string 
   const a = BY_ID[run.agent_id];
   if (!a) notFound();
   const f = await getFloor();
+  const unseen = needs(f, f.now, parseSeen((await cookies()).get(SEEN_COOKIE)?.value)).some((n) => n.run && n.agentId === a.id);
   const others = f.runs.filter((r) => r.agent_id === a.id && r.status !== "skipped" && r.id !== run.id).slice(0, 6);
   const leads = a.id === "wholesale_hunter" ? await leadsForRun(run.id) : null;
   const look = RUN_LOOK[run.status];
@@ -44,6 +48,7 @@ export default async function Replay({ params }: { params: Promise<{ id: string 
 
   return (
     <>
+      {unseen && <MarkSeen agentId={a.id} at={f.now} />}
       <div className="card dark" style={{ borderRadius: 24, padding: 24, gap: 20 }}>
         <div className="row wrap" style={{ gap: 14 }}>
           <Avatar a={a} size={48} />
