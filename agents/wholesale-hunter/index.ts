@@ -183,7 +183,7 @@ export async function runHunter(runId?: string, opts: { dryRun?: boolean } = {})
     h2(`${rows.length} new lead${rows.length === 1 ? "" : "s"}`),
     p(gmail ? "Drafts with an email address are waiting in Gmail. Edit, send or delete them there." : "Gmail isn't connected yet, so copy each draft from here."),
     ...leadBlocks(rows),
-  ]);
+  ], env.notionLeadsParent);
   const drafted = rows.filter((r) => r.draftId).length;
   return {
     status: "ok",

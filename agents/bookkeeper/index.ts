@@ -329,7 +329,7 @@ export async function runBookkeeper(runId?: string, opts: { dryRun?: boolean } =
   const proposals = [...all.values()].filter((d) => d.proposal_status === "proposed");
   const close = today.slice(8) === "03" ? await closeMonth(today, p) : null;
   let url: string | null = null;
-  const notion = !!(env.notionToken && env.notionBriefParent);
+  const notion = !!(env.notionToken && env.notionBooksParent);
   if (notion && (newlyMatched.length || newlyPhoto.length || picks.size || close)) {
     url = await notionPage(`Books · ${dayTitle(today)}`, [
       ...(close?.blocks ?? []),
@@ -341,7 +341,7 @@ export async function runBookkeeper(runId?: string, opts: { dryRun?: boolean } =
       ...(notes.length ? [h3("Couldn’t check"), ...notes.slice(0, 10).map((n) => li(n))] : []),
       divider(),
       para("Record keeping, not tax advice. Matches are decided in code: exact amount, date within the window, merchant name."),
-    ]);
+    ], env.notionBooksParent);
   }
 
   const covered = coverage([...all.values()].map((d) => d.status));
