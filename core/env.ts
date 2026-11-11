@@ -32,6 +32,9 @@ export const env = {
   // Notion internal integration, shared only with the page briefs and lead lists go under.
   notionToken: v("NOTION_TOKEN"),
   notionBriefParent: v("NOTION_BRIEF_PARENT_ID"),
+  // Each agent's own page for its run pages. Blank = they go under NOTION_BRIEF_PARENT_ID, as before.
+  notionLeadsParent: v("NOTION_LEADS_PARENT_ID") ?? v("NOTION_BRIEF_PARENT_ID"),
+  notionBooksParent: v("NOTION_BOOKS_PARENT_ID") ?? v("NOTION_BRIEF_PARENT_ID"),
   // The "Briefs" database (one row per morning brief). Blank = the brief is a page under the parent, as before.
   notionBriefsDb: v("NOTION_BRIEFS_DB_ID"),
 

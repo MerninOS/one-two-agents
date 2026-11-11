@@ -24,10 +24,10 @@ async function notion<T>(method: "POST" | "PATCH", path: string, body: unknown):
   return await res.json() as T;
 }
 
-/** Creates a page under NOTION_BRIEF_PARENT_ID and returns its URL. Notion takes at most 100 blocks per request. */
-export async function notionPage(title: string, children: Block[]) {
-  if (!env.notionBriefParent) throw new Error("NOTION_TOKEN and NOTION_BRIEF_PARENT_ID must be set");
-  const page = await notion<{ url: string }>("POST", "pages", { parent: { page_id: env.notionBriefParent }, properties: { title: { title: rt(title) } }, children: children.slice(0, 100) });
+/** Creates a page under `parent` (default NOTION_BRIEF_PARENT_ID) and returns its URL. Notion takes at most 100 blocks per request. */
+export async function notionPage(title: string, children: Block[], parent = env.notionBriefParent) {
+  if (!parent) throw new Error("NOTION_TOKEN and NOTION_BRIEF_PARENT_ID must be set");
+  const page = await notion<{ url: string }>("POST", "pages", { parent: { page_id: parent }, properties: { title: { title: rt(title) } }, children: children.slice(0, 100) });
   return page.url;
 }
 
