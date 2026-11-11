@@ -41,6 +41,14 @@ export const env = {
   // for receipts and never drafts or sends. Blank = no receipt search.
   gmailReceiptsRefreshToken: v("GMAIL_RECEIPTS_REFRESH_TOKEN"),
 
+  // Email to Zak only (morning brief, alerts) through Resend. BRIEF_TO is the one fixed
+  // recipient; BRIEF_FROM is a sender on a domain verified in Resend. Blank = no email.
+  resendKey: v("RESEND_API_KEY"),
+  briefFrom: v("BRIEF_FROM"),
+  briefTo: v("BRIEF_TO"),
+  // Where the Control Room lives, for links in the brief. Defaults to the Vercel production URL.
+  dashboardUrl: (v("DASHBOARD_URL") || (v("VERCEL_PROJECT_PRODUCTION_URL") ? `https://${v("VERCEL_PROJECT_PRODUCTION_URL")}` : "")).replace(/\/+$/, "") || undefined,
+
   // Public storefront, named in outreach drafts.
   siteUrl: (v("SITE_URL") || "https://onetwocoffeelab.com").replace(/\/+$/, ""),
 };

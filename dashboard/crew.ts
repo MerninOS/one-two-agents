@@ -3,7 +3,7 @@
 // from the tech spec and CLAUDE.md; the live switches (enabled, budget) come from Supabase.
 
 export type Tier = "Report" | "Draft" | "Act";
-export type IntegrationId = "shopify" | "mercury" | "notion" | "gmail" | "gmail_read" | "claude" | "web" | "supabase" | "github";
+export type IntegrationId = "shopify" | "mercury" | "notion" | "email" | "gmail" | "gmail_read" | "claude" | "web" | "supabase" | "github";
 export type Level = "read" | "draft" | "write" | "uses";
 
 export interface Schedule {
@@ -40,14 +40,14 @@ export interface CrewMember {
 export const CREW: CrewMember[] = [
   {
     id: "chief_of_staff", name: "Avery", role: "Chief of Staff", hue: "#F2884B", icon: "clipboard-list", built: true, tier: "Report",
-    model: "claude-sonnet-5-5", since: "Oct 29", estCostLabel: "About $0.003", writes: "1 Notion page",
-    mandate: "I read every other agent’s runs and your numbers, and write one morning brief in Notion before you start the day.",
-    job: "Morning brief posted to a Notion page: numbers, what each agent did, watch list, today’s focus.",
+    model: "claude-sonnet-5-5", since: "Oct 29", estCostLabel: "About $0.003", writes: "1 email to you, 1 Notion page",
+    mandate: "I read every other agent’s runs and your numbers, and email you one morning brief before you start the day.",
+    job: "Morning brief emailed to you, with a copy in Notion: today’s focus, what’s waiting on you, numbers, watch list.",
     works: "Reads every run from Morgan and Rowan for the morning brief.",
     how: [
       ["Voice", "Numbers first, then one focus for the day."],
       ["Reads", "The run log, kpi_snapshots, Shopify open orders and green lots"],
-      ["Writes", "One Notion page per brief under Morning briefs"],
+      ["Writes", "One email to your address, which is fixed in settings, and one Notion page per brief under Morning briefs"],
       ["Numbers", "Come from code. Claude writes only the watch list and today’s focus, with a rules fallback."],
       ["Works with", "Reads every other agent’s runs for the morning brief."],
     ],
@@ -137,6 +137,7 @@ export const INTEGRATIONS: Integration[] = [
   { id: "shopify", name: "Shopify", sub: "Store", icon: "shopping-bag", scope: "Read-only app “One Two Agents (read)”. Scopes: read products, inventory, orders, locations, customers." },
   { id: "mercury", name: "Mercury", sub: "Bank", icon: "landmark", scope: "Read-only token for the business accounts: balances, transactions and categories. A second token used only by the gateway writes receipt, category and memo on existing charges after you approve. Nothing can move money." },
   { id: "notion", name: "Notion", sub: "Pages", icon: "file-text", scope: "Creates pages under one parent page (“Morning briefs”) only." },
+  { id: "email", name: "Email to Zak", sub: "Brief and alerts", icon: "inbox", scope: "Sends through Resend to one address fixed in settings (BRIEF_TO). The code has no way to name another recipient, and no agent holds a Gmail send scope." },
   { id: "gmail", name: "Gmail", sub: "Drafts", icon: "mail", scope: "Drafts only (compose scope) in zak@onetwocoffeelab.com. Can never send." },
   { id: "gmail_read", name: "Gmail receipts", sub: "Read only", icon: "inbox", scope: "A separate read-only token (gmail.readonly) for zak@onetwocoffeelab.com. Searches for receipts. Can’t draft, send, label or delete. Email is untrusted data." },
   { id: "claude", name: "Claude API", sub: "Model", icon: "cpu", scope: "The model. Spend is read from the run log." },
@@ -148,7 +149,7 @@ export const INTEGRATIONS: Integration[] = [
 /** What each agent may touch. Built agents match the code; planned ones match the tech spec. */
 export const ACCESS: Record<string, Partial<Record<IntegrationId, [Level, string]>>> = {
   cfo: { shopify: ["read", "Orders, products, inventory"], mercury: ["read", "Balances"], supabase: ["write", "Its own table kpi_snapshots"] },
-  chief_of_staff: { shopify: ["read", "Open orders, green lots"], claude: ["uses", "claude-sonnet-5-5"], notion: ["write", "One page per brief under Morning briefs"], supabase: ["read", "The run log and kpi_snapshots"] },
+  chief_of_staff: { shopify: ["read", "Open orders, green lots"], claude: ["uses", "claude-sonnet-5-5"], email: ["write", "One brief a weekday, to your address only"], notion: ["write", "One page per brief under Morning briefs"], supabase: ["read", "The run log and kpi_snapshots"] },
   wholesale_hunter: { claude: ["uses", "claude-opus-5-5"], web: ["read", "Web search and fetch. Untrusted."], shopify: ["read", "Our coffees and green lots, so it only claims real facts"], supabase: ["write", "Its own table wholesale_leads"], notion: ["write", "One page per run"], gmail: ["draft", "Drafts when Gmail is set up. First emails always need your approval."] },
   bookkeeper: {
     mercury: ["draft", "Reads charges and categories. Receipt, category and memo on existing transactions are proposals Zak approves; the gateway applies them."],
