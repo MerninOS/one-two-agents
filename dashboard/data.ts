@@ -28,6 +28,13 @@ export interface Run {
   cost_usd: number;
   summary: string | null;
   error: string | null;
+  /** What the run loaded from memory (core/memory.ts loadSummary); null for runs that load none. */
+  memory_json: RunMemory | null;
+}
+export interface RunMemory {
+  budget: number; tokens: number; dropped: number; over_budget: boolean;
+  groups: Record<string, { lines: number; tokens: number }>;
+  pages?: { page_id: string; title: string; tokens: number; cut: boolean; problem: string | null }[];
 }
 export interface AgentRow { id: string; name: string; model: string; schedule: string | null; enabled: boolean; daily_budget_usd: number }
 
@@ -48,7 +55,7 @@ export interface Floor {
   lessonsWaiting: Record<string, number>;
 }
 
-const RUN_COLS = "id, agent_id, trigger, started_at, ended_at, status, tokens_in, tokens_out, cost_usd, summary, error";
+const RUN_COLS = "id, agent_id, trigger, started_at, ended_at, status, tokens_in, tokens_out, cost_usd, summary, error, memory_json";
 const toRun = (r: Record<string, unknown>) => ({ ...r, cost_usd: Number(r.cost_usd ?? 0), tokens_in: Number(r.tokens_in ?? 0), tokens_out: Number(r.tokens_out ?? 0) }) as Run;
 
 /** Midnight UTC: the same day boundary withRun uses for daily budgets. */
@@ -105,6 +112,20 @@ export async function getRun(id: string): Promise<Run | null> {
 }
 
 export interface Pipeline { stages: Record<string, number>; total: number; domains: string[] }
+
+/** Mission control's "Memory per agent": what each agent's next run would load. Notion pages aren't read here, only counted. */
+export async function getMemoryMeters(): Promise<Record<string, { tokens: number; budget: number; lines: number; groups: MemoryLoad["groups"]; linked: number }> | null> {
+  await requireSession();
+  if (!health().supabase) return null;
+  try {
+    const ids = [...MEMORY_AGENTS];
+    const loads = await Promise.all(ids.map((id) => loadMemory(id, Date.now(), { pages: false })));
+    return Object.fromEntries(loads.map((m) => [m.agentId, {
+      tokens: m.tokens, budget: m.budget, lines: m.rows.length, groups: m.groups,
+      linked: m.rows.filter((r) => r.grp === "standing_order" && r.notion_page_id).length,
+    }]));
+  } catch { return null; }
+}
 
 /** Rowan's pipeline by stage, and the domains it won't repeat. */
 export async function getPipeline(): Promise<Pipeline | null> {

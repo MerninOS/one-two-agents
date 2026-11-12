@@ -1,11 +1,13 @@
 // The "Live floor" workflow canvas from Run Canvas.dc.html, filled from one real run.
-// Nodes the backend can't fill yet (memory, gateway decisions) say so instead of showing samples.
+// Nodes the backend can't fill yet (gateway decisions) say so instead of showing samples.
 import { ACCESS, HARD_RULES, INTEGRATIONS, type CrewMember } from "../crew";
 import type { Run } from "../data";
 import { dur, m4, num, when } from "../format";
 import { RUN_LOOK, isLive } from "../status";
 import { Icon } from "./Icon";
 import { Summary } from "./ui";
+
+const MEM_NAME: Record<string, string> = { crew: "Crew memory", standing_order: "Standing orders", note: "Zak’s notes", lesson: "Lessons", working: "Working memory" };
 
 const NodeHead = ({ icon, title, tone }: { icon?: string; title: string; tone?: string }) => (
   <div className="node-h">
@@ -27,6 +29,10 @@ export function RunCanvas({ a, run, leads }: { a: CrewMember; run: Run | null; l
   const usesModel = !!run && run.tokens_in + run.tokens_out > 0;
   const look = run ? RUN_LOOK[run.status] : null;
   const resultBig = !run ? "—" : a.id === "wholesale_hunter" && leads != null ? String(leads) : look!.label;
+  const mem = run?.memory_json ?? null;
+  const memLines = mem ? Object.entries(mem.groups).filter(([, v]) => v.lines > 0) : [];
+  const pagesRead = (mem?.pages ?? []).filter((p) => !p.problem).length;
+  const pagesFailed = (mem?.pages ?? []).filter((p) => p.problem).length;
   const resultLabel = a.id === "wholesale_hunter" && leads != null && run ? "new leads" : "";
 
   return (
@@ -48,9 +54,21 @@ export function RunCanvas({ a, run, leads }: { a: CrewMember; run: Run | null; l
 
         <div className="node" style={{ left: 24, top: 184, width: 200, height: 150, opacity: o(1), boxShadow: "-16px -10px 40px -8px var(--glowA), 18px 14px 44px -8px var(--glowB)" }}>
           <NodeHead icon="brain" title="Memory" tone="var(--acc-soft)" />
-          <span style={{ fontSize: 12.5, color: "var(--ink2)", lineHeight: 1.45 }}>Standing orders live in the agent’s prompt for now.</span>
-          <span style={{ flex: 1 }} />
-          <span className="later" style={{ alignSelf: "flex-start" }}>MEMORY STORE COMING LATER</span>
+          {mem ? (
+            <>
+              {memLines.slice(0, 3).map(([g, v], k) => <Line key={g} c={["var(--acc)", "var(--pink)", "var(--yel)"][k]}>{MEM_NAME[g] ?? g} · {v.lines}</Line>)}
+              {!memLines.length && <Line c="var(--mut2)" mut>Nothing in memory yet</Line>}
+              {pagesRead > 0 && <Line c="var(--acc)">{pagesRead} Notion page{pagesRead === 1 ? "" : "s"}</Line>}
+              <span style={{ flex: 1 }} />
+              <span className="muted" style={{ fontSize: 11.5 }}>{num(mem.tokens)} of {num(mem.budget)} tokens{mem.dropped ? ` · ${mem.dropped} left out` : ""}{pagesFailed ? ` · ${pagesFailed} page${pagesFailed === 1 ? "" : "s"} skipped` : ""}</span>
+            </>
+          ) : (
+            <>
+              <span style={{ fontSize: 12.5, color: "var(--ink2)", lineHeight: 1.45 }}>{!run ? "Loads its memory when it runs." : a.model?.startsWith("claude") ? "This run loaded no memory." : "No model, so no memory to load."}</span>
+              <span style={{ flex: 1 }} />
+              <a href={`/agents/${a.id}?tab=memory`} className="muted" style={{ fontSize: 11.5 }}>Open memory</a>
+            </>
+          )}
         </div>
 
         <div className="node" style={{ left: 284, top: 24, width: 220, height: 112, opacity: o(2) }}>

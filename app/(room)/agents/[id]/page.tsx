@@ -6,7 +6,7 @@ import { notFound } from "next/navigation";
 import { discardLessonLine, dryRun, editMemoryLine, forgetMemoryLine, keepLessonLine, realRun, setBudget, setEnabled, teach } from "@/dashboard/actions";
 import { ACCESS, BY_ID, HARD_RULES, INTEGRATIONS, TIERS, type CrewMember } from "@/dashboard/crew";
 import { getBooks, getFloor, getMemory, getPipeline, type Books, type Floor } from "@/dashboard/data";
-import type { MemoryRow, PageLoad } from "@/core/memory";
+import { KEEPS_WORKING, type MemoryRow, type PageLoad } from "@/core/memory";
 import { MemoryLine, TeachForm, type LineView } from "@/dashboard/components/memory";
 import { budget, dur, hm, m2, m4, md, num, when } from "@/dashboard/format";
 import { nextRuns, schedSentence, schedWords } from "@/dashboard/schedule";
@@ -374,11 +374,13 @@ function Memory({ a, domains, mem }: { a: CrewMember; domains?: string[]; mem: A
       <>{lines("note")}{!mine("note").length && <span className="muted" style={{ fontSize: 13 }}>Nothing yet. Notes can be for the next run, 30 days or for good.</span>}</>
     ) },
     { n: 5, title: "Working memory", color: "var(--peach)", meta: "Where it left off, rewritten at the end of each run. At most 5 short lines, no addresses or links.", body: (
-      <>{lines("working")}{!mine("working").length && <span className="muted" style={{ fontSize: 13 }}>{tab?.loads ? "Empty until the next real run." : `${a.name} starts keeping working memory in a later update.`}</span>}</>
+      <>{lines("working")}{!mine("working").length && <span className="muted" style={{ fontSize: 13 }}>{!KEEPS_WORKING.has(a.id) ? `${a.name} only uses memory to pick categories, so it keeps no working memory.` : tab?.loads ? `Empty until the next real run.${a.id === "wholesale_hunter" ? " Rowan reads the web, so its lines are kept as data." : ""}` : `${a.name} doesn’t keep working memory.`}</span>}</>
     ) },
     a.id === "wholesale_hunter"
       ? { n: 6, title: "Don’t repeat", color: "var(--ink2)", meta: "Businesses already in the pipeline, by domain. Real, from wholesale_leads.", body: <div className="row wrap" style={{ gap: 6 }}>{(domains ?? []).slice(0, 60).map((c) => <span key={c} className="pill sm" style={{ background: "var(--soft)", fontWeight: 500 }}>{c}</span>)}{!domains?.length && <span className="muted" style={{ fontSize: 13 }}>No leads yet.</span>}</div> }
-      : { n: 6, title: "Don’t repeat", color: "var(--ink2)", meta: "Worked out from its own tables each run", body: <span className="muted" style={{ fontSize: 13 }}>Nothing to avoid yet.</span> },
+      : a.id === "bookkeeper"
+        ? { n: 6, title: "Don’t repeat", color: "var(--ink2)", meta: "Worked out from expense_docs each run", body: <span className="ink2" style={{ fontSize: 13, lineHeight: 1.45 }}>Charges it has already handled, receipts already searched for (up to 3 times each) and categories already suggested are skipped. Nothing here is stored as memory.</span> }
+        : { n: 6, title: "Don’t repeat", color: "var(--ink2)", meta: "Worked out from its own tables each run", body: <span className="muted" style={{ fontSize: 13 }}>Nothing to avoid. Each brief starts from today’s numbers.</span> },
   ];
   const pageLoad = (load?.pages ?? []).filter((p) => p.tokens > 0);
   const seg = load ? [
@@ -401,7 +403,7 @@ function Memory({ a, domains, mem }: { a: CrewMember; domains?: string[]; mem: A
               <span className="muted" style={{ fontSize: 11.5 }}>What {a.name}’s next run loads, counted in code. {load.dropped ? `${load.dropped} line(s) left out to stay in budget. ` : ""}{load.overBudget ? "Crew memory and standing orders alone pass the budget. " : ""}The budget is memory_budget_tokens in policies.</span>
             </>
           ) : (
-            <span style={{ fontSize: 13.5, lineHeight: 1.5 }} className="ink2">{tab ? `${a.name} doesn’t load memory yet. It starts in a later update; what you teach now is kept for then.` : "Shows once the memory tables exist."}</span>
+            <span style={{ fontSize: 13.5, lineHeight: 1.5 }} className="ink2">{tab ? `${a.name} uses no model, so its runs load no memory. What you teach is kept in case that changes.` : "Shows once the memory tables exist."}</span>
           )}
         </div>
         <div className="card" style={{ gap: 12 }}>
