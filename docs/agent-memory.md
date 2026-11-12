@@ -24,8 +24,8 @@ so he teaches an agent once instead of rewriting its prompt.
 
 - `agent_memory`: one row per line. `agent_id` (null = shared crew memory), `grp` (`crew`,
   `standing_order`, `lesson`, `note`, `working`), `text` (≤ 280), `source` (`zak`, `approval`,
-  `agent`), `source_tag`, `notion_page_id` (a standing order may point at a Notion page to load;
-  read fresh each run, arrives in a later PR), `trust`, `state` (`proposed`, `kept`, `discarded`,
+  `agent`), `source_tag`, `notion_page_id` (a standing order may point at a Notion page to load,
+  read fresh each run), `trust`, `state` (`proposed`, `kept`, `discarded`,
   `expired`, `forgotten`), `keep` (`next_run`, `days_30`, `always`), `runs_left`, `expires_at`, `tokens`.
 - `memory_events`: the timeline (`added`, `edited`, `forgotten`, `expired`, `rewritten`, `proposed`,
   `kept`, `discarded`), with before and after.
@@ -39,6 +39,13 @@ so he teaches an agent once instead of rewriting its prompt.
 2. Tokens are counted in code (characters ÷ 3.5, rounded up). Over budget, lines go in this
    order, oldest first: working memory, lessons, notes. Crew memory and standing orders are
    never trimmed.
+   Notion pages linked from standing orders (`readPages`, read only through
+   `integrations/notion.ts`) are read next, each capped at 1,500 tokens and all of them at what is
+   left of the budget, so they come ahead of notes, lessons and working memory. A page that can't
+   be read (not shared with the integration, deleted, no `NOTION_TOKEN`, no room) is skipped and
+   the run summary names it. Pages are Zak's own workspace, so they are notes, framed as
+   reference that never beats the rules. The Memory tab reads them the same way to show each
+   page's title, size and any problem.
 3. The job hands `memory.block` to the model as its own system block after the instructions.
 4. If the model read its memory (the job returns `remember`, even empty), withRun counts down
    next-run notes, retires 30-day notes past their date and replaces working memory. A rules
@@ -52,6 +59,9 @@ so he teaches an agent once instead of rewriting its prompt.
    (`proposeLesson`, Zak's words, no model call), shown on the agent's Memory tab with Keep,
    Keep for crew, Edit and Discard, and in Needs you. Proposed lessons are never loaded.
    Edits to an approval (`edit_diff`) will propose lessons too once Edit exists on approvals.
-3. Notion pages linked from standing orders (read fresh, ≤ 1,500 tokens a page), crew memory polish.
+3. Notion pages linked from standing orders: Teach shows an optional Notion link when "A standing
+   order" is picked; the order's line on the Memory tab shows the page, its size and whether it
+   can be read; the context meter has a Notion pages segment; `memory_json.pages` records what each
+   run read. To link a page, it must be shared with the agents’ Notion integration in Notion.
 4. Rowan and Quinn load memory; derived facts and don't repeat; mission control meters; the
    run canvas Memory node; last "coming later" tags removed.

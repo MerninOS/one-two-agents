@@ -199,15 +199,16 @@ export async function queueQuinn(): Promise<ActionResult> {
 const KEEP_AS = ["note", "standing_order", "crew"] as const;
 const FORGET: Keep[] = ["next_run", "days_30", "always"];
 
-export async function teach(agentId: string, text: string, keepAs: string, forget: string): Promise<ActionResult> {
+export async function teach(agentId: string, text: string, keepAs: string, forget: string, notionLink = ""): Promise<ActionResult> {
   await requireSession();
   if (!known(agentId)) return { ok: false, text: "Unknown agent." };
   if (!KEEP_AS.includes(keepAs as (typeof KEEP_AS)[number]) || !FORGET.includes(forget as Keep)) return { ok: false, text: "Pick how long to keep it." };
   try {
-    await teachMemory({ agentId, text: String(text), keepAs: keepAs as (typeof KEEP_AS)[number], forget: forget as Keep });
+    const link = keepAs === "standing_order" ? String(notionLink ?? "").slice(0, 500) : "";
+    await teachMemory({ agentId, text: String(text), keepAs: keepAs as (typeof KEEP_AS)[number], forget: forget as Keep, notionLink: link });
     revalidatePath("/", "layout");
     const name = BY_ID[agentId].name;
-    const how = keepAs === "crew" ? "Every agent will load it from its next run." : keepAs === "standing_order" ? `${name} follows it from the next run.` : forget === "next_run" ? `${name} reads it on the next run, then forgets it.` : forget === "days_30" ? `${name} keeps it for 30 days.` : `${name} keeps it until you forget it.`;
+    const how = keepAs === "crew" ? "Every agent will load it from its next run." : keepAs === "standing_order" ? `${name} follows it from the next run${link ? " and reads the linked page each time. Share that page with the agents’ Notion integration in Notion if you haven’t" : ""}.` : forget === "next_run" ? `${name} reads it on the next run, then forgets it.` : forget === "days_30" ? `${name} keeps it for 30 days.` : `${name} keeps it until you forget it.`;
     return { ok: true, text: `Saved. ${how}` };
   } catch (e) { return fail(e); }
 }
