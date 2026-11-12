@@ -5,6 +5,8 @@ import "server-only";
 import { MENUS } from "@/agents/menus";
 import { DEFAULT_BUDGET, KEEPS_WORKING, MEMORY_AGENTS } from "@/core/memory";
 import type { AgentMenu, Setup } from "@/core/setup";
+import { hasGateway } from "@/integrations/gateway";
+import { modelDef } from "@/integrations/models";
 import { ACCESS, HARD_RULES, INTEGRATIONS, type CrewMember, type IntegrationId } from "./crew";
 import type { AgentRow, Run } from "./data";
 import { budget, dur, m4, num, when } from "./format";
@@ -13,6 +15,8 @@ import { RUN_LOOK, isLive } from "./status";
 import type { CanvasBox, CanvasModel, CanvasRow } from "./components/AgentCanvas";
 
 const FOLDER: Record<string, string> = { chief_of_staff: "chief-of-staff", cfo: "cfo", wholesale_hunter: "wholesale-hunter", bookkeeper: "bookkeeper" };
+// A model id as people read it: "Claude Sonnet 5.5 (Anthropic)". Unknown ids show as they are.
+const label = (id: string) => { const d = modelDef(id); return d ? `${d.label} (${d.provider})` : id; };
 const MEM_NAME: Record<string, string> = { crew: "Crew memory", standing_order: "Standing orders", note: "Zak’s notes", lesson: "Lessons", working: "Working memory" };
 
 export interface CanvasInput {
@@ -102,19 +106,20 @@ export function buildCanvas(i: CanvasInput): CanvasModel {
     id: "thinking", title: usesModel ? "Thinking" : "Computing", icon: "cpu",
     replay: [setup && i.runSetupVersion != null ? `${a.model} · setup v${i.runSetupVersion}` : a.model ?? "Set when built"],
     replayFoot: run ? (run.tokens_in + run.tokens_out > 0 ? `${num(run.tokens_in)} in · ${num(run.tokens_out)} out` : "No model tokens") : undefined,
-    edit: setup && step ? [setup.model, `Effort ${setup.effort}${setup.fallback ? ` · fallback ${setup.fallback.replace(/^claude-/, "")}` : ""}`, `Instructions · ${num(setup.instructions.length)} characters`] : [a.model ?? "Set when built"],
+    edit: setup && step ? [label(setup.model), `Effort ${setup.effort}${setup.fallback ? ` · fallback ${modelDef(setup.fallback)?.label ?? setup.fallback}` : ""}`, `Instructions · ${num(setup.instructions.length)} characters`] : [a.model ?? "Set when built"],
     editable: !!(setup && step),
     rows: setup && step && menu
       ? [
         { label: "Step", value: `${step.label}. Needs: ${step.needs}`, home: "code", where: file },
-        { label: "Model", value: setup.model, home: "app", where: `${from(setup.fromSetup.model)} · can be ${step.models.join(", ")}` },
+        { label: "Model", value: label(setup.model), home: "app", where: `${from(setup.fromSetup.model)} · can be ${step.models.map((m) => modelDef(m)?.label ?? m).join(", ")}` },
         { label: "Effort", value: setup.effort, home: "app", where: `${from(setup.fromSetup.effort)} · can be low, medium or high` },
-        { label: "Fallback model", value: setup.fallback ?? "None", home: "app", where: `${from(setup.fromSetup.fallback)} · tried once if ${setup.model} can’t be reached, before the fixed rules` },
+        { label: "Fallback model", value: setup.fallback ? label(setup.fallback) : "None", home: "app", where: `${from(setup.fromSetup.fallback)} · tried once if ${modelDef(setup.model)?.label ?? setup.model} can’t be reached or answers in the wrong shape, before the fixed rules` },
         { label: "Safety block", value: "Locked. Sent first on every call.", home: "code", where: `agents/${FOLDER[a.id]}/prompt.ts (SAFETY). No setup can change it`, long: menu.safety },
         { label: "Instructions", value: `${num(setup.instructions.length)} characters`, home: "app", where: setup.fromSetup.instructions ? `Setup v${setup.version}` : `Built-in text in agents/${FOLDER[a.id]}/prompt.ts`, long: setup.instructions },
         ...fixed("thinking"),
-        { label: "Price", value: "Per token, by model", home: "code", where: "integrations/anthropic.ts, so cost is always computed in code" },
-        { label: "Claude API key", value: "ANTHROPIC_API_KEY", home: "vercel", where: "Vercel, Environment Variables", status: status(health.claude) },
+        { label: "Price", value: "Per token, by model", home: "code", where: "integrations/models.ts, so cost is always computed in code" },
+        { label: "Claude API key", value: "ANTHROPIC_API_KEY", home: "vercel", where: "Vercel, Environment Variables. Claude models go straight to Anthropic", status: status(health.claude) },
+        { label: "AI Gateway", value: "OpenAI and Google models", home: "vercel", where: "Vercel AI Gateway: the deployment signs in by itself, or AI_GATEWAY_API_KEY in Environment Variables", status: status(hasGateway()) },
       ]
       : usesModel
         ? [

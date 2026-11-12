@@ -1,7 +1,8 @@
-// Avery's menu: everything a setup may choose from (core/setup.ts). Adding a model to the
-// list, a fact source or an output here is a code change on purpose: the Control Room can
-// only pick from what is listed.
+// Avery's menu: everything a setup may choose from (core/setup.ts). Adding a model (to
+// integrations/models.ts), a fact source or an output is a code change on purpose: the
+// Control Room can only pick from what is listed.
 import type { AgentMenu } from "@/core/setup";
+import { modelsFor } from "@/integrations/models";
 import { SAFETY, SOP } from "./prompt";
 
 export const MENU: AgentMenu = {
@@ -10,8 +11,9 @@ export const MENU: AgentMenu = {
     id: "judge",
     label: "Watch and focus",
     needs: "Structured output (a watch list, one focus, working memory)",
-    // each needs a price in integrations/anthropic.ts before it can be listed
-    models: ["claude-sonnet-5-5", "claude-haiku-5-5", "claude-opus-5-5"],
+    // every model in integrations/models.ts that can return this shape, any provider
+    requires: ["structured-output"],
+    models: modelsFor(["structured-output"]),
     model: "claude-sonnet-5-5",
     effort: "medium",
     fallback: null,

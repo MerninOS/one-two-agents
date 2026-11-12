@@ -11,7 +11,9 @@ import type { RunResult } from "@/core/runs";
 import { setupOrDefaults, setupWords, type Setup, type SetupPreview } from "@/core/setup";
 import { env } from "@/core/env";
 import { chicagoDate, dayTitle } from "@/core/time";
-import { Anthropic, claude, costUsd, inputTokens, isModel, type Model } from "@/integrations/anthropic";
+import { Anthropic, claude, costUsd, inputTokens, isModel } from "@/integrations/anthropic";
+import { gateway } from "@/integrations/gateway";
+import { modelDef } from "@/integrations/models";
 import { emailZak, hasEmail } from "@/integrations/email";
 import { h2, li, notionArchive, notionPage, notionRow, notionRowOn, notionSetProps, p, prop, type Block, type Props } from "@/integrations/notion";
 import { getInventoryLots } from "@/integrations/shopify/lots";
@@ -81,45 +83,75 @@ async function facts(coverWarnDays: number) {
 }
 type Facts = Awaited<ReturnType<typeof facts>>;
 
-async function judge(f: Facts, memory: MemoryLoad | null, setup: Setup, model: string) {
-  const res = await claude().beta.messages.create({
-    model,
-    max_tokens: 16000,
-    betas: ["server-side-fallback-2026-07-01"],
-    fallbacks: "default",
-    output_config: { effort: setup.effort, format: FORMAT },
-    // the locked safety block always comes first and no setup can change it; the memory is its
-    // own block after the instructions, so it reads as notes, not rules
-    system: [{ type: "text", text: SAFETY }, { type: "text", text: setup.instructions }, ...(memory?.block ? [{ type: "text" as const, text: memory.block }] : [])],
-    messages: [{ role: "user", content: `Facts for ${f.today}:\n${JSON.stringify(f, null, 1)}` }],
-  });
-  if (res.stop_reason === "refusal") throw new Error("Brief model declined the request");
-  const text = res.content.find((b) => b.type === "text");
-  if (!text || text.type !== "text") throw new Error(`Brief model returned no text (stop: ${res.stop_reason})`);
-  return { judgment: JSON.parse(text.text) as Judgment, usage: res.usage };
+/** A model answered, but not in the shape the code reads. Counts as unreachable: the fallback model or the rules take over. */
+class BadAnswer extends Error {}
+
+/** The model's answer, checked field by field: the code only ever reads this shape. */
+function readJudgment(raw: string): Judgment {
+  let j: unknown;
+  try { j = JSON.parse(raw); } catch { throw new BadAnswer("answer was not JSON"); }
+  const x = (j ?? {}) as Record<string, unknown>, focus = (x.focus ?? {}) as Record<string, unknown>;
+  const strings = (v: unknown) => Array.isArray(v) && v.every((s) => typeof s === "string");
+  if (!strings(x.watch) || typeof focus.action !== "string" || typeof focus.reason !== "string" || (x.remember !== undefined && !strings(x.remember))) throw new BadAnswer("answer was not a watch list, focus and memory");
+  return { watch: x.watch as string[], focus: { action: focus.action, reason: focus.reason }, remember: (x.remember as string[] | undefined) ?? [] };
 }
 
-const apiError = (e: unknown): e is Error => e instanceof Anthropic.APIError || e instanceof Anthropic.AnthropicError;
+const firstText = (content: readonly { type: string }[]) => (content.find((b) => b.type === "text") as { text?: string } | undefined)?.text;
+
+// effort on a non-Claude model: the gateway maps an Anthropic-style thinking budget to the provider's own setting
+const THINK_BUDGET: Record<Setup["effort"], number> = { low: 1024, medium: 4000, high: 10000 };
+
+async function judge(f: Facts, memory: MemoryLoad | null, setup: Setup, model: string): Promise<{ judgment: Judgment; tokens: { in: number; out: number } }> {
+  const def = modelDef(model);
+  if (!def) throw new BadAnswer(`${model} has no price`);
+  // the locked safety block always comes first and no setup can change it; the memory is its
+  // own block after the instructions, so it reads as notes, not rules
+  const system = [{ type: "text" as const, text: SAFETY }, { type: "text" as const, text: setup.instructions }, ...(memory?.block ? [{ type: "text" as const, text: memory.block }] : [])];
+  const messages = [{ role: "user" as const, content: `Facts for ${f.today}:\n${JSON.stringify(f, null, 1)}` }];
+  let stop: string | null, text: string | undefined, tokens: { in: number; out: number };
+  if (def.route === "anthropic") {
+    const res = await claude().beta.messages.create({
+      model, max_tokens: 16000, betas: ["server-side-fallback-2026-07-01"], fallbacks: "default",
+      output_config: { effort: setup.effort, format: FORMAT }, system, messages,
+    });
+    stop = res.stop_reason; text = firstText(res.content);
+    tokens = { in: inputTokens(res.usage), out: res.usage.output_tokens };
+  } else {
+    // another provider, through Vercel AI Gateway's Messages endpoint (integrations/gateway.ts)
+    const res = await (await gateway()).messages.create({
+      model, max_tokens: 16000, system, messages, output_config: { format: FORMAT },
+      ...(def.caps.includes("reasoning") ? { thinking: { type: "enabled" as const, budget_tokens: THINK_BUDGET[setup.effort] } } : {}),
+    });
+    stop = res.stop_reason; text = firstText(res.content);
+    tokens = { in: inputTokens(res.usage), out: res.usage.output_tokens };
+  }
+  if (stop === "refusal") throw new Error("Brief model declined the request");
+  if (!text) throw new BadAnswer(`no text (stop: ${stop})`);
+  return { judgment: readJudgment(text), tokens };
+}
+
+const apiError = (e: unknown): e is Error => e instanceof Anthropic.APIError || e instanceof Anthropic.AnthropicError || e instanceof BadAnswer;
 
 /**
  * The Watch list and focus: the setup's model, then its fallback model when the first can't be
- * reached, then the fixed rules. `servedBy` is the model that answered, so cost uses its price.
+ * reached (or answers in the wrong shape), then the fixed rules. `servedBy` is the model that
+ * answered, so cost uses its price.
  */
-async function think(f: Facts, memory: MemoryLoad | null, setup: Setup): Promise<{ judgment: Judgment; usage: Anthropic.Beta.BetaUsage | null; servedBy: Model | null; note: string }> {
+async function think(f: Facts, memory: MemoryLoad | null, setup: Setup): Promise<{ judgment: Judgment; tokens: { in: number; out: number } | null; servedBy: string | null; note: string }> {
   const tries = [setup.model, ...(setup.fallback && setup.fallback !== setup.model ? [setup.fallback] : [])];
   const failed: string[] = [];
   for (const m of tries) {
     if (!isModel(m)) { failed.push(`${m}: no price`); continue; }
     try {
-      const { judgment, usage } = await judge(f, memory, setup, m);
-      return { judgment, usage, servedBy: m, note: failed.length ? ` (${failed.join("; ")}; ${m} used)` : "" };
+      const { judgment, tokens } = await judge(f, memory, setup, m);
+      return { judgment, tokens, servedBy: m, note: failed.length ? ` (${failed.join("; ")}; ${m} used)` : "" };
     } catch (e) {
       // the numbers still go out; only the two judgment sections fall back
       if (!apiError(e)) throw e;
       failed.push(`${m} unavailable: ${e.message.slice(0, 100)}`);
     }
   }
-  return { judgment: rulesJudgment(f), usage: null, servedBy: null, note: ` (${failed.join("; ")}; rules used)` };
+  return { judgment: rulesJudgment(f), tokens: null, servedBy: null, note: ` (${failed.join("; ")}; rules used)` };
 }
 
 /** The same two sections from fixed rules, for when the model can't be reached (no key, no credits, outage). */
@@ -215,7 +247,7 @@ const briefView = (f: Facts, j: Judgment, notionUrl?: string): BriefView => ({
 
 /** Every model a setup can send work to must have a price, so cost is computed in code. Checked before anything is read or sent. */
 function priced(setup: Setup) {
-  for (const m of [setup.model, setup.fallback]) if (m && !isModel(m)) throw new Error(`No price for ${m} in integrations/anthropic.ts, so its cost can't be computed`);
+  for (const m of [setup.model, setup.fallback]) if (m && !isModel(m)) throw new Error(`No price for ${m} in integrations/models.ts, so its cost can't be computed`);
 }
 
 /** A Notion property as plain words, for the Preview. */
@@ -241,15 +273,15 @@ export async function previewBrief(setup: Setup): Promise<SetupPreview & { statu
   let memory: MemoryLoad | null = null, memoryNote = "";
   try { memory = await loadMemory("chief_of_staff"); }
   catch (e) { memoryNote = ` Memory can't be read: ${(e instanceof Error ? e.message : String(e)).slice(0, 100)}.`; }
-  const { judgment, usage, servedBy, note } = await think(f, memory, setup);
-  const tokensIn = usage ? inputTokens(usage) : 0, tokensOut = usage?.output_tokens ?? 0;
+  const { judgment, tokens, servedBy, note } = await think(f, memory, setup);
+  const tokensIn = tokens?.in ?? 0, tokensOut = tokens?.out ?? 0;
   const m = briefEmail(briefView(f, judgment));
   return {
     status: "ok",
     servedBy: servedBy ?? "rules",
     watch: judgment.watch,
     focus: judgment.focus,
-    remember: usage ? judgment.remember ?? [] : [],
+    remember: tokens ? judgment.remember ?? [] : [],
     email: hasEmail() ? { subject: m.subject, html: m.html } : { subject: `${m.subject} (email isn’t set up, so this is how it would look)`, html: m.html },
     row: Object.entries(briefRow(f, judgment, false)).map(([k, v]) => [k, propWords(v)]),
     tokensIn, tokensOut,
@@ -275,10 +307,10 @@ export async function runBrief(opts: { dryRun?: boolean; memory?: MemoryLoad | n
     try { memory = await loadMemory("chief_of_staff"); memoryWords = ` ${loadWords(memory).replace(/^m/, "M")}.`; }
     catch (e) { memoryWords = ` Memory can't be read: ${(e instanceof Error ? e.message : String(e)).slice(0, 100)}.`; }
   }
-  let judgment: Judgment, usage: Anthropic.Beta.BetaUsage | null = null, servedBy: Model | null = null, fallback = "";
+  let judgment: Judgment, tokens: { in: number; out: number } | null = null, servedBy: string | null = null, fallback = "";
   // a dry run never calls the model: it checks the data plumbing for free
   if (opts.dryRun) judgment = rulesJudgment(f);
-  else ({ judgment, usage, servedBy, note: fallback } = await think(f, memory, setup));
+  else ({ judgment, tokens, servedBy, note: fallback } = await think(f, memory, setup));
   const view = (notionUrl?: string) => briefView(f, judgment, notionUrl);
   const briefsDb = env.notionToken ? env.notionBriefsDb : undefined;
   const email = hasEmail(), notion = !!(env.notionToken && (briefsDb || env.notionBriefParent));
@@ -313,15 +345,15 @@ export async function runBrief(opts: { dryRun?: boolean; memory?: MemoryLoad | n
     // the row is written before the send, so it is only marked once the email has gone
     if (rowId) await notionSetProps(rowId, { Emailed: prop.check(true) }).catch(() => { notionError += " The row's Emailed box could not be ticked."; });
   }
-  const tokensIn = usage ? inputTokens(usage) : 0;
-  const tokensOut = usage?.output_tokens ?? 0;
+  const tokensIn = tokens?.in ?? 0;
+  const tokensOut = tokens?.out ?? 0;
   const cost = servedBy ? costUsd(servedBy, tokensIn, tokensOut) : 0;
   return {
     status: "ok",
-    summary: `${sent}${url ? `${sent ? " Notion copy" : "Brief posted"}: ${url}.` : ""}${notionError} Focus: ${judgment.focus.action}${fallback}${memory ? `. ${loadWords(memory).replace(/^m/, "M")}.` : ""}`.trim(),
+    summary: `${sent}${url ? `${sent ? " Notion copy" : "Brief posted"}: ${url}.` : ""}${notionError} Focus: ${judgment.focus.action}${fallback}${servedBy ? `. Written by ${servedBy}` : ""}${memory ? `. ${loadWords(memory).replace(/^m/, "M")}.` : ""}`.trim(),
     tokensIn, tokensOut,
     costUsd: cost,
     // only what the model chose to remember; the rules fallback leaves the old working memory alone
-    remember: usage ? judgment.remember ?? [] : undefined,
+    remember: tokens ? judgment.remember ?? [] : undefined,
   };
 }

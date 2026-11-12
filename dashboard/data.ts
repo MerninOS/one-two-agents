@@ -8,7 +8,8 @@ import { db } from "@/core/db";
 import { env } from "@/core/env";
 import { DEFAULT_BUDGET, MEMORY_AGENTS, loadMemory, memoryView, proposedLessons, readPages, type MemoryEvent, type MemoryLoad, type MemoryRow, type PageLoad } from "@/core/memory";
 import { MAX_INSTRUCTIONS, listVersions, resolveSetup, setupOrDefaults, type Setup, type SetupVersion } from "@/core/setup";
-import { priceOf } from "@/integrations/anthropic";
+import { hasGateway } from "@/integrations/gateway";
+import { modelDef } from "@/integrations/models";
 import { MENUS } from "@/agents/menus";
 import { BUILT, BY_ID, type IntegrationId } from "./crew";
 import type { EditorVersion, ThinkingEditorData } from "./components/ThinkingEditor";
@@ -314,7 +315,8 @@ export async function getThinkingEditor(agentId: string, runs: Run[], got: { set
   const used = runs.filter((r) => r.agent_id === agentId && (r.trigger === "cron" || r.trigger === "manual") && r.tokens_in + r.tokens_out > 0).slice(0, 10);
   return {
     agentId, agentName: BY_ID[agentId]?.name ?? agentId, stepLabel: step.label, needs: step.needs,
-    models: step.models.map((id) => { const p = priceOf(id); return { id, in: p?.in ?? null, out: p?.out ?? null }; }),
+    models: step.models.map((id) => { const m = modelDef(id); return { id, label: m?.label ?? id, provider: m?.provider ?? "Unknown", gateway: m?.route === "gateway", in: m?.in ?? null, out: m?.out ?? null }; }),
+    gatewayReady: hasGateway(),
     active: { version: s.version, model: s.model, effort: s.effort, fallback: s.fallback, instructions: s.instructions },
     builtIn: menu.instructions, safety: menu.safety, maxChars: MAX_INSTRUCTIONS,
     usage: used.length ? { runs: used.length, avgIn: used.reduce((a, r) => a + r.tokens_in, 0) / used.length, avgOut: used.reduce((a, r) => a + r.tokens_out, 0) / used.length } : null,

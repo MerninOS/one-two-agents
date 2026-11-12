@@ -4,6 +4,7 @@ import { SEEN_COOKIE, parseSeen } from "@/dashboard/seen";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { costUsd, MODELS } from "@/integrations/anthropic";
+import { MODEL_LIST } from "@/integrations/models";
 import { dryRun } from "@/dashboard/actions";
 import { BY_ID } from "@/dashboard/crew";
 import { getFloor, getRun, leadsForRun } from "@/dashboard/data";
@@ -27,7 +28,10 @@ export default async function Replay({ params }: { params: Promise<{ id: string 
   const look = RUN_LOOK[run.status];
 
   // Where the money went, split in code with the same prices the agents bill with.
-  const model = Object.values(MODELS).find((m) => a.model?.startsWith(m));
+  // a setup can pick another model (any provider), so use the priced model whose prices give this run's cost, the agent's usual one first
+  const usual = Object.values(MODELS).find((m) => a.model?.startsWith(m));
+  const fits = (m: string) => Math.abs(costUsd(m, run.tokens_in, run.tokens_out) - run.cost_usd) <= 0.0002;
+  const model = usual && (fits(usual) || a.id === "wholesale_hunter") ? usual : MODEL_LIST.find((m) => fits(m.id))?.id ?? usual;
   const inUsd = model ? costUsd(model, run.tokens_in, 0) : 0;
   const outUsd = model ? costUsd(model, 0, run.tokens_out) : 0;
   const rest = Math.max(0, Number((run.cost_usd - inUsd - outUsd).toFixed(4)));
