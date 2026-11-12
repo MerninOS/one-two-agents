@@ -40,6 +40,10 @@ No sample data ships. Where the design used sample numbers, the build shows the 
 - Styling: one `app/globals.css` with the design's CSS variables and a handful of classes, light and dark (`data-theme` on `<html>`, remembered in a cookie). Icons from `lucide-react`. Font via `next/font` (Plus Jakarta Sans).
 - Routes: `/` mission control, `/agents/[id]?tab=…`, `/runs` (filters in the query string), `/runs/[id]` replay, `/access`, `/integrations`, `/approvals`, `/settings`, `/login`.
 
+### Phones
+
+At 860px and narrower (`app/globals.css`, last block): one sticky top bar with the bell and a menu button (`MobileMenu` in `dashboard/components/client.tsx`) that opens the full navigation as a sheet; the crew rail turns into labeled agent chips that stay visible on every screen (switching agent keeps the current tab, on desktop too); outer frames drop away; the run log stacks each run; the Live floor stacks its nodes; two-column sections become one; Access shows one card per agent instead of the matrix. Desktop is unchanged. Phone screenshots: project files `agents-repo/control-room-screens/mobile/`.
+
 ## 4. Safety rules for the UI
 
 - **Login required.** `DASHBOARD_PASSWORD` env var. Login sets an HMAC-signed, httpOnly cookie (30 days). If the variable is unset, the dashboard refuses everyone. `proxy.ts` guards pages, and every data function and server action checks the session again. `/api/*` keeps its bearer check and is not affected.

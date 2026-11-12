@@ -20,7 +20,36 @@ export default async function Access({ searchParams }: { searchParams: Promise<{
           {HARD_RULES.map((r, n) => <span key={r} className="row" style={{ gap: 10, fontSize: 13, lineHeight: 1.45, color: "#D6D6DC", alignItems: "flex-start" }}><span style={{ fontSize: 10, fontWeight: 700, letterSpacing: ".06em", color: "#8A8A93", width: 48, flex: "none", paddingTop: 2 }}>RULE {n + 1}</span>{r}</span>)}
         </div>
       </div>
-      <div className="grid2" style={{ gridTemplateColumns: "minmax(0,1fr) 300px" }}>
+      {/* phones: one card per agent instead of the matrix; tapping a level shows its scope in that card */}
+      <div className="stack phone-only">
+        {CREW.map((a) => {
+          const has = INTEGRATIONS.filter((i) => ACCESS[a.id]?.[i.id]);
+          return (
+            <div key={a.id} className="card" style={{ gap: 10, opacity: a.built ? 1 : 0.75 }}>
+              <span className="row" style={{ gap: 9 }}><Avatar a={a} size={28} /><span style={{ display: "flex", flexDirection: "column" }}><span style={{ fontSize: 14, fontWeight: 600 }}>{a.name}</span><span className="muted" style={{ fontSize: 11.5 }}>{a.role}{a.built ? "" : " · planned"}</span></span></span>
+              <div className="row wrap" style={{ gap: 6 }}>
+                {has.map((i) => {
+                  const v = ACCESS[a.id]![i.id]!;
+                  const on = sel?.a.id === a.id && sel.i.id === i.id;
+                  return <Link key={i.id} href={on ? "/access" : `/access?cell=${a.id}:${i.id}`} scroll={false} className={`mcell lv-${v[0]}`} style={{ textDecoration: "none", padding: "0 12px", gap: 6, display: "inline-flex", alignItems: "center", height: 34, outline: on ? "2px solid var(--acc)" : undefined }}><Icon name={i.icon} size={13} />{i.name} · {LABEL[v[0]]}</Link>;
+                })}
+                {!has.length && <span className="muted" style={{ fontSize: 13 }}>No access yet.</span>}
+              </div>
+              {sel?.a.id === a.id && (
+                <div className="soft-box" style={{ flexDirection: "column", alignItems: "flex-start", gap: 6 }}>
+                  <span style={{ fontSize: 13, fontWeight: 600 }}>{sel.i.name} · {sel.v ? LABEL[sel.v[0]] : "None"}</span>
+                  <span style={{ fontSize: 13, lineHeight: 1.5 }}>{sel.v ? sel.v[1] : `${sel.a.name} has no access to ${sel.i.name}.`}</span>
+                  <span className="muted" style={{ fontSize: 12, lineHeight: 1.5 }}>{sel.i.scope}</span>
+                </div>
+              )}
+            </div>
+          );
+        })}
+        <div className="card" style={{ gap: 8 }}>
+          {LEGEND.map(([k, t]) => <span key={k} className="row" style={{ fontSize: 12.5 }}><span className={`mcell lv-${k}`} style={{ width: 56, height: 24, fontSize: 11.5, flex: "none" }}>{LABEL[k]}</span>{t}</span>)}
+        </div>
+      </div>
+      <div className="grid2 wide-only-block" style={{ gridTemplateColumns: "minmax(0,1fr) 300px" }}>
         <div className="card" style={{ padding: 16, overflowX: "auto" }}>
           <div style={{ minWidth: 760 }}>
             <div className="matrix" style={{ paddingBottom: 10 }}>

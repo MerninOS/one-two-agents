@@ -49,16 +49,50 @@ export function SideLink({ href, match, tab, icon, label, note, noteColor, count
   );
 }
 
-export function RailLink({ id, title, icon, planned, running, badge }: { id: string; title: string; icon: string; planned?: boolean; running?: boolean; badge?: number }) {
-  const sel = usePathname() === `/agents/${id}`;
+export function RailLink({ id, name, title, icon, planned, running, badge }: { id: string; name: string; title: string; icon: string; planned?: boolean; running?: boolean; badge?: number }) {
+  const path = usePathname();
+  const tab = useSearchParams().get("tab");
+  const sel = path === `/agents/${id}`;
+  // switching agents keeps the tab Zak is on (Memory to Memory), except for agents not built yet
+  const href = `/agents/${id}${tab && !planned && path.startsWith("/agents/") ? `?tab=${tab}` : ""}`;
   return (
-    <Link href={`/agents/${id}`} title={title} className="rail-item">
+    <Link href={href} title={title} className={"rail-item" + (sel ? " sel" : "") + (planned ? " planned" : "")} aria-current={sel ? "page" : undefined}>
       <span className={"rail-av" + (sel ? " sel" : planned ? " planned" : "") + (running ? " running" : "")}>
         <Icon name={icon} size={planned ? 18 : 20} style={planned && !sel ? { opacity: 0.55 } : undefined} />
       </span>
+      <span className="rail-name">{name}</span>
       <span className={"rail-dot" + (sel ? " sel" : "")} />
       {!!badge && <span className="badge">{badge}</span>}
     </Link>
+  );
+}
+
+/** Phones only (CSS hides it on wide screens): a menu button that opens the full navigation as a sheet. */
+export function MobileMenu({ children, alert }: { children: React.ReactNode; alert?: boolean }) {
+  const here = usePathname() + "?" + useSearchParams().toString();
+  // remembers the page it was opened on, so it closes itself after navigating
+  const [openOn, setOpenOn] = useState<string | null>(null);
+  const open = openOn === here;
+  const setOpen = (o: boolean | ((o: boolean) => boolean)) => setOpenOn((typeof o === "function" ? o(open) : o) ? here : null);
+  useEffect(() => {
+    if (!open) return;
+    const esc = (e: KeyboardEvent) => { if (e.key === "Escape") setOpenOn(null); };
+    document.addEventListener("keydown", esc);
+    document.body.style.overflow = "hidden";
+    return () => { document.removeEventListener("keydown", esc); document.body.style.overflow = ""; };
+  }, [open]);
+  return (
+    <>
+      <button className="round menu-btn" aria-label="Menu" aria-expanded={open} onClick={() => setOpen((o) => !o)} style={{ position: "relative" }}>
+        <Icon name={open ? "x" : "menu"} />
+        {alert && !open && <span className="menu-alert" />}
+      </button>
+      {open && (
+        <div className="sheet-bg" onClick={() => setOpen(false)}>
+          <nav className="sheet" aria-label="Menu" onClick={(e) => e.stopPropagation()}>{children}</nav>
+        </div>
+      )}
+    </>
   );
 }
 
