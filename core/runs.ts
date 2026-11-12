@@ -3,11 +3,19 @@ import "server-only";
 // check, and the cron bearer check.
 import { db } from "@/core/db";
 import { env } from "@/core/env";
+import { MEMORY_AGENTS, afterLoad, loadMemory, loadSummary, saveWorking, type MemoryLoad } from "@/core/memory";
 
 /** Vercel Cron sends `Authorization: Bearer $CRON_SECRET`; manual runs use the same header. */
 export const cronAuthorized = (req: Request) => !!env.cronSecret && req.headers.get("authorization") === `Bearer ${env.cronSecret}`;
 
-export interface RunResult { status: "ok" | "skipped"; summary: string; tokensIn?: number; tokensOut?: number; costUsd?: number }
+export interface RunResult {
+  status: "ok" | "skipped"; summary: string; tokensIn?: number; tokensOut?: number; costUsd?: number;
+  /**
+   * Lines the agent wants for its next run, set only when the model actually read its memory.
+   * withRun caps and cleans them (core/memory.ts saveWorking); [] clears working memory.
+   */
+  remember?: string[];
+}
 
 /** Why the agent may not run now (disabled, or over today's budget), or null. */
 async function blockedReason(agentId: string) {
@@ -19,18 +27,40 @@ async function blockedReason(agentId: string) {
   return spent >= Number(agent.daily_budget_usd) ? `Daily budget of $${agent.daily_budget_usd} reached ($${spent.toFixed(2)} spent).` : null;
 }
 
-/** Run one agent job with a row in agent_runs around it; a failure is recorded, then rethrown. */
-export async function withRun(agentId: string, trigger: string, job: (runId: string) => Promise<RunResult>): Promise<RunResult & { runId: string }> {
+/**
+ * Run one agent job with a row in agent_runs around it; a failure is recorded, then rethrown.
+ * Agents in MEMORY_AGENTS get their memory loaded after the on-duty and budget check (a skipped
+ * run loads nothing) and leave working memory when the run finishes. A memory store that can't
+ * be read never stops the run: the job gets null and the summary says so.
+ */
+export async function withRun(agentId: string, trigger: string, job: (runId: string, memory: MemoryLoad | null) => Promise<RunResult>): Promise<RunResult & { runId: string }> {
   const { data: run, error } = await db().from("agent_runs").insert({ agent_id: agentId, trigger }).select("id").single();
   if (error || !run) throw new Error(`Could not start run: ${error?.message}`);
   const finish = (patch: Record<string, unknown>) => db().from("agent_runs").update({ ended_at: new Date().toISOString(), ...patch }).eq("id", run.id);
+  let memory: MemoryLoad | null = null, memoryNote = "";
   try {
     const blocked = await blockedReason(agentId);
-    const res: RunResult = blocked ? { status: "skipped", summary: blocked } : await job(run.id);
-    await finish({ status: res.status, summary: res.summary, tokens_in: res.tokensIn ?? 0, tokens_out: res.tokensOut ?? 0, cost_usd: res.costUsd ?? 0 });
-    return { ...res, runId: run.id };
+    // only agent runs load memory; a gateway apply run (trigger "approval") is not the agent thinking
+    if (!blocked && MEMORY_AGENTS.has(agentId) && (trigger === "cron" || trigger === "manual")) {
+      try { memory = await loadMemory(agentId); }
+      catch (e) { memoryNote = ` (memory not loaded: ${(e instanceof Error ? e.message : String(e)).slice(0, 100)})`; }
+    }
+    const res: RunResult = blocked ? { status: "skipped", summary: blocked } : await job(run.id, memory);
+    // `remember` (even empty) means the model read its memory: count down next-run notes and
+    // replace working memory. Without it (rules fallback, model unreachable) memory is left as it was.
+    if (memory && res.status === "ok" && res.remember !== undefined) {
+      try {
+        await afterLoad(memory, run.id);
+        memoryNote += await saveWorking(agentId, run.id, res.remember);
+      } catch (e) { memoryNote += ` Memory not updated: ${(e instanceof Error ? e.message : String(e)).slice(0, 100)}.`; }
+    }
+    await finish({
+      status: res.status, summary: `${res.summary}${memoryNote}`, tokens_in: res.tokensIn ?? 0, tokens_out: res.tokensOut ?? 0, cost_usd: res.costUsd ?? 0,
+      ...(memory ? { memory_json: loadSummary(memory) } : {}),
+    });
+    return { ...res, summary: `${res.summary}${memoryNote}`, runId: run.id };
   } catch (e) {
-    await finish({ status: "failed", error: e instanceof Error ? e.message : String(e) });
+    await finish({ status: "failed", error: e instanceof Error ? e.message : String(e), ...(memory ? { memory_json: loadSummary(memory) } : {}) });
     throw e;
   }
 }

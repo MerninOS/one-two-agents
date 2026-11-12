@@ -55,7 +55,7 @@ matrix and integrations, built from the Claude Design file "Agent Control Room".
 - Approvals (`/approvals`): Quinn's proposed Mercury changes, one card per charge, plus the gateway log.
   Approving writes to Mercury only when `MERCURY_WRITE_TOKEN` is set, `DASHBOARD_CONTROLS=on` and
   Quinn is on duty; otherwise the approval is kept and applied later. See `core/gateway/README.md`.
-- Memory and run steps show as "coming later" until their tables exist.
+- Memory (`?tab=memory` on a profile): what each agent carries into its runs, with Teach, Edit and Forget. Only Avery loads memory so far. Spec: `docs/agent-memory.md`. Run steps still show as "coming later".
 
 ## Layout
 
@@ -65,7 +65,7 @@ app/api/agents/[agent]/   one route for every agent: auth, trigger, run log
 app/api/health/           settings present + Supabase reachable
 dashboard/                Control Room data, actions, session and components
 agents/                   one folder per agent, plus registry.ts (see agents/README.md)
-core/                     env, Supabase client, withRun (log, enabled flag, budget), time helpers, the tool gateway
+core/                     env, Supabase client, withRun (log, enabled flag, budget, memory), agent memory, time helpers, the tool gateway
 integrations/             Shopify (read-only), Mercury (read-only; mercury-write.ts is gateway-only), Notion, Gmail (drafts only; receipts read-only), Anthropic
 domain/                   coffee constants and green math (copied from the storefront), bookkeeping rules (books.ts)
 supabase/migrations/      agent tables

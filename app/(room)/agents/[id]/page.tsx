@@ -3,17 +3,19 @@ import { needs } from "@/dashboard/needs";
 import { SEEN_COOKIE, parseSeen } from "@/dashboard/seen";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { dryRun, realRun, setBudget, setEnabled } from "@/dashboard/actions";
+import { dryRun, editMemoryLine, forgetMemoryLine, realRun, setBudget, setEnabled, teach } from "@/dashboard/actions";
 import { ACCESS, BY_ID, HARD_RULES, INTEGRATIONS, TIERS, type CrewMember } from "@/dashboard/crew";
-import { getBooks, getFloor, getPipeline, type Books, type Floor } from "@/dashboard/data";
-import { budget, dur, hm, m2, m4, md, when } from "@/dashboard/format";
+import { getBooks, getFloor, getMemory, getPipeline, type Books, type Floor } from "@/dashboard/data";
+import type { MemoryRow } from "@/core/memory";
+import { MemoryLine, TeachForm, type LineView } from "@/dashboard/components/memory";
+import { budget, dur, hm, m2, m4, md, num, when } from "@/dashboard/format";
 import { nextRuns, schedSentence, schedWords } from "@/dashboard/schedule";
 import { controlsOn } from "@/dashboard/session";
 import { STATE_LOOK, combined, stateOf } from "@/dashboard/status";
 import { ActionButton, BudgetForm, DryRun, MarkSeen, SwitchButton } from "@/dashboard/components/client";
 import { Icon } from "@/dashboard/components/Icon";
 import { RunTable } from "@/dashboard/components/RunTable";
-import { Avatar, Later, LockList, Pill, Summary } from "@/dashboard/components/ui";
+import { Avatar, LockList, Pill, Summary } from "@/dashboard/components/ui";
 
 // A real Wholesale Hunter run takes a few minutes. realRun returns at once and finishes the run in after(),
 // which lives as long as this page's function allows.
@@ -38,6 +40,7 @@ export default async function AgentPage({ params, searchParams }: { params: Prom
   const controls = controlsOn();
   const pipeline = id === "wholesale_hunter" ? await getPipeline() : null;
   const books = id === "bookkeeper" ? await getBooks() : null;
+  const mem = a.built && (tab === "memory" || tab === "profile") ? await getMemory(id) : null;
   const runs = f.runs.filter((r) => r.agent_id === id);
   const unseen = needs(f, f.now, parseSeen((await cookies()).get(SEEN_COOKIE)?.value)).some((n) => n.run && n.agentId === id);
 
@@ -69,7 +72,7 @@ export default async function AgentPage({ params, searchParams }: { params: Prom
             <Toolbelt a={a} f={f} />
           </div>
           <div className="stack">
-            <Journal a={a} f={f} />
+            <Journal a={a} f={f} mem={mem} />
             {id === "bookkeeper" && <BooksCard books={books} />}
             {pipeline && (
               <div className="card" style={{ gap: 12 }}>
@@ -85,7 +88,7 @@ export default async function AgentPage({ params, searchParams }: { params: Prom
         </div>
       )}
 
-      {tab === "memory" && <Memory a={a} domains={pipeline?.domains} />}
+      {tab === "memory" && <Memory a={a} domains={pipeline?.domains} mem={mem} />}
 
       {tab === "runs" && (a.built ? <RunTable runs={runs.slice(0, 200)} showAgent={false} foot={`${runs.length} runs in the last 60 days · ${m4(runs.reduce((s, r) => s + r.cost_usd, 0))} spent`} /> : <div className="card dashed" style={{ padding: 40, textAlign: "center" }}><span className="muted">{a.name} hasn’t joined yet. No runs.</span></div>)}
 
@@ -280,23 +283,26 @@ function Toolbelt({ a, f, title = "Toolbelt", noRules }: { a: CrewMember; f: Flo
   );
 }
 
-function Journal({ a, f }: { a: CrewMember; f: Floor }) {
+function Journal({ a, f, mem }: { a: CrewMember; f: Floor; mem: Awaited<ReturnType<typeof getMemory>> | null }) {
   const runs = f.runs.filter((r) => r.agent_id === a.id);
+  const taught = (mem?.tab?.rows ?? []).filter((r) => r.agent_id === a.id && r.state === "kept" && (r.grp === "note" || r.grp === "standing_order" || r.grp === "lesson")).slice(0, 8);
   const real = runs.filter((r) => r.status !== "skipped").slice(0, 12);
   const skipped = runs.filter((r) => r.status === "skipped");
   const items = [
     ...real.map((r) => ({ key: r.id, t: Date.parse(r.started_at), icon: r.status === "failed" ? "circle-alert" : "play", color: r.status === "failed" ? "var(--red)" : r.status === "running" ? "var(--acc)" : "var(--mint)", title: r.status === "failed" ? "Run failed" : r.status === "running" ? "Working now" : `Real run · ${r.trigger === "cron" ? "on schedule" : "manual"}`, text: r.error ?? r.summary, meta: `${dur(r.started_at, r.ended_at)} · ${m4(r.cost_usd)}`, href: `/runs/${r.id}` })),
+    ...taught.map((r) => ({ key: r.id, t: Date.parse(r.created_at), icon: r.grp === "lesson" ? "brain" : "pencil", color: GROUP_COLOR[r.grp], title: r.grp === "lesson" ? "Lesson kept" : r.grp === "standing_order" ? "Standing order from you" : "Note from you", text: r.text, meta: keepWords(r), href: `/agents/${a.id}?tab=memory` })),
     ...(skipped.length ? [{ key: "skipped", t: Date.parse(skipped[0].started_at), icon: "clock", color: "var(--mut2)", title: `${skipped.length} runs skipped while off duty`, text: "Every skipped run is logged at $0.", meta: `Latest ${when(skipped[0].started_at)}`, href: `/runs?agent=${a.id}&status=skipped` }] : []),
   ].sort((x, y) => y.t - x.t);
   return (
     <div className="card">
       <div className="card-h"><span className="card-t">Journal</span><span className="muted" style={{ fontSize: 12 }}>Newest first</span></div>
+      {a.built && <TeachForm name={a.name} compact enabled={!!mem?.tab} why={`Tell ${a.name} something for next time (needs the memory tables)`} teach={teach.bind(null, a.id)} />}
       <div>
         {items.map((j) => (
           <div key={j.key} className="rule" style={{ display: "grid", gridTemplateColumns: "32px minmax(0,1fr) auto", gap: 12, padding: "12px 0" }}>
             <span style={{ width: 32, height: 32, borderRadius: 999, background: "var(--soft)", display: "grid", placeItems: "center", position: "relative" }}><Icon name={j.icon} size={14} /><span style={{ position: "absolute", right: -1, bottom: -1, width: 9, height: 9, borderRadius: 999, background: j.color, border: "2px solid var(--card)" }} /></span>
             <span style={{ display: "flex", flexDirection: "column", gap: 3, minWidth: 0 }}><span style={{ fontSize: 13.5, fontWeight: 600 }}>{j.title}</span><span style={{ fontSize: 13, lineHeight: 1.45, overflowWrap: "anywhere" }} className="ink2"><Summary text={j.text} /></span><span className="muted" style={{ fontSize: 11.5 }}>{j.meta}</span></span>
-            <span style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 6 }}><span className="muted" style={{ fontSize: 11.5, whiteSpace: "nowrap" }}>{when(j.t)}</span><Link href={j.href} className="btn outline xs">{j.key === "skipped" ? "See all" : "Replay"}</Link></span>
+            <span style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 6 }}><span className="muted" style={{ fontSize: 11.5, whiteSpace: "nowrap" }}>{when(j.t)}</span><Link href={j.href} className="btn outline xs">{j.key === "skipped" ? "See all" : j.href.includes("tab=memory") ? "Memory" : "Replay"}</Link></span>
           </div>
         ))}
         {a.built && (
@@ -306,37 +312,80 @@ function Journal({ a, f }: { a: CrewMember; f: Floor }) {
           </div>
         )}
         {!a.built && <span style={{ fontSize: 13 }} className="muted">{a.name} hasn’t joined yet. The journal starts on day one.</span>}
-        {a.built && <span className="row" style={{ gap: 8, paddingTop: 10 }}><span className="sub" style={{ flex: 1 }}>Notes you leave for {a.name} land here once the memory store exists.</span><Later /></span>}
       </div>
     </div>
   );
 }
 
-function Memory({ a, domains }: { a: CrewMember; domains?: string[] }) {
+const GROUP_COLOR: Record<string, string> = { crew: "var(--mut2)", standing_order: "var(--acc)", lesson: "var(--yel)", note: "var(--pink)", working: "var(--peach)" };
+const GROUP_NAME: Record<string, string> = { crew: "Crew", standing_order: "Standing orders", lesson: "Lessons", note: "Your notes", working: "Working memory" };
+
+function keepWords(r: MemoryRow) {
+  if (r.grp === "working") return `Left by the agent · ${when(r.created_at)}`;
+  const by = r.source === "approval" ? "From an approval" : r.source === "agent" ? "Agent" : "You";
+  const life = r.keep === "next_run" ? "forgets after the next run" : r.keep === "days_30" && r.expires_at ? `forgets ${md(r.expires_at)}` : "kept until you forget it";
+  return `${by} · ${when(r.created_at)} · ${life}`;
+}
+const toLine = (r: MemoryRow): LineView => ({ id: r.id, text: r.text, meta: keepWords(r), data: r.trust === "data" });
+
+const EVENT_WORDS: Record<string, string> = { added: "Taught", edited: "Edited", forgotten: "Forgot", expired: "Expired", rewritten: "Working memory rewritten", proposed: "Lesson proposed", kept: "Kept", discarded: "Discarded" };
+
+function Memory({ a, domains, mem }: { a: CrewMember; domains?: string[]; mem: Awaited<ReturnType<typeof getMemory>> | null }) {
   if (!a.built) return <div className="card" style={{ padding: 56, textAlign: "center", fontSize: 16 }}><span className="ink2">{a.name} hasn’t joined yet. Memory starts on day one.</span></div>;
+  const tab = mem?.tab ?? null;
   const reads = INTEGRATIONS.filter((i) => ACCESS[a.id]?.[i.id]?.[0] === "read");
-  const groups: { n: number; title: string; color: string; meta: string; items?: string[]; chips?: string[]; later?: string }[] = [
-    { n: 1, title: "Standing orders", color: "var(--acc)", meta: "In the agent’s prompt in code today · Notion sync later", items: (a.how ?? []).map(([k, v]) => `${k}: ${v}`) },
-    { n: 2, title: "Facts it may claim", color: "var(--mint)", meta: "Read fresh every run, never from the model", items: reads.map((i) => `${i.name}: ${ACCESS[a.id]![i.id]![1]}`) },
-    { n: 3, title: "Lessons", color: "var(--yel)", meta: "Proposed from your approvals and edits", later: "Needs the approvals queue. You’ll Keep, Edit or Discard each one." },
-    { n: 4, title: "Your notes", color: "var(--pink)", meta: "Things you tell the agent directly", later: "Needs the memory store. Notes can be for the next run or standing, with an expiry." },
-    { n: 5, title: "Working memory", color: "var(--peach)", meta: "Where it left off, rewritten after each run", later: "Needs the memory store." },
+  const mine = (g: string) => (tab?.rows ?? []).filter((r) => r.grp === g && r.state === "kept" && (g === "crew" ? r.agent_id === null : r.agent_id === a.id));
+  const editable = !!tab;
+  const lines = (g: string, opts: { edit?: boolean } = { edit: true }) => mine(g).map((r) => (
+    <MemoryLine key={r.id} line={toLine(r)} color={GROUP_COLOR[g]} edit={editable && opts.edit ? editMemoryLine.bind(null, r.id) : undefined} forget={editable ? forgetMemoryLine.bind(null, r.id) : undefined} />
+  ));
+  const load = tab?.load ?? null;
+  const groups: { n: number; title: string; color: string; meta: string; body: React.ReactNode }[] = [
+    { n: 1, title: "Standing orders", color: "var(--acc)", meta: "Yours, kept until you forget them. Its base instructions stay in code (see Profile).", body: (
+      <>
+        {lines("standing_order")}
+        {!mine("standing_order").length && <span className="muted" style={{ fontSize: 13 }}>None yet. Use Teach and pick “A standing order”.</span>}
+      </>
+    ) },
+    { n: 2, title: "Facts it may claim", color: "var(--mint)", meta: "Read fresh every run, never from the model", body: (
+      <>{reads.map((i) => <div key={i.id} className="row rule" style={{ alignItems: "flex-start", padding: "10px 0", fontSize: 13.5, lineHeight: 1.45 }}><span className="dot" style={{ width: 6, height: 6, marginTop: 7, background: "var(--mint)" }} />{i.name}: {ACCESS[a.id]![i.id]![1]}</div>)}{!reads.length && <span className="muted" style={{ fontSize: 13 }}>Reads nothing.</span>}</>
+    ) },
+    { n: 3, title: "Lessons", color: "var(--yel)", meta: "Proposed from your approval decisions. Nothing sticks until you tap Keep.", body: (
+      <>{lines("lesson")}{!mine("lesson").length && <span className="muted" style={{ fontSize: 13 }}>No lessons yet. They start with Quinn’s approvals in the next update.</span>}</>
+    ) },
+    { n: 4, title: "Your notes", color: "var(--pink)", meta: "Things you told the agent directly", body: (
+      <>{lines("note")}{!mine("note").length && <span className="muted" style={{ fontSize: 13 }}>Nothing yet. Notes can be for the next run, 30 days or for good.</span>}</>
+    ) },
+    { n: 5, title: "Working memory", color: "var(--peach)", meta: "Where it left off, rewritten at the end of each run. At most 5 short lines, no addresses or links.", body: (
+      <>{lines("working")}{!mine("working").length && <span className="muted" style={{ fontSize: 13 }}>{tab?.loads ? "Empty until the next real run." : `${a.name} starts keeping working memory in a later update.`}</span>}</>
+    ) },
     a.id === "wholesale_hunter"
-      ? { n: 6, title: "Don’t repeat", color: "var(--ink2)", meta: "Businesses already in the pipeline, by domain. Real, from wholesale_leads.", chips: domains ?? [] }
-      : { n: 6, title: "Don’t repeat", color: "var(--ink2)", meta: "Nothing to avoid yet", items: [] },
+      ? { n: 6, title: "Don’t repeat", color: "var(--ink2)", meta: "Businesses already in the pipeline, by domain. Real, from wholesale_leads.", body: <div className="row wrap" style={{ gap: 6 }}>{(domains ?? []).slice(0, 60).map((c) => <span key={c} className="pill sm" style={{ background: "var(--soft)", fontWeight: 500 }}>{c}</span>)}{!domains?.length && <span className="muted" style={{ fontSize: 13 }}>No leads yet.</span>}</div> }
+      : { n: 6, title: "Don’t repeat", color: "var(--ink2)", meta: "Worked out from its own tables each run", body: <span className="muted" style={{ fontSize: 13 }}>Nothing to avoid yet.</span> },
   ];
+  const seg = load ? (Object.entries(load.groups) as [string, { lines: number; tokens: number }][]) : [];
   return (
     <div className="stack">
+      {!tab && <div className="card dashed" style={{ padding: 20, gap: 6 }}><span style={{ fontSize: 14, fontWeight: 600 }}>Memory isn’t switched on yet</span><span className="ink2" style={{ fontSize: 13 }}>{mem?.problem ?? "Couldn’t read the memory store."}</span></div>}
       <div className="grid2" style={{ gridTemplateColumns: "minmax(0,1.35fr) minmax(0,1fr)" }}>
-        <div className="card glow">
-          <div className="card-h"><span className="card-t">Context meter</span><Later /></div>
-          <span style={{ fontSize: 13.5, lineHeight: 1.5 }} className="ink2">Tokens {a.name} loads into each run, by group, against a budget. Shows once memory is stored per agent.</span>
-          <div className="bar" style={{ height: 14, borderRadius: 999 }} />
+        <div className="card glow" style={{ gap: 12 }}>
+          <div className="card-h"><span className="card-t">Context meter</span>{load && <span className="sub">{num(load.tokens)} of {num(load.budget)} tokens</span>}</div>
+          {load ? (
+            <>
+              <div className="bar" style={{ height: 14, borderRadius: 999, gap: 2 }}>{seg.map(([g, v]) => <span key={g} title={`${GROUP_NAME[g]}: ${v.tokens} tokens`} style={{ width: `${Math.min(100, (v.tokens / load.budget) * 100)}%`, background: GROUP_COLOR[g] }} />)}</div>
+              <div className="row wrap" style={{ gap: 12, fontSize: 12 }}>
+                {seg.map(([g, v]) => <span key={g} className="row" style={{ gap: 6 }}><span className="dot" style={{ background: GROUP_COLOR[g] }} />{GROUP_NAME[g]} <b style={{ fontWeight: 600 }}>{v.lines}</b><span className="muted">· {num(v.tokens)} tok</span></span>)}
+                {!seg.length && <span className="muted">Nothing to load yet. The next run starts with an empty memory.</span>}
+              </div>
+              <span className="muted" style={{ fontSize: 11.5 }}>What {a.name}’s next run loads, counted in code. {load.dropped ? `${load.dropped} line(s) left out to stay in budget. ` : ""}{load.overBudget ? "Crew memory and standing orders alone pass the budget. " : ""}The budget is memory_budget_tokens in policies.</span>
+            </>
+          ) : (
+            <span style={{ fontSize: 13.5, lineHeight: 1.5 }} className="ink2">{tab ? `${a.name} doesn’t load memory yet. It starts in a later update; what you teach now is kept for then.` : "Shows once the memory tables exist."}</span>
+          )}
         </div>
         <div className="card" style={{ gap: 12 }}>
           <span className="card-t">Teach {a.name} something</span>
-          <input className="input" disabled placeholder={`Coming later: tell ${a.name} something to remember`} />
-          <button className="btn primary" disabled style={{ height: 42 }}>Teach {a.name}</button>
+          <TeachForm name={a.name} enabled={!!tab} why="Needs the memory tables (see the PR)" teach={teach.bind(null, a.id)} />
           <span className="row ink2" style={{ gap: 8, fontSize: 12, lineHeight: 1.45, alignItems: "flex-start" }}><Icon name="lock" size={13} style={{ marginTop: 2, flex: "none" }} />Memory can’t widen access, switch off a hard rule or add a recipient. Only Zak writes rules.</span>
         </div>
       </div>
@@ -346,25 +395,37 @@ function Memory({ a, domains }: { a: CrewMember; domains?: string[] }) {
             <div className="card-h">
               <span style={{ width: 28, height: 28, borderRadius: 999, background: g.color, color: "#111114", display: "grid", placeItems: "center", fontSize: 11, fontWeight: 700 }}>{g.n}</span>
               <span className="card-t">{g.title}</span>
-              {g.later && <Later />}
             </div>
             <span className="muted" style={{ fontSize: 12 }}>{g.meta}</span>
-            {g.items?.map((t) => <div key={t} className="row rule" style={{ alignItems: "flex-start", padding: "10px 0", fontSize: 13.5, lineHeight: 1.45 }}><span className="dot" style={{ width: 6, height: 6, marginTop: 7, background: g.color }} />{t}</div>)}
-            {g.chips && <div className="row wrap" style={{ gap: 6 }}>{g.chips.slice(0, 60).map((c) => <span key={c} className="pill sm" style={{ background: "var(--soft)", fontWeight: 500 }}>{c}</span>)}{!g.chips.length && <span className="muted" style={{ fontSize: 13 }}>No leads yet.</span>}</div>}
-            {g.items && !g.items.length && <span className="muted" style={{ fontSize: 13 }}>Nothing here yet.</span>}
-            {g.later && <span className="muted" style={{ fontSize: 13 }}>{g.later}</span>}
+            <div>{g.body}</div>
           </div>
         ))}
       </div>
       <div className="grid2">
         <div className="card" style={{ gap: 6 }}>
           <div className="card-h"><span className="card-t">Shared crew memory</span><span className="tag">LOADED BY EVERY AGENT</span></div>
-          <span className="muted" style={{ fontSize: 12 }}>Every agent follows these.</span>
+          <span className="muted" style={{ fontSize: 12 }}>Voice and brand facts you teach the whole crew, then the hard rules, which live in code.</span>
+          <div>{lines("crew")}</div>
+          {!mine("crew").length && <span className="muted" style={{ fontSize: 13, padding: "4px 0 8px" }}>No crew notes yet. Use Teach and pick “Shared crew memory”.</span>}
           <LockList rules={HARD_RULES} />
         </div>
-        <div className="card" style={{ gap: 10 }}>
-          <div className="card-h"><Icon name="shield-alert" size={16} /><span className="card-t">Quarantine</span><Later>NEEDS RUN TRANSCRIPTS</Later></div>
-          <span style={{ fontSize: 12.5, lineHeight: 1.45 }} className="ink2">Text read on web pages is kept as data. It never becomes an instruction. Lines a page tried to slip in will show here once runs keep transcripts.</span>
+        <div className="stack">
+          <div className="card" style={{ gap: 4 }}>
+            <div className="card-h"><span className="card-t">Timeline</span><span className="muted" style={{ fontSize: 12 }}>Newest first</span></div>
+            {(tab?.events ?? []).slice(0, 15).map((e) => (
+              <div key={e.id} className="rule" style={{ display: "flex", flexDirection: "column", gap: 3, padding: "10px 0" }}>
+                <span className="row" style={{ gap: 8, fontSize: 13, fontWeight: 600 }}>{EVENT_WORDS[e.kind] ?? e.kind}{e.agent_id === null && <span className="tag">CREW</span>}<span style={{ flex: 1 }} /><span className="muted" style={{ fontSize: 11.5, fontWeight: 400 }}>{when(e.at)}</span></span>
+                {e.before && e.kind !== "added" && <span style={{ fontSize: 12.5, lineHeight: 1.45, textDecoration: e.kind === "edited" || e.kind === "rewritten" ? "line-through" : undefined, whiteSpace: "pre-line" }} className="muted">{e.before}</span>}
+                {e.after && <span style={{ fontSize: 12.5, lineHeight: 1.45, whiteSpace: "pre-line" }} className="ink2">{e.after}</span>}
+                <span className="muted" style={{ fontSize: 11 }}>{e.by}</span>
+              </div>
+            ))}
+            {!tab?.events.length && <span className="muted" style={{ fontSize: 13, padding: "8px 0" }}>No changes yet.</span>}
+          </div>
+          <div className="card" style={{ gap: 10 }}>
+            <div className="card-h"><Icon name="shield-alert" size={16} /><span className="card-t">Quarantine</span></div>
+            <span style={{ fontSize: 12.5, lineHeight: 1.45 }} className="ink2">Anything an agent read on a web page or in an email is kept marked as data. The agent sees it as information, never as an instruction. {(tab?.rows ?? []).filter((r) => r.trust === "data" && r.state === "kept").length} line(s) of {a.name}’s memory are marked as data.</span>
+          </div>
         </div>
       </div>
     </div>

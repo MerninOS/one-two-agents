@@ -6,6 +6,7 @@ import "server-only";
 // or a page per day when that isn't set up. Either the email or Notion alone also works.
 import { G_PER_LB } from "@/domain/coffee";
 import { db } from "@/core/db";
+import { loadMemory, loadWords, type MemoryLoad } from "@/core/memory";
 import type { RunResult } from "@/core/runs";
 import { env } from "@/core/env";
 import { chicagoDate, dayTitle } from "@/core/time";
@@ -30,12 +31,13 @@ const FORMAT = {
     properties: {
       watch: { type: "array", items: { type: "string" } },
       focus: { type: "object", properties: { action: { type: "string" }, reason: { type: "string" } }, required: ["action", "reason"], additionalProperties: false },
+      remember: { type: "array", items: { type: "string" } },
     },
-    required: ["watch", "focus"],
+    required: ["watch", "focus", "remember"],
     additionalProperties: false,
   },
 };
-interface Judgment { watch: string[]; focus: { action: string; reason: string } }
+interface Judgment { watch: string[]; focus: { action: string; reason: string }; remember?: string[] }
 
 const usd = (n: number | null | undefined) => (n == null ? "n/a" : `$${Number(n).toLocaleString("en-US", { maximumFractionDigits: 0 })}`);
 const pct = (n: number | null | undefined) => (n == null ? "n/a" : `${Math.round(Number(n) * 100)}%`);
@@ -78,14 +80,15 @@ async function facts() {
 }
 type Facts = Awaited<ReturnType<typeof facts>>;
 
-async function judge(f: Facts) {
+async function judge(f: Facts, memory: MemoryLoad | null) {
   const res = await claude().beta.messages.create({
     model: MODEL,
     max_tokens: 16000,
     betas: ["server-side-fallback-2026-07-01"],
     fallbacks: "default",
     output_config: { effort: "medium", format: FORMAT },
-    system: SOP,
+    // the memory is its own block after the instructions, so it reads as notes, not rules
+    system: memory?.block ? [{ type: "text", text: SOP }, { type: "text", text: memory.block }] : SOP,
     messages: [{ role: "user", content: `Facts for ${f.today}:\n${JSON.stringify(f, null, 1)}` }],
   });
   if (res.stop_reason === "refusal") throw new Error("Brief model declined the request");
@@ -168,14 +171,20 @@ async function writeBriefRow(databaseId: string, f: Facts, j: Judgment) {
   return { id: row.id, url: row.url, note };
 }
 
-export async function runBrief(opts: { dryRun?: boolean } = {}): Promise<RunResult> {
+export async function runBrief(opts: { dryRun?: boolean; memory?: MemoryLoad | null } = {}): Promise<RunResult> {
   const f = await facts();
+  // a real run gets its memory from withRun; a dry run reads it here, writes nothing and counts nothing down
+  let memory = opts.memory ?? null, memoryWords = "";
+  if (opts.dryRun) {
+    try { memory = await loadMemory("chief_of_staff"); memoryWords = ` ${loadWords(memory).replace(/^m/, "M")}.`; }
+    catch (e) { memoryWords = ` Memory can't be read: ${(e instanceof Error ? e.message : String(e)).slice(0, 100)}.`; }
+  }
   let judgment: Judgment, usage: Anthropic.Beta.BetaUsage | null = null, fallback = "";
   // a dry run never calls the model: it checks the data plumbing for free
   if (opts.dryRun) judgment = rulesJudgment(f);
   else {
     try {
-      ({ judgment, usage } = await judge(f));
+      ({ judgment, usage } = await judge(f, memory));
     } catch (e) {
       // the numbers still go out; only the two judgment sections fall back to rules
       if (!(e instanceof Anthropic.APIError) && !(e instanceof Anthropic.AnthropicError)) throw e;
@@ -209,7 +218,7 @@ export async function runBrief(opts: { dryRun?: boolean } = {}): Promise<RunResu
       try { archive = ` Briefs database: reachable, ${await notionRowOn(briefsDb, "Date", f.today) ? "would replace today's row" : "would add today's row"}.`; }
       catch (e) { archive = ` Briefs database can't be read: ${(e instanceof Error ? e.message : String(e)).slice(0, 140)}.`; }
     }
-    return { status: "ok", summary: `[dry run, nothing sent] "${subject}" (${Math.round(html.length / 1024)} KB, ${to}).${archive} ${f.approvals.pending} approvals pending, ${f.lowGreen.length} low lots, ${f.agentRuns.length} runs in 24h.` };
+    return { status: "ok", summary: `[dry run, nothing sent] "${subject}" (${Math.round(html.length / 1024)} KB, ${to}).${archive} ${f.approvals.pending} approvals pending, ${f.lowGreen.length} low lots, ${f.agentRuns.length} runs in 24h.${memoryWords}` };
   }
   if (!email && !notion) throw new Error("Nowhere to send the brief: set RESEND_API_KEY, BRIEF_FROM and BRIEF_TO for email, or NOTION_TOKEN and NOTION_BRIEFS_DB_ID (or NOTION_BRIEF_PARENT_ID) for Notion");
 
@@ -235,8 +244,10 @@ export async function runBrief(opts: { dryRun?: boolean } = {}): Promise<RunResu
   const tokensOut = usage?.output_tokens ?? 0;
   return {
     status: "ok",
-    summary: `${sent}${url ? `${sent ? " Notion copy" : "Brief posted"}: ${url}.` : ""}${notionError} Focus: ${judgment.focus.action}${fallback}`.trim(),
+    summary: `${sent}${url ? `${sent ? " Notion copy" : "Brief posted"}: ${url}.` : ""}${notionError} Focus: ${judgment.focus.action}${fallback}${memory ? `. ${loadWords(memory).replace(/^m/, "M")}.` : ""}`.trim(),
     tokensIn, tokensOut,
     costUsd: costUsd(MODEL, tokensIn, tokensOut),
+    // only what the model chose to remember; the rules fallback leaves the old working memory alone
+    remember: usage ? judgment.remember ?? [] : undefined,
   };
 }
