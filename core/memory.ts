@@ -32,7 +32,9 @@ export interface MemoryRow {
 export interface MemoryEvent { id: string; memory_id: string | null; agent_id: string | null; kind: string; before: string | null; after: string | null; by: string; at: string }
 
 /** Agents whose runs load memory. Others (the CFO snapshot has no model) load nothing. */
-export const MEMORY_AGENTS = new Set(["chief_of_staff"]);
+export const MEMORY_AGENTS = new Set(["chief_of_staff", "wholesale_hunter", "bookkeeper"]);
+/** Agents whose model leaves itself working memory. Quinn only picks categories, so it keeps none. */
+export const KEEPS_WORKING = new Set(["chief_of_staff", "wholesale_hunter"]);
 /** Agents that read web pages or inbound email: whatever they write to memory is stored as data, not notes. */
 const READS_OUTSIDE = new Set(["wholesale_hunter", "bookkeeper"]);
 

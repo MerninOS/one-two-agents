@@ -15,6 +15,8 @@ export interface RunResult {
    * withRun caps and cleans them (core/memory.ts saveWorking); [] clears working memory.
    */
   remember?: string[];
+  /** For an agent that keeps no working memory: the model read its memory, so next-run notes count down. */
+  readMemory?: boolean;
 }
 
 /** Why the agent may not run now (disabled, or over today's budget), or null. */
@@ -48,10 +50,10 @@ export async function withRun(agentId: string, trigger: string, job: (runId: str
     const res: RunResult = blocked ? { status: "skipped", summary: blocked } : await job(run.id, memory);
     // `remember` (even empty) means the model read its memory: count down next-run notes and
     // replace working memory. Without it (rules fallback, model unreachable) memory is left as it was.
-    if (memory && res.status === "ok" && res.remember !== undefined) {
+    if (memory && res.status === "ok" && (res.remember !== undefined || res.readMemory)) {
       try {
         await afterLoad(memory, run.id);
-        memoryNote += await saveWorking(agentId, run.id, res.remember);
+        if (res.remember !== undefined) memoryNote += await saveWorking(agentId, run.id, res.remember);
       } catch (e) { memoryNote += ` Memory not updated: ${(e instanceof Error ? e.message : String(e)).slice(0, 100)}.`; }
     }
     await finish({

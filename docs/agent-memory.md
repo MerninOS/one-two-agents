@@ -63,5 +63,12 @@ so he teaches an agent once instead of rewriting its prompt.
    order" is picked; the order's line on the Memory tab shows the page, its size and whether it
    can be read; the context meter has a Notion pages segment; `memory_json.pages` records what each
    run read. To link a page, it must be shared with the agents’ Notion integration in Notion.
-4. Rowan and Quinn load memory; derived facts and don't repeat; mission control meters; the
-   run canvas Memory node; last "coming later" tags removed.
+4. Rowan and Quinn load memory. Rowan gets it as a second system block and leaves working
+   memory through `remember` on record_leads (stored as data, since Rowan reads the web; lines
+   with an email, link, phone number or website name are dropped). Quinn's memory goes only to
+   the category call (Zak's notes like "Costco is packaging" help pick; Mercury's list still
+   decides what is allowed) and keeps no working memory (`KEEPS_WORKING`); it returns
+   `readMemory` so next-run notes count down. Facts and don't repeat stay derived each run
+   (Shopify offer facts and the pipeline list for Rowan, expense_docs for Quinn), never stored.
+   Mission control's "Memory per agent" shows each agent's next load against the budget, and the
+   run canvas Memory node shows what that run loaded (`agent_runs.memory_json`).

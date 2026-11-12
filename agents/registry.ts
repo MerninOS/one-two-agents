@@ -27,10 +27,10 @@ export const AGENTS: Record<string, AgentDef> = {
   cfo: { job: ({ dryRun }) => runCfoSnapshot({ dryRun }) },
   chief_of_staff: { job: ({ dryRun, memory }) => runBrief({ dryRun, memory }) },
   // ~$1 of Claude credit a run, so it has no schedule and never runs on its own.
-  wholesale_hunter: { job: ({ runId, dryRun }) => runHunter(runId, { dryRun }), manualOnly: true },
+  wholesale_hunter: { job: ({ runId, dryRun, memory }) => runHunter(runId, { dryRun, memory }), manualOnly: true },
   // Manual only until launch (planned daily 6:00 AM CT, after the CFO snapshot). Reads Mercury,
   // proposes Mercury changes but never makes them; a few cents of Haiku a run.
-  bookkeeper: { job: ({ runId, dryRun }) => runBookkeeper(runId, { dryRun }), manualOnly: true },
+  bookkeeper: { job: ({ runId, dryRun, memory }) => runBookkeeper(runId, { dryRun, memory }), manualOnly: true },
 };
 
 /** Old route names from the storefront repo, still accepted. */

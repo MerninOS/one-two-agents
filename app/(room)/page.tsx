@@ -3,14 +3,14 @@ import { SEEN_COOKIE, parseSeen } from "@/dashboard/seen";
 import Link from "next/link";
 import { chicagoDate } from "@/core/time";
 import { BUILT, BY_ID, INTEGRATIONS, PLANNED } from "@/dashboard/crew";
-import { getFloor, getPipeline, leadsForRun } from "@/dashboard/data";
-import { dow, hm, longDay, m2, m4, shortHm, when } from "@/dashboard/format";
+import { getFloor, getMemoryMeters, getPipeline, leadsForRun } from "@/dashboard/data";
+import { dow, hm, longDay, m2, m4, num, shortHm, when } from "@/dashboard/format";
 import { PRI_COLOR, needs } from "@/dashboard/needs";
 import { firingOn, schedWords, weekFrom } from "@/dashboard/schedule";
 import { RUN_LOOK, STATE_LOOK, stateOf } from "@/dashboard/status";
 import { Icon } from "@/dashboard/components/Icon";
 import { RunCanvas } from "@/dashboard/components/RunCanvas";
-import { Avatar, Later, Pill } from "@/dashboard/components/ui";
+import { Avatar, Pill } from "@/dashboard/components/ui";
 
 export default async function MissionControl() {
   const f = await getFloor();
@@ -22,7 +22,7 @@ export default async function MissionControl() {
   const spend = Object.values(f.spentToday).reduce((s, v) => s + v, 0);
   const budgetSum = BUILT.reduce((s, a) => s + (f.agents[a.id]?.daily_budget_usd ?? 0), 0);
   const systems = INTEGRATIONS.filter((i) => f.health[i.id]).length;
-  const pipeline = await getPipeline();
+  const [pipeline, meters] = await Promise.all([getPipeline(), getMemoryMeters()]);
 
   const latest = f.runs.find((r) => r.status !== "skipped" && BY_ID[r.agent_id]?.built) ?? null;
   const floorAgent = latest ? BY_ID[latest.agent_id] : BY_ID.wholesale_hunter;
@@ -146,8 +146,18 @@ export default async function MissionControl() {
             <span className="muted" style={{ fontSize: 11.5 }}>Budget day resets at midnight UTC, the same rule the agents use.</span>
           </div>
           <div className="card" style={{ gap: 12 }}>
-            <div className="card-h"><span className="card-t">Memory per agent</span><Later /></div>
-            <span style={{ fontSize: 13, lineHeight: 1.5 }} className="ink2">Each agent will carry standing orders, facts, lessons, your notes and working memory into every run. Needs the memory store.</span>
+            <span className="card-t">Memory per agent</span>
+            {meters ? BUILT.filter((a) => meters[a.id]).map((a) => {
+              const m = meters[a.id];
+              return (
+                <Link key={a.id} href={`/agents/${a.id}?tab=memory`} style={{ display: "flex", flexDirection: "column", gap: 6, color: "var(--ink)", textDecoration: "none" }}>
+                  <span className="row" style={{ gap: 8, fontSize: 12.5 }}><span className="dot" style={{ background: a.hue }} /><span style={{ flex: 1 }}>{a.name}</span><b style={{ fontWeight: 600 }}>{num(m.tokens)}</b><span className="muted">/ {num(m.budget)} tok</span></span>
+                  <div className="bar" style={{ height: 6, borderRadius: 999 }}><span style={{ width: `${Math.min(100, (m.tokens / m.budget) * 100)}%`, background: a.hue }} /></div>
+                  <span className="muted" style={{ fontSize: 11.5 }}>{m.lines} line{m.lines === 1 ? "" : "s"}{m.linked ? `, plus ${m.linked} linked Notion page${m.linked === 1 ? "" : "s"} read at run time` : ""}{f.lessonsWaiting?.[a.id] ? ` · ${f.lessonsWaiting[a.id]} lesson${f.lessonsWaiting[a.id] === 1 ? "" : "s"} to review` : ""}</span>
+                </Link>
+              );
+            }) : <span style={{ fontSize: 13, lineHeight: 1.5 }} className="ink2">Couldn’t read the memory store.</span>}
+            <span className="muted" style={{ fontSize: 11.5 }}>What each agent’s next run loads, counted in code. The CFO snapshot uses no model, so it carries none.</span>
           </div>
         </div>
       </div>

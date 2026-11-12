@@ -7,6 +7,7 @@ import "server-only";
 import { PL_BAGS, PL_MIN, PL_PACK, roastName, wholesaleOf } from "@/domain/coffee";
 import { db } from "@/core/db";
 import { env } from "@/core/env";
+import { loadMemory, loadWords, type MemoryLoad } from "@/core/memory";
 import type { RunResult } from "@/core/runs";
 import { chicagoDate, dayTitle } from "@/core/time";
 import { Anthropic, MODELS, claude, costUsd, inputTokens } from "@/integrations/anthropic";
@@ -48,8 +49,9 @@ const RECORD = {
           additionalProperties: false,
         },
       },
+      remember: { type: "array", items: { type: "string" }, description: "Working memory for your next run: at most five short lines. No email addresses, links or phone numbers." },
     },
-    required: ["leads"],
+    required: ["leads", "remember"],
     additionalProperties: false,
   },
 };
@@ -88,7 +90,7 @@ async function offer() {
   };
 }
 
-async function hunt(facts: unknown, known: string[]) {
+async function hunt(facts: unknown, known: string[], memory: MemoryLoad | null) {
   const client = claude();
   const messages: Anthropic.Beta.BetaMessageParam[] = [{
     role: "user",
@@ -104,7 +106,7 @@ async function hunt(facts: unknown, known: string[]) {
       betas: ["server-side-fallback-2026-07-01"],
       fallbacks: "default",
       output_config: { effort: "medium" },
-      system: SOP,
+      system: memory?.block ? [{ type: "text", text: SOP }, { type: "text", text: memory.block }] : SOP,
       tools: [
         { type: "web_search_20260209", name: "web_search", max_uses: 10, user_location: { type: "approximate", city: "Austin", region: "Texas", country: "US", timezone: "America/Chicago" } },
         { type: "web_fetch_20260209", name: "web_fetch", max_uses: 20 },
@@ -117,14 +119,14 @@ async function hunt(facts: unknown, known: string[]) {
     usage.searches += res.usage.server_tool_use?.web_search_requests ?? 0;
     if (res.stop_reason === "refusal") throw new Error("Hunter model declined the request");
     const call = res.content.find((b) => b.type === "tool_use" && b.name === "record_leads");
-    if (call && call.type === "tool_use") return { leads: (call.input as { leads: Lead[] }).leads, usage };
+    if (call && call.type === "tool_use") { const input = call.input as { leads: Lead[]; remember?: string[] }; return { leads: input.leads, remember: input.remember ?? [], usage }; }
     messages.push({ role: "assistant", content: res.content });
     if (res.stop_reason === "pause_turn") continue; // server tools hit their loop limit; resend to resume
     if (nudged) break;
     nudged = true;
     messages.push({ role: "user", content: "Call record_leads now with the leads you have." });
   }
-  return { leads: [] as Lead[], usage };
+  return { leads: [] as Lead[], remember: undefined as string[] | undefined, usage };
 }
 
 function leadBlocks(rows: { lead: Lead; draftId: string | null; draftError: string | null }[]): Block[] {
@@ -141,17 +143,19 @@ function leadBlocks(rows: { lead: Lead; draftId: string | null; draftError: stri
   ]);
 }
 
-export async function runHunter(runId?: string, opts: { dryRun?: boolean } = {}): Promise<RunResult> {
+export async function runHunter(runId?: string, opts: { dryRun?: boolean; memory?: MemoryLoad | null } = {}): Promise<RunResult> {
   const [facts, { data: existing }] = await Promise.all([
     offer(),
     db().from("wholesale_leads").select("business, domain"),
   ]);
   // a dry run checks Shopify and Supabase reads without spending on the model (~$1 a run)
   if (opts.dryRun) {
-    return { status: "ok", summary: `[dry run, no search] offer has ${facts.ourCoffees.length} coffees and ${facts.greenLots.length} green lots; ${existing?.length ?? 0} leads already in the pipeline` };
+    let mem = "";
+    try { mem = `; ${loadWords(await loadMemory("wholesale_hunter"))}`; } catch (e) { mem = `; memory not loaded (${e instanceof Error ? e.message.slice(0, 80) : e})`; }
+    return { status: "ok", summary: `[dry run, no search] offer has ${facts.ourCoffees.length} coffees and ${facts.greenLots.length} green lots; ${existing?.length ?? 0} leads already in the pipeline${mem}` };
   }
   const knownDomains = new Set((existing ?? []).map((r) => r.domain).filter(Boolean));
-  const { leads, usage } = await hunt(facts, (existing ?? []).map((r) => `${r.business}${r.domain ? ` (${r.domain})` : ""}`));
+  const { leads, remember, usage } = await hunt(facts, (existing ?? []).map((r) => `${r.business}${r.domain ? ` (${r.domain})` : ""}`), opts.memory ?? null);
 
   const fresh: Lead[] = [];
   for (const l of leads) {
@@ -187,7 +191,8 @@ export async function runHunter(runId?: string, opts: { dryRun?: boolean } = {})
   const drafted = rows.filter((r) => r.draftId).length;
   return {
     status: "ok",
-    summary: `${rows.length} new leads${leads.length > rows.length ? ` (${leads.length} found, ${leads.length - rows.length} already known or unusable)` : ""}${gmail ? `, ${drafted} Gmail drafts` : ""}, ${usage.searches} searches: ${url}`,
+    summary: `${rows.length} new leads${leads.length > rows.length ? ` (${leads.length} found, ${leads.length - rows.length} already known or unusable)` : ""}${gmail ? `, ${drafted} Gmail drafts` : ""}, ${usage.searches} searches: ${url}${opts.memory ? `. ${loadWords(opts.memory).replace(/^m/, "M")}.` : ""}`,
+    remember,
     tokensIn: usage.in, tokensOut: usage.out,
     costUsd: costUsd(MODEL, usage.in, usage.out, usage.searches),
   };

@@ -8,6 +8,7 @@ import "server-only";
 // approves it in the Control Room.
 // Emails are untrusted: Haiku only reads fields off them, code decides every match.
 import { db } from "@/core/db";
+import { loadMemory, loadWords, type MemoryLoad } from "@/core/memory";
 import type { RunResult } from "@/core/runs";
 import { TZ, chicagoDate, dayTitle } from "@/core/time";
 import {
@@ -166,7 +167,7 @@ async function findReceipt(gmail: GmailReader, doc: Doc, p: BookPolicies, u: Usa
 
 // ---- Category suggestions (from Mercury's own list only)
 
-async function suggestCategories(docs: Doc[], cats: MercuryCategory[], u: Usage) {
+async function suggestCategories(docs: Doc[], cats: MercuryCategory[], u: Usage, memory: MemoryLoad | null) {
   if (!docs.length || !cats.length) return new Map<string, MercuryCategory>();
   const ids = cats.map((c) => c.id);
   const schema = {
@@ -178,7 +179,8 @@ async function suggestCategories(docs: Doc[], cats: MercuryCategory[], u: Usage)
     additionalProperties: false,
   };
   const list = docs.map((d, i) => ({ ref: i, merchant: d.merchant, amount_usd: d.amount_usd, merchant_type: d.mercury_category }));
-  const out = await structured<{ picks: { ref: number; category_id: string | null }[] }>(PICK_CATEGORY,
+  // Zak's notes and lessons (e.g. "Costco is packaging supplies") help pick; Mercury's list still decides what is allowed
+  const out = await structured<{ picks: { ref: number; category_id: string | null }[] }>(memory?.block ? `${PICK_CATEGORY}\n\n${memory.block}` : PICK_CATEGORY,
     [{ type: "text", text: `Allowed categories:\n${JSON.stringify(cats.map((c) => ({ id: c.id, name: c.name })))}\n\nCharges:\n${JSON.stringify(list)}` }], schema, u, 4096);
   const byId = new Map(cats.map((c) => [c.id, c]));
   const picks = new Map<string, MercuryCategory>();
@@ -224,7 +226,7 @@ async function closeMonth(today: string, p: BookPolicies) {
 
 // ---- The run
 
-export async function runBookkeeper(runId?: string, opts: { dryRun?: boolean } = {}): Promise<RunResult> {
+export async function runBookkeeper(runId?: string, opts: { dryRun?: boolean; memory?: MemoryLoad | null } = {}): Promise<RunResult> {
   if (!hasMercury()) throw new Error("MERCURY_API_TOKEN must be set (business org, read-only)");
   const today = chicagoDate(0);
   const start = chicagoDate(LOOKBACK_DAYS);
@@ -254,9 +256,11 @@ export async function runBookkeeper(runId?: string, opts: { dryRun?: boolean } =
   if (opts.dryRun) {
     const newOpen = fresh.filter((d) => d.status === "open");
     const wouldPhoto = newOpen.filter((d) => photoNeeded(d.amount_usd, d.merchant, d.mercury_category, p)).length;
+    let mem = "";
+    try { mem = `; ${loadWords(await loadMemory("bookkeeper"))}`; } catch (e) { mem = `; memory not loaded (${e instanceof Error ? e.message.slice(0, 80) : e})`; }
     return {
       status: "ok",
-      summary: `[dry run, nothing saved, no model] ${charges.length} charges in Mercury since ${start} (${fresh.length} new: ${fresh.filter((d) => d.status === "matched").length} with a receipt in Mercury, ${fresh.filter((d) => d.status === "not_needed").length} own-account moves, ${newOpen.length} to look for, ${wouldPhoto} of them would need a photo if no receipt turns up); ${cats.length} Mercury categories; Gmail receipt search ${gmailReady ? "set up" : "not set up"}`,
+      summary: `[dry run, nothing saved, no model] ${charges.length} charges in Mercury since ${start} (${fresh.length} new: ${fresh.filter((d) => d.status === "matched").length} with a receipt in Mercury, ${fresh.filter((d) => d.status === "not_needed").length} own-account moves, ${newOpen.length} to look for, ${wouldPhoto} of them would need a photo if no receipt turns up); ${cats.length} Mercury categories; Gmail receipt search ${gmailReady ? "set up" : "not set up"}${mem}`,
     };
   }
 
@@ -301,7 +305,7 @@ export async function runBookkeeper(runId?: string, opts: { dryRun?: boolean } =
 
   // 3. Category suggestions for charges with no category in Mercury and no suggestion yet.
   const needCat = [...all.values()].filter((d) => !d.category_id && !d.proposal_category_id && d.status !== "not_needed" && d.status !== "personal").slice(0, 40);
-  const picks = await suggestCategories(needCat, cats, u);
+  const picks = await suggestCategories(needCat, cats, u, opts.memory ?? null);
   for (const d of needCat) {
     const c = picks.get(d.mercury_txn_id);
     if (!c) continue;
@@ -356,8 +360,11 @@ export async function runBookkeeper(runId?: string, opts: { dryRun?: boolean } =
       `coverage ${covered == null ? "n/a" : `${covered}%`}`,
       ...(close ? [close.summary] : []),
       ...(notes.length ? [`${notes.length} couldn't be checked`] : []),
+      ...(opts.memory ? [loadWords(opts.memory)] : []),
     ].join(", ") + (url ? `: ${url}` : notion ? "" : " (Notion not set up, no page)"),
     tokensIn: u.in, tokensOut: u.out,
     costUsd: costUsd(MODEL, u.in, u.out),
+    // memory goes only to the category call, so next-run notes count down only when that call ran
+    readMemory: needCat.length > 0 && cats.length > 0,
   };
 }
