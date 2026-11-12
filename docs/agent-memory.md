@@ -47,8 +47,11 @@ so he teaches an agent once instead of rewriting its prompt.
 
 ## Slices
 
-1. Store, Avery, Memory tab with Teach, Edit, Forget, context meter, timeline. (this PR)
-2. Lessons from Quinn's approval rejections: Keep, Edit, Discard; Needs you item.
+1. Store, Avery, Memory tab with Teach, Edit, Forget, context meter, timeline. (PR #14)
+2. Lessons: Reject on an approval asks "why not?" (optional). A reason becomes a proposed lesson
+   (`proposeLesson`, Zak's words, no model call), shown on the agent's Memory tab with Keep,
+   Keep for crew, Edit and Discard, and in Needs you. Proposed lessons are never loaded.
+   Edits to an approval (`edit_diff`) will propose lessons too once Edit exists on approvals.
 3. Notion pages linked from standing orders (read fresh, ≤ 1,500 tokens a page), crew memory polish.
 4. Rowan and Quinn load memory; derived facts and don't repeat; mission control meters; the
    run canvas Memory node; last "coming later" tags removed.

@@ -8,7 +8,7 @@ import { after } from "next/server";
 import { AGENTS } from "@/agents/registry";
 import { db } from "@/core/db";
 import { withRun } from "@/core/runs";
-import { editMemory, forgetMemory, teach as teachMemory, type Keep } from "@/core/memory";
+import { discardLesson, editMemory, forgetMemory, keepLesson, proposeLesson, teach as teachMemory, type Keep } from "@/core/memory";
 import { applyApproved, decide, queueBookkeeperProposals, retry, writeBlocker } from "@/core/gateway";
 import { BUILT, BY_ID } from "./crew";
 import { requireSession } from "./data";
@@ -131,13 +131,26 @@ export async function approve(approvalId: string): Promise<ActionResult> {
   } catch (e) { revalidatePath("/", "layout"); return fail(e); }
 }
 
-export async function reject(approvalId: string): Promise<ActionResult> {
+/**
+ * Rejects an approval. A reason (Zak's own words) also proposes a lesson for the agent, which waits on
+ * its Memory tab until he keeps it. No model call: the lesson is his sentence.
+ */
+export async function reject(approvalId: string, reason?: string): Promise<ActionResult> {
   await requireSession();
   if (!UUID.test(approvalId)) return { ok: false, text: "Unknown approval." };
+  const why = String(reason ?? "").replace(/\s+/g, " ").trim().slice(0, 400);
   try {
-    const actionId = await decide(approvalId, "reject", BY);
+    const actionId = await decide(approvalId, "reject", BY, why || undefined);
+    if (!actionId) { revalidatePath("/", "layout"); return { ok: false, text: "That item was already decided or has expired." }; }
+    let lesson = "";
+    if (why) {
+      try {
+        const { data: ap } = await db().from("approvals").select("agent_id, title").eq("id", approvalId).single();
+        if (ap && await proposeLesson(ap.agent_id, approvalId, ap.title, why)) lesson = ` A lesson is waiting on ${BY_ID[ap.agent_id]?.name ?? "the agent"}’s Memory tab for your Keep.`;
+      } catch (e) { lesson = ` The lesson couldn’t be saved: ${e instanceof Error ? e.message : String(e)}.`; }
+    }
     revalidatePath("/", "layout");
-    return actionId ? { ok: true, text: "Rejected. Quinn won’t propose this change again." } : { ok: false, text: "That item was already decided or has expired." };
+    return { ok: true, text: `Rejected. Quinn won’t propose this change again.${lesson}` };
   } catch (e) { return fail(e); }
 }
 
@@ -209,4 +222,16 @@ export async function forgetMemoryLine(memoryId: string): Promise<ActionResult> 
   await requireSession();
   if (!UUID.test(memoryId)) return { ok: false, text: "Unknown memory line." };
   try { await forgetMemory(memoryId); revalidatePath("/", "layout"); return { ok: true, text: "Forgotten. It won’t be loaded from the next run." }; } catch (e) { return fail(e); }
+}
+
+export async function keepLessonLine(memoryId: string, forCrew: boolean): Promise<ActionResult> {
+  await requireSession();
+  if (!UUID.test(memoryId)) return { ok: false, text: "Unknown lesson." };
+  try { await keepLesson(memoryId, !!forCrew); revalidatePath("/", "layout"); return { ok: true, text: forCrew ? "Kept for the whole crew." : "Kept. It’s loaded from the next run." }; } catch (e) { return fail(e); }
+}
+
+export async function discardLessonLine(memoryId: string): Promise<ActionResult> {
+  await requireSession();
+  if (!UUID.test(memoryId)) return { ok: false, text: "Unknown lesson." };
+  try { await discardLesson(memoryId); revalidatePath("/", "layout"); return { ok: true, text: "Discarded. The timeline keeps a record of it." }; } catch (e) { return fail(e); }
 }

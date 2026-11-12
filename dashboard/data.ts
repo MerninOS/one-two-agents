@@ -6,7 +6,7 @@ import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { db } from "@/core/db";
 import { env } from "@/core/env";
-import { MEMORY_AGENTS, loadMemory, memoryView, type MemoryEvent, type MemoryLoad, type MemoryRow } from "@/core/memory";
+import { MEMORY_AGENTS, loadMemory, memoryView, proposedLessons, type MemoryEvent, type MemoryLoad, type MemoryRow } from "@/core/memory";
 import { BUILT, type IntegrationId } from "./crew";
 import { SESSION_COOKIE, validSessionToken } from "./session";
 
@@ -44,6 +44,8 @@ export interface Floor {
   photosWaiting: number | null;
   /** Approvals waiting on Zak; null when the approvals table isn't there yet. */
   approvalsPending: number | null;
+  /** Proposed lessons waiting for Zak's Keep, per agent; empty until the memory tables exist. */
+  lessonsWaiting: Record<string, number>;
 }
 
 const RUN_COLS = "id, agent_id, trigger, started_at, ended_at, status, tokens_in, tokens_out, cost_usd, summary, error";
@@ -74,14 +76,15 @@ export const getFloor = cache(async (): Promise<Floor> => {
   await requireSession();
   const h = health();
   const now = Date.now();
-  const empty: Floor = { ok: false, now, agents: {}, runs: [], spentToday: {}, health: h, photosWaiting: null, approvalsPending: null };
+  const empty: Floor = { ok: false, now, agents: {}, runs: [], spentToday: {}, health: h, photosWaiting: null, approvalsPending: null, lessonsWaiting: {} };
   if (!h.supabase) return { ...empty, problem: "SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY are not set, so there is nothing to show yet." };
   const since = new Date(now - 60 * 864e5).toISOString();
-  const [a, r, ph, ap] = await Promise.all([
+  const [a, r, ph, ap, lessonsWaiting] = await Promise.all([
     db().from("agents").select("id, name, model, schedule, enabled, daily_budget_usd"),
     db().from("agent_runs").select(RUN_COLS).gte("started_at", since).order("started_at", { ascending: false }).limit(1000),
     db().from("expense_docs").select("id", { count: "exact", head: true }).eq("status", "needs_photo"),
     db().from("approvals").select("id", { count: "exact", head: true }).eq("status", "pending"),
+    proposedLessons(),
   ]);
   if (a.error || r.error) return { ...empty, problem: `Supabase: ${(a.error ?? r.error)?.message}` };
   const agents = Object.fromEntries((a.data ?? []).map((x) => [x.id, { ...x, daily_budget_usd: Number(x.daily_budget_usd) } as AgentRow]));
@@ -89,7 +92,7 @@ export const getFloor = cache(async (): Promise<Floor> => {
   const d0 = budgetDayStart(new Date(now)).getTime();
   const spentToday: Record<string, number> = Object.fromEntries(BUILT.map((b) => [b.id, 0]));
   for (const run of runs) if (Date.parse(run.started_at) >= d0) spentToday[run.agent_id] = (spentToday[run.agent_id] ?? 0) + run.cost_usd;
-  return { ok: true, now, agents, runs, spentToday, health: h, photosWaiting: ph.error ? null : ph.count ?? 0, approvalsPending: ap.error ? null : ap.count ?? 0 };
+  return { ok: true, now, agents, runs, spentToday, health: h, photosWaiting: ph.error ? null : ph.count ?? 0, approvalsPending: ap.error ? null : ap.count ?? 0, lessonsWaiting };
 });
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;

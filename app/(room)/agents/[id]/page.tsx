@@ -3,7 +3,7 @@ import { needs } from "@/dashboard/needs";
 import { SEEN_COOKIE, parseSeen } from "@/dashboard/seen";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { dryRun, editMemoryLine, forgetMemoryLine, realRun, setBudget, setEnabled, teach } from "@/dashboard/actions";
+import { discardLessonLine, dryRun, editMemoryLine, forgetMemoryLine, keepLessonLine, realRun, setBudget, setEnabled, teach } from "@/dashboard/actions";
 import { ACCESS, BY_ID, HARD_RULES, INTEGRATIONS, TIERS, type CrewMember } from "@/dashboard/crew";
 import { getBooks, getFloor, getMemory, getPipeline, type Books, type Floor } from "@/dashboard/data";
 import type { MemoryRow } from "@/core/memory";
@@ -336,6 +336,7 @@ function Memory({ a, domains, mem }: { a: CrewMember; domains?: string[]; mem: A
   const reads = INTEGRATIONS.filter((i) => ACCESS[a.id]?.[i.id]?.[0] === "read");
   const mine = (g: string) => (tab?.rows ?? []).filter((r) => r.grp === g && r.state === "kept" && (g === "crew" ? r.agent_id === null : r.agent_id === a.id));
   const editable = !!tab;
+  const proposed = (tab?.rows ?? []).filter((r) => r.grp === "lesson" && r.state === "proposed" && r.agent_id === a.id);
   const lines = (g: string, opts: { edit?: boolean } = { edit: true }) => mine(g).map((r) => (
     <MemoryLine key={r.id} line={toLine(r)} color={GROUP_COLOR[g]} edit={editable && opts.edit ? editMemoryLine.bind(null, r.id) : undefined} forget={editable ? forgetMemoryLine.bind(null, r.id) : undefined} />
   ));
@@ -350,8 +351,15 @@ function Memory({ a, domains, mem }: { a: CrewMember; domains?: string[]; mem: A
     { n: 2, title: "Facts it may claim", color: "var(--mint)", meta: "Read fresh every run, never from the model", body: (
       <>{reads.map((i) => <div key={i.id} className="row rule" style={{ alignItems: "flex-start", padding: "10px 0", fontSize: 13.5, lineHeight: 1.45 }}><span className="dot" style={{ width: 6, height: 6, marginTop: 7, background: "var(--mint)" }} />{i.name}: {ACCESS[a.id]![i.id]![1]}</div>)}{!reads.length && <span className="muted" style={{ fontSize: 13 }}>Reads nothing.</span>}</>
     ) },
-    { n: 3, title: "Lessons", color: "var(--yel)", meta: "Proposed from your approval decisions. Nothing sticks until you tap Keep.", body: (
-      <>{lines("lesson")}{!mine("lesson").length && <span className="muted" style={{ fontSize: 13 }}>No lessons yet. They start with Quinn’s approvals in the next update.</span>}</>
+    { n: 3, title: "Lessons", color: "var(--yel)", meta: "Proposed when you reject an approval and say why. Nothing sticks until you tap Keep.", body: (
+      <>
+        {proposed.map((r) => (
+          <MemoryLine key={r.id} line={{ ...toLine(r), meta: `Proposed · ${when(r.created_at)} · waiting for your Keep` }} color="var(--yel)"
+            edit={editMemoryLine.bind(null, r.id)} keep={keepLessonLine.bind(null, r.id, false)} keepCrew={keepLessonLine.bind(null, r.id, true)} discard={discardLessonLine.bind(null, r.id)} />
+        ))}
+        {lines("lesson")}
+        {!mine("lesson").length && !proposed.length && <span className="muted" style={{ fontSize: 13 }}>No lessons yet. When you reject an approval and say why, the reason lands here as a proposed lesson.</span>}
+      </>
     ) },
     { n: 4, title: "Your notes", color: "var(--pink)", meta: "Things you told the agent directly", body: (
       <>{lines("note")}{!mine("note").length && <span className="muted" style={{ fontSize: 13 }}>Nothing yet. Notes can be for the next run, 30 days or for good.</span>}</>
