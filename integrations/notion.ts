@@ -12,12 +12,12 @@ export const p = (t: string): Block => ({ object: "block", type: "paragraph", pa
 export const quote = (t: string): Block => ({ object: "block", type: "quote", quote: { rich_text: rt(t) } });
 export const divider = (): Block => ({ object: "block", type: "divider", divider: {} });
 
-async function notion<T>(method: "POST" | "PATCH", path: string, body: unknown): Promise<T> {
+async function notion<T>(method: "GET" | "POST" | "PATCH", path: string, body?: unknown): Promise<T> {
   if (!env.notionToken) throw new Error("NOTION_TOKEN must be set");
   const res = await fetch(`https://api.notion.com/v1/${path}`, {
     method,
     headers: { Authorization: `Bearer ${env.notionToken}`, "Notion-Version": "2022-06-28", "Content-Type": "application/json" },
-    body: JSON.stringify(body),
+    body: body === undefined ? undefined : JSON.stringify(body),
     cache: "no-store",
   });
   if (!res.ok) throw new Error(`Notion ${res.status}: ${(await res.text().catch(() => "")).slice(0, 300)}`);
@@ -63,3 +63,47 @@ export const notionSetProps = (pageId: string, properties: Props) => notion<Row>
 
 /** Moves a row to Notion's trash (it can be restored there for 30 days). */
 export const notionArchive = (pageId: string) => notion<Row>("PATCH", `pages/${pageId}`, { archived: true });
+
+// ---- Reading a page as plain text (agent memory: a standing order may point at a page to load).
+
+/** A Notion page id (32 hex characters, with or without dashes) out of an id or a notion.so / notion.site link, or null. */
+export function notionPageId(input: string): string | null {
+  const m = input.replace(/-/g, "").match(/([0-9a-f]{32})(?:[?#].*)?$/i) ?? input.replace(/-/g, "").match(/([0-9a-f]{32})/i);
+  return m ? m[1].toLowerCase() : null;
+}
+
+type Rich = { plain_text?: string }[];
+interface BlockRow { id: string; type: string; has_children?: boolean; [k: string]: unknown }
+
+const PREFIX: Record<string, string> = { heading_1: "# ", heading_2: "## ", heading_3: "### ", bulleted_list_item: "- ", numbered_list_item: "- ", to_do: "- ", quote: "> ", callout: "" };
+
+/**
+ * The page's title and its text, read top level plus one level of nesting, stopping once `maxChars`
+ * is reached. Read only. Throws when the page can't be read (not shared with the integration, deleted).
+ */
+export async function notionPageText(pageId: string, maxChars = 6000): Promise<{ title: string; text: string; cut: boolean }> {
+  const page = await notion<{ properties?: Record<string, { type: string; title?: Rich }> }>("GET", `pages/${pageId}`);
+  const titleProp = Object.values(page.properties ?? {}).find((v) => v.type === "title");
+  const title = (titleProp?.title ?? []).map((t) => t.plain_text ?? "").join("").trim() || "Untitled";
+  const lines: string[] = [];
+  let size = 0, cut = false;
+  const walk = async (id: string, depth: number) => {
+    let cursor: string | undefined;
+    do {
+      const res = await notion<{ results: BlockRow[]; has_more: boolean; next_cursor: string | null }>("GET", `blocks/${id}/children?page_size=100${cursor ? `&start_cursor=${cursor}` : ""}`);
+      for (const b of res.results) {
+        if (size >= maxChars) { cut = true; return; }
+        const body = b[b.type] as { rich_text?: Rich } | undefined;
+        const text = (body?.rich_text ?? []).map((t) => t.plain_text ?? "").join("").trim();
+        if (text) { const line = `${"  ".repeat(depth)}${PREFIX[b.type] ?? ""}${text}`; lines.push(line); size += line.length + 1; }
+        if (b.has_children && depth < 1 && b.type !== "child_page" && b.type !== "child_database") await walk(b.id, depth + 1);
+      }
+      cursor = res.has_more ? res.next_cursor ?? undefined : undefined;
+    } while (cursor && size < maxChars);
+    if (cursor) cut = true;
+  };
+  await walk(pageId, 0);
+  let text = lines.join("\n");
+  if (text.length > maxChars) { text = text.slice(0, maxChars); cut = true; }
+  return { title, text, cut };
+}

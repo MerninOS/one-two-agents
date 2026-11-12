@@ -6,7 +6,7 @@ import { notFound } from "next/navigation";
 import { discardLessonLine, dryRun, editMemoryLine, forgetMemoryLine, keepLessonLine, realRun, setBudget, setEnabled, teach } from "@/dashboard/actions";
 import { ACCESS, BY_ID, HARD_RULES, INTEGRATIONS, TIERS, type CrewMember } from "@/dashboard/crew";
 import { getBooks, getFloor, getMemory, getPipeline, type Books, type Floor } from "@/dashboard/data";
-import type { MemoryRow } from "@/core/memory";
+import type { MemoryRow, PageLoad } from "@/core/memory";
 import { MemoryLine, TeachForm, type LineView } from "@/dashboard/components/memory";
 import { budget, dur, hm, m2, m4, md, num, when } from "@/dashboard/format";
 import { nextRuns, schedSentence, schedWords } from "@/dashboard/schedule";
@@ -317,8 +317,8 @@ function Journal({ a, f, mem }: { a: CrewMember; f: Floor; mem: Awaited<ReturnTy
   );
 }
 
-const GROUP_COLOR: Record<string, string> = { crew: "var(--mut2)", standing_order: "var(--acc)", lesson: "var(--yel)", note: "var(--pink)", working: "var(--peach)" };
-const GROUP_NAME: Record<string, string> = { crew: "Crew", standing_order: "Standing orders", lesson: "Lessons", note: "Your notes", working: "Working memory" };
+const GROUP_COLOR: Record<string, string> = { crew: "var(--mut2)", standing_order: "var(--acc)", pages: "var(--acc-soft)", lesson: "var(--yel)", note: "var(--pink)", working: "var(--peach)" };
+const GROUP_NAME: Record<string, string> = { crew: "Crew", standing_order: "Standing orders", lesson: "Lessons", note: "Your notes", working: "Working memory", pages: "Notion pages" };
 
 function keepWords(r: MemoryRow) {
   if (r.grp === "working") return `Left by the agent · ${when(r.created_at)}`;
@@ -326,7 +326,16 @@ function keepWords(r: MemoryRow) {
   const life = r.keep === "next_run" ? "forgets after the next run" : r.keep === "days_30" && r.expires_at ? `forgets ${md(r.expires_at)}` : "kept until you forget it";
   return `${by} · ${when(r.created_at)} · ${life}`;
 }
-const toLine = (r: MemoryRow): LineView => ({ id: r.id, text: r.text, meta: keepWords(r), data: r.trust === "data" });
+const toLine = (r: MemoryRow, pages: PageLoad[] = []): LineView => {
+  const p = r.notion_page_id ? pages.find((x) => x.memoryId === r.id) : undefined;
+  const page = r.notion_page_id ? {
+    title: p?.title ?? "Notion page",
+    href: `https://www.notion.so/${r.notion_page_id}`,
+    note: !p ? "read on each run" : p.problem ? p.problem : `read each run, ${num(p.tokens)} tokens${p.cut ? ", cut to fit" : ""}`,
+    bad: !!p?.problem,
+  } : undefined;
+  return { id: r.id, text: r.text, meta: keepWords(r), data: r.trust === "data", page };
+};
 
 const EVENT_WORDS: Record<string, string> = { added: "Taught", edited: "Edited", forgotten: "Forgot", expired: "Expired", rewritten: "Working memory rewritten", proposed: "Lesson proposed", kept: "Kept", discarded: "Discarded" };
 
@@ -338,14 +347,14 @@ function Memory({ a, domains, mem }: { a: CrewMember; domains?: string[]; mem: A
   const editable = !!tab;
   const proposed = (tab?.rows ?? []).filter((r) => r.grp === "lesson" && r.state === "proposed" && r.agent_id === a.id);
   const lines = (g: string, opts: { edit?: boolean } = { edit: true }) => mine(g).map((r) => (
-    <MemoryLine key={r.id} line={toLine(r)} color={GROUP_COLOR[g]} edit={editable && opts.edit ? editMemoryLine.bind(null, r.id) : undefined} forget={editable ? forgetMemoryLine.bind(null, r.id) : undefined} />
+    <MemoryLine key={r.id} line={toLine(r, tab?.pages)} color={GROUP_COLOR[g]} edit={editable && opts.edit ? editMemoryLine.bind(null, r.id) : undefined} forget={editable ? forgetMemoryLine.bind(null, r.id) : undefined} />
   ));
   const load = tab?.load ?? null;
   const groups: { n: number; title: string; color: string; meta: string; body: React.ReactNode }[] = [
-    { n: 1, title: "Standing orders", color: "var(--acc)", meta: "Yours, kept until you forget them. Its base instructions stay in code (see Profile).", body: (
+    { n: 1, title: "Standing orders", color: "var(--acc)", meta: "Yours, kept until you forget them. An order can link a Notion page, read fresh each run. Its base instructions stay in code (see Profile).", body: (
       <>
         {lines("standing_order")}
-        {!mine("standing_order").length && <span className="muted" style={{ fontSize: 13 }}>None yet. Use Teach and pick “A standing order”.</span>}
+        {!mine("standing_order").length && <span className="muted" style={{ fontSize: 13 }}>None yet. Use Teach and pick “A standing order”, with a Notion page if it should read one.</span>}
       </>
     ) },
     { n: 2, title: "Facts it may claim", color: "var(--mint)", meta: "Read fresh every run, never from the model", body: (
@@ -371,7 +380,11 @@ function Memory({ a, domains, mem }: { a: CrewMember; domains?: string[]; mem: A
       ? { n: 6, title: "Don’t repeat", color: "var(--ink2)", meta: "Businesses already in the pipeline, by domain. Real, from wholesale_leads.", body: <div className="row wrap" style={{ gap: 6 }}>{(domains ?? []).slice(0, 60).map((c) => <span key={c} className="pill sm" style={{ background: "var(--soft)", fontWeight: 500 }}>{c}</span>)}{!domains?.length && <span className="muted" style={{ fontSize: 13 }}>No leads yet.</span>}</div> }
       : { n: 6, title: "Don’t repeat", color: "var(--ink2)", meta: "Worked out from its own tables each run", body: <span className="muted" style={{ fontSize: 13 }}>Nothing to avoid yet.</span> },
   ];
-  const seg = load ? (Object.entries(load.groups) as [string, { lines: number; tokens: number }][]) : [];
+  const pageLoad = (load?.pages ?? []).filter((p) => p.tokens > 0);
+  const seg = load ? [
+    ...(Object.entries(load.groups) as [string, { lines: number; tokens: number }][]),
+    ...(pageLoad.length ? [["pages", { lines: pageLoad.length, tokens: pageLoad.reduce((s, p) => s + p.tokens, 0) }] as [string, { lines: number; tokens: number }]] : []),
+  ] : [];
   return (
     <div className="stack">
       {!tab && <div className="card dashed" style={{ padding: 20, gap: 6 }}><span style={{ fontSize: 14, fontWeight: 600 }}>Memory isn’t switched on yet</span><span className="ink2" style={{ fontSize: 13 }}>{mem?.problem ?? "Couldn’t read the memory store."}</span></div>}

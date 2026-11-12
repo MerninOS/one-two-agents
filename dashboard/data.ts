@@ -6,7 +6,7 @@ import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { db } from "@/core/db";
 import { env } from "@/core/env";
-import { MEMORY_AGENTS, loadMemory, memoryView, proposedLessons, type MemoryEvent, type MemoryLoad, type MemoryRow } from "@/core/memory";
+import { DEFAULT_BUDGET, MEMORY_AGENTS, loadMemory, memoryView, proposedLessons, readPages, type MemoryEvent, type MemoryLoad, type MemoryRow, type PageLoad } from "@/core/memory";
 import { BUILT, type IntegrationId } from "./crew";
 import { SESSION_COOKIE, validSessionToken } from "./session";
 
@@ -202,7 +202,7 @@ export async function getApprovals(): Promise<ApprovalsView | null> {
 
 // ---- Memory (docs/agent-memory.md)
 
-export interface MemoryTab { rows: MemoryRow[]; events: MemoryEvent[]; load: MemoryLoad | null; loads: boolean }
+export interface MemoryTab { rows: MemoryRow[]; events: MemoryEvent[]; load: MemoryLoad | null; loads: boolean; /** Linked Notion pages, as a run would read them now. */ pages: PageLoad[] }
 
 /** One agent's memory for the Memory tab, and what its next run would load. Null with a reason until the tables exist. */
 export async function getMemory(agentId: string): Promise<{ tab: MemoryTab | null; problem?: string }> {
@@ -211,7 +211,9 @@ export async function getMemory(agentId: string): Promise<{ tab: MemoryTab | nul
   try {
     const loads = MEMORY_AGENTS.has(agentId);
     const [view, load] = await Promise.all([memoryView(agentId), loads ? loadMemory(agentId) : Promise.resolve(null)]);
-    return { tab: { ...view, load, loads } };
+    // an agent that doesn't load memory yet still shows whether its linked pages can be read
+    const pages = load?.pages ?? await readPages(view.rows.filter((r) => r.agent_id === agentId && r.state === "kept"), DEFAULT_BUDGET);
+    return { tab: { ...view, load, loads, pages } };
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
     return { tab: null, problem: /agent_memory|memory_events|schema cache|does not exist/i.test(msg) ? "The memory tables aren’t in Supabase yet. Apply the agent memory migration (see the PR) and this tab fills in." : msg };

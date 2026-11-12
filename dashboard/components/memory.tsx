@@ -10,8 +10,9 @@ const MAX = 280;
 type KeepAs = "note" | "standing_order" | "crew";
 type Forget = "next_run" | "days_30" | "always";
 
-export function TeachForm({ name, enabled, why, teach, compact }: { name: string; enabled: boolean; why?: string; teach: (text: string, keepAs: KeepAs, forget: Forget) => Promise<ActionResult>; compact?: boolean }) {
+export function TeachForm({ name, enabled, why, teach, compact }: { name: string; enabled: boolean; why?: string; teach: (text: string, keepAs: KeepAs, forget: Forget, notionLink: string) => Promise<ActionResult>; compact?: boolean }) {
   const [text, setText] = useState("");
+  const [link, setLink] = useState("");
   const [keepAs, setKeepAs] = useState<KeepAs>("note");
   const [forget, setForget] = useState<Forget>("always");
   const [toast, setToast] = useState<ActionResult | null>(null);
@@ -20,9 +21,9 @@ export function TeachForm({ name, enabled, why, teach, compact }: { name: string
   const left = MAX - text.trim().length;
   const go = () => start(async () => {
     let r: ActionResult;
-    try { r = await teach(text, keepAs, forget); } catch (e) { r = { ok: false, text: e instanceof Error ? e.message : "Couldn’t save that." }; }
+    try { r = await teach(text, keepAs, forget, keepAs === "standing_order" ? link : ""); } catch (e) { r = { ok: false, text: e instanceof Error ? e.message : "Couldn’t save that." }; }
     setToast(r);
-    if (r.ok) { setText(""); router.refresh(); }
+    if (r.ok) { setText(""); setLink(""); router.refresh(); }
   });
   const sel = { height: 38, borderRadius: 999, border: 0, background: "var(--soft)", padding: "0 12px", fontSize: 12.5 } as const;
   return (
@@ -48,13 +49,20 @@ export function TeachForm({ name, enabled, why, teach, compact }: { name: string
         <span style={{ flex: 1 }} />
         <span className="muted" style={{ fontSize: 11.5, color: left < 0 ? "var(--red-ink)" : undefined }}>{left}</span>
       </div>
+      {keepAs === "standing_order" && (
+        <label className="stack" style={{ gap: 4 }}>
+          <input className="input" type="url" value={link} disabled={!enabled || busy} onChange={(e) => setLink(e.target.value)} maxLength={500}
+            placeholder="Optional: a Notion page to read each run" aria-label="Notion page link" style={{ height: 38, fontSize: 13 }} />
+          <span className="muted" style={{ fontSize: 11.5 }}>In Notion: Share, then Copy link. The page must be shared with the One Two Agents integration. Read fresh each run, up to 1,500 tokens.</span>
+        </label>
+      )}
       <button className="btn primary" style={{ height: 42 }} disabled={!enabled || busy || !text.trim() || left < 0} onClick={go}>{busy ? "Saving…" : keepAs === "crew" ? "Teach the crew" : `Teach ${name}`}</button>
       <Toast t={toast} onDone={() => setToast(null)} />
     </div>
   );
 }
 
-export interface LineView { id: string; text: string; meta: string; data?: boolean }
+export interface LineView { id: string; text: string; meta: string; data?: boolean; /** A Notion page this standing order links, and whether a run can read it. */ page?: { title: string; href: string; note: string; bad?: boolean } }
 
 /** One memory line with Edit (inline) and Forget. Read-only when no actions are passed. */
 export function MemoryLine({ line, color, edit, forget, keep, keepCrew, discard }: {
@@ -94,6 +102,12 @@ export function MemoryLine({ line, color, edit, forget, keep, keepCrew, discard 
             {line.data && <span className="tag" style={{ marginRight: 6 }} title="Came from outside One Two. Shown to the agent as data, never as an instruction.">DATA</span>}
             {line.text}
           </span>
+        )}
+        {line.page && (
+          <a href={line.page.href} target="_blank" rel="noreferrer" className="row" style={{ gap: 6, fontSize: 12.5, alignItems: "flex-start", color: line.page.bad ? "var(--red-ink)" : "var(--ink2)" }}>
+            <Icon name={line.page.bad ? "circle-alert" : "file-text"} size={13} style={{ marginTop: 2, flex: "none" }} />
+            <span><b style={{ fontWeight: 600 }}>{line.page.title}</b> · {line.page.note}</span>
+          </a>
         )}
         <span className="muted" style={{ fontSize: 11.5 }}>{line.meta}</span>
         {!editing && keep && (
