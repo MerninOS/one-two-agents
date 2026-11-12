@@ -35,16 +35,17 @@ function agentLimits(id: string, p: Record<string, unknown>): GuardLine[] {
     { label: "Email recipient", value: "One fixed address. The email code has no recipient field", where: "integrations/email.ts, BRIEF_TO in Vercel" },
   );
   if (id === "wholesale_hunter") out.push(
-    { label: "Leads per run", value: `${PER_RUN}`, where: "PER_RUN in agents/wholesale-hunter/prompt.ts" },
-    { label: "Web searches per run", value: `At most ${ROWAN_SEARCHES}`, where: "MAX_SEARCHES in agents/wholesale-hunter/index.ts" },
-    { label: "Pages read per run", value: `At most ${MAX_FETCHES}`, where: "MAX_FETCHES in agents/wholesale-hunter/index.ts" },
-    { label: "Model turns per run", value: `At most ${MAX_TURNS}`, where: "MAX_TURNS in agents/wholesale-hunter/index.ts" },
+    { label: "Leads per run", value: `At most ${PER_RUN}. The setup can pick fewer (Writes)`, where: "PER_RUN in agents/wholesale-hunter/prompt.ts, the highest the menu offers" },
+    { label: "Web searches per run", value: `At most ${ROWAN_SEARCHES}. The setup can pick fewer (Thinking)`, where: "MAX_SEARCHES in agents/wholesale-hunter/menu.ts" },
+    { label: "Pages read per run", value: `At most ${MAX_FETCHES}. The setup can pick fewer (Thinking)`, where: "MAX_FETCHES in agents/wholesale-hunter/menu.ts" },
+    { label: "Model turns per run", value: `At most ${MAX_TURNS}. The setup can pick fewer (Thinking)`, where: "MAX_TURNS in agents/wholesale-hunter/menu.ts" },
+    { label: "Areas and kinds of business", value: "Picked from fixed lists. A web page can’t add one", where: "agents/wholesale-hunter/menu.ts" },
     { label: "Email", value: "Gmail drafts only. Nothing is sent; a first email to a new person always waits for you", where: "integrations/gmail.ts has no send" },
   );
   if (id === "bookkeeper") out.push(
-    { label: "Gmail searches per run", value: `At most ${QUINN_SEARCHES}, ${MAX_SEARCHES_PER_CHARGE} per charge, ${CANDIDATES} candidates each`, where: "agents/bookkeeper/index.ts" },
+    { label: "Gmail searches per run", value: `At most ${QUINN_SEARCHES}, ${MAX_SEARCHES_PER_CHARGE} per charge, ${CANDIDATES} candidates each. The setup can pick fewer (Reads)`, where: "agents/bookkeeper/menu.ts" },
     { label: "Receipt PDFs", value: `Up to ${(MAX_PDF_BYTES / 1e6).toFixed(0)} MB`, where: "MAX_PDF_BYTES in agents/bookkeeper/index.ts" },
-    { label: "Charges looked at", value: `The last ${LOOKBACK_DAYS} days`, where: "LOOKBACK_DAYS in agents/bookkeeper/index.ts" },
+    { label: "Charges looked at", value: `At most the last ${LOOKBACK_DAYS} days. The setup can pick fewer (Reads)`, where: "LOOKBACK_DAYS in agents/bookkeeper/menu.ts" },
   );
   if (id === "cfo") out.push({ label: "Method", value: "Plain code. No model is called, so nothing is estimated", where: "agents/cfo/index.ts" });
   const tools = Object.entries(TOOLS).filter(([, t]) => (t.agents as readonly string[]).includes(id));

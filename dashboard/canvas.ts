@@ -51,6 +51,10 @@ export function buildCanvas(i: CanvasInput): CanvasModel {
   const numbers = (box: CanvasBox["id"]): CanvasRow[] => Object.entries(menu?.numbers ?? {}).filter(([, d]) => d.box === box).map(([k, d]) => ({
     label: d.label, value: `${setup?.numbers[k] ?? d.default} ${d.unit}`, home: "app", where: `${from(setup?.fromSetup.numbers[k])} · can be ${d.min} to ${d.max}`,
   }));
+  const choices = (box: CanvasBox["id"]): CanvasRow[] => Object.entries(menu?.choices ?? {}).filter(([, d]) => d.box === box).map(([k, d]) => ({
+    label: d.label, value: (setup?.choices[k] ?? d.default).map((id) => d.options.find((o) => o.id === id)?.label ?? id).join(", "), home: "app", where: `${from(setup?.fromSetup.choices[k])} · ${d.detail}`,
+  }));
+  const choiceWords = (box: CanvasBox["id"]) => Object.entries(menu?.choices ?? {}).filter(([, d]) => d.box === box).map(([k, d]) => `${d.label} · ${(setup?.choices[k] ?? d.default).length} picked`);
   const access = (levels: string[]) => INTEGRATIONS.filter((x) => levels.includes(ACCESS[a.id]?.[x.id]?.[0] ?? ""));
 
   // 1. Trigger
@@ -93,35 +97,50 @@ export function buildCanvas(i: CanvasInput): CanvasModel {
   const reads: CanvasBox = {
     id: "reads", title: "Reads · facts", icon: "shopping-bag",
     replay: readsAccess.length ? readsAccess.map((x) => x.name) : ["No reads"],
-    edit: menu ? [`${menu.reads.length - (setup?.readsOff.length ?? 0)} of ${menu.reads.length} fact sources on`, ...numbers("reads").map((r) => `${r.label} ${r.value}`)] : (readsAccess.length ? readsAccess.map((x) => x.name) : ["No reads"]),
-    editable: !!(setup && menu),
+    edit: menu ? [`${menu.reads.length - (setup?.readsOff.length ?? 0)} of ${menu.reads.length} fact sources on`, ...numbers("reads").map((r) => `${r.label} ${r.value}`), ...choiceWords("reads")] : (readsAccess.length ? readsAccess.map((x) => x.name) : ["No reads"]),
+    // nothing to pick when every source is locked and no setting lives here (Morgan)
+    editable: !!(setup && menu && (menu.reads.some((r) => !r.locked) || numbers("reads").length || choices("reads").length)),
     rows: menu
       ? [
         ...menu.reads.map((r): CanvasRow => {
           const off = !!setup?.readsOff.includes(r.id);
-          return { label: r.label, value: off ? `Off. ${r.detail}` : r.detail, home: "app", where: `${from(setup?.fromSetup.reads)} · built in ${file}`, status: off ? undefined : status(health[r.integration as IntegrationId] ?? false) };
+          return { label: r.label, value: off ? `Off. ${r.detail}` : r.detail, home: r.locked ? "code" : "app", where: r.locked ? `Always on · built in ${file}` : `${from(setup?.fromSetup.reads)} · built in ${file}`, status: off ? undefined : status(health[r.integration as IntegrationId] ?? false) };
         }),
-        ...numbers("reads"), ...fixed("reads"),
+        ...numbers("reads"), ...choices("reads"), ...fixed("reads"),
       ]
       : readsAccess.map((x): CanvasRow => ({ label: x.name, value: ACCESS[a.id]?.[x.id]?.[1] ?? "", home: "code", where: file, status: status(health[x.id]) })),
   };
 
   // 4. Thinking
   const step = menu?.steps[0];
+  const locked = !!menu?.instructionsLocked;
+  const more = (menu?.steps.slice(1) ?? []).map((d) => ({ d, c: setup?.more[d.id] ?? { model: d.model, effort: d.effort, fallback: d.fallback } }));
   const thinking: CanvasBox = {
     id: "thinking", title: usesModel ? "Thinking" : "Computing", icon: "cpu",
     replay: [setup && i.runSetupVersion != null ? `${a.model} · setup v${i.runSetupVersion}` : a.model ?? "Set when built"],
     replayFoot: run ? (run.tokens_in + run.tokens_out > 0 ? `${num(run.tokens_in)} in · ${num(run.tokens_out)} out` : "No model tokens") : undefined,
-    edit: setup && step ? [label(setup.model), `Effort ${setup.effort}${setup.fallback ? ` · fallback ${modelDef(setup.fallback)?.label ?? setup.fallback}` : ""}`, `Instructions · ${num(setup.instructions.length)} characters`] : [a.model ?? "Set when built"],
+    edit: setup && step
+      ? [more.length ? `${step.label} · ${label(setup.model)}` : label(setup.model), ...more.map(({ d, c }) => `${d.label} · ${label(c.model)}`), more.length ? `Effort ${[setup.effort, ...more.map(({ c }) => c.effort)].join(" / ")}` : `Effort ${setup.effort}${setup.fallback ? ` · fallback ${modelDef(setup.fallback)?.label ?? setup.fallback}` : ""}`, locked ? "Instructions fixed in code" : `Instructions · ${num(setup.instructions.length)} characters`, ...choiceWords("thinking")]
+      : [a.model ?? "Set when built"],
     editable: !!(setup && step),
     rows: setup && step && menu
       ? [
-        { label: "Step", value: `${step.label}. Needs: ${step.needs}`, home: "code", where: file },
+        { label: more.length ? `Step 1: ${step.label}` : "Step", value: `Needs: ${step.needs}`, home: "code", where: file },
         { label: "Model", value: label(setup.model), home: "app", where: `${from(setup.fromSetup.model)} · can be ${step.models.map((m) => modelDef(m)?.label ?? m).join(", ")}` },
         { label: "Effort", value: setup.effort, home: "app", where: `${from(setup.fromSetup.effort)} · can be low, medium or high` },
-        { label: "Fallback model", value: setup.fallback ? label(setup.fallback) : "None", home: "app", where: `${from(setup.fromSetup.fallback)} · tried once if ${modelDef(setup.model)?.label ?? setup.model} can’t be reached or answers in the wrong shape, before the fixed rules` },
-        { label: "Safety block", value: "Locked. Sent first on every call.", home: "code", where: `agents/${FOLDER[a.id]}/prompt.ts (SAFETY). No setup can change it`, long: menu.safety },
-        { label: "Instructions", value: `${num(setup.instructions.length)} characters`, home: "app", where: setup.fromSetup.instructions ? `Setup v${setup.version}` : `Built-in text in agents/${FOLDER[a.id]}/prompt.ts`, long: setup.instructions },
+        step.fallbackOff
+          ? { label: "Fallback model", value: "None", home: "code", where: `${file} has no fallback for this step` }
+          : { label: "Fallback model", value: setup.fallback ? label(setup.fallback) : "None", home: "app", where: `${from(setup.fromSetup.fallback)} · tried once if ${modelDef(setup.model)?.label ?? setup.model} can’t be reached or answers in the wrong shape, before the fixed rules` },
+        ...more.flatMap(({ d, c }, k): CanvasRow[] => [
+          { label: `Step ${k + 2}: ${d.label}`, value: `Needs: ${d.needs}`, home: "code", where: file },
+          { label: "Model", value: label(c.model), home: "app", where: `${from(setup.fromSetup.more[d.id])} · can be ${d.models.map((m) => modelDef(m)?.label ?? m).join(", ")}` },
+          { label: "Effort", value: c.effort, home: "app", where: `${from(setup.fromSetup.more[d.id])} · can be low, medium or high` },
+        ]),
+        { label: "Safety block", value: locked ? "Locked, in code" : "Locked. Sent first on every call.", home: "code", where: locked ? `agents/${FOLDER[a.id]}/prompt.ts. No setup can change it` : `agents/${FOLDER[a.id]}/prompt.ts (SAFETY). No setup can change it`, long: menu.safety },
+        locked
+          ? { label: "Instructions", value: "Fixed in code", home: "code", where: `agents/${FOLDER[a.id]}/prompt.ts. Short prompts whose answers code checks, so a setup can’t change them`, long: setup.instructions }
+          : { label: "Instructions", value: `${num(setup.instructions.length)} characters`, home: "app", where: setup.fromSetup.instructions ? `Setup v${setup.version}` : `Built-in text in agents/${FOLDER[a.id]}/prompt.ts`, long: setup.instructions },
+        ...numbers("thinking"), ...choices("thinking"),
         ...fixed("thinking"),
         { label: "Price", value: "Per token, by model", home: "code", where: "integrations/models.ts, so cost is always computed in code" },
         { label: "Claude API key", value: "ANTHROPIC_API_KEY", home: "vercel", where: "Vercel, Environment Variables. Claude models go straight to Anthropic", status: status(health.claude) },
@@ -147,28 +166,29 @@ export function buildCanvas(i: CanvasInput): CanvasModel {
       { label: "Before every run", value: "Off duty or over budget means the run is skipped and logged at $0", home: "code", where: "withRun in core/runs.ts" },
       { label: "Numbers", value: "Money, margins, counts and days of cover are computed in code, never by the model", home: "code", where: file },
       ...(ACCESS[a.id]?.email ? [{ label: "Email recipient", value: "One address. The email code has no recipient field.", home: "vercel", where: "BRIEF_TO in Vercel, read by integrations/email.ts", status: status(!!process.env.BRIEF_TO?.trim()) } as CanvasRow] : []),
-      ...numbers("guardrails"), ...fixed("guardrails"),
+      ...numbers("guardrails"), ...choices("guardrails"), ...fixed("guardrails"),
     ],
   };
 
   // 6. Writes
   const writesAccess = access(["write", "draft"]);
   const outOn = (id: string) => !setup?.outputsOff.includes(id);
-  const target = !menu?.notion ? "" : setup?.notion ? `${setup.notion.kind === "database" ? "Database" : "Page"} “${setup.notion.title}”` : env.notionBriefsDb ? "The database in NOTION_BRIEFS_DB_ID" : env.notionBriefParent ? "A page per day under NOTION_BRIEF_PARENT_ID" : "Not set";
+  const envSet = (k?: string) => !!(k && process.env[k]?.trim());
+  const target = !menu?.notion ? "" : setup?.notion ? `${setup.notion.kind === "database" ? "Database" : "Page"} “${setup.notion.title}”` : envSet(menu.notion.envDb) ? `The database in ${menu.notion.envDb}` : envSet(menu.notion.envPage) ? `A page per run under ${menu.notion.envPage}` : a.id !== "chief_of_staff" && env.notionBriefParent ? "A page per run under NOTION_BRIEF_PARENT_ID" : "Not set";
   const sectionLabel = (id: string) => menu?.sections.find((x) => x.id === id)?.label ?? id;
   const tools = Object.entries(TOOLS).filter(([, t]) => (t.agents as readonly string[]).includes(a.id));
   const writes: CanvasBox = {
     id: "writes", title: "Writes · outputs", icon: "shield-check",
     replay: writesAccess.map((x) => `${x.name}${ACCESS[a.id]?.[x.id]?.[0] === "draft" ? " · draft" : ""}`),
-    edit: menu && setup ? [menu.outputs.filter((o) => outOn(o.id)).map((o) => o.label).join(" + ") || "Nothing on", `${liveSections(menu, setup).length} sections`] : menu ? menu.outputs.map((o) => o.label) : writesAccess.map((x) => x.name),
-    editable: !!(setup && menu),
+    edit: menu && setup ? [menu.outputs.filter((o) => outOn(o.id)).map((o) => o.label).join(" + ") || "Nothing on", ...(menu.sections.length ? [`${liveSections(menu, setup).length} sections`] : []), ...numbers("writes").map((r) => `${r.label} ${r.value}`)] : menu ? menu.outputs.map((o) => o.label) : writesAccess.map((x) => x.name),
+    editable: !!(setup && menu && (menu.outputs.some((o) => !o.locked) || menu.notion || menu.sections.length || numbers("writes").length)),
     rows: menu
       ? [
-        ...menu.outputs.map((o): CanvasRow => ({ label: o.label, value: outOn(o.id) ? o.detail : `Off. ${o.detail}`, home: "app", where: `${from(setup?.fromSetup.outputs)} · keys in Vercel: ${(o.env ?? []).join(", ")}`, status: outOn(o.id) ? status(has(o.env)) : undefined })),
-        ...(menu.notion ? [{ label: "Notion copy goes to", value: target, home: setup?.notion ? "app" : "vercel", where: setup?.notion ? `Setup v${setup.version}. Picked from pages shared with the Notion integration` : `${menu.notion.envDb} or ${menu.notion.envPage} in Vercel, until a target is picked here` } as CanvasRow] : []),
-        ...(setup ? [{ label: "Sections, in order", value: liveSections(menu, setup).map(sectionLabel).join(", "), home: "app", where: `${from(setup.fromSetup.sections)}. A section whose fact source is off is left out` } as CanvasRow] : []),
+        ...menu.outputs.map((o): CanvasRow => ({ label: o.label, value: outOn(o.id) ? o.detail : `Off. ${o.detail}`, home: o.locked ? "code" : "app", where: o.locked ? `Always on · built in ${file}` : `${from(setup?.fromSetup.outputs)} · keys in Vercel: ${(o.env ?? []).join(", ")}`, status: outOn(o.id) ? status(o.locked ? (health[o.integration as IntegrationId] ?? false) : has(o.env)) : undefined })),
+        ...(menu.notion ? [{ label: menu.notion.pageOnly ? "Notion page goes under" : "Notion copy goes to", value: target, home: setup?.notion ? "app" : "vercel", where: setup?.notion ? `Setup v${setup.version}. Picked from pages shared with the Notion integration` : `${[menu.notion.envDb, menu.notion.envPage].filter(Boolean).join(" or ")} in Vercel, until a ${menu.notion.pageOnly ? "page" : "target"} is picked here` } as CanvasRow] : []),
+        ...(setup && menu.sections.length ? [{ label: "Sections, in order", value: liveSections(menu, setup).map(sectionLabel).join(", "), home: "app", where: `${from(setup.fromSetup.sections)}. A section whose fact source is off is left out` } as CanvasRow] : []),
         { label: "Gateway actions", value: tools.length ? tools.map(([k, t]) => `${k} (${t.tier})`).join(", ") : "None. It can’t send, pay or post.", home: "code", where: "core/gateway/policy.ts. A new action type is a pull request and starts at Draft" },
-        ...numbers("writes"), ...fixed("writes"),
+        ...numbers("writes"), ...choices("writes"), ...fixed("writes"),
       ]
       : writesAccess.map((x): CanvasRow => ({ label: x.name, value: ACCESS[a.id]?.[x.id]?.[1] ?? "", home: "code", where: file, status: status(health[x.id]) })),
   };

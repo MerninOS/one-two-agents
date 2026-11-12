@@ -286,7 +286,18 @@ function cleanDraft(d: unknown): SetupDraft | null {
   if (!numbers || !Object.values(numbers).every((n) => typeof n === "number") || !readsOff || !outputsOff || !sections) return null;
   const notion = x.notion == null ? null : notionTarget(x.notion);
   if (x.notion != null && !notion) return null;
-  return { model: x.model, effort: x.effort as Setup["effort"], fallback: (x.fallback as string | null) || null, instructions: x.instructions, numbers: numbers as Record<string, number>, readsOff, outputsOff, sections, notion };
+  const rec = (v: unknown) => (v && typeof v === "object" && !Array.isArray(v) ? v as Record<string, unknown> : v == null ? {} : null);
+  const moreRaw = rec(x.more), choicesRaw = rec(x.choices);
+  if (!moreRaw || !choicesRaw || Object.keys(moreRaw).length > 10 || Object.keys(choicesRaw).length > 10) return null;
+  const more: SetupDraft["more"] = {};
+  for (const [k, v] of Object.entries(moreRaw)) {
+    const c = rec(v);
+    if (!c || typeof c.model !== "string" || !EFFORTS.includes(c.effort as Setup["effort"]) || (c.fallback != null && typeof c.fallback !== "string")) return null;
+    more[k] = { model: c.model, effort: c.effort as Setup["effort"], fallback: (c.fallback as string | null) || null };
+  }
+  const choices: SetupDraft["choices"] = {};
+  for (const [k, v] of Object.entries(choicesRaw)) { const l = list(v); if (!l) return null; choices[k] = l; }
+  return { model: x.model, effort: x.effort as Setup["effort"], fallback: (x.fallback as string | null) || null, instructions: x.instructions, more, numbers: numbers as Record<string, number>, choices, readsOff, outputsOff, sections, notion };
 }
 
 /**
@@ -316,15 +327,20 @@ async function editable(agentId: string) {
  */
 export async function previewSetup(agentId: string, draft: unknown): Promise<ActionResult & { preview?: SetupPreview }> {
   await requireSession();
-  if (!controlsOn()) return { ok: false, text: `${CONTROLS_OFF} A preview makes one real model call.` };
   const d = cleanDraft(draft);
   if (!d) return { ok: false, text: "That draft isn’t complete." };
   try {
     const { menu, now } = await editable(agentId);
     const preview = AGENTS[agentId].preview;
-    if (!preview) return { ok: false, text: `${BY_ID[agentId].name} has no preview yet.` };
     const next = fromDraft(menu, now, d);
     if (next.problems.length) return { ok: false, text: `The draft asks for something the menu doesn’t offer: ${next.problems.join("; ")}.` };
+    // Rowan's and Quinn's real output costs a real run, so their preview is the free dry run with the draft:
+    // real reads, no model, nothing written, not logged (the same as the Dry run button)
+    if (!preview) {
+      const r = await AGENTS[agentId].job({ dryRun: true, setup: next });
+      return { ok: r.status === "ok", text: r.summary.replace(/setup v\d+/, "this draft").replace("built-in setup", "this draft") };
+    }
+    if (!controlsOn()) return { ok: false, text: `${CONTROLS_OFF} A preview makes one real model call.` };
     let got: SetupPreview | null = null;
     const res = await withRun(agentId, "preview", async () => {
       const p = await preview(next);
@@ -389,7 +405,8 @@ export async function findNotionTargets(agentId: string, query: string): Promise
   if (!env.notionToken) return { ok: false, text: "NOTION_TOKEN isn’t set in Vercel, so there is nothing to search." };
   try {
     const found = await notionSearch(String(query ?? "").trim());
-    const places = found.map((p) => ({ kind: p.kind, id: p.id, title: p.title, url: p.url, missing: p.kind === "database" ? missingProps(p.props, menu.notion!.dbProps) : [] }));
+    // Rowan and Quinn write a new page each run, so only pages can be picked for them
+    const places = found.filter((p) => !menu.notion!.pageOnly || p.kind === "page").map((p) => ({ kind: p.kind, id: p.id, title: p.title, url: p.url, missing: p.kind === "database" ? missingProps(p.props, menu.notion!.dbProps) : [] }));
     return { ok: true, text: places.length ? `${places.length} found.` : "Nothing found. Share the page or database with the Notion integration first.", places };
   } catch (e) { return fail(e); }
 }

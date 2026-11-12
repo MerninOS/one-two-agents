@@ -291,8 +291,10 @@ export async function getSetupEditor(agentId: string, runs: Run[], health: Recor
   await requireSession();
   const menu = MENUS[agentId];
   if (!menu || !got) return null;
-  const step = menu.steps[0];
+  const step = menu.steps[0] as AgentMenu["steps"][number] | undefined;
   const s = got.setup;
+  const models = (ids: readonly string[]) => ids.map((id) => { const m = modelDef(id); return { id, label: m?.label ?? id, provider: m?.provider ?? "Unknown", gateway: m?.route === "gateway", in: m?.in ?? null, out: m?.out ?? null }; });
+  const optLabel = (k: string, id: string) => menu.choices?.[k]?.options.find((o) => o.id === id)?.label ?? id;
   let versions: SetupVersion[] = [], blocked = got.problem ? `Saving is off: ${got.problem}.` : undefined;
   if (!blocked) {
     try { versions = await listVersions(menu); }
@@ -306,6 +308,8 @@ export async function getSetupEditor(agentId: string, runs: Run[], health: Recor
       ...(v.setup.effort !== prev.effort ? [`effort ${prev.effort} to ${v.setup.effort}`] : []),
       ...(v.setup.fallback !== prev.fallback ? [`fallback ${prev.fallback ?? "none"} to ${v.setup.fallback ?? "none"}`] : []),
       ...(v.setup.instructions !== prev.instructions ? [builtIn(v.setup) ? "back to the built-in instructions" : "instructions"] : []),
+      ...menu.steps.slice(1).filter((d) => JSON.stringify(v.setup.more[d.id]) !== JSON.stringify(prev.more[d.id])).map((d) => `${d.label} ${prev.more[d.id]?.model} ${prev.more[d.id]?.effort} to ${v.setup.more[d.id]?.model} ${v.setup.more[d.id]?.effort}`),
+      ...Object.entries(menu.choices ?? {}).filter(([k]) => JSON.stringify(v.setup.choices[k]) !== JSON.stringify(prev.choices[k])).map(([k, d]) => `${d.label}: ${(v.setup.choices[k] ?? []).map((id) => optLabel(k, id)).join(", ")}`),
       ...Object.keys(menu.numbers).filter((n) => v.setup.numbers[n] !== prev.numbers[n]).map((n) => `${menu.numbers[n].label} ${prev.numbers[n]} to ${v.setup.numbers[n]}`),
       ...partChanges(menu, prev, v.setup),
     ];
@@ -321,23 +325,38 @@ export async function getSetupEditor(agentId: string, runs: Run[], health: Recor
   });
   const used = runs.filter((r) => r.agent_id === agentId && (r.trigger === "cron" || r.trigger === "manual") && r.tokens_in + r.tokens_out > 0).slice(0, 10);
   return {
-    agentId, agentName: BY_ID[agentId]?.name ?? agentId, stepLabel: step.label, needs: step.needs,
-    models: step.models.map((id) => { const m = modelDef(id); return { id, label: m?.label ?? id, provider: m?.provider ?? "Unknown", gateway: m?.route === "gateway", in: m?.in ?? null, out: m?.out ?? null }; }),
+    agentId, agentName: BY_ID[agentId]?.name ?? agentId, stepLabel: step?.label ?? "Computed in code", needs: step?.needs ?? "No model",
+    models: models(step?.models ?? []), fallbackOff: !step || !!step.fallbackOff,
+    more: menu.steps.slice(1).map((d) => ({ id: d.id, label: d.label, needs: d.needs, models: models(d.models) })),
+    instructionsLocked: !!menu.instructionsLocked || !step,
+    // Avery's preview writes today's real brief with one model call; the others get a free dry run with the draft
+    previewKind: AGENTS[agentId]?.preview ? "model" : "dry",
     gatewayReady: hasGateway(),
     active: { version: s.version, ...toDraft(s) },
     builtIn: menu.instructions, safety: menu.safety, maxChars: MAX_INSTRUCTIONS,
     usage: used.length ? { runs: used.length, avgIn: used.reduce((a, r) => a + r.tokens_in, 0) / used.length, avgOut: used.reduce((a, r) => a + r.tokens_out, 0) / used.length } : null,
     controlsOn: controlsOn(), blocked, versions: view,
-    reads: menu.reads.map((r) => ({ id: r.id, label: r.label, detail: r.detail, connected: health[r.integration as IntegrationId] ?? false })),
+    reads: menu.reads.map((r) => ({ id: r.id, label: r.label, detail: r.detail, locked: !!r.locked, connected: (health[r.integration as IntegrationId] ?? false) && (r.env ?? []).every((k) => !!process.env[k]?.trim()) })),
     numbers: Object.entries(menu.numbers).map(([key, n]) => ({ key, label: n.label, unit: n.unit, min: n.min, max: n.max, default: n.default, box: n.box })),
-    outputs: menu.outputs.map((o) => { const missing = (o.env ?? []).filter((k) => !process.env[k]?.trim()); return { id: o.id, label: o.label, detail: o.detail, ready: !missing.length, missing }; }),
+    choices: Object.entries(menu.choices ?? {}).map(([key, c]) => ({ key, label: c.label, detail: c.detail, box: c.box, options: c.options.map((o) => ({ id: o.id, label: o.label })), default: [...c.default], min: c.min, max: c.max })),
+    outputs: menu.outputs.map((o) => { const missing = (o.env ?? []).filter((k) => !process.env[k]?.trim()); return { id: o.id, label: o.label, detail: o.detail, locked: !!o.locked, ready: o.locked ? (health[o.integration as IntegrationId] ?? false) : !missing.length, missing }; }),
     sections: menu.sections.map((x) => ({ id: x.id, label: x.label, detail: x.detail, locked: !!x.locked, needs: (x.needs ?? []).map((id) => ({ id, label: menu.reads.find((r) => r.id === id)?.label ?? id })) })),
     notion: menu.notion ? {
-      tokenSet: !!env.notionToken,
-      fallback: env.notionBriefsDb ? "The database in NOTION_BRIEFS_DB_ID (Vercel), until you pick one here" : env.notionBriefParent ? "A page per day under NOTION_BRIEF_PARENT_ID (Vercel), until you pick one here" : null,
+      tokenSet: !!env.notionToken, pageOnly: !!menu.notion.pageOnly,
+      fallback: notionFallback(menu.notion),
     } : null,
     actions: Object.entries(TOOLS).filter(([, t]) => (t.agents as readonly string[]).includes(agentId)).map(([tool, t]) => ({ tool, tier: t.tier, note: "Every action waits for your approval card. Promotion needs 28 of the last 30 approved unedited." })),
   };
+}
+
+/** What the Notion env vars point at when the setup picks no target, in words. */
+function notionFallback(n: NonNullable<AgentMenu["notion"]>): string | null {
+  const set = (k?: string) => !!(k && process.env[k]?.trim());
+  if (set(n.envDb)) return `The database in ${n.envDb} (Vercel), until you pick one here`;
+  if (set(n.envPage)) return `A page per ${n.pageOnly ? "run" : "day"} under ${n.envPage} (Vercel), until you pick one here`;
+  // core/env.ts falls back to the brief's parent page for Rowan's and Quinn's pages
+  if (n.pageOnly && env.notionBriefParent) return "A page per run under NOTION_BRIEF_PARENT_ID (Vercel), until you pick one here";
+  return null;
 }
 
 /** Reads and writes changes between two versions, in words. */
@@ -358,7 +377,8 @@ function partWords(menu: AgentMenu, s: Setup): string {
   return [
     off.length ? `not reading ${off.join(", ")}` : "every source on",
     `to ${outs.join(" and ") || "nowhere"}${s.notion && !s.outputsOff.includes("notion") ? ` (“${s.notion.title}”)` : ""}`,
-    `${liveSections(menu, s).length} sections`,
+    ...(menu.sections.length ? [`${liveSections(menu, s).length} sections`] : []),
+    ...Object.entries(menu.numbers).filter(([, d]) => d.box === "writes").map(([k, d]) => `${s.numbers[k]} ${d.unit}`),
   ].join(" · ");
 }
 

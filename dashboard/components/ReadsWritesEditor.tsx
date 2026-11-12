@@ -35,6 +35,41 @@ function Header({ d, e, icon, title, sub }: { d: SetupEditorData; e: SetupEditor
   );
 }
 
+type NumberDef = SetupEditorData["numbers"][number];
+type ChoiceDef = SetupEditorData["choices"][number];
+
+/** A tuning number within the menu's range. */
+export function NumberField({ n, value, onChange }: { n: NumberDef; value: number; onChange: (v: number) => void }) {
+  return (
+    <label className="ted-field">
+      <span className="ted-k">{n.label}</span>
+      <span className="row" style={{ gap: 8 }}>
+        <input className="input" type="number" min={n.min} max={n.max} step={1} style={{ width: 96 }} value={Number.isFinite(value) ? value : ""} onChange={(x) => onChange(x.target.value === "" ? NaN : Number(x.target.value))} aria-label={n.label} />
+        <span className="sub">{n.unit}</span>
+      </span>
+      <span className="sub">{n.min} to {n.max}{n.max === n.default ? ". The highest is today’s limit in code" : `. Built-in ${n.default}`}.</span>
+    </label>
+  );
+}
+
+/** A pick-list from the menu: the options are code, a setup picks some. */
+export function ChoicePicker({ c, value, onChange }: { c: ChoiceDef; value: string[]; onChange: (v: string[]) => void }) {
+  const flip = (id: string) => onChange(value.includes(id) ? value.filter((x) => x !== id) : c.options.map((o) => o.id).filter((x) => x === id || value.includes(x)));
+  const bad = value.length < c.min || value.length > c.max;
+  return (
+    <Field k={c.label} sub={<>{c.detail}. Pick {c.min === c.max ? c.min : `${c.min} to ${c.max}`}; {value.length} picked.{bad && <span style={{ color: "var(--red-ink)" }}> Out of range.</span>}</>}>
+      <div className="rw-chips" role="group" aria-label={c.label}>
+        {c.options.map((o) => {
+          const on = value.includes(o.id);
+          return <button key={o.id} type="button" aria-pressed={on} className={`chip-pick${on ? " on" : ""}`} onClick={() => flip(o.id)}>{on && <Icon name="check" size={12} />}{o.label}</button>;
+        })}
+      </div>
+    </Field>
+  );
+}
+
+const Locked = ({ label }: { label: string }) => <span className="rw-lock" title={`${label} is always on`} aria-label={`${label} is always on`}><Icon name="lock" size={13} /></span>;
+
 const offWords = (d: SetupEditorData, x: Draft) => {
   const off = d.reads.filter((r) => x.readsOff.includes(r.id)).map((r) => r.label);
   return off.length ? `${off.join(", ")} off` : "All on";
@@ -43,7 +78,7 @@ const offWords = (d: SetupEditorData, x: Draft) => {
 export function ReadsEditor({ d }: { d: SetupEditorData }) {
   const e = useSetupEditor(d);
   const { draft, change } = e;
-  const nums = d.numbers.filter((n) => n.box === "reads");
+  const nums = d.numbers.filter((n) => n.box === "reads"), picks = d.choices.filter((c) => c.box === "reads");
   const dropped = (id: string) => d.sections.filter((s) => s.needs.some((n) => n.id === id)).map((s) => s.label);
   return (
     <div className="card" style={{ gap: 16 }}>
@@ -54,11 +89,11 @@ export function ReadsEditor({ d }: { d: SetupEditorData }) {
             const on = !draft.readsOff.includes(r.id), lose = dropped(r.id);
             return (
               <div key={r.id} className="rw-row">
-                <Switch on={on} label={r.label} onChange={(v) => change({ readsOff: toggle(draft.readsOff, r.id, v) })} />
+                {r.locked ? <Locked label={r.label} /> : <Switch on={on} label={r.label} onChange={(v) => change({ readsOff: toggle(draft.readsOff, r.id, v) })} />}
                 <div className="stack" style={{ gap: 2, minWidth: 0 }}>
-                  <span style={{ fontWeight: 600, fontSize: 13.5 }}>{r.label}</span>
+                  <span style={{ fontWeight: 600, fontSize: 13.5 }}>{r.label}{r.locked && <span className="sub"> · always on</span>}</span>
                   <span className="sub">{r.detail}</span>
-                  {!on && <span className="sub" style={{ color: "var(--yel-ink)" }}>Not read. The model is told it was turned off, so it won’t treat it as zero.{lose.length ? ` ${lose.join(" and ")} ${lose.length === 1 ? "is" : "are"} left out of the brief.` : ""}</span>}
+                  {!on && <span className="sub" style={{ color: "var(--yel-ink)" }}>{d.sections.length ? "Not read. The model is told it was turned off, so it won’t treat it as zero." : "Not read on the next run."}{lose.length ? ` ${lose.join(" and ")} ${lose.length === 1 ? "is" : "are"} left out of the brief.` : ""}</span>}
                 </div>
                 <span className={`pill sm`} style={r.connected ? { background: "var(--mint-soft)", color: "var(--mint-ink)" } : { background: "var(--red-soft)", color: "var(--red-ink)" }}>{r.connected ? "Connected" : "Missing key"}</span>
               </div>
@@ -66,21 +101,13 @@ export function ReadsEditor({ d }: { d: SetupEditorData }) {
           })}
         </div>
       </Field>
+      {picks.map((c) => <ChoicePicker key={c.key} c={c} value={draft.choices[c.key] ?? c.default} onChange={(v) => change({ choices: { ...draft.choices, [c.key]: v } })} />)}
       {nums.length > 0 && (
         <div className="ted-grid">
-          {nums.map((n) => (
-            <label key={n.key} className="ted-field">
-              <span className="ted-k">{n.label}</span>
-              <span className="row" style={{ gap: 8 }}>
-                <input className="input" type="number" min={n.min} max={n.max} step={1} style={{ width: 96 }} value={Number.isFinite(draft.numbers[n.key]) ? draft.numbers[n.key] : ""} onChange={(x) => change({ numbers: { ...draft.numbers, [n.key]: x.target.value === "" ? NaN : Number(x.target.value) } })} aria-label={n.label} />
-                <span className="sub">{n.unit}</span>
-              </span>
-              <span className="sub">{n.min} to {n.max}. Built-in {n.default}.</span>
-            </label>
-          ))}
+          {nums.map((n) => <NumberField key={n.key} n={n} value={draft.numbers[n.key]} onChange={(v) => change({ numbers: { ...draft.numbers, [n.key]: v } })} />)}
         </div>
       )}
-      <EditorFooter d={d} e={e} lines={[{ k: "Sources", v: offWords(d, draft) }, ...nums.map((n) => ({ k: n.label, v: `${draft.numbers[n.key]} ${n.unit}` }))]} />
+      <EditorFooter d={d} e={e} lines={[{ k: "Sources", v: offWords(d, draft) }, ...picks.map((c) => ({ k: c.label, v: (draft.choices[c.key] ?? c.default).map((id) => c.options.find((o) => o.id === id)?.label ?? id).join(", ") })), ...nums.map((n) => ({ k: n.label, v: `${draft.numbers[n.key]} ${n.unit}` }))]} />
     </div>
   );
 }
@@ -99,21 +126,24 @@ export function WritesEditor({ d }: { d: SetupEditorData }) {
   };
   const setOn = (id: string, on: boolean) => change({ sections: on ? [...draft.sections, id] : draft.sections.filter((x) => x !== id) });
   const notionOn = !draft.outputsOff.includes("notion");
-  const target = draft.notion ? `${draft.notion.kind === "database" ? "Database" : "Page"} “${draft.notion.title}”, picked here` : d.notion?.fallback ?? "Nothing picked, and no NOTION_BRIEFS_DB_ID or NOTION_BRIEF_PARENT_ID in Vercel";
+  const pageOnly = !!d.notion?.pageOnly;
+  const nums = d.numbers.filter((n) => n.box === "writes");
+  const target = draft.notion ? `${draft.notion.kind === "database" ? "Database" : "Page"} “${draft.notion.title}”, picked here` : d.notion?.fallback ?? "Nothing picked, and no Notion page or database set in Vercel";
   return (
     <div className="card" style={{ gap: 16 }}>
-      <Header d={d} e={e} icon="shield-check" title="Edit Writes" sub={`Where ${d.agentName}’s brief goes and what is in it. New kinds of output are code.`} />
+      <Header d={d} e={e} icon="shield-check" title="Edit Writes" sub={`Where ${d.agentName}’s work goes${d.sections.length ? " and what is in it" : ""}. New kinds of output are code.`} />
       <Field k="Outputs">
         <div className="rw-list">
           {d.outputs.map((o) => {
             const on = !draft.outputsOff.includes(o.id);
             return (
               <div key={o.id} className="rw-row">
-                <Switch on={on} label={o.label} onChange={(v) => change({ outputsOff: toggle(draft.outputsOff, o.id, v) })} />
+                {o.locked ? <Locked label={o.label} /> : <Switch on={on} label={o.label} onChange={(v) => change({ outputsOff: toggle(draft.outputsOff, o.id, v) })} />}
                 <div className="stack" style={{ gap: 2, minWidth: 0 }}>
-                  <span style={{ fontWeight: 600, fontSize: 13.5 }}>{o.label}</span>
+                  <span style={{ fontWeight: 600, fontSize: 13.5 }}>{o.label}{o.locked && <span className="sub"> · always on</span>}</span>
                   <span className="sub">{o.detail}</span>
                   {o.id === "email" && <span className="sub"><Icon name="lock" size={11} /> The recipient is BRIEF_TO in Vercel. No setup can change who gets it.</span>}
+                  {o.id === "gmail" && <span className="sub"><Icon name="lock" size={11} /> Drafts only. The Gmail code has no send, and a first email to a new person always waits for you.</span>}
                 </div>
                 <span className="pill sm" title={o.missing.length ? `Missing in Vercel: ${o.missing.join(", ")}` : undefined} style={o.ready ? { background: "var(--mint-soft)", color: "var(--mint-ink)" } : { background: "var(--red-soft)", color: "var(--red-ink)" }}>{o.ready ? "Set up" : "Missing key"}</span>
               </div>
@@ -123,17 +153,24 @@ export function WritesEditor({ d }: { d: SetupEditorData }) {
       </Field>
 
       {d.notion && (
-        <Field k="Notion copy goes to" sub={notionOn ? "A database must have the Briefs columns (see docs/avery-briefs-database.md); a page gets one new page per day under it. Only pages shared with the Notion integration show up." : "The Notion copy is off."}>
+        <Field k={pageOnly ? "Notion page goes under" : "Notion copy goes to"} sub={!notionOn ? `The Notion ${pageOnly ? "page" : "copy"} is off.` : pageOnly ? "Each run adds a new page under the page you pick. Only pages shared with the Notion integration show up." : "A database must have the Briefs columns (see docs/avery-briefs-database.md); a page gets one new page per day under it. Only pages shared with the Notion integration show up."}>
           <div className="row wrap" style={{ gap: 8 }}>
             <span style={{ fontSize: 13.5, flex: "1 1 220px" }}>{target}</span>
             <button className="btn outline xs" disabled={!notionOn || !d.notion.tokenSet} onClick={() => setPicking((x) => !x)}>{picking ? "Close" : "Change"}</button>
             {draft.notion && <button className="btn ghost xs" onClick={() => change({ notion: null })}>Use the Vercel setting</button>}
           </div>
           {!d.notion.tokenSet && <span className="sub" style={{ color: "var(--red-ink)" }}>NOTION_TOKEN isn’t set in Vercel, so nothing can be picked.</span>}
-          {picking && notionOn && <NotionPicker agentId={d.agentId} current={draft.notion?.id} onPick={(t) => { change({ notion: t }); setPicking(false); }} />}
+          {picking && notionOn && <NotionPicker agentId={d.agentId} current={draft.notion?.id} pageOnly={pageOnly} onPick={(t) => { change({ notion: t }); setPicking(false); }} />}
         </Field>
       )}
 
+      {nums.length > 0 && (
+        <div className="ted-grid">
+          {nums.map((n) => <NumberField key={n.key} n={n} value={draft.numbers[n.key]} onChange={(v) => change({ numbers: { ...draft.numbers, [n.key]: v } })} />)}
+        </div>
+      )}
+
+      {d.sections.length > 0 && (
       <Field k="Sections, in order" sub="The email and the Notion copy use the same sections in the same order.">
         <div className="rw-list">
           {order.map((id) => {
@@ -156,17 +193,19 @@ export function WritesEditor({ d }: { d: SetupEditorData }) {
           })}
         </div>
       </Field>
+      )}
 
       <Field k="Gateway actions" sub="Sending, paying and posting only happen as gateway action types. Each starts at Draft (an approval card) and moves up only after 28 of its last 30 approvals went through unedited and you confirm.">
         {d.actions.length
           ? <div className="rw-list">{d.actions.map((a) => <div key={a.tool} className="rw-row"><Icon name="lock" size={13} /><div className="stack" style={{ gap: 2 }}><span style={{ fontWeight: 600, fontSize: 13.5 }}>{a.tool}</span><span className="sub">{a.note}</span></div><span className="pill sm">{a.tier}</span></div>)}</div>
-          : <span style={{ fontSize: 13.5 }}>None. {d.agentName} can’t send, pay or post; its brief to you is a report, not a gateway action.</span>}
+          : <span style={{ fontSize: 13.5 }}>None. {d.agentName} can’t send, pay or post{d.outputs.some((o) => o.id === "email") ? "; its brief to you is a report, not a gateway action" : ""}.</span>}
       </Field>
 
       <EditorFooter d={d} e={e} lines={[
         { k: "Outputs", v: d.outputs.filter((o) => !draft.outputsOff.includes(o.id)).map((o) => o.label).join(", ") || "none" },
         ...(d.notion && notionOn ? [{ k: "Notion", v: target }] : []),
-        { k: "Sections", v: draft.sections.map((id) => sec(id)?.label ?? id).join(", ") },
+        ...nums.map((n) => ({ k: n.label, v: `${draft.numbers[n.key]} ${n.unit}` })),
+        ...(d.sections.length ? [{ k: "Sections", v: draft.sections.map((id) => sec(id)?.label ?? id).join(", ") }] : []),
       ]} />
     </div>
   );
@@ -174,7 +213,7 @@ export function WritesEditor({ d }: { d: SetupEditorData }) {
 
 type Place = NonNullable<Awaited<ReturnType<typeof findNotionTargets>>["places"]>[number];
 
-function NotionPicker({ agentId, current, onPick }: { agentId: string; current?: string; onPick: (t: NotionTarget) => void }) {
+function NotionPicker({ agentId, current, pageOnly, onPick }: { agentId: string; current?: string; pageOnly: boolean; onPick: (t: NotionTarget) => void }) {
   const [q, setQ] = useState("");
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState("");
@@ -190,7 +229,7 @@ function NotionPicker({ agentId, current, onPick }: { agentId: string; current?:
   return (
     <div className="rw-pick">
       <form className="row" style={{ gap: 8 }} onSubmit={(x) => { x.preventDefault(); void search(); }}>
-        <input className="input" style={{ flex: 1, height: 34 }} placeholder="Search pages and databases (blank: recently edited)" value={q} onChange={(x) => setQ(x.target.value)} aria-label="Search Notion" />
+        <input className="input" style={{ flex: 1, height: 34 }} placeholder={pageOnly ? "Search pages (blank: recently edited)" : "Search pages and databases (blank: recently edited)"} value={q} onChange={(x) => setQ(x.target.value)} aria-label="Search Notion" />
         <button className="btn dark sm" disabled={busy}>{busy ? "Searching…" : "Search"}</button>
       </form>
       {msg && <span className="sub">{msg}</span>}
@@ -199,7 +238,7 @@ function NotionPicker({ agentId, current, onPick }: { agentId: string; current?:
           <Icon name={p.kind === "database" ? "database" : "file-text"} size={14} />
           <div className="stack" style={{ gap: 2, minWidth: 0 }}>
             <a href={p.url} target="_blank" rel="noreferrer" style={{ fontWeight: 600, fontSize: 13.5, overflowWrap: "anywhere" }}>{p.title}</a>
-            <span className="sub">{p.kind === "database" ? (p.missing.length ? `Missing ${p.missing.join(", ")}` : "Database with every Briefs column") : "Page: one new page per day goes under it"}</span>
+            <span className="sub">{p.kind === "database" ? (p.missing.length ? `Missing ${p.missing.join(", ")}` : "Database with every Briefs column") : `Page: one new page per ${pageOnly ? "run" : "day"} goes under it`}</span>
           </div>
           <button className="btn outline xs" disabled={p.missing.length > 0 || p.id === current} onClick={() => onPick({ kind: p.kind, id: p.id, title: p.title })}>{p.id === current ? "Picked" : "Use"}</button>
         </div>

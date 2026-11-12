@@ -33,7 +33,12 @@ export interface StepDef {
   effort: Effort;
   /** Tried once when `model` can't be reached, before the agent's fixed rules. Null: straight to the rules. */
   fallback: string | null;
+  /** The agent's code has no fallback for this step, so a setup can't pick one. */
+  fallbackOff?: boolean;
 }
+
+/** The model choice for one thinking step. */
+export interface StepChoice { model: string; effort: Effort; fallback: string | null }
 
 export interface NumberDef {
   label: string;
@@ -54,6 +59,19 @@ export interface PartDef {
   integration: string;
   /** Env vars this part needs, by name only. Values never leave the server. */
   env?: readonly string[];
+  /** Always on: the agent can't work without it (a table its next run reads). */
+  locked?: boolean;
+}
+
+/** A pick-list setting (Rowan's areas, the kinds of business): options are fixed in code, a setup picks some. */
+export interface ChoiceDef {
+  label: string;
+  box: NumberDef["box"];
+  detail: string;
+  options: readonly { id: string; label: string }[];
+  default: readonly string[];
+  min: number;
+  max: number;
 }
 
 /** A part of the agent's output (a section of the brief). Order and on/off are setup choices. */
@@ -76,6 +94,8 @@ export interface NotionDef {
   /** Env vars used when the setup picks no target, in order: a database id, then a parent page id. */
   envDb?: string;
   envPage?: string;
+  /** The agent writes a new page each run, so only a parent page can be picked, not a database. */
+  pageOnly?: boolean;
 }
 
 /** A Notion page or database the brief goes to, picked in the Control Room from what the integration can see. */
@@ -86,9 +106,13 @@ export interface FixedDef { box: NumberDef["box"]; label: string; value: string;
 
 export interface AgentMenu {
   agentId: string;
-  /** One thinking step for now; an agent with two model calls gets two. The first is the one `Setup.model` describes. */
+  /**
+   * The thinking steps. The first is the one `Setup.model` describes; the others are in
+   * `Setup.more`. Empty for an agent that calls no model (Morgan): computed in code.
+   */
   steps: readonly StepDef[];
   numbers: Record<string, NumberDef>;
+  choices?: Record<string, ChoiceDef>;
   reads: readonly PartDef[];
   outputs: readonly PartDef[];
   /** The output's sections, in their built-in order. */
@@ -97,6 +121,8 @@ export interface AgentMenu {
   fixed: readonly FixedDef[];
   /** The built-in instructions, used until a setup holds its own. */
   instructions: string;
+  /** The instructions are fixed in code (several prompts, or none), so a setup can't change them. */
+  instructionsLocked?: boolean;
   /**
    * The locked safety block, for the canvas only. The agent's code sends its own copy first on
    * every call; a setup can't change or remove it.
@@ -114,7 +140,11 @@ export interface Setup {
   effort: Effort;
   fallback: string | null;
   instructions: string;
+  /** Model choices for the steps after the first, by step id. */
+  more: Record<string, StepChoice>;
   numbers: Record<string, number>;
+  /** Pick-list settings, by key in the menu's `choices`. */
+  choices: Record<string, string[]>;
   /** Fact sources turned off (ids in the menu's `reads`). */
   readsOff: string[];
   /** Outputs turned off (ids in the menu's `outputs`). Never all of them. */
@@ -124,7 +154,7 @@ export interface Setup {
   /** The Notion page or database picked in the app; null means the env vars (NOTION_BRIEFS_DB_ID, NOTION_BRIEF_PARENT_ID). */
   notion: NotionTarget | null;
   /** Which values came from the setup row; everything else is the menu's default. */
-  fromSetup: { model: boolean; effort: boolean; fallback: boolean; instructions: boolean; numbers: Record<string, boolean>; reads: boolean; outputs: boolean; sections: boolean; notion: boolean };
+  fromSetup: { model: boolean; effort: boolean; fallback: boolean; instructions: boolean; more: Record<string, boolean>; numbers: Record<string, boolean>; choices: Record<string, boolean>; reads: boolean; outputs: boolean; sections: boolean; notion: boolean };
   /** Values in the row that the menu doesn't offer. Each was ignored and the default used. */
   problems: string[];
 }
@@ -139,27 +169,32 @@ const obj = (v: unknown): Record<string, unknown> => (v && typeof v === "object"
  * range) is dropped with a line in `problems`, never clamped into something Zak didn't pick.
  */
 export function resolveSetup(menu: AgentMenu, row: Row | null): Setup {
-  const step = menu.steps[0];
+  const step = menu.steps[0] as StepDef | undefined;
   const s: Setup = {
     agentId: menu.agentId, version: row?.version ?? null, note: row?.note ?? null, createdAt: row?.created_at ?? null,
-    model: step.model, effort: step.effort, fallback: step.fallback, instructions: menu.instructions,
+    model: step?.model ?? NO_MODEL, effort: step?.effort ?? "low", fallback: step?.fallback ?? null, instructions: menu.instructions,
+    more: Object.fromEntries(menu.steps.slice(1).map((d) => [d.id, { model: d.model, effort: d.effort, fallback: d.fallback }])),
     numbers: Object.fromEntries(Object.entries(menu.numbers).map(([k, d]) => [k, d.default])),
+    choices: Object.fromEntries(Object.entries(menu.choices ?? {}).map(([k, d]) => [k, [...d.default]])),
     readsOff: [], outputsOff: [], sections: menu.sections.map((x) => x.id), notion: null,
-    fromSetup: { model: false, effort: false, fallback: false, instructions: false, numbers: {}, reads: false, outputs: false, sections: false, notion: false },
+    fromSetup: { model: false, effort: false, fallback: false, instructions: false, more: {}, numbers: {}, choices: {}, reads: false, outputs: false, sections: false, notion: false },
     problems: [],
   };
   if (!row) return s;
-  const raw = obj(row.setup), thinking = obj(raw.thinking), numbers = obj(raw.numbers), reads = obj(raw.reads), writes = obj(raw.writes);
+  const raw = obj(row.setup), thinking = step ? obj(raw.thinking) : {}, numbers = obj(raw.numbers), reads = obj(raw.reads), writes = obj(raw.writes), choices = obj(raw.choices);
+  if (!step && Object.keys(obj(raw.thinking)).length) s.problems.push("this agent calls no model, so thinking choices were ignored");
+  if (step?.fallbackOff && thinking.fallback !== undefined && thinking.fallback !== null) { s.problems.push(`${step.label} has no fallback`); delete thinking.fallback; }
+  if (menu.instructionsLocked && thinking.instructions !== undefined && thinking.instructions !== null) { s.problems.push("the instructions are fixed in code"); delete thinking.instructions; }
 
-  if (thinking.model !== undefined) {
+  if (thinking.model !== undefined && step) {
     if (typeof thinking.model === "string" && step.models.includes(thinking.model)) { s.model = thinking.model; s.fromSetup.model = true; }
     else s.problems.push(`model ${JSON.stringify(thinking.model)} is not on ${step.label}'s list`);
   }
-  if (thinking.effort !== undefined) {
+  if (thinking.effort !== undefined && step) {
     if (EFFORTS.includes(thinking.effort as Effort)) { s.effort = thinking.effort as Effort; s.fromSetup.effort = true; }
     else s.problems.push(`effort ${JSON.stringify(thinking.effort)} is not low, medium or high`);
   }
-  if (thinking.fallback !== undefined) {
+  if (thinking.fallback !== undefined && step) {
     if (thinking.fallback === null || (typeof thinking.fallback === "string" && step.models.includes(thinking.fallback))) { s.fallback = thinking.fallback as string | null; s.fromSetup.fallback = true; }
     else s.problems.push(`fallback model ${JSON.stringify(thinking.fallback)} is not on ${step.label}'s list`);
   }
@@ -167,6 +202,21 @@ export function resolveSetup(menu: AgentMenu, row: Row | null): Setup {
     const t = typeof thinking.instructions === "string" ? thinking.instructions.trim() : "";
     if (t && t.length <= MAX_INSTRUCTIONS) { s.instructions = t; s.fromSetup.instructions = true; }
     else s.problems.push(t ? `instructions are longer than ${MAX_INSTRUCTIONS} characters` : "instructions are empty");
+  }
+  for (const [id, v] of Object.entries(obj(thinking.steps))) {
+    const d = menu.steps.slice(1).find((x) => x.id === id);
+    if (!d) { s.problems.push(`"${id}" is not a thinking step this agent has`); continue; }
+    const c = resolveStep(d, v);
+    if (typeof c === "string") s.problems.push(c); else { s.more[id] = c; s.fromSetup.more[id] = true; }
+  }
+  for (const [k, v] of Object.entries(choices)) {
+    const d = menu.choices?.[k];
+    if (!d) { s.problems.push(`"${k}" is not a setting this agent has`); continue; }
+    const on = Array.isArray(v) && v.every((x) => typeof x === "string") ? [...new Set(v as string[])] : null;
+    const bad = on?.filter((x) => !d.options.some((o) => o.id === x)) ?? [];
+    if (!on || bad.length) s.problems.push(on ? `${d.label}: ${bad.join(", ")} is not on the list` : `${d.label} is not a list`);
+    else if (on.length < d.min || on.length > d.max) s.problems.push(`${d.label} needs ${d.min} to ${d.max} picks`);
+    else { s.choices[k] = on; s.fromSetup.choices[k] = true; }
   }
   for (const [k, v] of Object.entries(numbers)) {
     const d = menu.numbers[k];
@@ -176,12 +226,15 @@ export function resolveSetup(menu: AgentMenu, row: Row | null): Setup {
   }
   if (reads.off !== undefined) {
     const off = ids(reads.off), bad = off?.filter((x) => !menu.reads.some((r) => r.id === x)) ?? [];
-    if (off && !bad.length) { s.readsOff = off; s.fromSetup.reads = true; }
-    else s.problems.push(off ? `fact source ${bad.join(", ")} is not on the menu` : "the list of fact sources turned off is not a list");
+    const locked = off?.filter((x) => menu.reads.find((r) => r.id === x)?.locked) ?? [];
+    if (off && !bad.length && !locked.length) { s.readsOff = off; s.fromSetup.reads = true; }
+    else s.problems.push(!off ? "the list of fact sources turned off is not a list" : bad.length ? `fact source ${bad.join(", ")} is not on the menu` : `${locked.join(", ")} can't be turned off`);
   }
   if (writes.off !== undefined) {
     const off = ids(writes.off), bad = off?.filter((x) => !menu.outputs.some((o) => o.id === x)) ?? [];
+    const locked = off?.filter((x) => menu.outputs.find((o) => o.id === x)?.locked) ?? [];
     if (!off || bad.length) s.problems.push(off ? `output ${bad.join(", ")} is not on the menu` : "the list of outputs turned off is not a list");
+    else if (locked.length) s.problems.push(`${locked.join(", ")} can't be turned off`);
     else if (menu.outputs.length && off.length >= menu.outputs.length) s.problems.push("every output was turned off, so all stay on");
     else { s.outputsOff = off; s.fromSetup.outputs = true; }
   }
@@ -194,10 +247,28 @@ export function resolveSetup(menu: AgentMenu, row: Row | null): Setup {
   }
   if (writes.notion !== undefined && writes.notion !== null) {
     const t = notionTarget(writes.notion);
-    if (t && menu.notion) { s.notion = t; s.fromSetup.notion = true; }
+    if (t && menu.notion?.pageOnly && t.kind === "database") s.problems.push("this agent writes a new page each run, so the Notion target must be a page");
+    else if (t && menu.notion) { s.notion = t; s.fromSetup.notion = true; }
     else s.problems.push(menu.notion ? "the Notion target is not a page or database id" : "this agent has no Notion output");
   }
   return s;
+}
+
+/** The model id an agent with no thinking step reports. */
+export const NO_MODEL = "none";
+
+/** One extra step's stored choice, checked against its menu entry; a string says why it was ignored. */
+function resolveStep(d: StepDef, v: unknown): StepChoice | string {
+  const x = obj(v);
+  const c: StepChoice = { model: d.model, effort: d.effort, fallback: d.fallback };
+  if (x.model !== undefined) { if (typeof x.model === "string" && d.models.includes(x.model)) c.model = x.model; else return `model ${JSON.stringify(x.model)} is not on ${d.label}'s list`; }
+  if (x.effort !== undefined) { if (EFFORTS.includes(x.effort as Effort)) c.effort = x.effort as Effort; else return `${d.label} effort ${JSON.stringify(x.effort)} is not low, medium or high`; }
+  if (x.fallback !== undefined) {
+    if (x.fallback === null) c.fallback = null;
+    else if (!d.fallbackOff && typeof x.fallback === "string" && d.models.includes(x.fallback)) c.fallback = x.fallback;
+    else return d.fallbackOff ? `${d.label} has no fallback` : `fallback ${JSON.stringify(x.fallback)} is not on ${d.label}'s list`;
+  }
+  return c;
 }
 
 /** A list of short ids, or null. */
@@ -244,12 +315,14 @@ export const setupWords = (s: Setup) => `${s.version == null ? "built-in setup" 
 /** What the setup editors send: every editable value, picked from the menu. One draft covers all the boxes. */
 export interface SetupDraft {
   model: string; effort: Effort; fallback: string | null; instructions: string;
+  more: Record<string, StepChoice>;
   numbers: Record<string, number>;
+  choices: Record<string, string[]>;
   readsOff: string[]; outputsOff: string[]; sections: string[]; notion: NotionTarget | null;
 }
 
 /** The setup's values as a draft. */
-export const toDraft = (s: Setup): SetupDraft => ({ model: s.model, effort: s.effort, fallback: s.fallback, instructions: s.instructions, numbers: { ...s.numbers }, readsOff: [...s.readsOff], outputsOff: [...s.outputsOff], sections: [...s.sections], notion: s.notion });
+export const toDraft = (s: Setup): SetupDraft => ({ model: s.model, effort: s.effort, fallback: s.fallback, instructions: s.instructions, more: JSON.parse(JSON.stringify(s.more)), numbers: { ...s.numbers }, choices: JSON.parse(JSON.stringify(s.choices)), readsOff: [...s.readsOff], outputsOff: [...s.outputsOff], sections: [...s.sections], notion: s.notion });
 
 /** The draft as a setup. Problems mean the draft asks for something the menu doesn't offer. */
 export function fromDraft(menu: AgentMenu, base: Setup, d: SetupDraft): Setup {
@@ -272,18 +345,21 @@ function rawSetup(menu: AgentMenu, base: Setup, d: SetupDraft) {
   const instructions = typeof d.instructions === "string" ? d.instructions.trim() : d.instructions;
   const keep = <T>(v: T, dv: T, chosen: boolean) => (chosen || !same(v, dv) ? v : undefined);
   const numbers = Object.fromEntries(Object.entries(d.numbers ?? {}).filter(([k, v]) => base.fromSetup.numbers[k] || v !== def.numbers[k]));
+  const choices = Object.fromEntries(Object.entries(d.choices ?? {}).filter(([k, v]) => base.fromSetup.choices[k] || !same(v, def.choices[k])));
+  const steps = Object.fromEntries(Object.entries(d.more ?? {}).filter(([k, v]) => base.fromSetup.more[k] || !same(v, def.more[k])));
   const off = keep(d.readsOff, def.readsOff, base.fromSetup.reads);
   const writes = { off: keep(d.outputsOff, def.outputsOff, base.fromSetup.outputs), sections: keep(d.sections, def.sections, base.fromSetup.sections), notion: d.notion ?? undefined };
   return {
-    thinking: { model: d.model, effort: d.effort, fallback: d.fallback ?? null, ...(instructions === menu.instructions.trim() ? {} : { instructions }) },
+    ...(menu.steps.length ? { thinking: { model: d.model, effort: d.effort, fallback: d.fallback ?? null, ...(menu.instructionsLocked || instructions === menu.instructions.trim() ? {} : { instructions }), ...(Object.keys(steps).length ? { steps } : {}) } } : {}),
     numbers,
+    ...(Object.keys(choices).length ? { choices } : {}),
     ...(off ? { reads: { off } } : {}),
     ...(Object.values(writes).some((v) => v !== undefined) ? { writes } : {}),
   };
 }
 
 const EFFORT_RANK: Record<Effort, number> = { low: 0, medium: 1, high: 2 };
-type Loosen = Pick<Setup, "model" | "effort" | "fallback" | "outputsOff" | "notion">;
+type Loosen = Pick<Setup, "model" | "effort" | "fallback" | "outputsOff" | "notion"> & { more?: Setup["more"] };
 
 /**
  * Why `next` is looser than `now`, or [] when it isn't: it costs more (a pricier model or
@@ -296,6 +372,13 @@ export function loosening(menu: AgentMenu, now: Loosen, next: Loosen, price: (m:
   if (price(next.model) > price(now.model)) out.push(`${next.model} costs more per token than ${now.model}`);
   if (next.fallback && (!now.fallback || price(next.fallback) > price(now.fallback))) out.push(`fallback ${next.fallback} costs more than ${now.fallback ?? "no fallback"}`);
   if (EFFORT_RANK[next.effort] > EFFORT_RANK[now.effort]) out.push(`effort ${next.effort} uses more tokens than ${now.effort}`);
+  for (const d of menu.steps.slice(1)) {
+    const a = now.more?.[d.id], b = next.more?.[d.id];
+    if (!a || !b) continue;
+    if (price(b.model) > price(a.model)) out.push(`${d.label}: ${b.model} costs more per token than ${a.model}`);
+    if (b.fallback && (!a.fallback || price(b.fallback) > price(a.fallback))) out.push(`${d.label}: fallback ${b.fallback} costs more than ${a.fallback ?? "no fallback"}`);
+    if (EFFORT_RANK[b.effort] > EFFORT_RANK[a.effort]) out.push(`${d.label}: effort ${b.effort} uses more tokens than ${a.effort}`);
+  }
   for (const o of menu.outputs) if (now.outputsOff.includes(o.id) && !next.outputsOff.includes(o.id)) out.push(`${o.label} turned back on`);
   if (next.notion && next.notion.id !== now.notion?.id) out.push(`the Notion copy goes to a different ${next.notion.kind}: ${next.notion.title}`);
   return out;

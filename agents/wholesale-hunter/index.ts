@@ -9,17 +9,31 @@ import { db } from "@/core/db";
 import { env } from "@/core/env";
 import { loadMemory, loadWords, type MemoryLoad } from "@/core/memory";
 import type { RunResult } from "@/core/runs";
+import { outputOn, setupOrDefaults, setupWords, type Setup } from "@/core/setup";
 import { chicagoDate, dayTitle } from "@/core/time";
-import { Anthropic, MODELS, claude, costUsd, inputTokens } from "@/integrations/anthropic";
+import { Anthropic, claude, costUsd, inputTokens, isModel } from "@/integrations/anthropic";
 import { createDraft, hasGmail } from "@/integrations/gmail";
 import { divider, h2, h3, li, notionPage, p, quote, type Block } from "@/integrations/notion";
 import { getInventoryLots } from "@/integrations/shopify/lots";
 import { fetchStockCoffees } from "@/integrations/shopify/stock";
-import { AREAS, PER_RUN, SOP } from "./prompt";
+import { BUSINESS_TYPES, MAX_FETCHES, MAX_SEARCHES, MAX_TURNS, MENU } from "./menu";
+import { SAFETY } from "./prompt";
 
-const MODEL = MODELS.opus;
-/** Limits enforced in code; the Guardrails box lists them. */
-export const MAX_TURNS = 6, MAX_SEARCHES = 10, MAX_FETCHES = 20;
+/** Limits enforced in code; the Guardrails box lists them. A setup picks at or under each. */
+export { MAX_FETCHES, MAX_SEARCHES, MAX_TURNS };
+
+/** The run's sizes from the setup, never above the limits in code (the menu already refuses more; this holds if it didn't). */
+function sizes(setup: Setup) {
+  const n = (k: string, max: number) => Math.max(1, Math.min(max, Math.floor(setup.numbers[k] ?? max)));
+  const label = (k: string, list: readonly { id: string; label: string }[]) => (setup.choices[k] ?? []).map((id) => list.find((o) => o.id === id)?.label).filter((x): x is string => !!x);
+  const areas = label("areas", MENU.choices!.areas.options), kinds = label("business_types", BUSINESS_TYPES);
+  return {
+    perRun: n("leads_per_run", MENU.numbers.leads_per_run.max), searches: n("max_searches", MAX_SEARCHES),
+    fetches: n("max_fetches", MAX_FETCHES), turns: n("max_turns", MAX_TURNS),
+    areas: areas.length ? areas : MENU.choices!.areas.default.map((id) => MENU.choices!.areas.options.find((o) => o.id === id)!.label),
+    kinds: kinds.length ? kinds : BUSINESS_TYPES.map((b) => b.label),
+  };
+}
 
 const RECORD = {
   name: "record_leads",
@@ -91,26 +105,29 @@ async function offer() {
   };
 }
 
-async function hunt(facts: unknown, known: string[], memory: MemoryLoad | null) {
+async function hunt(facts: unknown, known: string[], memory: MemoryLoad | null, setup: Setup) {
   const client = claude();
+  const z = sizes(setup);
   const messages: Anthropic.Beta.BetaMessageParam[] = [{
     role: "user",
-    content: `Today is ${chicagoDate(0)}. Find ${PER_RUN} new wholesale leads in ${AREAS.join(", ")}.\n\n` +
+    content: `Today is ${chicagoDate(0)}. Find ${z.perRun} new wholesale leads in ${z.areas.join(", ")}.\n\nKinds of business that fit: ${z.kinds.join("; ")}.\n\n` +
       `Offer facts:\n${JSON.stringify(facts, null, 1)}\n\nAlready in the pipeline (skip these):\n${known.length ? known.join("\n") : "(none yet)"}`,
   }];
   const usage = { in: 0, out: 0, searches: 0 };
   let nudged = false;
-  for (let turn = 0; turn < MAX_TURNS; turn++) {
+  // the locked safety block always comes first and no setup can change it; then the instructions, then memory
+  const system = [{ type: "text" as const, text: SAFETY }, { type: "text" as const, text: setup.instructions }, ...(memory?.block ? [{ type: "text" as const, text: memory.block }] : [])];
+  for (let turn = 0; turn < z.turns; turn++) {
     const res = await client.beta.messages.create({
-      model: MODEL,
+      model: setup.model,
       max_tokens: 16000,
       betas: ["server-side-fallback-2026-07-01"],
       fallbacks: "default",
-      output_config: { effort: "medium" },
-      system: memory?.block ? [{ type: "text", text: SOP }, { type: "text", text: memory.block }] : SOP,
+      output_config: { effort: setup.effort },
+      system,
       tools: [
-        { type: "web_search_20260209", name: "web_search", max_uses: MAX_SEARCHES, user_location: { type: "approximate", city: "Austin", region: "Texas", country: "US", timezone: "America/Chicago" } },
-        { type: "web_fetch_20260209", name: "web_fetch", max_uses: MAX_FETCHES },
+        { type: "web_search_20260209", name: "web_search", max_uses: z.searches, user_location: { type: "approximate", city: "Austin", region: "Texas", country: "US", timezone: "America/Chicago" } },
+        { type: "web_fetch_20260209", name: "web_fetch", max_uses: z.fetches },
         RECORD,
       ],
       messages,
@@ -144,7 +161,12 @@ function leadBlocks(rows: { lead: Lead; draftId: string | null; draftError: stri
   ]);
 }
 
-export async function runHunter(runId?: string, opts: { dryRun?: boolean; memory?: MemoryLoad | null } = {}): Promise<RunResult> {
+export async function runHunter(runId?: string, opts: { dryRun?: boolean; memory?: MemoryLoad | null; setup?: Setup | null } = {}): Promise<RunResult> {
+  // a real run gets its setup from withRun; a dry run reads it here. A setup that can't be read falls back to the menu.
+  let setup = opts.setup ?? null, setupNote = "";
+  if (!setup) { const got = await setupOrDefaults(MENU); setup = got.setup; if (got.problem) setupNote = ` (setup not read: ${got.problem}; built-in values used)`; }
+  if (!isModel(setup.model)) throw new Error(`No price for ${setup.model} in integrations/models.ts, so its cost can't be computed`);
+  const z = sizes(setup);
   const [facts, { data: existing }] = await Promise.all([
     offer(),
     db().from("wholesale_leads").select("business, domain"),
@@ -153,10 +175,10 @@ export async function runHunter(runId?: string, opts: { dryRun?: boolean; memory
   if (opts.dryRun) {
     let mem = "";
     try { mem = `; ${loadWords(await loadMemory("wholesale_hunter"))}`; } catch (e) { mem = `; memory not loaded (${e instanceof Error ? e.message.slice(0, 80) : e})`; }
-    return { status: "ok", summary: `[dry run, no search] offer has ${facts.ourCoffees.length} coffees and ${facts.greenLots.length} green lots; ${existing?.length ?? 0} leads already in the pipeline${mem}` };
+    return { status: "ok", summary: `[dry run, no search] ${setupWords(setup)}${setupNote}: ${z.perRun} leads in ${z.areas.join(", ")} with ${setup.model}; offer has ${facts.ourCoffees.length} coffees and ${facts.greenLots.length} green lots; ${existing?.length ?? 0} leads already in the pipeline${mem}` };
   }
   const knownDomains = new Set((existing ?? []).map((r) => r.domain).filter(Boolean));
-  const { leads, remember, usage } = await hunt(facts, (existing ?? []).map((r) => `${r.business}${r.domain ? ` (${r.domain})` : ""}`), opts.memory ?? null);
+  const { leads, remember, usage } = await hunt(facts, (existing ?? []).map((r) => `${r.business}${r.domain ? ` (${r.domain})` : ""}`), opts.memory ?? null, setup);
 
   const fresh: Lead[] = [];
   for (const l of leads) {
@@ -166,9 +188,9 @@ export async function runHunter(runId?: string, opts: { dryRun?: boolean; memory
     fresh.push({ ...l, email: l.email && EMAIL.test(l.email.trim()) ? l.email.trim() : null, fit_score: Math.min(5, Math.max(1, Math.round(l.fit_score))) });
   }
 
-  const gmail = hasGmail();
+  const gmail = hasGmail() && outputOn(setup, "gmail");
   const rows = [];
-  for (const l of fresh.slice(0, PER_RUN)) {
+  for (const l of fresh.slice(0, z.perRun)) {
     let draftId: string | null = null, draftError: string | null = null;
     if (gmail && l.email) {
       try { draftId = await createDraft(l.email, l.subject, l.body); } catch (e) { draftError = e instanceof Error ? e.message.slice(0, 120) : String(e); }
@@ -184,18 +206,20 @@ export async function runHunter(runId?: string, opts: { dryRun?: boolean; memory
   }
 
   const today = chicagoDate(0);
-  const url = await notionPage(`Wholesale leads · ${dayTitle(today)}`, [
+  // the page picked in the setup, else NOTION_LEADS_PARENT_ID; none when the output is off
+  const parent = outputOn(setup, "notion") && env.notionToken ? (setup.notion?.id ?? env.notionLeadsParent) : undefined;
+  const url = parent ? await notionPage(`Wholesale leads · ${dayTitle(today)}`, [
     h2(`${rows.length} new lead${rows.length === 1 ? "" : "s"}`),
-    p(gmail ? "Drafts with an email address are waiting in Gmail. Edit, send or delete them there." : "Gmail isn't connected yet, so copy each draft from here."),
+    p(gmail ? "Drafts with an email address are waiting in Gmail. Edit, send or delete them there." : outputOn(setup, "gmail") ? "Gmail isn't connected yet, so copy each draft from here." : "Gmail drafts are off in Rowan's setup, so copy each draft from here."),
     ...leadBlocks(rows),
-  ], env.notionLeadsParent);
+  ], parent) : null;
   const drafted = rows.filter((r) => r.draftId).length;
   return {
     status: "ok",
-    summary: `${rows.length} new leads${leads.length > rows.length ? ` (${leads.length} found, ${leads.length - rows.length} already known or unusable)` : ""}${gmail ? `, ${drafted} Gmail drafts` : ""}, ${usage.searches} searches: ${url}${opts.memory ? `. ${loadWords(opts.memory).replace(/^m/, "M")}.` : ""}`,
+    summary: `${rows.length} new leads${leads.length > rows.length ? ` (${leads.length} found, ${leads.length - rows.length} already known or unusable)` : ""}${gmail ? `, ${drafted} Gmail drafts` : ""}, ${usage.searches} searches, ${setupWords(setup)}${url ? `: ${url}` : " (no Notion page)"}${opts.memory ? `. ${loadWords(opts.memory).replace(/^m/, "M")}.` : ""}`,
     remember,
     tokensIn: usage.in, tokensOut: usage.out,
-    costUsd: costUsd(MODEL, usage.in, usage.out, usage.searches),
+    costUsd: costUsd(setup.model, usage.in, usage.out, usage.searches),
     metrics: { new_leads: rows.length, drafts: drafted },
   };
 }

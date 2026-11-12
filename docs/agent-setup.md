@@ -88,8 +88,8 @@ actions `previewSetup`, `saveSetupVersion` and `rollBackSetup` in `dashboard/act
   Replay and Avery's own "What ran". A preview may run while the agent is off duty (it acts on
   nothing) and needs `DASHBOARD_CONTROLS=on` because it spends money.
 - On a phone the boxes stack, like the Live floor.
-- An agent without a menu yet (Morgan, Rowan, Quinn) still gets the canvas; its values all read
-  Code until its menu is written (slice 7).
+- Every built agent has a menu since slice 7. An agent added later without one still gets the
+  canvas, with its values reading Code.
 
 Mission control's Live floor and the run replay page still use `RunCanvas.tsx`. They move to the
 new canvas with the crew canvas (slice 5), so both views change once.
@@ -197,7 +197,7 @@ line tagged "Enforced in code":
   leads, searches, page reads and turns; Quinn's Gmail searches, PDF size and look-back; the
   gateway's writes per apply, memo length and approval expiry; Avery's watch list, instructions
   length and fixed recipient). Each line names the file or `policies` row that enforces it.
-  These change with a pull request until each agent gets its menu (slice 7).
+  Since slice 7 Rowan's and Quinn's numbers are setup choices at or under these limits.
 - Money and email caps, crew-wide (`policies`): per purchase, per calendar month, emails per day,
   undo window. Lowering applies right away (the undo window is the other way round: shorter is
   looser). Loosening needs a confirm and `DASHBOARD_CONTROLS=on`, and stops at the limit in code
@@ -214,6 +214,37 @@ list", built in the same pull request: migration `20261112230000_caps_and_vendor
 vendors list (add needs `DASHBOARD_CONTROLS=on`) and addresses that get no email.
 `npm run check:policy` runs the checks against a table of cases.
 
+## Menus for Rowan, Quinn and Morgan (slice 7)
+
+`agents/<id>/menu.ts` for each, registered in `agents/menus.ts`; migration
+`20261113090000_setup_rowan_quinn_morgan.sql` seeds v1 for each with the values it already ran
+with, so nothing changes until Zak saves a v2. Every number's highest value is today's limit in
+code, so a setup can make a run smaller and cheaper, never bigger.
+
+- Rowan (`wholesale_hunter`): one step, Claude only (Anthropic's web tools), no fallback in
+  code; effort; editable instructions after a locked safety block (the prompt is now split into
+  `SAFETY` and `SOP`, and SOP holds no numbers or lists); web searches, pages read and model
+  turns (Thinking); areas and kinds of business, picked from fixed lists in code (Reads and
+  Thinking), so a web page can't add one; leads per run, Gmail drafts on or off, and the Notion
+  page the run's page goes under (Writes). Offer facts, the pipeline and web search are locked on,
+  and so is the `wholesale_leads` output.
+- Quinn (`bookkeeper`): two steps, each with its own Claude model and effort (read a receipt,
+  needs PDF; suggest categories), no fallback; the instructions stay in code
+  (`instructionsLocked`) because both are short prompts whose answers code checks. Look-back
+  days, Gmail searches per run and per charge, and receipt search in Gmail on or off (Reads);
+  the Notion page (Writes). Mercury, `expense_docs` and approval cards are locked on. Cost is
+  added up per call, since the two steps can use different models.
+- Morgan (`cfo`): no steps (`Setup.model` is `none`), every read and the snapshot output locked.
+  The menu exists so the canvas shows the same boxes with each part marked as fixed in code.
+- Notion for Rowan and Quinn is `pageOnly`: the picker lists only pages, and a database is
+  refused. With no page picked they use `NOTION_LEADS_PARENT_ID` / `NOTION_BOOKS_PARENT_ID`.
+- Preview for agents without a model preview is "Dry run with this draft": the free dry run
+  with the draft setup (real reads, no model, nothing written, not logged), so it needs no
+  `DASHBOARD_CONTROLS`. Avery keeps the one-call preview.
+- `core/setup.ts` gained what these menus need: extra steps in `Setup.more`, pick-lists in
+  `Setup.choices`, `fallbackOff`, `instructionsLocked`, locked parts and `pageOnly`. Loosening
+  also checks each extra step's model and effort.
+
 ## Slices
 
 1. Setup store and the read-only canvas. Avery reads its model, effort,
@@ -224,4 +255,4 @@ vendors list (add needs `DASHBOARD_CONTROLS=on`) and addresses that get no email
 4. Reads and Writes editable for Avery (sources, outputs, Notion target, sections).
 5. Crew canvas: triggers and chains.
 6. Guardrails box and caps.
-7. Menus for Rowan, Quinn and Morgan.
+7. Menus for Rowan, Quinn and Morgan (built).
