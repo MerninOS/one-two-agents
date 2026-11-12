@@ -14,7 +14,7 @@ export function RunTable({ runs, showAgent = true, foot }: { runs: Run[]; showAg
       </div>
       {runs.map((r) => {
         const a = BY_ID[r.agent_id];
-        const trig = r.trigger === "cron" ? "Schedule" : r.trigger === "manual" ? "Manual" : r.trigger === "approval" ? "Approval" : r.trigger;
+        const trig = r.trigger === "cron" ? "Schedule" : r.trigger === "manual" ? "Manual" : r.trigger === "approval" ? "Approval" : r.trigger === "chain" ? "Chain" : r.trigger;
         return (
           <div key={r.id} className={"tbl-row" + (r.status === "failed" ? " fail" : "") + (showAgent ? "" : " no-agent")} style={cols}>
             <span className="c-status" style={{ justifySelf: "start" }}><Pill look={RUN_LOOK[r.status]} sm /></span>

@@ -324,3 +324,11 @@ h1, h2, h3, p { margin: 0; }
   .ted-grid, .ted-cols { grid-template-columns: minmax(0, 1fr); }
   .ted-mail { height: 480px; }
 }
+
+/* Chain replay (run page): each step of the chain run, this run highlighted */
+.chain-steps { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 10px; }
+.chain-step { display: flex; flex-direction: column; gap: 6px; padding: 12px 14px; border-radius: 16px; border: 1px solid var(--bd); background: var(--card); color: var(--ink); }
+.chain-step:hover { text-decoration: none; border-color: var(--mut2); }
+.chain-step.here { border-color: var(--acc); background: var(--acc-soft); }
+/* Crew canvas: small selects sit in a sentence */
+.input.sel-auto, .ted-field select.input.sel-auto { width: auto; max-width: 100%; }

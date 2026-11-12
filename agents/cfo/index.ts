@@ -103,5 +103,5 @@ export async function snapshot(date = chicagoDate(1), opts: { dryRun?: boolean }
 export async function runCfoSnapshot(opts: { dryRun?: boolean } = {}): Promise<RunResult> {
   const s = await snapshot(chicagoDate(1), opts);
   const margin = s.green_margin == null ? "n/a" : `${Math.round(s.green_margin * 100)}%`;
-  return { status: "ok", summary: `${opts.dryRun ? "[dry run, not saved] " : ""}${s.date}: ${s.orders} orders, $${s.revenue.toFixed(2)} revenue, green margin ${margin}${s.cash_usd == null ? "" : `, cash $${s.cash_usd.toFixed(0)}`}` };
+  return { status: "ok", summary: `${opts.dryRun ? "[dry run, not saved] " : ""}${s.date}: ${s.orders} orders, $${s.revenue.toFixed(2)} revenue, green margin ${margin}${s.cash_usd == null ? "" : `, cash $${s.cash_usd.toFixed(0)}`}`, metrics: { orders: s.orders } };
 }

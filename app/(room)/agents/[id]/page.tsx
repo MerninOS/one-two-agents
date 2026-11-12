@@ -482,14 +482,14 @@ function Shift({ a, f, controls }: { a: CrewMember; f: Floor; controls: boolean 
   }
   const row = f.agents[a.id];
   const next = nextRuns(a.schedule, f.now, 5);
-  const name = a.schedule?.vercelName;
+  const chain = a.schedule?.chain;
   return (
     <div className="grid2" style={{ gridTemplateColumns: "minmax(0,1.3fr) minmax(0,1fr)" }}>
       <div className="card" style={{ gap: 16 }}>
         <span className="card-t">Shift</span>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 8 }}>
           <div className="soft-box" style={{ alignItems: "flex-start", padding: 14 }}>
-            <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 3 }}><span style={{ fontSize: 13.5, fontWeight: 600 }}>Schedule</span><span style={{ fontSize: 12, lineHeight: 1.4 }} className="ink2">{name ? `Vercel Schedule “${name}”. On or off is set in Vercel, not here.` : "No schedule. Never runs on its own."}</span></div>
+            <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 3 }}><span style={{ fontSize: 13.5, fontWeight: 600 }}>Schedule</span><span style={{ fontSize: 12, lineHeight: 1.4 }} className="ink2">{chain ? <>Set on the <Link href="/crew">Crew canvas</Link> (chain “{chain}”). It runs on its own only while that chain is on.</> : <>Not in a chain, so it never runs on its own. Add it on the <Link href="/crew">Crew canvas</Link>.</>}</span></div>
           </div>
           <div className="soft-box" style={{ alignItems: "flex-start", padding: 14 }}>
             <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 3 }}><span style={{ fontSize: 13.5, fontWeight: 600 }}>On the crew</span><span style={{ fontSize: 12, lineHeight: 1.4 }} className="ink2">The master switch. When off, every run is skipped and logged at $0.</span></div>
@@ -498,13 +498,6 @@ function Shift({ a, f, controls }: { a: CrewMember; f: Floor; controls: boolean 
         </div>
         <span style={{ fontSize: 13.5, fontWeight: 500 }}>{combined(a, row)}</span>
         <span style={{ fontSize: 13.5, lineHeight: 1.5 }} className="ink2">{schedSentence(a.schedule)}</span>
-        {name && (
-          <div style={{ fontSize: 12.5, padding: "12px 14px", borderRadius: 14, background: "var(--soft)", display: "flex", flexDirection: "column", gap: 6 }}>
-            <span style={{ fontWeight: 600 }}>Change it from a terminal</span>
-            <code style={{ fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace", fontSize: 12, lineHeight: 1.7, whiteSpace: "pre-wrap" }}>{`vercel schedules disable ${name}\nvercel schedules enable ${name}\nvercel schedules invoke ${name}   # run once now`}</code>
-            <span className="muted">New times go in vercel.json and go live with the next deploy.</span>
-          </div>
-        )}
       </div>
       <div className="card" style={{ gap: 4 }}>
         <span className="card-t" style={{ marginBottom: 8 }}>Next 5 runs</span>

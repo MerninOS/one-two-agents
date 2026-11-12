@@ -2,16 +2,10 @@
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "framework": "nextjs",
   "schedules": {
-    "cfo": {
-      "schedule": "30 5 * * *",
+    "dispatch": {
+      "schedule": "*/15 * * * *",
       "timezone": "America/Chicago",
-      "path": "/api/agents/cfo",
-      "requestMethod": "GET"
-    },
-    "chief-of-staff": {
-      "schedule": "45 6 * * 1-5",
-      "timezone": "America/Chicago",
-      "path": "/api/agents/chief_of_staff",
+      "path": "/api/dispatch",
       "requestMethod": "GET"
     }
   }

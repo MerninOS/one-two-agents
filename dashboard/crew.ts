@@ -11,7 +11,8 @@ export interface Schedule {
   /** "HH:MM" in Central Time */
   time?: string;
   /** Vercel Schedule name in vercel.json */
-  vercelName?: string;
+  /** The crew flow chain (core/flow.ts) that runs it on this schedule. Off until Zak turns the chain on. */
+  chain?: string;
 }
 
 export interface CrewMember {
@@ -51,7 +52,7 @@ export const CREW: CrewMember[] = [
       ["Numbers", "Come from code. Claude writes only the watch list and today’s focus, with a rules fallback."],
       ["Works with", "Reads every other agent’s runs for the morning brief."],
     ],
-    schedule: { kind: "weekdays", time: "06:45", vercelName: "chief-of-staff" },
+    schedule: { kind: "weekdays", time: "06:45", chain: "morning" },
   },
   {
     id: "cfo", name: "Morgan", role: "CFO", hue: "#6CC69A", icon: "calculator", built: true, tier: "Report",
@@ -65,7 +66,7 @@ export const CREW: CrewMember[] = [
       ["Writes", "Its own table kpi_snapshots"],
       ["Works with", "Avery reads the snapshot each morning."],
     ],
-    schedule: { kind: "daily", time: "05:30", vercelName: "cfo" },
+    schedule: { kind: "daily", time: "05:30", chain: "morning" },
   },
   {
     id: "wholesale_hunter", name: "Rowan", role: "Wholesale Hunter", hue: "#F5D35C", icon: "compass", built: true, tier: "Draft",

@@ -9,8 +9,8 @@ ten agents is the "One Two Coffee Lab Agent System" tech spec.
 
 | Route | Schedule | What it does |
 | --- | --- | --- |
-| `/api/agents/cfo` | daily 5:30 AM Central | Yesterday's revenue, orders, AOV, repeat rate, green cost and margin from Shopify, cash from Mercury → `kpi_snapshots`. Plain code, no model |
-| `/api/agents/chief_of_staff` | weekdays 6:45 AM Central | Morning brief → an email to Zak (when `RESEND_API_KEY`, `BRIEF_FROM` and `BRIEF_TO` are set; see `docs/avery-email.md`) and a Notion page. Numbers come from code; Claude writes only the Watch list and today's focus, with a rules fallback when the API can't be reached |
+| `/api/agents/cfo` | Morning chain: daily 5:30 AM Central (off) | Yesterday's revenue, orders, AOV, repeat rate, green cost and margin from Shopify, cash from Mercury → `kpi_snapshots`. Plain code, no model |
+| `/api/agents/chief_of_staff` | Morning chain: after Morgan, weekdays not before 6:45 AM Central (off) | Morning brief → an email to Zak (when `RESEND_API_KEY`, `BRIEF_FROM` and `BRIEF_TO` are set; see `docs/avery-email.md`) and a Notion page. Numbers come from code; Claude writes only the Watch list and today's focus, with a rules fallback when the API can't be reached |
 | `/api/agents/bookkeeper` | manual only until launch (planned daily 6:00 AM Central) | Business charges from Mercury → `expense_docs`, receipts found in Gmail (read-only token) saved to the private `receipts` bucket, category suggestions from Mercury's own list, charges that need a photo, month close on the 3rd → a Notion page. Haiku reads receipts; code decides every match. **Never writes to Mercury itself**: receipt, category and memo are proposals that the tool gateway applies after Zak approves them in the Control Room. A few cents a run. Ships off (`agents.enabled = false`) |
 | `/api/agents/wholesale_hunter` | manual only | Claude searches the web for a few new wholesale/private label prospects in Austin, Lakeway and Bee Cave, scores fit, writes a first-touch email → `wholesale_leads`, Gmail drafts (if `GMAIL_*` is set) and a Notion page. Drafts only; nothing is sent. About $1 a run |
 
@@ -20,15 +20,17 @@ The old paths `/api/agents/brief` and `/api/agents/hunter` still work.
 - Add `?trigger=manual` when running one by hand, so `agent_runs` records it as manual.
 - Add `?dryRun=1` to read real data without writing anything or calling a model: no
   `agent_runs` row, no Supabase, Notion or Gmail writes. Good for checking a deploy.
-- Schedules are Vercel Schedules (`schedules` in `vercel.json`, the replacement for Cron
-  Jobs), named `cfo` and `chief-of-staff`, in `America/Chicago` time so daylight saving
-  doesn't shift them. **Both are disabled while the agents are in development.** A disabled
-  schedule stays disabled across deploys:
+- Schedules live in the crew flow (Control Room, Crew canvas; `docs/agent-setup.md`, slice 5),
+  not in `vercel.json`. The one Vercel Schedule is `dispatch` (`/api/dispatch`, every 15
+  minutes, `America/Chicago`): it starts the chains that are on and due, and steps waiting for
+  their "not before" time. **Every chain is off while the agents are in development**, so the
+  dispatcher does nothing. To stop it entirely:
   ```bash
   vercel schedules list
-  vercel schedules disable cfo        # or enable; no redeploy needed
-  vercel schedules invoke cfo         # run once now, even while disabled
+  vercel schedules disable dispatch   # or enable; no redeploy needed
   ```
+  A chain step is a request to `/api/agents/<id>?trigger=chain&chain=…&key=…&step=…`; the route
+  checks it against the saved flow.
 - `agents.enabled = false` is a second off switch: a firing is logged as skipped at $0.
   The CFO snapshot and brief are also off there until launch.
 - `agents.daily_budget_usd` caps model spend per agent per UTC day.
