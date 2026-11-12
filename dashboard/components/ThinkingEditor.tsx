@@ -14,7 +14,7 @@ import { Icon } from "./Icon";
 import { Modal, Toast, type Confirm } from "./client";
 
 type Gap = { op: "gap"; text: string };
-export interface EditorModel { id: string; in: number | null; out: number | null }
+export interface EditorModel { id: string; label: string; provider: string; /** Called through Vercel AI Gateway rather than the Claude API. */ gateway: boolean; in: number | null; out: number | null }
 export interface EditorVersion {
   version: number; active: boolean; note: string | null; by: string; at: string;
   model: string; effort: Effort; fallback: string | null; instructionsChars: number; builtInText: boolean;
@@ -30,6 +30,8 @@ export interface ThinkingEditorData {
   /** Average tokens of the last real runs that called a model, for the cost estimate. */
   usage: { runs: number; avgIn: number; avgOut: number } | null;
   controlsOn: boolean;
+  /** A gateway call can sign in (AI_GATEWAY_API_KEY, or running on Vercel). */
+  gatewayReady: boolean;
   /** Why saving is off (the setup can't be read), when it is. */
   blocked?: string;
   versions: EditorVersion[];
@@ -87,6 +89,9 @@ export function ThinkingEditor({ d }: { d: ThinkingEditorData }) {
   const discard = () => { try { localStorage.removeItem(key); } catch { /* nothing kept */ } setDraft(base); setNote(""); setOk(false); setPreview(null); };
 
   const price = (m: string) => d.models.find((x) => x.id === m)?.out ?? Infinity;
+  const picked = d.models.find((m) => m.id === draft.model);
+  const providers = [...new Set(d.models.map((m) => m.provider))];
+  const name = (id: string | null) => (id ? d.models.find((m) => m.id === id)?.label ?? id : "None");
   const runCost = (m: string) => {
     const p = d.models.find((x) => x.id === m);
     return d.usage && p?.in != null && p.out != null ? d.usage.avgIn * p.in + d.usage.avgOut * p.out : null;
@@ -115,14 +120,14 @@ export function ThinkingEditor({ d }: { d: ThinkingEditorData }) {
   const doSave = () => act("save", () => saveSetupVersion(d.agentId, draft, note, more.length > 0 && ok), (r) => { if (r.ok) discard(); });
   const askSave = () => setConfirm({
     title: `Save as v${nextV}?`, body: `${d.agentName}’s next run uses it. You can roll back from the version list at any time.`,
-    lines: [{ k: "Model", v: draft.model }, { k: "Effort", v: draft.effort }, { k: "Fallback", v: draft.fallback ?? "None" }, { k: "Instructions", v: `${n0(draft.instructions.trim().length)} characters` }, ...more.map((m) => ({ k: "Costs more", v: m }))],
+    lines: [{ k: "Model", v: name(draft.model) }, { k: "Effort", v: draft.effort }, { k: "Fallback", v: name(draft.fallback) }, { k: "Instructions", v: `${n0(draft.instructions.trim().length)} characters` }, ...more.map((m) => ({ k: "Costs more", v: m }))],
     confirmLabel: `Save v${nextV}`, kind: "dark", go: doSave,
   });
   const askRollBack = (v: EditorVersion) => {
     const m = costlier(base, { model: v.model, effort: v.effort, fallback: v.fallback, instructions: "" }, price);
     setConfirm({
       title: `Make v${v.version} active again?`, body: `Nothing is deleted. v${version ?? "?"} stays in the list and you can switch back.${m.length && !d.controlsOn ? " This version costs more, so DASHBOARD_CONTROLS must be on." : ""}`,
-      lines: [{ k: "Model", v: v.model }, { k: "Effort", v: v.effort }, { k: "Fallback", v: v.fallback ?? "None" }, ...m.map((x) => ({ k: "Costs more", v: x }))],
+      lines: [{ k: "Model", v: name(v.model) }, { k: "Effort", v: v.effort }, { k: "Fallback", v: name(v.fallback) }, ...m.map((x) => ({ k: "Costs more", v: x }))],
       confirmLabel: `Roll back to v${v.version}`, kind: m.length ? "danger" : "dark",
       go: () => act("rollback", () => rollBackSetup(d.agentId, v.version, m.length > 0)),
     });
@@ -143,22 +148,24 @@ export function ThinkingEditor({ d }: { d: ThinkingEditorData }) {
         <label className="ted-field">
           <span className="ted-k">Model</span>
           <select className="input" value={draft.model} onChange={(e) => change({ model: e.target.value, fallback: draft.fallback === e.target.value ? null : draft.fallback })}>
-            {d.models.map((m) => <option key={m.id} value={m.id}>{m.id} · {perM(m.in)} in, {perM(m.out)} out per million</option>)}
+            {providers.map((p) => <optgroup key={p} label={p}>{d.models.filter((m) => m.provider === p).map((m) => <option key={m.id} value={m.id}>{m.label} · {perM(m.in)} in, {perM(m.out)} out per million</option>)}</optgroup>)}
           </select>
+          <span className="sub">{picked?.gateway ? `Through Vercel AI Gateway. Today’s facts and Avery’s memory go to ${picked.provider} for this call.${d.gatewayReady ? "" : " The gateway can’t sign in here (no AI_GATEWAY_API_KEY, not on Vercel), so this would fall back."}` : "Straight to the Claude API, with Avery’s Claude key."} Only models that can return the watch list, focus and memory shape are listed.</span>
         </label>
         <div className="ted-field">
           <span className="ted-k">Effort</span>
           <div className="seg" role="radiogroup" aria-label="Effort">
             {EFFORTS.map((e) => <button key={e} type="button" role="radio" aria-checked={draft.effort === e} className={draft.effort === e ? "on" : ""} onClick={() => change({ effort: e })}>{e}</button>)}
           </div>
+          <span className="sub">{picked?.gateway ? "On other providers, effort sets a thinking budget (about 1K, 4K or 10K tokens) that the gateway maps to the model’s own setting." : "How hard Claude thinks before it answers. More effort, more tokens."}</span>
         </div>
         <label className="ted-field">
           <span className="ted-k">Fallback model</span>
           <select className="input" value={draft.fallback ?? ""} onChange={(e) => change({ fallback: e.target.value || null })}>
             <option value="">None. Straight to the fixed rules.</option>
-            {d.models.filter((m) => m.id !== draft.model).map((m) => <option key={m.id} value={m.id}>{m.id}</option>)}
+            {d.models.filter((m) => m.id !== draft.model).map((m) => <option key={m.id} value={m.id}>{m.label} ({m.provider})</option>)}
           </select>
-          <span className="sub">Tried once if {draft.model} can’t be reached. If both fail, fixed rules write the watch list and focus.</span>
+          <span className="sub">Tried once if {name(draft.model)} can’t be reached or answers in the wrong shape. If both fail, fixed rules write the watch list and focus.</span>
         </label>
         <div className="ted-field">
           <span className="ted-k">Cost per run</span>

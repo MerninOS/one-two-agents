@@ -94,13 +94,39 @@ actions `previewSetup`, `saveSetupVersion` and `rollBackSetup` in `dashboard/act
 Mission control's Live floor and the run replay page still use `RunCanvas.tsx`. They move to the
 new canvas with the crew canvas (slice 5), so both views change once.
 
+## Models across providers (slice 3)
+
+`integrations/models.ts` is the one list of models: id, label, provider, route, price per
+million tokens in and out, and abilities (`structured-output`, `anthropic-web-search`, `pdf`,
+`reasoning`). Cost is always the token counts times this table, in code
+(`costUsd` in `integrations/anthropic.ts`). A model that isn't in the list can't be picked, and a
+stored id that falls off the list is ignored like any other invalid setup value.
+
+- Each menu step says what it `requires`; its picker lists only models with those abilities
+  (`modelsFor`). Avery's step requires `structured-output` because the answer must be the watch
+  list, focus and memory shape.
+- Claude models go straight to the Claude API (`ANTHROPIC_API_KEY`), so they keep effort, the
+  server-side refusal fallback and Anthropic's own tools.
+- OpenAI and Google models go through Vercel AI Gateway's Anthropic-compatible endpoint
+  (`integrations/gateway.ts`). On Vercel the deployment signs in by itself (OIDC); elsewhere
+  `AI_GATEWAY_API_KEY`. No key ever goes in the app or the database. Effort maps to a thinking
+  budget of about 1K, 4K or 10K tokens.
+- Every answer is checked in code. A reply in the wrong shape counts like an unreachable model:
+  the fallback model is tried once, then the fixed rules.
+- The run summary names the model that wrote the brief, and the run replay splits cost by the
+  model whose price matches the logged cost.
+- Privacy: picking a non-Claude model sends today's facts and Avery's memory to that provider
+  through Vercel. The editor says so under the picker.
+- Gateway prices in the list are list prices as of 2026-11-12. Changing a price or adding a
+  model is a pull request.
+
 ## Slices
 
 1. Setup store and the read-only canvas. Avery reads its model, effort,
    instructions and low-green warning from its setup; version 1 holds the values it already had.
 2. Edit mode: Thinking for Avery (model, effort, instructions with a locked safety block,
    preview, versions, roll back).
-3. Model choice across providers.
+3. Model choice across providers (Claude direct, OpenAI and Google through Vercel AI Gateway).
 4. Reads and Writes editable for Avery.
 5. Crew canvas: triggers and chains.
 6. Guardrails box and caps.

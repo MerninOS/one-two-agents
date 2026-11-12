@@ -1,8 +1,8 @@
 import "server-only";
-// One place for the Claude client, model ids and per-token prices, so cost lands in
-// agent_runs the same way for every agent. Keep PRICES in step with the models used;
-// add a model here (with its price) before an agent uses it.
+// The Claude client, the Claude model ids agents use in code, and cost from the price list in
+// integrations/models.ts (every provider's prices live there).
 import Anthropic from "@anthropic-ai/sdk";
+import { modelDef } from "./models";
 
 export { Anthropic };
 
@@ -12,19 +12,12 @@ export const MODELS = {
   haiku: "claude-haiku-5-5",
 } as const;
 export type Model = (typeof MODELS)[keyof typeof MODELS];
-/** True for a model id that has a price here, so its cost can be computed. */
-export const isModel = (id: string): id is Model => (Object.values(MODELS) as string[]).includes(id);
+/** True for a model id with a price in integrations/models.ts, so its cost can be computed. */
+export const isModel = (id: string): boolean => !!modelDef(id);
 
-/** $ per token in and out. */
-const PRICES: Record<Model, { in: number; out: number }> = {
-  "claude-opus-5-5": { in: 4 / 1e6, out: 20 / 1e6 },
-  "claude-sonnet-5-5": { in: 2 / 1e6, out: 10 / 1e6 },
-  // prompts up to 100K tokens; Bookkeeper's are a few thousand
-  "claude-haiku-5-5": { in: 0.1 / 1e6, out: 0.5 / 1e6 },
-};
 export const WEB_SEARCH_USD = 0.01; // per search
 /** $ per token in and out, for estimates shown in the Control Room. Null for a model without a price. */
-export const priceOf = (id: string): { in: number; out: number } | null => (isModel(id) ? PRICES[id] : null);
+export const priceOf = (id: string): { in: number; out: number } | null => { const m = modelDef(id); return m ? { in: m.in, out: m.out } : null; };
 
 export const claude = () => new Anthropic(); // reads ANTHROPIC_API_KEY
 
@@ -32,5 +25,9 @@ export const claude = () => new Anthropic(); // reads ANTHROPIC_API_KEY
 export const inputTokens = (u: Anthropic.Beta.BetaUsage | Anthropic.Usage) =>
   u.input_tokens + (u.cache_read_input_tokens ?? 0) + (u.cache_creation_input_tokens ?? 0);
 
-export const costUsd = (model: Model, tokensIn: number, tokensOut: number, searches = 0) =>
-  Number((tokensIn * PRICES[model].in + tokensOut * PRICES[model].out + searches * WEB_SEARCH_USD).toFixed(4));
+/** Cost in code from the price list, for any provider. Throws for a model without a price: an agent checks before it calls one. */
+export function costUsd(model: string, tokensIn: number, tokensOut: number, searches = 0) {
+  const m = modelDef(model);
+  if (!m) throw new Error(`No price for ${model} in integrations/models.ts`);
+  return Number((tokensIn * m.in + tokensOut * m.out + searches * WEB_SEARCH_USD).toFixed(4));
+}

@@ -25,7 +25,9 @@ export interface StepDef {
   label: string;
   /** What the step needs from a model, in plain words, for the canvas. */
   needs: string;
-  /** Model ids this step may use. The first one is not special: `model` below is the default. */
+  /** What the step needs from a model (integrations/models.ts Cap): only models with all of it are offered. */
+  requires: readonly string[];
+  /** Model ids this step may use: integrations/models.ts modelsFor(requires). `model` below is the default. */
   models: readonly string[];
   model: string;
   effort: Effort;
