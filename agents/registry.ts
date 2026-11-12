@@ -4,6 +4,7 @@ import "server-only";
 // in vercel.json if it runs on a schedule.
 import type { MemoryLoad } from "@/core/memory";
 import type { RunResult } from "@/core/runs";
+import type { Setup } from "@/core/setup";
 import { runCfoSnapshot } from "./cfo";
 import { runBookkeeper } from "./bookkeeper";
 import { runBrief } from "./chief-of-staff";
@@ -14,6 +15,8 @@ export interface JobOpts {
   dryRun?: boolean;
   /** Loaded by withRun for agents in MEMORY_AGENTS (core/memory.ts); null when the store can't be read. */
   memory?: MemoryLoad | null;
+  /** Loaded by withRun for agents with a menu (agents/menus.ts); a dry run loads its own. */
+  setup?: Setup | null;
 }
 
 export interface AgentDef {
@@ -25,7 +28,7 @@ export interface AgentDef {
 
 export const AGENTS: Record<string, AgentDef> = {
   cfo: { job: ({ dryRun }) => runCfoSnapshot({ dryRun }) },
-  chief_of_staff: { job: ({ dryRun, memory }) => runBrief({ dryRun, memory }) },
+  chief_of_staff: { job: ({ dryRun, memory, setup }) => runBrief({ dryRun, memory, setup }) },
   // ~$1 of Claude credit a run, so it has no schedule and never runs on its own.
   wholesale_hunter: { job: ({ runId, dryRun, memory }) => runHunter(runId, { dryRun, memory }), manualOnly: true },
   // Manual only until launch (planned daily 6:00 AM CT, after the CFO snapshot). Reads Mercury,

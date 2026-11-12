@@ -11,7 +11,9 @@ export const MODELS = {
   sonnet: "claude-sonnet-5-5",
   haiku: "claude-haiku-5-5",
 } as const;
-type Model = (typeof MODELS)[keyof typeof MODELS];
+export type Model = (typeof MODELS)[keyof typeof MODELS];
+/** True for a model id that has a price here, so its cost can be computed. */
+export const isModel = (id: string): id is Model => (Object.values(MODELS) as string[]).includes(id);
 
 /** $ per token in and out. */
 const PRICES: Record<Model, { in: number; out: number }> = {

@@ -162,6 +162,31 @@ h1, h2, h3, p { margin: 0; }
 .progress { height: 8px; border-radius: 999px; background: #2A2A30; overflow: hidden; }
 .progress > div { height: 100%; border-radius: 999px; background: linear-gradient(90deg, #F5D35C, #F2884B); }
 
+/* agent canvas (node graph): Replay and Edit */
+.flow-wide { height: 400px; overflow: hidden; }
+.flow-wide .react-flow { background: transparent; --xy-background-color: transparent; --xy-edge-stroke: var(--mut2); --xy-attribution-background-color: transparent; }
+.flow-wide .react-flow__handle { opacity: 0; pointer-events: none; }
+.flow-wide .react-flow__node { cursor: pointer; }
+.flow-wide .react-flow__node-result { cursor: default; }
+.flow-wide .react-flow__attribution a { color: var(--mut); }
+.flow-stack { display: none; flex-direction: column; gap: 14px; }
+.fnode { width: 100%; height: 100%; background: var(--card); border: 1px solid var(--bd); border-radius: 18px; box-shadow: var(--sh); padding: 12px 14px; display: flex; flex-direction: column; gap: 6px; font-size: 12px; text-align: left; color: var(--ink); min-width: 0; }
+.fnode.sel { border-color: var(--acc); box-shadow: 0 0 0 1.5px var(--acc), var(--sh); }
+.fnode.out { background: var(--dark); color: #F4F4F6; border-color: var(--dark2); border-radius: 20px; padding: 16px; gap: 10px; box-shadow: 0 14px 34px rgba(17, 17, 26, .18); }
+.fnode-line { color: var(--ink2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fnode-out-text { color: #D6D6DC; font-size: 12.5px; line-height: 1.45; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 4; -webkit-box-orient: vertical; overflow-wrap: anywhere; }
+.fnode-btn { all: unset; display: block; cursor: pointer; border-radius: 18px; }
+.fnode-btn:focus-visible { outline: 2px solid var(--acc); outline-offset: 2px; }
+.home-chip { padding: 2px 8px; border-radius: 999px; font-size: 10.5px; font-weight: 600; white-space: nowrap; }
+.seg { display: inline-flex; padding: 3px; border-radius: 999px; background: var(--soft); }
+.seg button { height: 32px; padding: 0 16px; border: 0; border-radius: 999px; background: transparent; font-size: 13px; font-weight: 600; cursor: pointer; color: var(--ink2); }
+.seg button.on { background: var(--ink); color: var(--ws); }
+.setup-row { display: grid; grid-template-columns: 170px minmax(0, 1.4fr) minmax(0, 1fr); gap: 14px; padding: 12px 0; border-top: 1px solid var(--bd); font-size: 13.5px; align-items: start; }
+.setup-k { color: var(--mut); }
+.setup-v, .setup-w { display: flex; flex-direction: column; gap: 5px; min-width: 0; overflow-wrap: anywhere; line-height: 1.45; }
+.setup-v summary { cursor: pointer; font-size: 12.5px; color: var(--acc-ink); width: fit-content; }
+.setup-long { display: block; white-space: pre-wrap; font-size: 12.5px; line-height: 1.55; color: var(--ink2); background: var(--soft); border-radius: 12px; padding: 12px 14px; margin-top: 6px; }
+
 /* modal and toast */
 /* one column no wider than the screen, so a 460px modal shrinks instead of pushing past the edge */
 .modal-bg { position: fixed; inset: 0; background: rgba(17, 17, 20, .38); display: grid; grid-template-columns: minmax(0, 1fr); place-items: center; z-index: 50; padding: 24px; overflow-y: auto; }
@@ -238,6 +263,11 @@ h1, h2, h3, p { margin: 0; }
   .tbl-row .c-go { grid-column: 2; justify-self: end; }
 
   /* live floor: nodes stacked, full width */
+  .flow-wide { display: none; }
+  .flow-stack { display: flex; }
+  .flow-stack .fnode { height: auto; min-height: 96px; }
+  .flow-stack .fnode-line { white-space: normal; }
+  .setup-row { grid-template-columns: minmax(0, 1fr); gap: 6px; }
   .canvas { overflow: visible; }
   .canvas-inner { width: auto; height: auto; display: flex; flex-direction: column; gap: 20px; padding: 16px; }
   .canvas-inner > svg { display: none; }
