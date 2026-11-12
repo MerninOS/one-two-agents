@@ -103,3 +103,85 @@ export function planWrite(args: AnnotateArgs, live: LiveTxn | null, expect: { am
 }
 
 export const planIsEmpty = (p: Plan) => !p.attach && !p.categoryId && !p.note;
+
+// ---- Caps (CLAUDE.md: money, email and undo limits). Zak's values live in `policies`; each has
+// a limit in code that no row can pass. "looser" says which way is riskier: a bigger purchase
+// cap, more emails, or a shorter undo window. Tightening is always allowed.
+
+export type CapKey = "max_purchase_usd" | "max_monthly_spend_usd" | "max_emails_per_day" | "undo_window_minutes";
+export interface CapDef {
+  label: string;
+  /** Zak's starting value (Nov 11), used when the row is missing or unreadable. */
+  start: number;
+  /** The riskier direction. */
+  looser: "up" | "down";
+  /** The furthest a row may go in the looser direction: a ceiling for "up", a floor for "down". */
+  limit: number;
+  /** The furthest in the safe direction (0 means "nothing allowed"). */
+  safest: number;
+  unit: "usd" | "count" | "minutes";
+  about: string;
+}
+export const CAPS: Record<CapKey, CapDef> = {
+  max_purchase_usd: { label: "Per purchase", start: 500, looser: "up", limit: 500, safest: 0, unit: "usd", about: "The most any one payment may be. Payments go only to vendors you added." },
+  max_monthly_spend_usd: { label: "Per calendar month", start: 1500, looser: "up", limit: 1500, safest: 0, unit: "usd", about: "All agents together, Chicago calendar month, counted from applied payments." },
+  max_emails_per_day: { label: "Emails per day", start: 20, looser: "up", limit: 20, safest: 0, unit: "count", about: "Outbound emails from all agents together, Chicago day. Briefs and alerts to you don’t count." },
+  undo_window_minutes: { label: "Undo window", start: 30, looser: "down", limit: 30, safest: 240, unit: "minutes", about: "How long you can undo an action at the middle trust level before it goes out." },
+};
+export const CAP_KEYS = Object.keys(CAPS) as CapKey[];
+
+/** The value code enforces: the policy row, held inside the code limit; the start value when the row is missing or bad. */
+export function effectiveCap(key: CapKey, raw: unknown): number {
+  const d = CAPS[key];
+  const n = typeof raw === "number" ? raw : typeof raw === "string" && raw.trim() ? Number(raw) : NaN;
+  if (!Number.isFinite(n) || n < 0) return d.start;
+  const lo = Math.min(d.limit, d.safest), hi = Math.max(d.limit, d.safest);
+  return Math.min(hi, Math.max(lo, n));
+}
+
+export const fmtCap = (key: CapKey, v: number) => (CAPS[key].unit === "usd" ? `$${v.toLocaleString("en-US", { maximumFractionDigits: 2 })}` : CAPS[key].unit === "minutes" ? `${v} minutes` : `${v}`);
+
+/** Why a new value for a cap can't be saved, or whether it is looser (a confirm and DASHBOARD_CONTROLS=on). */
+export function capChange(key: string, now: number, next: number): { refuse: string } | { looser: boolean } {
+  const d = CAPS[key as CapKey];
+  if (!d) return { refuse: `Unknown cap ${key}.` };
+  const k = key as CapKey;
+  if (!Number.isFinite(next) || next < 0) return { refuse: "Pick a number of zero or more." };
+  if (d.unit !== "usd" && !Number.isInteger(next)) return { refuse: "Pick a whole number." };
+  if (d.unit === "usd" && Math.abs(Math.round(next * 100) - next * 100) > 1e-6) return { refuse: "Whole cents only." };
+  if (d.looser === "up" && next > d.limit) return { refuse: `${d.label} can’t go above ${fmtCap(k, d.limit)}. That ceiling is in code (core/gateway/policy.ts).` };
+  if (d.looser === "down" && next < d.limit) return { refuse: `${d.label} can’t go below ${fmtCap(k, d.limit)}. That floor is in code (core/gateway/policy.ts).` };
+  if (d.looser === "down" && next > d.safest) return { refuse: `${d.label} can be at most ${fmtCap(k, d.safest)}.` };
+  if (next === now) return { refuse: "That is already the value." };
+  return { looser: d.looser === "up" ? next > now : next < now };
+}
+
+export interface Vendor { id: string; name: string; mercury_recipient_id: string | null }
+
+/**
+ * Whether a payment may be proposed. Refuses when the payee isn't in vendors, the amount is
+ * over the per-purchase cap, or this month plus the amount is over the monthly cap. A first
+ * payment to a vendor is flagged so it always waits for Zak (never promoted). Amounts are cents
+ * in code; the payee comes from vendors, never from a web page, an email or model text.
+ * A refusal is a cap breach: the caller passes it to onBreach (core/gateway/index.ts).
+ */
+export function checkPurchase(p: { amountUsd: number; vendorId: string; vendors: Vendor[]; monthSpentUsd: number; paidVendorIds: Set<string>; maxPurchaseUsd: number; maxMonthlyUsd: number }): { ok: false; reason: string } | { ok: true; firstPayment: boolean } {
+  const cents = Math.round(p.amountUsd * 100);
+  if (!Number.isFinite(p.amountUsd) || cents <= 0) return { ok: false, reason: "The amount must be more than $0." };
+  const v = p.vendors.find((x) => x.id === p.vendorId);
+  if (!v) return { ok: false, reason: "The payee isn’t on your vendors list." };
+  if (!v.mercury_recipient_id) return { ok: false, reason: `${v.name} has no Mercury recipient yet.` };
+  if (cents > Math.round(p.maxPurchaseUsd * 100)) return { ok: false, reason: `$${(cents / 100).toFixed(2)} is over the per-purchase cap of $${p.maxPurchaseUsd.toFixed(2)}.` };
+  const month = Math.round(p.monthSpentUsd * 100) + cents;
+  if (month > Math.round(p.maxMonthlyUsd * 100)) return { ok: false, reason: `This would make $${(month / 100).toFixed(2)} this month, over the monthly cap of $${p.maxMonthlyUsd.toFixed(2)}.` };
+  return { ok: true, firstPayment: !p.paidVendorIds.has(v.id) };
+}
+
+/** Whether an email may be proposed: never to a suppressed address, never past today's cap. */
+export function checkEmail(p: { to: string; suppressed: Set<string>; sentToday: number; maxPerDay: number }): { ok: false; reason: string } | { ok: true } {
+  const to = p.to.trim().toLowerCase();
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(to)) return { ok: false, reason: "That isn’t an email address." };
+  if (p.suppressed.has(to)) return { ok: false, reason: `${to} asked not to be emailed.` };
+  if (p.sentToday >= p.maxPerDay) return { ok: false, reason: `Today’s email cap (${p.maxPerDay}) is used up.` };
+  return { ok: true };
+}

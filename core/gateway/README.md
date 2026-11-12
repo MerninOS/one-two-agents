@@ -39,5 +39,23 @@ Mercury endpoints used (the only writes in the repo): `PATCH /api/v1/transaction
 `note` and/or `categoryId`, and `POST /api/v1/transaction/{id}/attachments` (multipart,
 `attachmentType=receipt`). `GET /api/v1/transaction/{id}` (read token) for the live check.
 
+## Caps, vendors and suppressed addresses
+
+The fences the payment and email action types will have to pass. Neither action type exists yet.
+
+- `CAPS` in `policy.ts`: per purchase ($500), per calendar month ($1,500), emails per day (20),
+  undo window (30 minutes). Zak's values are rows in `policies`; each has a limit in code that
+  `effectiveCap` never lets a row pass. Zak changes them in an agent's Guardrails box; agents
+  never write `policies`.
+- `checkPurchase`: payee must be in `vendors` with a Mercury recipient; amount within the
+  per-purchase cap; this month plus the amount within the monthly cap (cents, in code). A first
+  payment to a vendor is flagged so it always waits for Zak.
+- `checkEmail`: never to an address in `email_suppressions`, never past today's cap.
+- `index.ts`: `loadCaps`, `monthSpentUsd` and `emailsSentToday` (Chicago month and day, from
+  applied actions), `paidVendorIds`, and `onBreach`, where the trust levels card will demote
+  the action type to Draft.
+- Only a signed-in Zak adds vendors (Settings, `DASHBOARD_CONTROLS=on`).
+- `npm run check:policy` exercises the checks.
+
 Not built yet: the Notion approvals database, Act tier and promotion, circuit breakers,
 an Undo button, and Edit on an approval (reject it instead).

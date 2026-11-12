@@ -185,6 +185,35 @@ dispatcher in `app/api/dispatch`. Migration `20261112200000_crew_flow.sql`.
 - Replay: a chain run's page shows every step of that chain run, its status and cost, and the
   total. `agent_runs` gains `chain_id`, `chain_key`, `chain_step`, `parent_run_id` and `metrics`.
 
+## Guardrails box and caps (slice 6)
+
+`dashboard/components/GuardrailsEditor.tsx`, built by `dashboard/guardrails.ts`; shown when the
+Guardrails box is clicked in Edit on the Setup tab, for every built agent. Three bands, every
+line tagged "Enforced in code":
+
+- Crew hard rules, locked (`HARD_RULES` in `dashboard/crew.ts`, from CLAUDE.md).
+- Limits for this agent: the daily budget (adjustable; lowering any time, raising needs
+  `DASHBOARD_CONTROLS=on`; $50 ceiling in code) and the limits code holds for that agent (Rowan's
+  leads, searches, page reads and turns; Quinn's Gmail searches, PDF size and look-back; the
+  gateway's writes per apply, memo length and approval expiry; Avery's watch list, instructions
+  length and fixed recipient). Each line names the file or `policies` row that enforces it.
+  These change with a pull request until each agent gets its menu (slice 7).
+- Money and email caps, crew-wide (`policies`): per purchase, per calendar month, emails per day,
+  undo window. Lowering applies right away (the undo window is the other way round: shorter is
+  looser). Loosening needs a confirm and `DASHBOARD_CONTROLS=on`, and stops at the limit in code
+  (`CAPS` in `core/gateway/policy.ts`, today equal to Zak's starting values: $500, $1,500, 20,
+  30 minutes). Every change is a row in `policy_log`. `effectiveCap` holds a row inside the code
+  limit, so editing the table directly can't pass it either.
+- Instructions and standing orders never appear here, and trust levels aren't editable.
+
+The caps themselves come from the Build Board card "Gateway: spending caps, email cap and vendors
+list", built in the same pull request: migration `20261112230000_caps_and_vendors.sql`
+(the four policies, `vendors`, `email_suppressions`, `policy_log`), `checkPurchase` and
+`checkEmail` in `policy.ts`, loaders in `core/gateway/index.ts` (`loadCaps`, `monthSpentUsd`,
+`emailsSentToday`, `paidVendorIds`, `onBreach`), and Settings showing the caps with usage, the
+vendors list (add needs `DASHBOARD_CONTROLS=on`) and addresses that get no email.
+`npm run check:policy` runs the checks against a table of cases.
+
 ## Slices
 
 1. Setup store and the read-only canvas. Avery reads its model, effort,

@@ -3,7 +3,7 @@ import { needs } from "@/dashboard/needs";
 import { SEEN_COOKIE, parseSeen } from "@/dashboard/seen";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { discardLessonLine, dryRun, editMemoryLine, forgetMemoryLine, keepLessonLine, realRun, setBudget, setEnabled, teach } from "@/dashboard/actions";
+import { discardLessonLine, dryRun, editMemoryLine, forgetMemoryLine, keepLessonLine, realRun, setBudget, setCap, setEnabled, teach } from "@/dashboard/actions";
 import { ACCESS, BY_ID, HARD_RULES, INTEGRATIONS, TIERS, type CrewMember } from "@/dashboard/crew";
 import { buildCanvas } from "@/dashboard/canvas";
 import { getBooks, getFloor, getMemory, getMemoryMeter, getPipeline, getSetup, getSetupEditor, leadsForRun, runSetupVersion, type Books, type Floor } from "@/dashboard/data";
@@ -14,6 +14,7 @@ import { nextRuns, schedSentence, schedWords } from "@/dashboard/schedule";
 import { controlsOn } from "@/dashboard/session";
 import { STATE_LOOK, combined, stateOf } from "@/dashboard/status";
 import { AgentCanvas } from "@/dashboard/components/AgentCanvas";
+import { getGuardrails } from "@/dashboard/guardrails";
 import { ActionButton, BudgetForm, DryRun, MarkSeen, SwitchButton } from "@/dashboard/components/client";
 import { Icon } from "@/dashboard/components/Icon";
 import { RunTable } from "@/dashboard/components/RunTable";
@@ -140,8 +141,12 @@ async function SetupTab({ a, f }: { a: CrewMember; f: Floor }) {
     run ? runSetupVersion(run.id) : Promise.resolve(null),
     run && a.id === "wholesale_hunter" ? leadsForRun(run.id) : Promise.resolve(null),
   ]);
-  const editor = await getSetupEditor(a.id, f.runs, f.health, setup);
-  return <AgentCanvas model={buildCanvas({ a, row: f.agents[a.id], run, runSetupVersion: version, leads, health: f.health, setup, memory })} editor={editor} />;
+  const row = f.agents[a.id];
+  const [editor, guard] = await Promise.all([getSetupEditor(a.id, f.runs, f.health, setup), row ? getGuardrails(a.id, row.daily_budget_usd) : Promise.resolve(null)]);
+  return (
+    <AgentCanvas model={buildCanvas({ a, row, run, runSetupVersion: version, leads, health: f.health, setup, memory })} editor={editor}
+      guard={guard && { d: guard, saveCap: setCap, budgetForm: <BudgetForm current={row!.daily_budget_usd} save={setBudget.bind(null, a.id)} controls={guard.controls} /> }} />
+  );
 }
 
 function crewSwitch(a: CrewMember, f: Floor, controls: boolean) {

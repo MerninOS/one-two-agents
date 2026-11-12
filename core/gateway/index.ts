@@ -9,7 +9,8 @@ import { db } from "@/core/db";
 import { withRun } from "@/core/runs";
 import { hasMercury, mercuryCategories, mercuryTransaction } from "@/integrations/mercury";
 import { attachReceipt, hasMercuryWrite, patchTransaction } from "@/integrations/mercury-write";
-import { ANNOTATE, MAX_RECEIPT_BYTES, RECEIPT_TYPES, TOOLS, planIsEmpty, planWrite, receiptPathOk, refuseProposal, type AnnotateArgs, type ToolName } from "./policy";
+import { chicagoDate, offsetOn } from "@/core/time";
+import { ANNOTATE, CAP_KEYS, MAX_RECEIPT_BYTES, RECEIPT_TYPES, TOOLS, effectiveCap, planIsEmpty, planWrite, receiptPathOk, refuseProposal, type AnnotateArgs, type CapKey, type ToolName } from "./policy";
 
 export { ANNOTATE } from "./policy";
 
@@ -238,4 +239,55 @@ export async function applyApproved(ids?: string[]) {
     texts.push(res.status === "skipped" ? `${agentId}: not applied (${res.summary}) Approved changes are kept.` : res.summary);
   }
   return { ok, text: texts.join(" ") };
+}
+
+// ---- Caps: what checkPurchase and checkEmail need (policy.ts), loaded here.
+
+/** Names the payment and email action types will have. Neither is in TOOLS yet, so nothing can propose one. */
+export const PAY_TOOL = "mercury.send_money";
+export const EMAIL_TOOL = "email.send";
+
+/** Every cap as code enforces it (the policy row held inside the code limit), plus the raw row. */
+export async function loadCaps(): Promise<Record<CapKey, { value: number; raw: unknown }>> {
+  const { data, error } = await db().from("policies").select("key, value_json").in("key", CAP_KEYS);
+  if (error) throw new Error(`Gateway: could not read caps: ${error.message}`);
+  const raw = new Map((data ?? []).map((r) => [r.key as string, r.value_json as unknown]));
+  return Object.fromEntries(CAP_KEYS.map((k) => [k, { value: effectiveCap(k, raw.get(k)), raw: raw.has(k) ? raw.get(k) : null }])) as Record<CapKey, { value: number; raw: unknown }>;
+}
+
+const chicagoStart = (unit: "day" | "month", now = new Date()) => {
+  const d = chicagoDate(0, now);
+  const day = unit === "day" ? d : `${d.slice(0, 8)}01`;
+  return new Date(`${day}T00:00:00${offsetOn(day)}`).toISOString();
+};
+
+/** Money sent this Chicago calendar month, from applied payment actions (computed in code). */
+export async function monthSpentUsd(now = new Date()): Promise<number> {
+  const { data, error } = await db().from("agent_actions").select("args_json").eq("tool", PAY_TOOL).in("status", ["applied", "executing"]).gte("executed_at", chicagoStart("month", now));
+  if (error) throw new Error(error.message);
+  const cents = (data ?? []).reduce((s, r) => s + Math.round(Number((r.args_json as { amount_usd?: number } | null)?.amount_usd ?? 0) * 100), 0);
+  return cents / 100;
+}
+
+/** Outbound emails sent today (Chicago), from applied email actions. Briefs to Zak are reports, not actions, so they don't count. */
+export async function emailsSentToday(now = new Date()): Promise<number> {
+  const { count, error } = await db().from("agent_actions").select("id", { count: "exact", head: true }).eq("tool", EMAIL_TOOL).in("status", ["applied", "executing"]).gte("executed_at", chicagoStart("day", now));
+  if (error) throw new Error(error.message);
+  return count ?? 0;
+}
+
+/** Vendors that have been paid before, so a first payment always waits for Zak. */
+export async function paidVendorIds(): Promise<Set<string>> {
+  const { data } = await db().from("agent_actions").select("target").eq("tool", PAY_TOOL).eq("status", "applied");
+  return new Set((data ?? []).map((r) => r.target as string));
+}
+
+/**
+ * A cap was breached (a payment or email refused by checkPurchase or checkEmail). CLAUDE.md:
+ * a cap breach drops that action type back to Draft. The trust levels card adds the demotion;
+ * until then this records the refusal so it shows in the gateway log.
+ */
+export async function onBreach(b: { agentId: string; tool: string; target: string; reason: string; runId?: string | null }) {
+  await db().from("agent_actions").insert({ agent_id: b.agentId, run_id: b.runId ?? null, tool: b.tool, action_type: "cap breach", target: b.target, args_json: {}, status: "refused", reason: b.reason });
+  // TODO(trust levels card): demote b.tool for b.agentId to Draft here.
 }

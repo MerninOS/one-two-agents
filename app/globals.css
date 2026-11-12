@@ -332,3 +332,7 @@ h1, h2, h3, p { margin: 0; }
 .chain-step.here { border-color: var(--acc); background: var(--acc-soft); }
 /* Crew canvas: small selects sit in a sentence */
 .input.sel-auto, .ted-field select.input.sel-auto { width: auto; max-width: 100%; }
+
+/* Guardrails box (agent canvas, slice 6) */
+.guard-rules { margin: 0; padding-left: 20px; display: flex; flex-direction: column; gap: 4px; font-size: 13px; line-height: 1.5; color: var(--ink2); }
+.guard-cap { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; padding: 12px 0; border-top: 1px solid var(--bd); }

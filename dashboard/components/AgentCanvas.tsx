@@ -3,7 +3,7 @@
 // Replay shows what the latest run did; Edit shows the agent's setup, box by box. Clicking a
 // box lists every value behind it and where that value lives. In Edit, a box marked editable
 // opens its editor (for agents with a menu: Reads and Writes in ReadsWritesEditor.tsx, Thinking in
-// ThinkingEditor.tsx); the rest are read-only.
+// ThinkingEditor.tsx; for every built agent, Guardrails in GuardrailsEditor.tsx); the rest are read-only.
 // The server builds the whole model (dashboard/canvas.ts); nothing here reads data.
 import { useMemo, useState } from "react";
 import { Handle, Position, ReactFlow, type Edge, type Node, type NodeProps } from "@xyflow/react";
@@ -12,6 +12,8 @@ import { Icon } from "./Icon";
 import { ReadsEditor, WritesEditor } from "./ReadsWritesEditor";
 import type { SetupEditorData } from "./setupEditor";
 import { ThinkingEditor } from "./ThinkingEditor";
+import { GuardrailsEditor, type GuardrailsData } from "./GuardrailsEditor";
+import type { ActionResult } from "@/dashboard/actions";
 import { Summary } from "./ui";
 
 export type HomeId = "app" | "code" | "vercel" | "database";
@@ -160,7 +162,7 @@ function Detail({ box, m }: { box: CanvasBox; m: CanvasModel }) {
   );
 }
 
-export function AgentCanvas({ model, start = "edit", editor }: { model: CanvasModel; start?: Mode; editor?: SetupEditorData | null }) {
+export function AgentCanvas({ model, start = "edit", editor, guard }: { model: CanvasModel; start?: Mode; editor?: SetupEditorData | null; guard?: { d: GuardrailsData; saveCap: (key: string, v: number, confirmed: boolean) => Promise<ActionResult>; budgetForm?: React.ReactNode } | null }) {
   const [mode, setMode] = useState<Mode>(start);
   const [sel, setSel] = useState<BoxId>("thinking");
   const box = model.boxes.find((b) => b.id === sel) ?? model.boxes[0];
@@ -199,8 +201,9 @@ export function AgentCanvas({ model, start = "edit", editor }: { model: CanvasMo
 
       {mode === "edit" && editor && box.id === "thinking" && <ThinkingEditor key={`t:${editor.agentId}:${editor.active.version}`} d={editor} />}
       {mode === "edit" && editor && box.id === "reads" && <ReadsEditor key={`r:${editor.agentId}:${editor.active.version}`} d={editor} />}
+      {mode === "edit" && guard && box.id === "guardrails" && <GuardrailsEditor d={guard.d} saveCap={guard.saveCap} budgetForm={guard.budgetForm} />}
       {mode === "edit" && editor && box.id === "writes" && <WritesEditor key={`w:${editor.agentId}:${editor.active.version}`} d={editor} />}
-      <Detail box={box} m={model} />
+      {!(mode === "edit" && guard && box.id === "guardrails") && <Detail box={box} m={model} />}
     </div>
   );
 }
