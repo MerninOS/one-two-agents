@@ -44,8 +44,14 @@ A fourth label, Database, marks a value that is a row in Supabase but has no scr
 - A setup is choices, never authority. `core/gateway` and `integrations/` may not import
   `core/setup` (lint enforces it), the same way they may not import memory.
 - Only models with a price in `integrations/anthropic.ts` may be listed in a menu, so cost is
-  always computed in code. An agent refuses to run on a model without a price before it reads or
-  sends anything.
+  always computed in code. An agent refuses to run on a model (or fallback model) without a price
+  before it reads or sends anything.
+- The safety block is locked. It lives in the agent's code (`agents/chief-of-staff/prompt.ts`,
+  `SAFETY`), is sent first on every model call, and a setup can only replace the instructions
+  after it. The canvas shows it so nothing is hidden.
+- Loosening means a costlier model, a costlier fallback or more effort. Saving or rolling back to
+  a costlier setup needs a confirm and `DASHBOARD_CONTROLS=on`; the server checks both
+  (`loosening` in `core/setup.ts`). Cheaper changes and instruction edits need only the login.
 - The Guardrails box lists only what code enforces. Instructions and standing orders are guidance
   the model reads, so they sit in Thinking and Memory.
 - Trust levels (Draft, Act with undo, Act) are not a setting. They move only through the
@@ -59,17 +65,38 @@ A fourth label, Database, marks a value that is a row in Supabase but has no scr
 - **Replay** shows what the latest real run did, like the Live floor.
 - **Edit** shows the setup box by box. Clicking a box lists every value behind it, its home
   (App, Code, Vercel, Database), where to change it, and Connected or Missing key for anything
-  that needs a key. Edit is read-only in slice 1.
+  that needs a key. Boxes marked Edit open an editor; the rest are read-only for now.
+
+## Editing Thinking (slice 2)
+
+`dashboard/components/ThinkingEditor.tsx`, data from `getThinkingEditor` in `dashboard/data.ts`,
+actions `previewSetup`, `saveSetupVersion` and `rollBackSetup` in `dashboard/actions.ts`.
+
+- Model, effort and fallback model come from the menu's list; instructions are free text up to
+  6,000 characters under the locked safety block.
+- The fallback model is tried once when the main model can't be reached (an API error), before
+  the fixed rules. A refusal is handled separately by the Claude API's own server-side fallback.
+- Cost per run, now and with the draft: the price table times the average tokens of the last 10
+  real runs that called a model.
+- A change is a draft (kept in this browser) until it is saved as a new version with a note.
+  Saving switches the old version off and the new one on. Roll back makes an older version
+  active again; nothing is deleted.
+- Preview runs the draft for real on today's facts and memory and shows the email, the Briefs
+  row, the watch list, the focus and what it would remember. It writes nothing: no Notion, no
+  email, no memory written or counted down. Its one model call is logged with trigger `preview`
+  so the cost counts against the daily budget. Previews stay out of the floor, the run log,
+  Replay and Avery's own "What ran". A preview may run while the agent is off duty (it acts on
+  nothing) and needs `DASHBOARD_CONTROLS=on` because it spends money.
 - On a phone the boxes stack, like the Live floor.
 - An agent without a menu yet (Morgan, Rowan, Quinn) still gets the canvas; its values all read
   Code until its menu is written (slice 7).
 
 Mission control's Live floor and the run replay page still use `RunCanvas.tsx`. They move to the
-new canvas when Edit mode is real (slice 2).
+new canvas with the crew canvas (slice 5), so both views change once.
 
 ## Slices
 
-1. Setup store and the read-only canvas (this document). Avery reads its model, effort,
+1. Setup store and the read-only canvas. Avery reads its model, effort,
    instructions and low-green warning from its setup; version 1 holds the values it already had.
 2. Edit mode: Thinking for Avery (model, effort, instructions with a locked safety block,
    preview, versions, roll back).

@@ -29,6 +29,8 @@ export interface StepDef {
   models: readonly string[];
   model: string;
   effort: Effort;
+  /** Tried once when `model` can't be reached, before the agent's fixed rules. Null: straight to the rules. */
+  fallback: string | null;
 }
 
 export interface NumberDef {
@@ -65,6 +67,11 @@ export interface AgentMenu {
   fixed: readonly FixedDef[];
   /** The built-in instructions, used until a setup holds its own. */
   instructions: string;
+  /**
+   * The locked safety block, for the canvas only. The agent's code sends its own copy first on
+   * every call; a setup can't change or remove it.
+   */
+  safety: string;
 }
 
 export interface Setup {
@@ -75,10 +82,11 @@ export interface Setup {
   createdAt: string | null;
   model: string;
   effort: Effort;
+  fallback: string | null;
   instructions: string;
   numbers: Record<string, number>;
   /** Which values came from the setup row; everything else is the menu's default. */
-  fromSetup: { model: boolean; effort: boolean; instructions: boolean; numbers: Record<string, boolean> };
+  fromSetup: { model: boolean; effort: boolean; fallback: boolean; instructions: boolean; numbers: Record<string, boolean> };
   /** Values in the row that the menu doesn't offer. Each was ignored and the default used. */
   problems: string[];
 }
@@ -96,9 +104,9 @@ export function resolveSetup(menu: AgentMenu, row: Row | null): Setup {
   const step = menu.steps[0];
   const s: Setup = {
     agentId: menu.agentId, version: row?.version ?? null, note: row?.note ?? null, createdAt: row?.created_at ?? null,
-    model: step.model, effort: step.effort, instructions: menu.instructions,
+    model: step.model, effort: step.effort, fallback: step.fallback, instructions: menu.instructions,
     numbers: Object.fromEntries(Object.entries(menu.numbers).map(([k, d]) => [k, d.default])),
-    fromSetup: { model: false, effort: false, instructions: false, numbers: {} },
+    fromSetup: { model: false, effort: false, fallback: false, instructions: false, numbers: {} },
     problems: [],
   };
   if (!row) return s;
@@ -111,6 +119,10 @@ export function resolveSetup(menu: AgentMenu, row: Row | null): Setup {
   if (thinking.effort !== undefined) {
     if (EFFORTS.includes(thinking.effort as Effort)) { s.effort = thinking.effort as Effort; s.fromSetup.effort = true; }
     else s.problems.push(`effort ${JSON.stringify(thinking.effort)} is not low, medium or high`);
+  }
+  if (thinking.fallback !== undefined) {
+    if (thinking.fallback === null || (typeof thinking.fallback === "string" && step.models.includes(thinking.fallback))) { s.fallback = thinking.fallback as string | null; s.fromSetup.fallback = true; }
+    else s.problems.push(`fallback model ${JSON.stringify(thinking.fallback)} is not on ${step.label}'s list`);
   }
   if (thinking.instructions !== undefined && thinking.instructions !== null) {
     const t = typeof thinking.instructions === "string" ? thinking.instructions.trim() : "";
@@ -144,3 +156,109 @@ export async function setupOrDefaults(menu: AgentMenu): Promise<{ setup: Setup; 
 
 /** A short line for run summaries: "setup v3", or "built-in setup". */
 export const setupWords = (s: Setup) => `${s.version == null ? "built-in setup" : `setup v${s.version}`}${s.problems.length ? ` (ignored: ${s.problems.join("; ").slice(0, 160)})` : ""}`;
+
+// ---- Editing a setup in the Control Room (slice 2)
+
+/** What the Thinking editor sends: every Thinking value, picked from the menu. */
+export interface ThinkingDraft { model: string; effort: Effort; fallback: string | null; instructions: string }
+
+/** The draft laid over `base` (its tuning numbers are kept). Problems mean the draft asks for something the menu doesn't offer. */
+export function fromDraft(menu: AgentMenu, base: Setup, d: ThinkingDraft): Setup {
+  const raw = rawSetup(menu, base, d);
+  const s = resolveSetup(menu, { version: 0, setup: raw, note: null, created_at: "" });
+  return { ...s, version: null, note: null, createdAt: null };
+}
+
+/**
+ * The JSON a new version stores: the Thinking values, and the numbers the base setup picked.
+ * Instructions are stored only when they differ from the built-in text, so a version that
+ * keeps the built-in text follows it when the code's copy is improved.
+ */
+function rawSetup(menu: AgentMenu, base: Setup, d: ThinkingDraft) {
+  const instructions = typeof d.instructions === "string" ? d.instructions.trim() : d.instructions;
+  return {
+    thinking: { model: d.model, effort: d.effort, fallback: d.fallback ?? null, ...(instructions === menu.instructions.trim() ? {} : { instructions }) },
+    numbers: Object.fromEntries(Object.entries(base.numbers).filter(([k]) => base.fromSetup.numbers[k])),
+  };
+}
+
+const EFFORT_RANK: Record<Effort, number> = { low: 0, medium: 1, high: 2 };
+
+/**
+ * Why `next` costs more to run than `now`, or [] when it doesn't: a pricier model, a pricier
+ * fallback, or more effort. Loosening needs a confirm and DASHBOARD_CONTROLS=on; tightening
+ * never does. `price` is the model's $ per output token (integrations/anthropic.ts priceOf).
+ */
+export function loosening(now: Pick<Setup, "model" | "effort" | "fallback">, next: Pick<Setup, "model" | "effort" | "fallback">, price: (m: string) => number): string[] {
+  const out: string[] = [];
+  if (price(next.model) > price(now.model)) out.push(`${next.model} costs more per token than ${now.model}`);
+  if (next.fallback && (!now.fallback || price(next.fallback) > price(now.fallback))) out.push(`fallback ${next.fallback} costs more than ${now.fallback ?? "no fallback"}`);
+  if (EFFORT_RANK[next.effort] > EFFORT_RANK[now.effort]) out.push(`effort ${next.effort} uses more tokens than ${now.effort}`);
+  return out;
+}
+
+export interface SetupVersion { version: number; active: boolean; note: string | null; createdBy: string; createdAt: string; setup: Setup }
+
+/** Every saved version of an agent's setup, newest first. Throws when the table can't be read. */
+export async function listVersions(menu: AgentMenu): Promise<SetupVersion[]> {
+  const { data, error } = await db().from("agent_setup").select("version, setup, note, created_at, created_by, active").eq("agent_id", menu.agentId).order("version", { ascending: false }).limit(100);
+  if (error) throw new Error(error.message);
+  return (data ?? []).map((r) => ({ version: r.version, active: r.active, note: r.note, createdBy: r.created_by, createdAt: r.created_at, setup: resolveSetup(menu, r as Row) }));
+}
+
+/** Makes `version` the active one. The old active row is switched off first (one active per agent), and back on if this fails. */
+async function activate(agentId: string, version: number, previous: number | null) {
+  if (previous != null) {
+    const { error } = await db().from("agent_setup").update({ active: false }).eq("agent_id", agentId).eq("version", previous);
+    if (error) throw new Error(error.message);
+  }
+  const { error } = await db().from("agent_setup").update({ active: true }).eq("agent_id", agentId).eq("version", version);
+  if (error) {
+    if (previous != null) await db().from("agent_setup").update({ active: true }).eq("agent_id", agentId).eq("version", previous);
+    throw new Error(error.message);
+  }
+}
+
+/**
+ * Saves the draft as the next version and makes it active. The caller has already checked the
+ * login, loosening and controls (dashboard/actions.ts). Returns the new version number.
+ */
+export async function saveVersion(menu: AgentMenu, base: Setup, d: ThinkingDraft, note: string, by: string): Promise<number> {
+  const next = fromDraft(menu, base, d);
+  if (next.problems.length) throw new Error(`Not saved: ${next.problems.join("; ")}`);
+  const { data: top, error: e1 } = await db().from("agent_setup").select("version").eq("agent_id", menu.agentId).order("version", { ascending: false }).limit(1).maybeSingle();
+  if (e1) throw new Error(e1.message);
+  const version = (top?.version ?? 0) + 1;
+  const { error } = await db().from("agent_setup").insert({ agent_id: menu.agentId, version, setup: rawSetup(menu, base, d), note, created_by: by, active: false });
+  if (error) throw new Error(error.message);
+  await activate(menu.agentId, version, base.version);
+  return version;
+}
+
+/** Makes an earlier version active again. Nothing is deleted; the version list keeps every row. */
+export async function rollBack(menu: AgentMenu, base: Setup, version: number): Promise<void> {
+  if (version === base.version) throw new Error(`v${version} is already active.`);
+  const { data, error } = await db().from("agent_setup").select("version").eq("agent_id", menu.agentId).eq("version", version).maybeSingle();
+  if (error) throw new Error(error.message);
+  if (!data) throw new Error(`There is no v${version}.`);
+  await activate(menu.agentId, version, base.version);
+}
+
+/**
+ * What a Preview shows: the agent's real output for a draft setup, with nothing written or
+ * sent. Built by the agent's own preview function (agents/registry.ts).
+ */
+export interface SetupPreview {
+  /** The model that wrote the answer: the draft's model, its fallback, or "rules" when neither could be reached. */
+  servedBy: string;
+  watch: string[];
+  focus: { action: string; reason: string };
+  remember: string[];
+  email: { subject: string; html: string } | null;
+  /** The Briefs database row it would write, as label and value. */
+  row: [string, string][];
+  tokensIn: number;
+  tokensOut: number;
+  costUsd: number;
+  note: string;
+}

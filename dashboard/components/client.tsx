@@ -106,7 +106,7 @@ export function Toast({ t, onDone }: { t: ActionResult | null; onDone: () => voi
   return <div className="toast" role="status"><span className="dot" style={{ background: t.ok ? "var(--mint)" : "var(--red)" }} /><span>{t.text}</span></div>;
 }
 
-function Modal({ c, busy, onCancel, onGo }: { c: Confirm; busy: boolean; onCancel: () => void; onGo: () => void }) {
+export function Modal({ c, busy, onCancel, onGo }: { c: Confirm; busy: boolean; onCancel: () => void; onGo: () => void }) {
   return (
     <div className="modal-bg" onClick={busy ? undefined : onCancel}>
       <div className="modal" role="dialog" aria-modal="true" aria-label={c.title} onClick={(e) => e.stopPropagation()}>

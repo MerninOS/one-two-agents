@@ -10,6 +10,9 @@ import { db } from "@/core/db";
 import { withRun } from "@/core/runs";
 import { discardLesson, editMemory, forgetMemory, keepLesson, proposeLesson, teach as teachMemory, type Keep } from "@/core/memory";
 import { applyApproved, decide, queueBookkeeperProposals, retry, writeBlocker } from "@/core/gateway";
+import { MENUS } from "@/agents/menus";
+import { EFFORTS, MAX_INSTRUCTIONS, fromDraft, listVersions, loadSetup, loosening, rollBack, saveVersion, type Setup, type SetupPreview, type ThinkingDraft } from "@/core/setup";
+import { priceOf } from "@/integrations/anthropic";
 import { BUILT, BY_ID } from "./crew";
 import { requireSession } from "./data";
 import { SESSION_COOKIE, SESSION_DAYS, checkPassword, controlsOn, newSessionToken } from "./session";
@@ -235,4 +238,91 @@ export async function discardLessonLine(memoryId: string): Promise<ActionResult>
   await requireSession();
   if (!UUID.test(memoryId)) return { ok: false, text: "Unknown lesson." };
   try { await discardLesson(memoryId); revalidatePath("/", "layout"); return { ok: true, text: "Discarded. The timeline keeps a record of it." }; } catch (e) { return fail(e); }
+}
+
+// ---- Agent setup (docs/agent-setup.md): the Thinking editor on the Setup tab
+
+/** $ per output token; a model without a price counts as the most expensive, so it always needs a confirm. */
+const outPrice = (m: string) => priceOf(m)?.out ?? Infinity;
+
+/** A draft from the browser, checked field by field before it goes anywhere near the menu. */
+function cleanDraft(d: unknown): ThinkingDraft | null {
+  const x = (d ?? {}) as Record<string, unknown>;
+  if (typeof x.model !== "string" || !EFFORTS.includes(x.effort as Setup["effort"]) || typeof x.instructions !== "string") return null;
+  if (x.fallback !== null && typeof x.fallback !== "string") return null;
+  if (x.instructions.length > MAX_INSTRUCTIONS) return null;
+  return { model: x.model, effort: x.effort as Setup["effort"], fallback: (x.fallback as string | null) || null, instructions: x.instructions };
+}
+
+/** The agent's menu and active setup. The table must be readable: nothing is saved over a setup that can't be seen. */
+async function editable(agentId: string) {
+  const menu = MENUS[agentId];
+  if (!menu || !known(agentId)) throw new Error("This agent has no menu yet, so its setup can’t be edited here.");
+  return { menu, now: await loadSetup(menu) };
+}
+
+/**
+ * Preview: the agent's real output for a draft, from real facts and memory, with nothing
+ * written or sent. One model call, logged as a run with trigger "preview" so its cost counts
+ * against today's budget. Allowed while the agent is off duty; needs DASHBOARD_CONTROLS=on.
+ */
+export async function previewSetup(agentId: string, draft: unknown): Promise<ActionResult & { preview?: SetupPreview }> {
+  await requireSession();
+  if (!controlsOn()) return { ok: false, text: `${CONTROLS_OFF} A preview makes one real model call.` };
+  const d = cleanDraft(draft);
+  if (!d) return { ok: false, text: "That draft isn’t complete." };
+  try {
+    const { menu, now } = await editable(agentId);
+    const preview = AGENTS[agentId].preview;
+    if (!preview) return { ok: false, text: `${BY_ID[agentId].name} has no preview yet.` };
+    const next = fromDraft(menu, now, d);
+    if (next.problems.length) return { ok: false, text: `The draft asks for something the menu doesn’t offer: ${next.problems.join("; ")}.` };
+    let got: SetupPreview | null = null;
+    const res = await withRun(agentId, "preview", async () => {
+      const p = await preview(next);
+      got = p;
+      return { status: "ok", summary: `Preview of an unsaved setup (${next.model}, effort ${next.effort}). Nothing written or sent. Answered by ${p.servedBy}.`, tokensIn: p.tokensIn, tokensOut: p.tokensOut, costUsd: p.costUsd };
+    });
+    revalidatePath("/", "layout");
+    if (!got) return { ok: false, text: res.summary };
+    return { ok: true, text: res.summary, preview: got };
+  } catch (e) { return fail(e); }
+}
+
+/** Saves the draft as a new version and makes it active. Costlier choices need a confirm and DASHBOARD_CONTROLS=on. */
+export async function saveSetupVersion(agentId: string, draft: unknown, note: string, confirmed: boolean): Promise<ActionResult> {
+  await requireSession();
+  const d = cleanDraft(draft);
+  if (!d) return { ok: false, text: "That draft isn’t complete." };
+  const why = note.trim().slice(0, 300);
+  if (!why) return { ok: false, text: "Add a short note saying why, so the version list makes sense later." };
+  try {
+    const { menu, now } = await editable(agentId);
+    const next = fromDraft(menu, now, d);
+    if (next.problems.length) return { ok: false, text: `Not saved: ${next.problems.join("; ")}.` };
+    if (next.model === now.model && next.effort === now.effort && next.fallback === now.fallback && next.instructions === now.instructions) return { ok: false, text: "Nothing changed from the active setup." };
+    const costlier = loosening(now, next, outPrice);
+    if (costlier.length && !controlsOn()) return { ok: false, text: `${CONTROLS_OFF} This change costs more: ${costlier.join("; ")}.` };
+    if (costlier.length && !confirmed) return { ok: false, text: `Confirm first: ${costlier.join("; ")}.` };
+    const v = await saveVersion(menu, now, d, why, "zak (control room)");
+    revalidatePath("/", "layout");
+    return { ok: true, text: `Saved as v${v}. ${BY_ID[agentId].name}’s next run uses it.` };
+  } catch (e) { return fail(e); }
+}
+
+/** Makes an earlier version active again. Rolling back to a costlier version needs the same confirm as saving one. */
+export async function rollBackSetup(agentId: string, version: number, confirmed: boolean): Promise<ActionResult> {
+  await requireSession();
+  if (!Number.isInteger(version) || version < 1) return { ok: false, text: "Unknown version." };
+  try {
+    const { menu, now } = await editable(agentId);
+    const target = (await listVersions(menu)).find((v) => v.version === version);
+    if (!target) return { ok: false, text: `There is no v${version}.` };
+    const costlier = loosening(now, target.setup, outPrice);
+    if (costlier.length && !controlsOn()) return { ok: false, text: `${CONTROLS_OFF} v${version} costs more: ${costlier.join("; ")}.` };
+    if (costlier.length && !confirmed) return { ok: false, text: `Confirm first: ${costlier.join("; ")}.` };
+    await rollBack(menu, now, version);
+    revalidatePath("/", "layout");
+    return { ok: true, text: `v${version} is active again. ${BY_ID[agentId].name}’s next run uses it.` };
+  } catch (e) { return fail(e); }
 }

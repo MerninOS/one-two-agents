@@ -23,6 +23,8 @@ const PRICES: Record<Model, { in: number; out: number }> = {
   "claude-haiku-5-5": { in: 0.1 / 1e6, out: 0.5 / 1e6 },
 };
 export const WEB_SEARCH_USD = 0.01; // per search
+/** $ per token in and out, for estimates shown in the Control Room. Null for a model without a price. */
+export const priceOf = (id: string): { in: number; out: number } | null => (isModel(id) ? PRICES[id] : null);
 
 export const claude = () => new Anthropic(); // reads ANTHROPIC_API_KEY
 

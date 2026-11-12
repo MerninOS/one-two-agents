@@ -2,7 +2,7 @@
 // list, a fact source or an output here is a code change on purpose: the Control Room can
 // only pick from what is listed.
 import type { AgentMenu } from "@/core/setup";
-import { SOP } from "./prompt";
+import { SAFETY, SOP } from "./prompt";
 
 export const MENU: AgentMenu = {
   agentId: "chief_of_staff",
@@ -14,6 +14,7 @@ export const MENU: AgentMenu = {
     models: ["claude-sonnet-5-5", "claude-haiku-5-5", "claude-opus-5-5"],
     model: "claude-sonnet-5-5",
     effort: "medium",
+    fallback: null,
   }],
   numbers: {
     cover_warn_days: { label: "Low-green warning", box: "reads", unit: "days of cover", default: 21, min: 7, max: 60 },
@@ -35,10 +36,12 @@ export const MENU: AgentMenu = {
     { box: "reads", label: "Green use window", value: "30 days" },
     { box: "reads", label: "Snapshot history", value: "8 days" },
     { box: "thinking", label: "Answer shape", value: "Watch list, focus, working memory", note: "The code reads this shape, so it stays in code" },
-    { box: "thinking", label: "If the model can’t be reached", value: "Fixed rules write the watch list and focus" },
+    { box: "thinking", label: "If no model can be reached", value: "Fixed rules write the watch list and focus" },
+    { box: "thinking", label: "If the model declines", value: "The Claude API reruns the request on another Claude model it picks" },
     { box: "thinking", label: "Dry run", value: "Never calls the model" },
     { box: "writes", label: "Sections, in order", value: "Numbers, Waiting on you, What ran, Watch, Today’s focus" },
     { box: "writes", label: "Order of writes", value: "Notion first, then the email, so the email can link to its copy" },
   ],
   instructions: SOP,
+  safety: SAFETY,
 };

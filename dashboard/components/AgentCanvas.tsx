@@ -1,12 +1,14 @@
 "use client";
 // The agent canvas (docs/agent-setup.md): the run canvas as a node graph, with two modes.
 // Replay shows what the latest run did; Edit shows the agent's setup, box by box. Clicking a
-// box lists every value behind it and where that value lives. Edit is read-only for now.
+// box lists every value behind it and where that value lives. In Edit, a box marked editable
+// opens its editor (Thinking for agents with a menu: ThinkingEditor.tsx); the rest are read-only.
 // The server builds the whole model (dashboard/canvas.ts); nothing here reads data.
 import { useMemo, useState } from "react";
 import { Handle, Position, ReactFlow, type Edge, type Node, type NodeProps } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import { Icon } from "./Icon";
+import { ThinkingEditor, type ThinkingEditorData } from "./ThinkingEditor";
 import { Summary } from "./ui";
 
 export type HomeId = "app" | "code" | "vercel" | "database";
@@ -31,6 +33,8 @@ export interface CanvasBox {
   replayFoot?: string;
   /** Lines on the node in Edit. */
   edit: string[];
+  /** True when Edit mode can change this box here. */
+  editable?: boolean;
   rows: CanvasRow[];
 }
 export interface CanvasResult { big: string; label: string; text: string; foot: string; pct: number; href?: string }
@@ -74,7 +78,7 @@ function BoxBody({ box, mode, selected }: { box: CanvasBox; mode: Mode; selected
   const lines = mode === "replay" ? box.replay : box.edit;
   return (
     <div className={`fnode${selected ? " sel" : ""}`}>
-      <div className="node-h"><span className="node-ic"><Icon name={box.icon} size={13} /></span><span style={{ flex: 1 }}>{box.title}</span></div>
+      <div className="node-h"><span className="node-ic"><Icon name={box.icon} size={13} /></span><span style={{ flex: 1 }}>{box.title}</span>{mode === "edit" && box.editable && <span className="home-chip" style={{ background: "var(--acc)", color: "#111114" }}>Edit</span>}</div>
       {lines.slice(0, 3).map((l) => <span key={l} className="fnode-line">{l}</span>)}
       <span style={{ flex: 1 }} />
       {mode === "replay"
@@ -92,7 +96,7 @@ function ResultBody({ m, mode }: { m: CanvasModel; mode: Mode }) {
         <span style={{ fontSize: 22, fontWeight: 600, letterSpacing: "-.02em" }}>{m.versionLabel}</span>
         <span className="fnode-out-text">{m.versionNote ?? (m.hasMenu ? "No saved version yet. Every value is the built-in default." : `${m.agentName}’s values are all still in code. Its menu comes later.`)}</span>
         <span style={{ flex: 1 }} />
-        <span style={{ fontSize: 11.5, color: "#B9B9C2" }}>Read-only for now. Editing arrives box by box.</span>
+        <span style={{ fontSize: 11.5, color: "#B9B9C2" }}>{m.boxes.some((b) => b.editable) ? "Boxes marked Edit can be changed here. The rest arrive box by box." : "Read-only for now. Editing arrives box by box."}</span>
       </div>
     );
   }
@@ -153,7 +157,7 @@ function Detail({ box, m }: { box: CanvasBox; m: CanvasModel }) {
   );
 }
 
-export function AgentCanvas({ model, start = "edit" }: { model: CanvasModel; start?: Mode }) {
+export function AgentCanvas({ model, start = "edit", editor }: { model: CanvasModel; start?: Mode; editor?: ThinkingEditorData | null }) {
   const [mode, setMode] = useState<Mode>(start);
   const [sel, setSel] = useState<BoxId>("thinking");
   const box = model.boxes.find((b) => b.id === sel) ?? model.boxes[0];
@@ -173,7 +177,7 @@ export function AgentCanvas({ model, start = "edit" }: { model: CanvasModel; sta
         <div className="seg" role="tablist" aria-label="Canvas mode">
           {(["replay", "edit"] as Mode[]).map((k) => <button key={k} role="tab" aria-selected={mode === k} className={mode === k ? "on" : ""} onClick={() => setMode(k)}>{k === "replay" ? "Replay" : "Edit"}</button>)}
         </div>
-        <span className="sub" style={{ flex: 1, minWidth: 180 }}>{mode === "replay" ? (model.hasRun ? "What the latest run did." : "No real run yet. Dry runs aren’t logged.") : `${model.versionLabel}. Click a box to see every value behind it and where it lives.`}</span>
+        <span className="sub" style={{ flex: 1, minWidth: 180 }}>{mode === "replay" ? (model.hasRun ? "What the latest run did." : "No real run yet. Dry runs aren’t logged.") : `${model.versionLabel}. Click a box to see every value behind it and where it lives.${editor ? " Thinking can be edited." : ""}`}</span>
         <span className="row wrap" style={{ gap: 6 }}>{(Object.keys(HOME) as HomeId[]).map((h) => <span key={h} title={HOME[h].about}><HomeChip h={h} /></span>)}</span>
       </div>
       {model.problem && <div className="card dashed" style={{ padding: 14, fontSize: 13 }}>{model.problem}</div>}
@@ -190,6 +194,7 @@ export function AgentCanvas({ model, start = "edit" }: { model: CanvasModel; sta
         <ResultBody m={model} mode={mode} />
       </div>
 
+      {mode === "edit" && box.id === "thinking" && editor && <ThinkingEditor key={`${editor.agentId}:${editor.active.version}`} d={editor} />}
       <Detail box={box} m={model} />
     </div>
   );

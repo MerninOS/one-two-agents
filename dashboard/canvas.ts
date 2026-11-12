@@ -102,12 +102,15 @@ export function buildCanvas(i: CanvasInput): CanvasModel {
     id: "thinking", title: usesModel ? "Thinking" : "Computing", icon: "cpu",
     replay: [setup && i.runSetupVersion != null ? `${a.model} · setup v${i.runSetupVersion}` : a.model ?? "Set when built"],
     replayFoot: run ? (run.tokens_in + run.tokens_out > 0 ? `${num(run.tokens_in)} in · ${num(run.tokens_out)} out` : "No model tokens") : undefined,
-    edit: setup && step ? [setup.model, `Effort ${setup.effort}`, `Instructions · ${num(setup.instructions.length)} characters`] : [a.model ?? "Set when built"],
+    edit: setup && step ? [setup.model, `Effort ${setup.effort}${setup.fallback ? ` · fallback ${setup.fallback.replace(/^claude-/, "")}` : ""}`, `Instructions · ${num(setup.instructions.length)} characters`] : [a.model ?? "Set when built"],
+    editable: !!(setup && step),
     rows: setup && step && menu
       ? [
         { label: "Step", value: `${step.label}. Needs: ${step.needs}`, home: "code", where: file },
         { label: "Model", value: setup.model, home: "app", where: `${from(setup.fromSetup.model)} · can be ${step.models.join(", ")}` },
         { label: "Effort", value: setup.effort, home: "app", where: `${from(setup.fromSetup.effort)} · can be low, medium or high` },
+        { label: "Fallback model", value: setup.fallback ?? "None", home: "app", where: `${from(setup.fromSetup.fallback)} · tried once if ${setup.model} can’t be reached, before the fixed rules` },
+        { label: "Safety block", value: "Locked. Sent first on every call.", home: "code", where: `agents/${FOLDER[a.id]}/prompt.ts (SAFETY). No setup can change it`, long: menu.safety },
         { label: "Instructions", value: `${num(setup.instructions.length)} characters`, home: "app", where: setup.fromSetup.instructions ? `Setup v${setup.version}` : `Built-in text in agents/${FOLDER[a.id]}/prompt.ts`, long: setup.instructions },
         ...fixed("thinking"),
         { label: "Price", value: "Per token, by model", home: "code", where: "integrations/anthropic.ts, so cost is always computed in code" },
