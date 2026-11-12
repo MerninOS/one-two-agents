@@ -9,7 +9,8 @@ import { AGENTS } from "@/agents/registry";
 import { db } from "@/core/db";
 import { withRun } from "@/core/runs";
 import { discardLesson, editMemory, forgetMemory, keepLesson, proposeLesson, teach as teachMemory, type Keep } from "@/core/memory";
-import { applyApproved, decide, queueBookkeeperProposals, retry, writeBlocker } from "@/core/gateway";
+import { applyApproved, decide, loadCaps, queueBookkeeperProposals, retry, writeBlocker } from "@/core/gateway";
+import { CAPS, capChange, fmtCap, type CapKey } from "@/core/gateway/policy";
 import { MENUS } from "@/agents/menus";
 import { EFFORTS, MAX_INSTRUCTIONS, fromDraft, listVersions, loadSetup, loosening, notionTarget, rollBack, sameSetup, saveVersion, type AgentMenu, type Setup, type SetupDraft, type SetupPreview } from "@/core/setup";
 import { missingProps, notionPlace, notionSearch } from "@/integrations/notion";
@@ -100,7 +101,7 @@ export async function pauseAll(): Promise<ActionResult> {
 export async function setBudget(agentId: string, value: number): Promise<ActionResult> {
   await requireSession();
   if (!known(agentId)) return { ok: false, text: "Unknown agent." };
-  if (!(Number.isFinite(value) && value >= 0 && value <= 50)) return { ok: false, text: "Pick a budget between $0 and $50 a day." };
+  if (!(Number.isFinite(value) && value >= 0 && value <= 50)) return { ok: false, text: "Pick a budget between $0 and $50 a day. $50 is the ceiling in code." };
   const { data: cur, error: e1 } = await db().from("agents").select("daily_budget_usd").eq("id", agentId).single();
   if (e1) return fail(e1.message);
   // lowering a budget only stops spend, so it's always allowed
@@ -494,4 +495,55 @@ export async function previewChain(flow: unknown, key: string): Promise<ActionRe
     steps.push({ agent: s.agent, name, summary, next });
   }
   return { ok: true, text: `Previewed ${c.name}: ${steps.length} step${steps.length === 1 ? "" : "s"}. Nothing was written or sent.`, steps };
+}
+
+// ---- Caps, vendors and suppressed addresses (Guardrails box and Settings). Agents never call
+// these: only a signed-in Zak. Tightening is always allowed; loosening needs a confirm and
+// DASHBOARD_CONTROLS=on, and never passes the limit in code (CAPS in core/gateway/policy.ts).
+
+export async function setCap(key: string, value: number, confirmed: boolean): Promise<ActionResult> {
+  await requireSession();
+  try {
+    const caps = await loadCaps();
+    const now = caps[key as CapKey]?.value;
+    if (now === undefined) return { ok: false, text: `Unknown cap ${key}.` };
+    const v = Number(value);
+    const ch = capChange(key, now, v);
+    if ("refuse" in ch) return { ok: false, text: ch.refuse };
+    if (ch.looser && !controlsOn()) return { ok: false, text: CONTROLS_OFF };
+    if (ch.looser && !confirmed) return { ok: false, text: `Confirm first: ${CAPS[key as CapKey].label} from ${fmtCap(key as CapKey, now)} to ${fmtCap(key as CapKey, v)}.` };
+    const { error } = await db().from("policies").upsert({ key, value_json: v, updated_at: new Date().toISOString() });
+    if (error) return fail(error.message);
+    await db().from("policy_log").insert({ key, old_value: caps[key as CapKey].raw ?? null, new_value: v, changed_by: "zak (control room)" });
+    revalidatePath("/", "layout");
+    return { ok: true, text: `${CAPS[key as CapKey].label}: ${fmtCap(key as CapKey, v)}. The gateway uses it from the next check.` };
+  } catch (e) { return fail(e); }
+}
+
+const KINDS = ["importer", "packaging", "other"] as const;
+
+/** Adds a payee. Only here, only Zak, DASHBOARD_CONTROLS=on. A first payment to a vendor always waits for approval. */
+export async function addVendor(form: { name: string; kind: string; mercuryRecipientId: string; contactEmail: string }): Promise<ActionResult> {
+  await requireSession();
+  if (!controlsOn()) return { ok: false, text: CONTROLS_OFF };
+  const name = String(form.name ?? "").trim(), kind = KINDS.includes(form.kind as (typeof KINDS)[number]) ? form.kind : "other";
+  const rid = String(form.mercuryRecipientId ?? "").trim(), email = String(form.contactEmail ?? "").trim().toLowerCase();
+  if (!name || name.length > 120) return { ok: false, text: "Give the vendor a name (up to 120 characters)." };
+  if (rid && !/^[0-9a-f-]{36}$/i.test(rid)) return { ok: false, text: "The Mercury recipient id is the long id from Mercury (Payments, Recipients). Leave it empty if the recipient isn’t in Mercury yet." };
+  if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return { ok: false, text: "That contact email doesn’t look right." };
+  const { error } = await db().from("vendors").insert({ name, kind, mercury_recipient_id: rid || null, contact_email: email || null, added_by: "zak (control room)" });
+  if (error) return fail(error.code === "23505" ? "That Mercury recipient is already a vendor." : error.message);
+  revalidatePath("/settings");
+  return { ok: true, text: `${name} added to vendors.${rid ? "" : " Add its Mercury recipient id before anything can be paid to it."}` };
+}
+
+/** Stops all email to an address. Always allowed: it only takes power away. */
+export async function suppressEmail(address: string, reason: string): Promise<ActionResult> {
+  await requireSession();
+  const email = String(address ?? "").trim().toLowerCase();
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return { ok: false, text: "That isn’t an email address." };
+  const { error } = await db().from("email_suppressions").upsert({ email, reason: String(reason ?? "").trim().slice(0, 200) || "Added by Zak", source: "zak" });
+  if (error) return fail(error.message);
+  revalidatePath("/settings");
+  return { ok: true, text: `No agent will email ${email}.` };
 }

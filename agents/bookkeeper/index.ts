@@ -25,10 +25,10 @@ import { queueBookkeeperProposals } from "@/core/gateway";
 import { PICK_CATEGORY, READ_RECEIPT } from "./prompt";
 
 const MODEL = MODELS.haiku;
-const LOOKBACK_DAYS = 45;
+export const LOOKBACK_DAYS = 45;
 /** Gmail searches per run, newest charges first, and per charge over its life. */
-const MAX_SEARCHES = 25, MAX_SEARCHES_PER_CHARGE = 3, CANDIDATES = 3;
-const MAX_PDF_BYTES = 3_000_000;
+export const MAX_SEARCHES = 25, MAX_SEARCHES_PER_CHARGE = 3, CANDIDATES = 3;
+export const MAX_PDF_BYTES = 3_000_000;
 const OPEN: DocStatus[] = ["open", "needs_photo", "bank_record_only"];
 
 interface Doc {

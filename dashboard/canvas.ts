@@ -138,7 +138,7 @@ export function buildCanvas(i: CanvasInput): CanvasModel {
 
   // 5. Guardrails: only what code enforces. Instructions and standing orders are guidance, so they sit in Thinking and Memory.
   const guardrails: CanvasBox = {
-    id: "guardrails", title: "Guardrails", icon: "lock",
+    id: "guardrails", title: "Guardrails", icon: "lock", editable: !!row,
     replay: [`${HARD_RULES.length} hard rules, locked`, "Budget checked every run"],
     edit: [`${HARD_RULES.length} hard rules, locked`, row ? `Daily budget ${budget(row.daily_budget_usd)}` : "Daily budget set when built"],
     rows: [

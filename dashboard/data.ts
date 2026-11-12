@@ -416,3 +416,19 @@ export async function getChainRuns(runId: string): Promise<{ chainId: string; ke
     runs: (data ?? []).map((r) => ({ id: r.id, step: Number(r.chain_step ?? 0), agentId: r.agent_id, status: r.status as RunStatus, startedAt: r.started_at, endedAt: r.ended_at, costUsd: Number(r.cost_usd ?? 0), summary: (r.summary ?? r.error ?? null) as string | null })),
   };
 }
+
+// ---- Vendors and suppressed addresses (Settings). Null when the caps migration isn't applied yet.
+
+export interface VendorRow { id: string; name: string; kind: string; mercury_recipient_id: string | null; contact_email: string | null; added_by: string; added_at: string }
+export interface SuppressionRow { email: string; reason: string | null; source: string; created_at: string }
+
+export async function getVendorsAndSuppressions(): Promise<{ vendors: VendorRow[]; suppressed: SuppressionRow[] } | null> {
+  await requireSession();
+  if (!health().supabase) return null;
+  const [v, s] = await Promise.all([
+    db().from("vendors").select("id, name, kind, mercury_recipient_id, contact_email, added_by, added_at").order("name"),
+    db().from("email_suppressions").select("email, reason, source, created_at").order("created_at", { ascending: false }).limit(200),
+  ]);
+  if (v.error || s.error) return null;
+  return { vendors: (v.data ?? []) as VendorRow[], suppressed: (s.data ?? []) as SuppressionRow[] };
+}

@@ -18,7 +18,8 @@ import { fetchStockCoffees } from "@/integrations/shopify/stock";
 import { AREAS, PER_RUN, SOP } from "./prompt";
 
 const MODEL = MODELS.opus;
-const MAX_TURNS = 6;
+/** Limits enforced in code; the Guardrails box lists them. */
+export const MAX_TURNS = 6, MAX_SEARCHES = 10, MAX_FETCHES = 20;
 
 const RECORD = {
   name: "record_leads",
@@ -108,8 +109,8 @@ async function hunt(facts: unknown, known: string[], memory: MemoryLoad | null) 
       output_config: { effort: "medium" },
       system: memory?.block ? [{ type: "text", text: SOP }, { type: "text", text: memory.block }] : SOP,
       tools: [
-        { type: "web_search_20260209", name: "web_search", max_uses: 10, user_location: { type: "approximate", city: "Austin", region: "Texas", country: "US", timezone: "America/Chicago" } },
-        { type: "web_fetch_20260209", name: "web_fetch", max_uses: 20 },
+        { type: "web_search_20260209", name: "web_search", max_uses: MAX_SEARCHES, user_location: { type: "approximate", city: "Austin", region: "Texas", country: "US", timezone: "America/Chicago" } },
+        { type: "web_fetch_20260209", name: "web_fetch", max_uses: MAX_FETCHES },
         RECORD,
       ],
       messages,
