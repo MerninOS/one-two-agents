@@ -163,9 +163,10 @@ h1, h2, h3, p { margin: 0; }
 .progress > div { height: 100%; border-radius: 999px; background: linear-gradient(90deg, #F5D35C, #F2884B); }
 
 /* modal and toast */
-.modal-bg { position: fixed; inset: 0; background: rgba(17, 17, 20, .38); display: grid; place-items: center; z-index: 50; padding: 24px; }
-.modal { width: 460px; max-width: 100%; background: var(--card); border: 1px solid var(--bd); border-radius: 24px; box-shadow: 0 24px 60px rgba(17, 17, 26, .18); padding: 26px; display: flex; flex-direction: column; gap: 14px; }
-.modal-line { display: flex; justify-content: space-between; gap: 16px; padding: 9px 0; border-top: 1px solid var(--bd); font-size: 13px; }
+/* one column no wider than the screen, so a 460px modal shrinks instead of pushing past the edge */
+.modal-bg { position: fixed; inset: 0; background: rgba(17, 17, 20, .38); display: grid; grid-template-columns: minmax(0, 1fr); place-items: center; z-index: 50; padding: 24px; overflow-y: auto; }
+.modal { width: 460px; max-width: 100%; min-width: 0; max-height: calc(100dvh - 48px); overflow-y: auto; overflow-wrap: anywhere; background: var(--card); border: 1px solid var(--bd); border-radius: 24px; box-shadow: 0 24px 60px rgba(17, 17, 26, .18); padding: 26px; display: flex; flex-direction: column; gap: 14px; }
+.modal-line { display: flex; justify-content: space-between; gap: 16px; min-width: 0; padding: 9px 0; border-top: 1px solid var(--bd); font-size: 13px; }
 .toast { position: fixed; left: 50%; bottom: 28px; transform: translateX(-50%); z-index: 60; display: flex; align-items: center; gap: 14px; padding: 12px 20px; border-radius: 999px; background: var(--dark); color: #F4F4F6; font-size: 13.5px; box-shadow: 0 14px 34px rgba(17, 17, 26, .25); max-width: min(640px, calc(100vw - 32px)); }
 
 /* login */
@@ -222,7 +223,8 @@ h1, h2, h3, p { margin: 0; }
   .kv { grid-template-columns: 96px minmax(0, 1fr); }
   .input, textarea.input, select { font-size: 16px !important; }
   .modal-bg { padding: 12px; align-items: end; }
-  .modal { padding: 20px; }
+  .modal { padding: 20px; max-height: calc(100dvh - 24px); }
+  .modal .btn { flex: 1 1 auto; }
   .toast { bottom: 16px; border-radius: 18px; }
 
   /* run log: stacked rows instead of eight columns */
