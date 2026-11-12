@@ -7,7 +7,7 @@ import { costUsd, MODELS } from "@/integrations/anthropic";
 import { MODEL_LIST } from "@/integrations/models";
 import { dryRun } from "@/dashboard/actions";
 import { BY_ID } from "@/dashboard/crew";
-import { getFloor, getRun, leadsForRun } from "@/dashboard/data";
+import { getChainRuns, getFloor, getRun, leadsForRun } from "@/dashboard/data";
 import { dur, m4, num, utcStr, when } from "@/dashboard/format";
 import { RUN_LOOK } from "@/dashboard/status";
 import { DryRun, MarkSeen } from "@/dashboard/components/client";
@@ -25,6 +25,7 @@ export default async function Replay({ params }: { params: Promise<{ id: string 
   const unseen = needs(f, f.now, parseSeen((await cookies()).get(SEEN_COOKIE)?.value)).some((n) => n.run && n.agentId === a.id);
   const others = f.runs.filter((r) => r.agent_id === a.id && r.status !== "skipped" && r.id !== run.id).slice(0, 6);
   const leads = a.id === "wholesale_hunter" ? await leadsForRun(run.id) : null;
+  const chain = run.trigger === "chain" ? await getChainRuns(run.id) : null;
   const look = RUN_LOOK[run.status];
 
   // Where the money went, split in code with the same prices the agents bill with.
@@ -41,13 +42,13 @@ export default async function Replay({ params }: { params: Promise<{ id: string 
     { label: a.id === "wholesale_hunter" ? "Web searches" : "Other", amount: rest, sub: a.id === "wholesale_hunter" ? `about ${Math.round(rest / 0.01)} at $0.01` : "", color: "var(--ink2)" },
   ];
 
-  const title = run.status === "skipped" ? `Skipped · ${when(run.started_at)}` : run.status === "failed" ? `Failed · ${when(run.started_at)}` : `${run.trigger === "manual" ? "Manual" : run.trigger === "approval" ? "Approval" : "Scheduled"} run · ${when(run.started_at)}`;
+  const title = run.status === "skipped" ? `Skipped · ${when(run.started_at)}` : run.status === "failed" ? `Failed · ${when(run.started_at)}` : `${run.trigger === "manual" ? "Manual" : run.trigger === "approval" ? "Approval" : run.trigger === "chain" ? "Chain" : "Scheduled"} run · ${when(run.started_at)}`;
   const stats = [
     ["Started", `${when(run.started_at)} CT`, utcStr(run.started_at)],
     ["Duration", dur(run.started_at, run.ended_at), ""],
     ["Cost", m4(run.cost_usd), ""],
     ["Tokens", `${num(run.tokens_in)} in · ${num(run.tokens_out)} out`, ""],
-    ["Trigger", run.trigger === "cron" ? "Vercel Schedule" : run.trigger === "manual" ? "Zak pressed Run" : run.trigger === "approval" ? "Zak approved changes (gateway)" : run.trigger, ""],
+    ["Trigger", run.trigger === "cron" ? "Vercel Schedule" : run.trigger === "manual" ? "Zak pressed Run" : run.trigger === "approval" ? "Zak approved changes (gateway)" : run.trigger === "chain" ? `Chain${chain ? `: ${chain.name}` : ""}` : run.trigger, ""],
   ];
 
   return (
@@ -74,6 +75,38 @@ export default async function Replay({ params }: { params: Promise<{ id: string 
           <span style={{ fontSize: 12.5, color: "#B9B9C2", whiteSpace: "nowrap" }}>Steps need transcripts</span>
         </div>
       </div>
+
+      {chain && (
+        <div className="card" style={{ gap: 12 }}>
+          <div className="card-h">
+            <span className="node-ic"><Icon name="git-pull-request" size={13} /></span>
+            <span className="card-t">Chain: {chain.name}</span>
+            <span className="muted" style={{ fontSize: 12, flex: 1 }}>{chain.runs.length} of {Math.max(chain.steps.length, chain.runs.length)} step{Math.max(chain.steps.length, chain.runs.length) === 1 ? "" : "s"} ran</span>
+            <span style={{ fontSize: 15, fontWeight: 600 }}>{m4(chain.runs.reduce((s, r) => s + r.costUsd, 0))}</span>
+          </div>
+          <div className="chain-steps">
+            {(chain.steps.length ? chain.steps : chain.runs.map((r) => r.agentId)).map((agentId, k) => {
+              const r = chain.runs.find((x) => x.step === k);
+              const who = BY_ID[agentId];
+              const l = r ? RUN_LOOK[r.status] : null;
+              const body = (
+                <>
+                  <span className="row" style={{ gap: 8 }}>
+                    {who && <Avatar a={who} size={24} />}
+                    <span style={{ fontSize: 13, fontWeight: 600, flex: 1 }}>Step {k + 1}: {who?.name ?? agentId}</span>
+                    {l ? <span className="row" style={{ gap: 6, fontSize: 12 }}><span className="dot" style={{ background: l.dot }} />{l.label}</span> : <span className="muted" style={{ fontSize: 12 }}>Didn’t run</span>}
+                  </span>
+                  <span className="muted" style={{ fontSize: 12 }}>{r ? `${when(r.startedAt)} · ${m4(r.costUsd)}` : "The chain stopped before this step, or it is still waiting."}</span>
+                  {r?.summary && <span style={{ fontSize: 12.5, lineHeight: 1.45, overflowWrap: "anywhere" }} className="ink2"><Summary text={r.summary.slice(0, 220)} /></span>}
+                </>
+              );
+              return r && r.id !== run.id
+                ? <Link key={k} href={`/runs/${r.id}`} className="chain-step">{body}</Link>
+                : <div key={k} className={"chain-step" + (r?.id === run.id ? " here" : "")}>{body}</div>;
+            })}
+          </div>
+        </div>
+      )}
 
       {others.length > 0 && (
         <div className="row wrap" style={{ gap: 6 }}>

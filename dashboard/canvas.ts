@@ -57,11 +57,11 @@ export function buildCanvas(i: CanvasInput): CanvasModel {
   const sched = a.schedule;
   const trigger: CanvasBox = {
     id: "trigger", title: "Trigger", icon: "play",
-    replay: [!run ? "No real run yet" : run.trigger === "manual" ? "Zak pressed Run" : run.trigger === "approval" ? "Zak approved changes" : "Vercel Schedule", run ? `Real run · ${when(run.started_at)} CT` : "Dry runs aren’t logged"],
+    replay: [!run ? "No real run yet" : run.trigger === "manual" ? "Zak pressed Run" : run.trigger === "approval" ? "Zak approved changes" : run.trigger === "chain" ? "A crew chain" : "Vercel Schedule", run ? `Real run · ${when(run.started_at)} CT` : "Dry runs aren’t logged"],
     edit: [schedWords(sched), row ? (row.enabled ? "On the crew" : "Off duty") : "Not in the database"],
     rows: [
-      { label: "Schedule", value: schedSentence(sched), home: "code", where: sched?.vercelName ? `vercel.json, schedule “${sched.vercelName}”` : "No schedule. agents/registry.ts marks it manual only" },
-      ...(sched?.vercelName ? [{ label: "Schedule on or off", value: "Set in Vercel, not shown here", home: "vercel", where: `vercel schedules enable ${sched.vercelName} (or disable), from a terminal` } as CanvasRow] : []),
+      { label: "Schedule", value: schedSentence(sched), home: "app", where: sched?.chain ? `Crew canvas, chain “${sched.chain}”. Runs only while that chain is on` : "Not in a chain. Crew canvas can add it to one" },
+      { label: "Dispatcher", value: "One Vercel Schedule every 15 minutes starts chains that are due", home: "vercel", where: "vercel.json “dispatch”. With every chain off it does nothing" },
       { label: "On the crew", value: row ? (row.enabled ? "Yes. Runs go through." : "No. Every run is skipped and logged at $0.") : "Not in the agents table yet", home: "app", where: "Profile tab, the On the crew switch" },
       { label: "Run by hand", value: "Run and Dry run buttons", home: "app", where: "Profile tab. Real runs need DASHBOARD_CONTROLS=on" },
     ],

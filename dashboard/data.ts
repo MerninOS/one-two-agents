@@ -12,7 +12,10 @@ import { TOOLS } from "@/core/gateway/policy";
 import { hasGateway } from "@/integrations/gateway";
 import { modelDef } from "@/integrations/models";
 import { MENUS } from "@/agents/menus";
+import { AGENTS } from "@/agents/registry";
+import { APPROVAL_LABELS, APPROVAL_TOOLS, BUTTON_ONLY, MAX_CHAINS, MAX_STEPS, METRICS, TAKES_HANDOFF, listFlowVersions, loadFlow, nextFirings } from "@/core/flow";
 import { BUILT, BY_ID, type IntegrationId } from "./crew";
+import type { CrewAgent, CrewCanvasData } from "./components/CrewCanvas";
 import type { EditorVersion, SetupEditorData } from "./components/setupEditor";
 import { lineDiff, trimDiff } from "./diff";
 import { SESSION_COOKIE, controlsOn, validSessionToken } from "./session";
@@ -357,4 +360,59 @@ function partWords(menu: AgentMenu, s: Setup): string {
     `to ${outs.join(" and ") || "nowhere"}${s.notion && !s.outputsOff.includes("notion") ? ` (“${s.notion.title}”)` : ""}`,
     `${liveSections(menu, s).length} sections`,
   ].join(" · ");
+}
+
+// ---- Crew canvas (docs/agent-setup.md, slice 5)
+
+/**
+ * The Crew canvas: the active flow, its versions, and the palette of agents a chain can pick
+ * (with what each run costs on average, from real runs). Null problem-free values when the
+ * crew_flow table isn't there yet.
+ */
+export async function getCrewCanvas(f: Floor): Promise<CrewCanvasData> {
+  await requireSession();
+  const ids = Object.keys(AGENTS);
+  const palette: CrewAgent[] = ids.map((id) => {
+    const a = BY_ID[id];
+    const real = f.runs.filter((r) => r.agent_id === id && r.status === "ok" && r.trigger !== "preview").slice(0, 10);
+    return {
+      id, name: a?.name ?? id, role: a?.role ?? "", hue: a?.hue ?? "#999", icon: a?.icon ?? "bot",
+      enabled: !!f.agents[id]?.enabled, buttonOnly: BUTTON_ONLY.has(id), takesHandoff: TAKES_HANDOFF.has(id),
+      metrics: METRICS[id] ?? [], avgCost: real.length ? real.reduce((s, r) => s + r.cost_usd, 0) / real.length : null, runs: real.length,
+    };
+  });
+  const base = { palette, approvalTools: APPROVAL_TOOLS.map((t) => ({ id: t, label: APPROVAL_LABELS[t] ?? t })), controls: controlsOn(), maxSteps: MAX_STEPS, maxChains: MAX_CHAINS, now: f.now };
+  if (!health().supabase) return { ...base, version: 0, note: null, flow: { chains: [] }, problems: [], versions: [], next: {}, problem: "Supabase isn’t set up, so there is no flow to show." };
+  try {
+    const [active, all] = await Promise.all([loadFlow(ids), listFlowVersions(ids)]);
+    const next = Object.fromEntries(active.flow.chains.map((c) => [c.key, nextFirings(c, f.now, 3).map((t) => new Date(t).toISOString())]));
+    return {
+      ...base, version: active.version, note: active.note, flow: active.flow, problems: active.problems, next,
+      versions: all.map((v) => ({ version: v.version, active: v.active, note: v.note, createdBy: v.createdBy, createdAt: v.createdAt, chains: v.flow.chains.length, on: v.flow.chains.filter((c) => c.on).map((c) => c.name) })),
+    };
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    return { ...base, version: 0, note: null, flow: { chains: [] }, problems: [], versions: [], next: {}, problem: /crew_flow/.test(msg) ? "The crew_flow table isn’t in Supabase yet: apply the migration 20261112200000_crew_flow.sql." : `Supabase: ${msg}` };
+  }
+}
+
+export interface ChainRun { id: string; step: number; agentId: string; status: RunStatus; startedAt: string; endedAt: string | null; costUsd: number; summary: string | null }
+
+/** Every run of the chain run this run belongs to, in step order; null when it isn't in a chain (or the columns aren't there yet). */
+export async function getChainRuns(runId: string): Promise<{ chainId: string; key: string; name: string; steps: string[]; runs: ChainRun[] } | null> {
+  await requireSession();
+  if (!UUID.test(runId) || !health().supabase) return null;
+  const { data: me, error } = await db().from("agent_runs").select("chain_id, chain_key").eq("id", runId).maybeSingle();
+  if (error || !me?.chain_id) return null;
+  const { data } = await db().from("agent_runs").select("id, agent_id, chain_step, status, started_at, ended_at, cost_usd, summary, error").eq("chain_id", me.chain_id).order("chain_step").order("started_at");
+  let name = me.chain_key as string, steps: string[] = [];
+  try {
+    const flow = await loadFlow(Object.keys(AGENTS));
+    const c = flow.flow.chains.find((x) => x.key === me.chain_key);
+    if (c) { name = c.name; steps = c.steps.map((s) => s.agent); }
+  } catch { /* the flow can't be read: show the runs alone */ }
+  return {
+    chainId: me.chain_id as string, key: me.chain_key as string, name, steps,
+    runs: (data ?? []).map((r) => ({ id: r.id, step: Number(r.chain_step ?? 0), agentId: r.agent_id, status: r.status as RunStatus, startedAt: r.started_at, endedAt: r.ended_at, costUsd: Number(r.cost_usd ?? 0), summary: (r.summary ?? r.error ?? null) as string | null })),
+  };
 }

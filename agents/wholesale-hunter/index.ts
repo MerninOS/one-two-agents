@@ -195,5 +195,6 @@ export async function runHunter(runId?: string, opts: { dryRun?: boolean; memory
     remember,
     tokensIn: usage.in, tokensOut: usage.out,
     costUsd: costUsd(MODEL, usage.in, usage.out, usage.searches),
+    metrics: { new_leads: rows.length, drafts: drafted },
   };
 }

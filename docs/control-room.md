@@ -52,7 +52,7 @@ At 860px and narrower (`app/globals.css`, last block): one sticky top bar with t
 - Dry runs are allowed: they read real data, write nothing and call no model (existing `dryRun` path). They are not logged, as today.
 - Every control goes through a confirm modal that states what will happen and what it costs.
 - Real runs from the UI go through `withRun` with trigger `manual`, so they respect `agents.enabled` and the daily budget.
-- Schedules are not edited from the UI (they live in `vercel.json` and Vercel). The Shift tab shows the schedule and the `vercel schedules` commands.
+- Schedules and chains are edited on the Crew canvas (`/crew`, `docs/agent-setup.md` slice 5). The only Vercel Schedule is `dispatch`, which starts chains that are on.
 
 ## 5. Phase 2 (needs backend, not in this PR)
 

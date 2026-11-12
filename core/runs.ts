@@ -19,7 +19,12 @@ export interface RunResult {
   remember?: string[];
   /** For an agent that keeps no working memory: the model read its memory, so next-run notes count down. */
   readMemory?: boolean;
+  /** Numbers computed in code (core/flow.ts METRICS), for chain checks and hand-offs. */
+  metrics?: Record<string, number>;
 }
+
+/** Which chain a run belongs to (core/chain.ts). */
+export interface RunChain { chainId: string; key: string; step: number; parent?: string }
 
 /**
  * Why the agent may not run now (disabled, or over today's budget), or null. A Preview (Setup
@@ -49,15 +54,18 @@ const setupCol = (s: Setup | null) => (s?.version != null ? { setup_version: s.v
  * Trigger "preview" (a draft setup tried from the Setup tab) gets neither: the job brings its own
  * draft and reads memory without changing it.
  */
-export async function withRun(agentId: string, trigger: string, job: (runId: string, memory: MemoryLoad | null, setup: Setup | null) => Promise<RunResult>): Promise<RunResult & { runId: string }> {
-  const { data: run, error } = await db().from("agent_runs").insert({ agent_id: agentId, trigger }).select("id").single();
+export async function withRun(agentId: string, trigger: string, job: (runId: string, memory: MemoryLoad | null, setup: Setup | null) => Promise<RunResult>, opts: { chain?: RunChain } = {}): Promise<RunResult & { runId: string }> {
+  // chain columns arrive with the crew_flow migration; only a chain run names them
+  const c = opts.chain;
+  const chainCols = c ? { chain_id: c.chainId, chain_key: c.key, chain_step: c.step, ...(c.parent ? { parent_run_id: c.parent } : {}) } : {};
+  const { data: run, error } = await db().from("agent_runs").insert({ agent_id: agentId, trigger, ...chainCols }).select("id").single();
   if (error || !run) throw new Error(`Could not start run: ${error?.message}`);
   const finish = (patch: Record<string, unknown>) => db().from("agent_runs").update({ ended_at: new Date().toISOString(), ...patch }).eq("id", run.id);
   let memory: MemoryLoad | null = null, memoryNote = "";
   let setup: Setup | null = null;
   try {
     const blocked = await blockedReason(agentId, trigger);
-    const agentRun = !blocked && (trigger === "cron" || trigger === "manual");
+    const agentRun = !blocked && (trigger === "cron" || trigger === "manual" || trigger === "chain");
     if (agentRun && MENUS[agentId]) {
       const got = await setupOrDefaults(MENUS[agentId]);
       setup = got.setup;
@@ -82,6 +90,7 @@ export async function withRun(agentId: string, trigger: string, job: (runId: str
     await finish({
       status: res.status, summary: `${res.summary}${memoryNote}`, tokens_in: res.tokensIn ?? 0, tokens_out: res.tokensOut ?? 0, cost_usd: res.costUsd ?? 0,
       ...(memory ? { memory_json: loadSummary(memory) } : {}), ...setupCol(setup),
+      ...(c && res.metrics ? { metrics: res.metrics } : {}),
     });
     return { ...res, summary: `${res.summary}${memoryNote}`, runId: run.id };
   } catch (e) {

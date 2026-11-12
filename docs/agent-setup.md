@@ -147,6 +147,44 @@ and Writes are saved together as one version.
 - Avery's default section order is now the email's (focus, waiting, numbers, watch, what ran)
   for the Notion copy too.
 
+## Crew canvas: triggers and chains (slice 5)
+
+`app/(room)/crew` (Crew canvas in the sidebar), `dashboard/components/CrewCanvas.tsx`. The rules
+are in `core/flow-rules.ts` (no database, so the browser checks a draft too), the store in
+`core/flow.ts` (table `crew_flow`, versioned like `agent_setup`), running in `core/chain.ts`, the
+dispatcher in `app/api/dispatch`. Migration `20261112200000_crew_flow.sql`.
+
+- A flow is up to 12 chains. A chain has a name, an on switch, one start and one to three agents.
+- Starts: a schedule (every day or weekdays, Chicago time, on a quarter hour), the Run chain
+  button, or an approval being decided (approve, reject or either; at most once a minute per chain).
+- Each step after the first can: run after the step before worked, failed, or either way; only go
+  on if a number the step before computed in code passes a check (Rowan: new leads, drafts; Quinn:
+  changes proposed, receipts still missing; Morgan: orders yesterday); only run on weekdays; wait
+  until a time ("not before 6:45"); and read the step before's summary and numbers as facts
+  (Avery only, so far). The hand-off is labelled as another agent's words, not instructions.
+- One Vercel Schedule, `dispatch`, every 15 minutes. It starts the chains whose time came in the
+  last hour (each firing once, `chain_fires`) and the waiting steps that are due (`chain_waits`).
+  With every chain off it does nothing. The old `cfo` and `chief-of-staff` schedules are gone:
+  version 1 of the flow is the Morning chain (Morgan at 5:30, then Avery on weekdays not before
+  6:45, either way, with the hand-off), saved **off**.
+- Each step is its own signed request to `/api/agents/<id>?trigger=chain&...`, so it gets its own
+  time limit and goes through `withRun` (on duty, daily budget, setup, memory). The request only
+  names a chain and a step; the route reads the saved flow and checks the agent matches, so
+  nothing outside the flow (an email, a web page, a run's output) can choose what runs next.
+- A skipped step (agent off duty or over budget) stops the chain. A chain never turns an agent on.
+- Rowan and Quinn run only by hand, so they can only be in a chain started with Run chain.
+- No loops: an agent appears once per chain.
+- Looser, so a confirm and `DASHBOARD_CONTROLS=on`: a chain that starts running on its own
+  (turned on, or new and on), or an on chain that gains an agent or changes its start. Turning a
+  chain off or dropping a step needs neither. Run chain is a real run, so it needs the controls.
+- Preview chain dry-runs each step on real data in order (no writes, no model, no cost, nothing
+  logged) and says what the chain would do next. A dry run reports no numbers, so checks show as
+  not tested.
+- Cost: each agent's average over its last real runs; per chain run, and per month for a
+  scheduled chain that is on (30 runs daily, 22 weekdays).
+- Replay: a chain run's page shows every step of that chain run, its status and cost, and the
+  total. `agent_runs` gains `chain_id`, `chain_key`, `chain_step`, `parent_run_id` and `metrics`.
+
 ## Slices
 
 1. Setup store and the read-only canvas. Avery reads its model, effort,

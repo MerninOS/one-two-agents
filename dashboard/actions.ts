@@ -1,7 +1,7 @@
 "use server";
 // Control Room actions. Each one checks the login again. Anything that can spend money
 // or wake an agent also needs DASHBOARD_CONTROLS=on; stopping things never does.
-import { cookies } from "next/headers";
+import { cookies, headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { after } from "next/server";
@@ -15,6 +15,9 @@ import { EFFORTS, MAX_INSTRUCTIONS, fromDraft, listVersions, loadSetup, loosenin
 import { missingProps, notionPlace, notionSearch } from "@/integrations/notion";
 import { env } from "@/core/env";
 import { priceOf } from "@/integrations/anthropic";
+import { approvalDecided, startStep } from "@/core/chain";
+import { activateFlow, flowLooser, flowProblems, listFlowVersions, loadFlow, saveFlowVersion, type Flow } from "@/core/flow";
+import { ANNOTATE } from "@/core/gateway";
 import { BUILT, BY_ID } from "./crew";
 import { requireSession } from "./data";
 import { SESSION_COOKIE, SESSION_DAYS, checkPassword, controlsOn, newSessionToken } from "./session";
@@ -118,6 +121,26 @@ const BY = "zak (control room)";
 /** Why approved changes can't go to Mercury from here right now, or null. */
 const applyBlocker = () => (!controlsOn() ? "Approved, not applied yet: DASHBOARD_CONTROLS is off." : writeBlocker());
 
+/** This deployment's own address, for a chain step's request to /api/agents. */
+async function selfOrigin() {
+  const h = await headers();
+  const host = h.get("x-forwarded-host") ?? h.get("host");
+  return host ? `${h.get("x-forwarded-proto") ?? "https"}://${host}` : env.dashboardUrl ?? "";
+}
+
+/** Chains that start when an approval is decided (core/flow.ts). Runs after the answer, never blocks it. */
+async function fireApprovalChains(decision: "approve" | "reject") {
+  const origin = await selfOrigin();
+  if (!origin) return;
+  after(async () => {
+    try {
+      const flow = await loadFlow(Object.keys(AGENTS));
+      const started = await approvalDecided(origin, flow.flow, ANNOTATE, decision);
+      if (started.length) console.log(`[chains] approval ${decision} started ${started.join(", ")}`);
+    } catch (e) { console.error("[chains] approval", e); }
+  });
+}
+
 async function applyNow(ids?: string[]): Promise<ActionResult> {
   const blocked = applyBlocker();
   if (blocked) return { ok: true, text: blocked.startsWith("Approved") ? blocked : `Approved, not applied yet: ${blocked}` };
@@ -131,6 +154,7 @@ export async function approve(approvalId: string): Promise<ActionResult> {
     const actionId = await decide(approvalId, "approve", BY);
     if (!actionId) { revalidatePath("/", "layout"); return { ok: false, text: "That item was already decided or has expired." }; }
     const res = await applyNow([actionId]);
+    await fireApprovalChains("approve");
     revalidatePath("/", "layout");
     return res;
   } catch (e) { revalidatePath("/", "layout"); return fail(e); }
@@ -147,6 +171,7 @@ export async function reject(approvalId: string, reason?: string): Promise<Actio
   try {
     const actionId = await decide(approvalId, "reject", BY, why || undefined);
     if (!actionId) { revalidatePath("/", "layout"); return { ok: false, text: "That item was already decided or has expired." }; }
+    await fireApprovalChains("reject");
     let lesson = "";
     if (why) {
       try {
@@ -166,6 +191,7 @@ export async function approveAll(approvalIds: string[]): Promise<ActionResult> {
     const actionIds: string[] = [];
     for (const id of ids) { const a = await decide(id, "approve", BY); if (a) actionIds.push(a); }
     const res = actionIds.length ? await applyNow(actionIds) : { ok: false, text: "Nothing left to approve." };
+    if (actionIds.length) await fireApprovalChains("approve");
     revalidatePath("/", "layout");
     return actionIds.length ? { ok: res.ok, text: `Approved ${actionIds.length}. ${res.text}` } : res;
   } catch (e) { revalidatePath("/", "layout"); return fail(e); }
@@ -365,4 +391,107 @@ export async function findNotionTargets(agentId: string, query: string): Promise
     const places = found.map((p) => ({ kind: p.kind, id: p.id, title: p.title, url: p.url, missing: p.kind === "database" ? missingProps(p.props, menu.notion!.dbProps) : [] }));
     return { ok: true, text: places.length ? `${places.length} found.` : "Nothing found. Share the page or database with the Notion integration first.", places };
   } catch (e) { return fail(e); }
+}
+
+// ---- Crew flow (docs/agent-setup.md, slice 5): chains of agents on the Crew canvas
+
+/** A flow from the browser, checked against the palette before anything is saved or run. */
+function cleanFlow(f: unknown): { flow: Flow } | { problems: string[] } {
+  const problems = flowProblems(f, Object.keys(AGENTS));
+  return problems.length ? { problems } : { flow: f as Flow };
+}
+
+/**
+ * Saves the crew flow as a new version. A chain that starts running on its own (or gains an
+ * agent) needs a confirm and DASHBOARD_CONTROLS=on. Saving never turns an agent on: each run
+ * still goes through withRun, and an agent that is off duty is skipped.
+ */
+export async function saveCrewFlow(flow: unknown, note: string, confirmed: boolean): Promise<ActionResult> {
+  await requireSession();
+  const why = String(note ?? "").trim().slice(0, 300);
+  if (!why) return { ok: false, text: "Add a short note saying why, so the version list makes sense later." };
+  const got = cleanFlow(flow);
+  if ("problems" in got) return { ok: false, text: `Not saved: ${got.problems.slice(0, 5).join(" ")}` };
+  try {
+    const now = await loadFlow(Object.keys(AGENTS));
+    if (JSON.stringify(now.flow) === JSON.stringify(got.flow)) return { ok: false, text: "Nothing changed from the saved flow." };
+    const looser = flowLooser(now.flow, got.flow);
+    if (looser.length && !controlsOn()) return { ok: false, text: `${CONTROLS_OFF} ${looser.join("; ")}.` };
+    if (looser.length && !confirmed) return { ok: false, text: `Confirm first: ${looser.join("; ")}.` };
+    const v = await saveFlowVersion(got.flow, why, "zak (control room)", now.version);
+    revalidatePath("/", "layout");
+    return { ok: true, text: `Saved as flow v${v}.${got.flow.chains.some((c) => c.on) ? " Chains that are on start at their next time; agents that are off duty are skipped." : " Every chain is off, so nothing runs on its own."}` };
+  } catch (e) { return fail(e); }
+}
+
+export async function rollBackFlow(version: number, confirmed: boolean): Promise<ActionResult> {
+  await requireSession();
+  if (!Number.isInteger(version) || version < 1) return { ok: false, text: "Unknown version." };
+  try {
+    const agents = Object.keys(AGENTS);
+    const [now, all] = await Promise.all([loadFlow(agents), listFlowVersions(agents)]);
+    const target = all.find((v) => v.version === version);
+    if (!target) return { ok: false, text: `There is no flow v${version}.` };
+    if (target.version === now.version) return { ok: false, text: `v${version} is already active.` };
+    const looser = flowLooser(now.flow, target.flow);
+    if (looser.length && !controlsOn()) return { ok: false, text: `${CONTROLS_OFF} ${looser.join("; ")}.` };
+    if (looser.length && !confirmed) return { ok: false, text: `Confirm first: ${looser.join("; ")}.` };
+    await activateFlow(version, now.version);
+    revalidatePath("/", "layout");
+    return { ok: true, text: `Flow v${version} is active again.` };
+  } catch (e) { return fail(e); }
+}
+
+/**
+ * The Run chain button: starts a saved chain now, even while it is off (like the Run button on a
+ * profile). Real runs, so DASHBOARD_CONTROLS=on; each agent still needs to be on duty.
+ */
+export async function runChainNow(key: string): Promise<ActionResult> {
+  await requireSession();
+  if (!controlsOn()) return { ok: false, text: CONTROLS_OFF };
+  try {
+    const flow = await loadFlow(Object.keys(AGENTS));
+    const c = flow.flow.chains.find((x) => x.key === key);
+    if (!c) return { ok: false, text: "That chain isn’t in the saved flow. Save first." };
+    const origin = await selfOrigin();
+    if (!origin) return { ok: false, text: "Can’t work out this app’s address to start the chain." };
+    const chainId = crypto.randomUUID();
+    after(() => startStep(origin, c, { chainId, key: c.key, step: 0, manual: true }));
+    revalidatePath("/", "layout");
+    return { ok: true, text: `${c.name} started: ${c.steps.map((s) => BY_ID[s.agent]?.name ?? s.agent).join(", then ")}. An agent that is off duty is skipped and the chain stops there. The run log shows each step.` };
+  } catch (e) { return fail(e); }
+}
+
+export interface ChainPreviewStep { agent: string; name: string; summary: string; next: string }
+
+/**
+ * Preview a chain from the canvas (saved or not): each step's dry run in order (real data, no
+ * writes, no model, no cost, nothing logged), and what the chain would do after it. A dry run
+ * reports no numbers, so a check is shown as not tested.
+ */
+export async function previewChain(flow: unknown, key: string): Promise<ActionResult & { steps?: ChainPreviewStep[] }> {
+  await requireSession();
+  const got = cleanFlow(flow);
+  if ("problems" in got) return { ok: false, text: got.problems.slice(0, 5).join(" ") };
+  const c = got.flow.chains.find((x) => x.key === key);
+  if (!c) return { ok: false, text: "Unknown chain." };
+  const steps: ChainPreviewStep[] = [];
+  for (let k = 0; k < c.steps.length; k++) {
+    const s = c.steps[k], name = BY_ID[s.agent]?.name ?? s.agent;
+    let summary: string, status: "ok" | "failed" = "ok";
+    try { summary = (await AGENTS[s.agent].job({ dryRun: true })).summary; }
+    catch (e) { status = "failed"; summary = `Dry run failed: ${e instanceof Error ? e.message : String(e)}`; }
+    const nxt = c.steps[k + 1];
+    let next = "End of the chain.";
+    if (nxt) {
+      const nn = BY_ID[nxt.agent]?.name ?? nxt.agent;
+      const when = nxt.when ?? "ok";
+      const goes = when === "any" || (when === "ok" ? status === "ok" : status === "failed");
+      next = !goes ? `${nn} would not run (${when === "ok" ? "only after a step that worked" : "only after a failure"}).`
+        : `${nn} would run next${nxt.days === "weekdays" ? " on weekdays" : ""}${nxt.notBefore ? `, not before ${nxt.notBefore}` : ""}${nxt.check ? `, if ${nxt.check.metric} ${nxt.check.op} ${nxt.check.value} (a dry run reports no numbers, so not tested)` : ""}${nxt.passAlong ? `, with ${name}’s summary passed along` : ""}.`;
+      if (!goes) { steps.push({ agent: s.agent, name, summary, next }); break; }
+    }
+    steps.push({ agent: s.agent, name, summary, next });
+  }
+  return { ok: true, text: `Previewed ${c.name}: ${steps.length} step${steps.length === 1 ? "" : "s"}. Nothing was written or sent.`, steps };
 }

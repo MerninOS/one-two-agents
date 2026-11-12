@@ -366,5 +366,6 @@ export async function runBookkeeper(runId?: string, opts: { dryRun?: boolean; me
     costUsd: costUsd(MODEL, u.in, u.out),
     // memory goes only to the category call, so next-run notes count down only when that call ran
     readMemory: needCat.length > 0 && cats.length > 0,
+    metrics: { proposals: gate.queued, open: waiting.length },
   };
 }
