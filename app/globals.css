@@ -26,8 +26,8 @@ html, body { margin: 0; background: var(--pg); color: var(--ink); }
 body { font-family: var(--font-sans), system-ui, sans-serif; font-variant-numeric: tabular-nums; -webkit-font-smoothing: antialiased; }
 a { color: var(--acc-ink); text-decoration: none; }
 a:hover { text-decoration: underline; }
-button, input, select { font: inherit; color: inherit; }
-button:focus-visible, input:focus-visible, select:focus-visible, a:focus-visible { outline: 2px solid var(--acc); outline-offset: 2px; }
+button, input, select, textarea { font: inherit; color: inherit; }
+button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible, a:focus-visible { outline: 2px solid var(--acc); outline-offset: 2px; }
 h1, h2, h3, p { margin: 0; }
 @keyframes acrPulse { 0%, 100% { box-shadow: 0 0 0 0 rgba(242, 136, 75, .4) } 50% { box-shadow: 0 0 0 8px rgba(242, 136, 75, 0) } }
 

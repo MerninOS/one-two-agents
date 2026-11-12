@@ -66,7 +66,7 @@ export interface Confirm { title: string; body: string; lines?: { k: string; v: 
 
 type Act = () => Promise<ActionResult>;
 
-function Toast({ t, onDone }: { t: ActionResult | null; onDone: () => void }) {
+export function Toast({ t, onDone }: { t: ActionResult | null; onDone: () => void }) {
   useEffect(() => { if (!t) return; const h = setTimeout(onDone, 6000); return () => clearTimeout(h); }, [t, onDone]);
   if (!t) return null;
   return <div className="toast" role="status"><span className="dot" style={{ background: t.ok ? "var(--mint)" : "var(--red)" }} /><span>{t.text}</span></div>;

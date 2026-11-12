@@ -22,7 +22,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ agent: s
   }
   try {
     if (dryRun) return NextResponse.json({ dryRun: true, ...(await def.job({ dryRun })) });
-    return NextResponse.json(await withRun(id, trigger, (runId) => def.job({ runId })));
+    return NextResponse.json(await withRun(id, trigger, (runId, memory) => def.job({ runId, memory })));
   } catch (e) {
     console.error(`[agents/${id}]`, e);
     return NextResponse.json({ error: e instanceof Error ? e.message : "Run failed" }, { status: 500 });

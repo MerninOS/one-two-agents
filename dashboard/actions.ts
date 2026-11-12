@@ -8,6 +8,7 @@ import { after } from "next/server";
 import { AGENTS } from "@/agents/registry";
 import { db } from "@/core/db";
 import { withRun } from "@/core/runs";
+import { editMemory, forgetMemory, teach as teachMemory, type Keep } from "@/core/memory";
 import { applyApproved, decide, queueBookkeeperProposals, retry, writeBlocker } from "@/core/gateway";
 import { BUILT, BY_ID } from "./crew";
 import { requireSession } from "./data";
@@ -59,7 +60,7 @@ export async function realRun(agentId: string): Promise<ActionResult> {
 
   let markStarted: () => void = () => {};
   const started = new Promise<null>((resolve) => { markStarted = () => resolve(null); });
-  const run = withRun(agentId, "manual", (runId) => { markStarted(); return AGENTS[agentId].job({ runId }); })
+  const run = withRun(agentId, "manual", (runId, memory) => { markStarted(); return AGENTS[agentId].job({ runId, memory }); })
     .then((res) => ({ res }), (err: unknown) => { console.error(`[control-room] ${agentId} run failed`, err); return { err }; });
   after(run);
   const first = await Promise.race([started, run]);
@@ -178,4 +179,34 @@ export async function queueQuinn(): Promise<ActionResult> {
     revalidatePath("/", "layout");
     return { ok: true, text: r.queued || r.refused ? `${r.queued} new approval${r.queued === 1 ? "" : "s"} from Quinn${r.refused ? `, ${r.refused} refused by the gateway (see the log)` : ""}.` : "No new proposals from Quinn." };
   } catch (e) { return fail(e); }
+}
+
+// ---- Memory. Teaching, editing and forgetting spend nothing and wake nothing, so they need only the login.
+
+const KEEP_AS = ["note", "standing_order", "crew"] as const;
+const FORGET: Keep[] = ["next_run", "days_30", "always"];
+
+export async function teach(agentId: string, text: string, keepAs: string, forget: string): Promise<ActionResult> {
+  await requireSession();
+  if (!known(agentId)) return { ok: false, text: "Unknown agent." };
+  if (!KEEP_AS.includes(keepAs as (typeof KEEP_AS)[number]) || !FORGET.includes(forget as Keep)) return { ok: false, text: "Pick how long to keep it." };
+  try {
+    await teachMemory({ agentId, text: String(text), keepAs: keepAs as (typeof KEEP_AS)[number], forget: forget as Keep });
+    revalidatePath("/", "layout");
+    const name = BY_ID[agentId].name;
+    const how = keepAs === "crew" ? "Every agent will load it from its next run." : keepAs === "standing_order" ? `${name} follows it from the next run.` : forget === "next_run" ? `${name} reads it on the next run, then forgets it.` : forget === "days_30" ? `${name} keeps it for 30 days.` : `${name} keeps it until you forget it.`;
+    return { ok: true, text: `Saved. ${how}` };
+  } catch (e) { return fail(e); }
+}
+
+export async function editMemoryLine(memoryId: string, text: string): Promise<ActionResult> {
+  await requireSession();
+  if (!UUID.test(memoryId)) return { ok: false, text: "Unknown memory line." };
+  try { await editMemory(memoryId, String(text)); revalidatePath("/", "layout"); return { ok: true, text: "Saved. The old words are in the timeline." }; } catch (e) { return fail(e); }
+}
+
+export async function forgetMemoryLine(memoryId: string): Promise<ActionResult> {
+  await requireSession();
+  if (!UUID.test(memoryId)) return { ok: false, text: "Unknown memory line." };
+  try { await forgetMemory(memoryId); revalidatePath("/", "layout"); return { ok: true, text: "Forgotten. It won’t be loaded from the next run." }; } catch (e) { return fail(e); }
 }

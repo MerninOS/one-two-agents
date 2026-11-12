@@ -6,6 +6,7 @@ import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { db } from "@/core/db";
 import { env } from "@/core/env";
+import { MEMORY_AGENTS, loadMemory, memoryView, type MemoryEvent, type MemoryLoad, type MemoryRow } from "@/core/memory";
 import { BUILT, type IntegrationId } from "./crew";
 import { SESSION_COOKIE, validSessionToken } from "./session";
 
@@ -194,4 +195,22 @@ export async function getApprovals(): Promise<ApprovalsView | null> {
     log: (log.data ?? []) as GatewayAction[],
     staleHours: Number(pol.data?.value_json) || 72,
   };
+}
+
+// ---- Memory (docs/agent-memory.md)
+
+export interface MemoryTab { rows: MemoryRow[]; events: MemoryEvent[]; load: MemoryLoad | null; loads: boolean }
+
+/** One agent's memory for the Memory tab, and what its next run would load. Null with a reason until the tables exist. */
+export async function getMemory(agentId: string): Promise<{ tab: MemoryTab | null; problem?: string }> {
+  await requireSession();
+  if (!health().supabase) return { tab: null, problem: "Supabase isn’t set up." };
+  try {
+    const loads = MEMORY_AGENTS.has(agentId);
+    const [view, load] = await Promise.all([memoryView(agentId), loads ? loadMemory(agentId) : Promise.resolve(null)]);
+    return { tab: { ...view, load, loads } };
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    return { tab: null, problem: /agent_memory|memory_events|schema cache|does not exist/i.test(msg) ? "The memory tables aren’t in Supabase yet. Apply the agent memory migration (see the PR) and this tab fills in." : msg };
+  }
 }
