@@ -177,19 +177,85 @@ h1, h2, h3, p { margin: 0; }
   .home-grid > :nth-child(2) { grid-column: 1 / -1; order: 3; }
   .grid3 { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
 }
+/* phone-only pieces, hidden on wide screens */
+.rail-name, .menu-btn, .phone-only, .c-meta { display: none; }
+.wide-only { display: contents; }
+.menu-alert { position: absolute; top: 11px; right: 11px; width: 7px; height: 7px; border-radius: 999px; background: var(--red); border: 1.5px solid var(--soft); }
+.sheet-bg { position: fixed; inset: 0; z-index: 35; background: rgba(17, 17, 20, .38); display: flex; justify-content: flex-end; align-items: flex-start; padding: 64px 8px 8px; }
+.sheet { width: min(320px, 100%); max-height: calc(100dvh - 72px); overflow-y: auto; background: var(--ws); border: 1px solid var(--bd); border-radius: 24px; box-shadow: 0 24px 60px rgba(17, 17, 26, .22); padding: 12px; display: flex; flex-direction: column; gap: 6px; }
+.sheet-group { display: flex; flex-direction: column; gap: 2px; padding: 6px 0; }
+.sheet-group + .sheet-group { border-top: 1px solid var(--bd); }
+.sheet-group .side-label { padding-top: 6px; }
+.sheet .side-item { min-height: 46px; }
+
+/* phones and small tablets: one top bar with a menu button, a labeled agent switcher, full-width cards */
 @media (max-width: 860px) {
-  .page { padding: 8px; }
-  .topbar { flex-wrap: wrap; padding: 16px; gap: 12px; }
-  .brand { width: auto; }
-  .rail { order: 3; flex-basis: 100%; justify-content: flex-start; }
-  .top-right .date-pill { display: none; }
-  .body { flex-direction: column; padding: 0 8px 8px; }
-  .side { width: auto; flex-direction: row; overflow-x: auto; padding: 8px; gap: 4px; }
-  .side-group { flex-direction: row; }
-  .side-label, .side-spacer { display: none; }
-  .side-item { width: auto; white-space: nowrap; }
-  .main { padding: 16px; }
-  .home-grid, .grid2, .grid3 { grid-template-columns: minmax(0, 1fr); }
-  .tbl { overflow-x: auto; }
-  .tbl-row { min-width: 900px; }
+  .page { padding: 0; }
+  .ws { border: 0; border-radius: 0; box-shadow: none; min-height: 100vh; }
+  .topbar { position: sticky; top: 0; z-index: 40; background: var(--ws); flex-wrap: wrap; padding: 10px 12px 8px; gap: 8px 10px; border-bottom: 1px solid var(--bd); }
+  .brand { width: auto; flex: 1; }
+  .brand-mark { width: 34px; height: 34px; border-radius: 11px; }
+  .top-right { gap: 8px; }
+  .top-right .date-pill, .top-right .me, .wide-only, .wide-only-block, .side { display: none; }
+  .menu-btn { display: grid; }
+  .phone-only { display: flex; }
+
+  /* the crew rail becomes chips with names; switching agent keeps the tab */
+  .rail { order: 3; flex-basis: 100%; justify-content: flex-start; align-items: center; gap: 6px; padding: 2px 0 2px; margin: 0 -12px; padding-left: 12px; padding-right: 12px; scroll-padding-left: 12px; }
+  .rail-item { flex-direction: row; gap: 7px; height: 40px; padding: 0 12px 0 4px; border-radius: 999px; background: var(--soft); flex: none; }
+  .rail-item.sel { background: var(--acc); color: #111114; }
+  .rail-item.planned { background: transparent; border: 1.5px dashed var(--mut2); color: var(--mut); padding-left: 3px; }
+  .rail-av { width: 32px; height: 32px; background: var(--card); }
+  .rail-av.planned { border: 0; background: transparent; }
+  .rail-av.sel { box-shadow: none; background: var(--card); color: var(--ink); }
+  .rail-name { display: block; font-size: 13px; font-weight: 600; white-space: nowrap; }
+  .rail-dot { display: none; }
+  .rail-sep { height: 24px; margin: 0 4px; }
+  .badge { top: -4px; right: -4px; }
+
+  .body { flex-direction: column; padding: 0; gap: 0; }
+  .main { border: 0; border-radius: 0; padding: 14px 12px 28px; gap: 16px; }
+  .card { padding: 16px; border-radius: 20px; }
+  .h1 { font-size: 24px; }
+  .big { font-size: 44px; }
+  .home-grid, .grid2, .grid3 { grid-template-columns: minmax(0, 1fr) !important; }
+  .kv { grid-template-columns: 96px minmax(0, 1fr); }
+  .input, textarea.input, select { font-size: 16px !important; }
+  .modal-bg { padding: 12px; align-items: end; }
+  .modal { padding: 20px; }
+  .toast { bottom: 16px; border-radius: 18px; }
+
+  /* run log: stacked rows instead of eight columns */
+  .tbl-row { min-width: 0; grid-template-columns: minmax(0, 1fr) auto !important; gap: 6px 10px; padding: 12px 14px; }
+  .tbl-row.head, .tbl-row .c-wide { display: none; }
+  .tbl-row .c-agent { grid-column: 1; grid-row: 1; }
+  .tbl-row .c-status { grid-column: 2; grid-row: 1; justify-self: end !important; }
+  .tbl-row.no-agent .c-status { grid-column: 1; justify-self: start !important; }
+  .tbl-row .c-sum { grid-column: 1 / -1; white-space: normal; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; line-height: 1.45; }
+  .tbl-row .c-meta { display: block; grid-column: 1; font-size: 12px; align-self: center; }
+  .tbl-row .c-go { grid-column: 2; justify-self: end; }
+
+  /* live floor: nodes stacked, full width */
+  .canvas { overflow: visible; }
+  .canvas-inner { width: auto; height: auto; display: flex; flex-direction: column; gap: 20px; padding: 16px; }
+  .canvas-inner > svg { display: none; }
+  .canvas-inner .node { position: relative; left: auto !important; top: auto !important; width: auto !important; height: auto !important; }
+  .canvas-inner .node + .node::before { content: ""; position: absolute; left: 28px; top: -21px; height: 20px; border-left: 1.6px dashed var(--mut2); }
+
+  /* agent profile */
+  .hero { grid-template-columns: minmax(0, 1fr) !important; padding: 18px !important; gap: 18px !important; }
+  .hero-id { flex-direction: column; gap: 14px !important; }
+  .hero-id h1 { font-size: 30px !important; }
+  .hero .pill { white-space: normal; }
+  .hero-boxes { grid-template-columns: minmax(0, 1fr) !important; }
+  .stats { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) !important; padding: 16px 4px !important; }
+  .stats > div { padding: 0 12px !important; }
+  .tabs { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; margin: 0 -12px; padding: 0 12px; }
+  .tabs > a { flex: none; }
+
+  /* mission control shift board fits the week */
+  .shift-wrap { min-width: 0 !important; }
+  .shift-grid { grid-template-columns: 76px repeat(7, minmax(0, 1fr)); gap: 4px; }
+  .shift-grid .av { display: none; }
+  .shift-grid .cell { font-size: 10px; height: 26px; padding: 0; letter-spacing: -.02em; }
 }

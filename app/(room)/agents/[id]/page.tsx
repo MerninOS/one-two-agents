@@ -58,7 +58,7 @@ export default async function AgentPage({ params, searchParams }: { params: Prom
 
       {a.built && tab === "profile" && <Stats a={a} f={f} pipelineTotal={pipeline?.total} books={books} />}
 
-      <div className="row wrap" style={{ gap: 6 }}>
+      <div className="row wrap tabs" style={{ gap: 6 }}>
         {TABS.map(([k, l]) => <Link key={k} href={`/agents/${id}${k === "profile" ? "" : `?tab=${k}`}`} className="btn sm" style={{ height: 38, fontSize: 13.5, background: tab === k ? "var(--ink)" : "var(--soft)", color: tab === k ? "var(--ws)" : "var(--ink)" }}>{l}</Link>)}
       </div>
 
@@ -145,8 +145,8 @@ function HeroFull({ a, f, controls }: { a: CrewMember; f: Floor; controls: boole
   const st = stateOf(a, row, f.runs, f.spentToday[a.id] ?? 0);
   const realLabel = `Real run · ${a.estCostLabel === "About $1" ? "~$1" : a.estCostLabel === "$0" ? "$0" : a.estCostLabel === "A few cents" ? "~$0.05" : "~$0.003"}`;
   return (
-    <div className="card" style={{ padding: 28, borderRadius: 24, display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))", gap: 28 }}>
-      <div className="row" style={{ gap: 22, alignItems: "flex-start", minWidth: 0 }}>
+    <div className="card hero" style={{ padding: 28, borderRadius: 24, display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))", gap: 28 }}>
+      <div className="row hero-id" style={{ gap: 22, alignItems: "flex-start", minWidth: 0 }}>
         <span style={{ boxShadow: "0 12px 30px rgba(17,17,26,.10)", borderRadius: 999 }}><Avatar a={a} size={96} working={st === "running"} /></span>
         <div style={{ display: "flex", flexDirection: "column", gap: 10, minWidth: 0 }}>
           <div className="row wrap">
@@ -174,7 +174,7 @@ function HeroFull({ a, f, controls }: { a: CrewMember; f: Floor; controls: boole
                 {st === "running" ? <><span className="dot pulse" style={{ background: "var(--acc)" }} />Working…</> : realLabel}
               </ActionButton>
             </div>
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+            <div className="hero-boxes" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
               <div className="soft-box">
                 <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 2, minWidth: 0 }}><span style={{ fontSize: 13.5, fontWeight: 600 }}>On the crew</span><span className="muted" style={{ fontSize: 11.5 }}>{row?.enabled ? "Every run goes through" : "Every run is skipped at $0"}</span></div>
                 {crewSwitch(a, f, controls)}
@@ -218,7 +218,7 @@ function Stats({ a, f, pipelineTotal, books }: { a: CrewMember; f: Floor; pipeli
     ["Last real run", last ? md(last.started_at) : "—", last ? `${hm(last.started_at)} CT · ${dur(last.started_at, last.ended_at)} · ${m4(last.cost_usd)}` : "none yet"],
   ];
   return (
-    <div className="card" style={{ padding: "20px 8px", display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", rowGap: 16 }}>
+    <div className="card stats" style={{ padding: "20px 8px", display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", rowGap: 16 }}>
       {stats.map(([l, v, s]) => (
         <div key={l} style={{ display: "flex", flexDirection: "column", gap: 4, padding: "0 20px", borderLeft: "1px solid var(--bd)" }}>
           <span className="sub">{l}</span><span style={{ fontSize: 24, fontWeight: 600, letterSpacing: "-.02em" }}>{v}</span><span style={{ fontSize: 12 }} className="ink2">{s}</span>

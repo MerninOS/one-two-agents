@@ -104,7 +104,7 @@ export default async function MissionControl() {
             <span className="row" style={{ gap: 6, fontSize: 12 }}><span style={{ width: 18, height: 8, borderRadius: 999, border: "1.5px solid var(--mut2)" }} />Will skip, off duty</span>
           </div>
           <div style={{ overflowX: "auto" }}>
-            <div style={{ minWidth: 400 }}>
+            <div className="shift-wrap" style={{ minWidth: 400 }}>
               <div className="shift-grid">
                 <span />
                 {days.map((d, i) => <span key={d} style={{ fontSize: 12, textAlign: "center", color: i === 0 ? "var(--acc-ink)" : "var(--mut)", fontWeight: i === 0 ? 700 : 500 }}>{dow(`${d}T18:00:00Z`)} {Number(d.slice(8))}</span>)}
