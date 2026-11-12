@@ -60,7 +60,7 @@ export async function realRun(agentId: string): Promise<ActionResult> {
 
   let markStarted: () => void = () => {};
   const started = new Promise<null>((resolve) => { markStarted = () => resolve(null); });
-  const run = withRun(agentId, "manual", (runId, memory) => { markStarted(); return AGENTS[agentId].job({ runId, memory }); })
+  const run = withRun(agentId, "manual", (runId, memory, setup) => { markStarted(); return AGENTS[agentId].job({ runId, memory, setup }); })
     .then((res) => ({ res }), (err: unknown) => { console.error(`[control-room] ${agentId} run failed`, err); return { err }; });
   after(run);
   const first = await Promise.race([started, run]);

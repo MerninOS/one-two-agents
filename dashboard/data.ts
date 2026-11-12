@@ -7,6 +7,8 @@ import { redirect } from "next/navigation";
 import { db } from "@/core/db";
 import { env } from "@/core/env";
 import { DEFAULT_BUDGET, MEMORY_AGENTS, loadMemory, memoryView, proposedLessons, readPages, type MemoryEvent, type MemoryLoad, type MemoryRow, type PageLoad } from "@/core/memory";
+import { setupOrDefaults, type Setup } from "@/core/setup";
+import { MENUS } from "@/agents/menus";
 import { BUILT, type IntegrationId } from "./crew";
 import { SESSION_COOKIE, validSessionToken } from "./session";
 
@@ -239,4 +241,32 @@ export async function getMemory(agentId: string): Promise<{ tab: MemoryTab | nul
     const msg = e instanceof Error ? e.message : String(e);
     return { tab: null, problem: /agent_memory|memory_events|schema cache|does not exist/i.test(msg) ? "The memory tables aren’t in Supabase yet. Apply the agent memory migration (see the PR) and this tab fills in." : msg };
   }
+}
+
+// ---- Setup (docs/agent-setup.md)
+
+/** The agent's active setup over its menu, for the canvas. Null for an agent that has no menu yet. */
+export async function getSetup(agentId: string): Promise<{ setup: Setup; problem?: string } | null> {
+  await requireSession();
+  const menu = MENUS[agentId];
+  if (!menu) return null;
+  if (!health().supabase) return { ...(await setupOrDefaults(menu)), problem: "Supabase isn’t set up" };
+  const got = await setupOrDefaults(menu);
+  return got.problem && /agent_setup|schema cache|does not exist/i.test(got.problem) ? { setup: got.setup, problem: "the agent_setup table isn’t in Supabase yet" } : got;
+}
+
+/** Which setup version a run used. Null for a run on built-in values, or until the column exists. */
+export async function runSetupVersion(runId: string): Promise<number | null> {
+  await requireSession();
+  if (!health().supabase) return null;
+  const { data, error } = await db().from("agent_runs").select("setup_version").eq("id", runId).maybeSingle();
+  return error ? null : (data?.setup_version as number | null) ?? null;
+}
+
+/** What one agent's next run would load from memory, for the canvas. Null when it loads none or the store can't be read. */
+export async function getMemoryMeter(agentId: string): Promise<{ budget: number; lines: number } | null> {
+  await requireSession();
+  if (!MEMORY_AGENTS.has(agentId) || !health().supabase) return null;
+  try { const m = await loadMemory(agentId, Date.now(), { pages: false }); return { budget: m.budget, lines: m.rows.length }; }
+  catch { return null; }
 }

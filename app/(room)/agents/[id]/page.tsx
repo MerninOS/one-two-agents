@@ -5,13 +5,15 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { discardLessonLine, dryRun, editMemoryLine, forgetMemoryLine, keepLessonLine, realRun, setBudget, setEnabled, teach } from "@/dashboard/actions";
 import { ACCESS, BY_ID, HARD_RULES, INTEGRATIONS, TIERS, type CrewMember } from "@/dashboard/crew";
-import { getBooks, getFloor, getMemory, getPipeline, type Books, type Floor } from "@/dashboard/data";
+import { buildCanvas } from "@/dashboard/canvas";
+import { getBooks, getFloor, getMemory, getMemoryMeter, getPipeline, getSetup, leadsForRun, runSetupVersion, type Books, type Floor } from "@/dashboard/data";
 import { KEEPS_WORKING, type MemoryRow, type PageLoad } from "@/core/memory";
 import { MemoryLine, TeachForm, type LineView } from "@/dashboard/components/memory";
 import { budget, dur, hm, m2, m4, md, num, when } from "@/dashboard/format";
 import { nextRuns, schedSentence, schedWords } from "@/dashboard/schedule";
 import { controlsOn } from "@/dashboard/session";
 import { STATE_LOOK, combined, stateOf } from "@/dashboard/status";
+import { AgentCanvas } from "@/dashboard/components/AgentCanvas";
 import { ActionButton, BudgetForm, DryRun, MarkSeen, SwitchButton } from "@/dashboard/components/client";
 import { Icon } from "@/dashboard/components/Icon";
 import { RunTable } from "@/dashboard/components/RunTable";
@@ -21,7 +23,7 @@ import { Avatar, LockList, Pill, Summary } from "@/dashboard/components/ui";
 // which lives as long as this page's function allows.
 export const maxDuration = 300;
 
-const TABS = [["profile", "Profile"], ["memory", "Memory"], ["runs", "Runs and replays"], ["access", "Access"], ["shift", "Shift"], ["settings", "Settings"]] as const;
+const TABS = [["profile", "Profile"], ["setup", "Setup"], ["memory", "Memory"], ["runs", "Runs and replays"], ["access", "Access"], ["shift", "Shift"], ["settings", "Settings"]] as const;
 type Tab = (typeof TABS)[number][0];
 
 const LEVEL_CLASS = { read: "lv-read", draft: "lv-draft", write: "lv-write", uses: "lv-uses" } as const;
@@ -88,6 +90,8 @@ export default async function AgentPage({ params, searchParams }: { params: Prom
         </div>
       )}
 
+      {tab === "setup" && (a.built ? <SetupTab a={a} f={f} /> : <div className="card dashed" style={{ padding: 40, textAlign: "center" }}><span className="muted">{a.name} hasn’t joined yet. Its setup appears when it is built.</span></div>)}
+
       {tab === "memory" && <Memory a={a} domains={pipeline?.domains} mem={mem} />}
 
       {tab === "runs" && (a.built ? <RunTable runs={runs.slice(0, 200)} showAgent={false} foot={`${runs.length} runs in the last 60 days · ${m4(runs.reduce((s, r) => s + r.cost_usd, 0))} spent`} /> : <div className="card dashed" style={{ padding: 40, textAlign: "center" }}><span className="muted">{a.name} hasn’t joined yet. No runs.</span></div>)}
@@ -126,6 +130,17 @@ export default async function AgentPage({ params, searchParams }: { params: Prom
       )}
     </>
   );
+}
+
+/** The agent canvas: Replay of the latest real run, and the setup box by box (read-only for now). */
+async function SetupTab({ a, f }: { a: CrewMember; f: Floor }) {
+  const run = f.runs.find((r) => r.agent_id === a.id && r.status !== "skipped") ?? null;
+  const [setup, memory, version, leads] = await Promise.all([
+    getSetup(a.id), getMemoryMeter(a.id),
+    run ? runSetupVersion(run.id) : Promise.resolve(null),
+    run && a.id === "wholesale_hunter" ? leadsForRun(run.id) : Promise.resolve(null),
+  ]);
+  return <AgentCanvas model={buildCanvas({ a, row: f.agents[a.id], run, runSetupVersion: version, leads, health: f.health, setup, memory })} />;
 }
 
 function crewSwitch(a: CrewMember, f: Floor, controls: boolean) {

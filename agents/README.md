@@ -21,7 +21,8 @@ Adding one:
 
 1. `agents/<folder>/index.ts` exporting the job, `prompt.ts` for its instructions.
 2. A migration in `supabase/migrations/` inserting its `agents` row and any tables it owns.
-3. An entry in `registry.ts`.
+3. An entry in `registry.ts`, and a `menu.ts` listed in `menus.ts` if its model, numbers or
+   instructions should be picked in the Control Room (`docs/agent-setup.md`).
 4. A named entry under `schedules` in `vercel.json` (with `"requestMethod": "GET"` and
    `"timezone": "America/Chicago"`) if it runs on a schedule, then
    `vercel schedules disable <name>` until it should go live.
