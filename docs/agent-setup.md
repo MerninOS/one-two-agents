@@ -120,6 +120,33 @@ stored id that falls off the list is ignored like any other invalid setup value.
 - Gateway prices in the list are list prices as of 2026-11-12. Changing a price or adding a
   model is a pull request.
 
+## Reads and Writes (slice 4)
+
+`dashboard/components/ReadsWritesEditor.tsx`; the shared draft, Preview, save and versions are in
+`dashboard/components/setupEditor.tsx`. One draft covers every box: changes in Reads, Thinking
+and Writes are saved together as one version.
+
+- Reads: each fact source in the menu on or off, plus the reads tuning numbers within their range
+  (Avery: low-green warning, green use window, snapshot history). A source that is off is not
+  read at all; its values are empty and the model is told it was turned off, so it never treats
+  it as zero.
+- Writes: each output on or off (never all of them), the Notion target, and the sections of the
+  brief, on or off and in order. The email and the Notion copy use the same sections. A section
+  whose fact source is off is left out (Numbers needs Yesterday's numbers, What ran needs Other
+  agents' runs). Today's focus is always on.
+- Notion target: picked from pages and databases the Notion integration can see (`notionSearch`
+  in `integrations/notion.ts`), so the app can't widen access. A database must have every column
+  the Briefs row writes (`menu.notion.dbProps`); a page gets one new page per day under it. The
+  server opens the target again on save. With no target picked, `NOTION_BRIEFS_DB_ID`, then
+  `NOTION_BRIEF_PARENT_ID`, still work, so nothing changes until Zak picks one.
+- The email recipient is never a choice: `integrations/email.ts` has no recipient argument and
+  sends to `BRIEF_TO`.
+- Gateway action types show read only in Writes, with their tier. Avery has none.
+- Looser, so a confirm and `DASHBOARD_CONTROLS=on`: an output turned back on, or a different
+  Notion target, as well as the slice 2 cost rules. Turning things off never needs either.
+- Avery's default section order is now the email's (focus, waiting, numbers, watch, what ran)
+  for the Notion copy too.
+
 ## Slices
 
 1. Setup store and the read-only canvas. Avery reads its model, effort,
@@ -127,7 +154,7 @@ stored id that falls off the list is ignored like any other invalid setup value.
 2. Edit mode: Thinking for Avery (model, effort, instructions with a locked safety block,
    preview, versions, roll back).
 3. Model choice across providers (Claude direct, OpenAI and Google through Vercel AI Gateway).
-4. Reads and Writes editable for Avery.
+4. Reads and Writes editable for Avery (sources, outputs, Notion target, sections).
 5. Crew canvas: triggers and chains.
 6. Guardrails box and caps.
 7. Menus for Rowan, Quinn and Morgan.
