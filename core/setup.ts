@@ -56,6 +56,31 @@ export interface PartDef {
   env?: readonly string[];
 }
 
+/** A part of the agent's output (a section of the brief). Order and on/off are setup choices. */
+export interface SectionDef {
+  id: string;
+  label: string;
+  detail: string;
+  /** Fact sources (PartDef ids in `reads`) it is built from: with any of them off, the section is left out. */
+  needs?: readonly string[];
+  /** Always on: the output makes no sense without it. */
+  locked?: boolean;
+}
+
+/** Where a Notion output may go: any page shared with the integration, or a database with these properties. */
+export interface NotionDef {
+  /** The output id in `outputs` this target is for. */
+  output: string;
+  /** Property name to Notion type ("title", "date", "number", "rich_text", "checkbox") that a database must have. */
+  dbProps: Record<string, string>;
+  /** Env vars used when the setup picks no target, in order: a database id, then a parent page id. */
+  envDb?: string;
+  envPage?: string;
+}
+
+/** A Notion page or database the brief goes to, picked in the Control Room from what the integration can see. */
+export interface NotionTarget { kind: "database" | "page"; id: string; title: string }
+
 /** A value that is fixed in code today, shown on the canvas so nothing is hidden. */
 export interface FixedDef { box: NumberDef["box"]; label: string; value: string; note?: string }
 
@@ -66,6 +91,9 @@ export interface AgentMenu {
   numbers: Record<string, NumberDef>;
   reads: readonly PartDef[];
   outputs: readonly PartDef[];
+  /** The output's sections, in their built-in order. */
+  sections: readonly SectionDef[];
+  notion?: NotionDef;
   fixed: readonly FixedDef[];
   /** The built-in instructions, used until a setup holds its own. */
   instructions: string;
@@ -87,8 +115,16 @@ export interface Setup {
   fallback: string | null;
   instructions: string;
   numbers: Record<string, number>;
+  /** Fact sources turned off (ids in the menu's `reads`). */
+  readsOff: string[];
+  /** Outputs turned off (ids in the menu's `outputs`). Never all of them. */
+  outputsOff: string[];
+  /** Sections that are on, in order. Locked sections are always in. */
+  sections: string[];
+  /** The Notion page or database picked in the app; null means the env vars (NOTION_BRIEFS_DB_ID, NOTION_BRIEF_PARENT_ID). */
+  notion: NotionTarget | null;
   /** Which values came from the setup row; everything else is the menu's default. */
-  fromSetup: { model: boolean; effort: boolean; fallback: boolean; instructions: boolean; numbers: Record<string, boolean> };
+  fromSetup: { model: boolean; effort: boolean; fallback: boolean; instructions: boolean; numbers: Record<string, boolean>; reads: boolean; outputs: boolean; sections: boolean; notion: boolean };
   /** Values in the row that the menu doesn't offer. Each was ignored and the default used. */
   problems: string[];
 }
@@ -108,11 +144,12 @@ export function resolveSetup(menu: AgentMenu, row: Row | null): Setup {
     agentId: menu.agentId, version: row?.version ?? null, note: row?.note ?? null, createdAt: row?.created_at ?? null,
     model: step.model, effort: step.effort, fallback: step.fallback, instructions: menu.instructions,
     numbers: Object.fromEntries(Object.entries(menu.numbers).map(([k, d]) => [k, d.default])),
-    fromSetup: { model: false, effort: false, fallback: false, instructions: false, numbers: {} },
+    readsOff: [], outputsOff: [], sections: menu.sections.map((x) => x.id), notion: null,
+    fromSetup: { model: false, effort: false, fallback: false, instructions: false, numbers: {}, reads: false, outputs: false, sections: false, notion: false },
     problems: [],
   };
   if (!row) return s;
-  const raw = obj(row.setup), thinking = obj(raw.thinking), numbers = obj(raw.numbers);
+  const raw = obj(row.setup), thinking = obj(raw.thinking), numbers = obj(raw.numbers), reads = obj(raw.reads), writes = obj(raw.writes);
 
   if (thinking.model !== undefined) {
     if (typeof thinking.model === "string" && step.models.includes(thinking.model)) { s.model = thinking.model; s.fromSetup.model = true; }
@@ -137,8 +174,51 @@ export function resolveSetup(menu: AgentMenu, row: Row | null): Setup {
     if (typeof v === "number" && Number.isFinite(v) && v >= d.min && v <= d.max) { s.numbers[k] = v; s.fromSetup.numbers[k] = true; }
     else s.problems.push(`${d.label} ${JSON.stringify(v)} is outside ${d.min} to ${d.max}`);
   }
+  if (reads.off !== undefined) {
+    const off = ids(reads.off), bad = off?.filter((x) => !menu.reads.some((r) => r.id === x)) ?? [];
+    if (off && !bad.length) { s.readsOff = off; s.fromSetup.reads = true; }
+    else s.problems.push(off ? `fact source ${bad.join(", ")} is not on the menu` : "the list of fact sources turned off is not a list");
+  }
+  if (writes.off !== undefined) {
+    const off = ids(writes.off), bad = off?.filter((x) => !menu.outputs.some((o) => o.id === x)) ?? [];
+    if (!off || bad.length) s.problems.push(off ? `output ${bad.join(", ")} is not on the menu` : "the list of outputs turned off is not a list");
+    else if (menu.outputs.length && off.length >= menu.outputs.length) s.problems.push("every output was turned off, so all stay on");
+    else { s.outputsOff = off; s.fromSetup.outputs = true; }
+  }
+  if (writes.sections !== undefined) {
+    const on = ids(writes.sections), bad = on?.filter((x) => !menu.sections.some((d) => d.id === x)) ?? [];
+    const missing = menu.sections.filter((d) => d.locked && !on?.includes(d.id)).map((d) => d.label);
+    if (!on || bad.length || new Set(on).size !== on.length) s.problems.push(on ? (bad.length ? `section ${bad.join(", ")} is not on the menu` : "a section is listed twice") : "the section list is not a list");
+    else if (missing.length) s.problems.push(`${missing.join(", ")} can't be turned off`);
+    else { s.sections = on; s.fromSetup.sections = true; }
+  }
+  if (writes.notion !== undefined && writes.notion !== null) {
+    const t = notionTarget(writes.notion);
+    if (t && menu.notion) { s.notion = t; s.fromSetup.notion = true; }
+    else s.problems.push(menu.notion ? "the Notion target is not a page or database id" : "this agent has no Notion output");
+  }
   return s;
 }
+
+/** A list of short ids, or null. */
+const ids = (v: unknown): string[] | null => (Array.isArray(v) && v.every((x) => typeof x === "string" && /^[a-z0-9_]{1,40}$/.test(x)) ? [...v] as string[] : null);
+
+/** A Notion target in the stored shape, or null. The id is 32 hex characters; the title is only for showing. */
+export function notionTarget(v: unknown): NotionTarget | null {
+  const x = obj(v);
+  const id = typeof x.id === "string" ? x.id.replace(/-/g, "").toLowerCase() : "";
+  if ((x.kind !== "database" && x.kind !== "page") || !/^[0-9a-f]{32}$/.test(id)) return null;
+  const title = typeof x.title === "string" ? x.title.replace(/\s+/g, " ").trim().slice(0, 200) : "";
+  return { kind: x.kind, id, title: title || "Untitled" };
+}
+
+/** The sections that will be written: on in the setup, and every fact source they need is read. In order. */
+export function liveSections(menu: AgentMenu, s: Pick<Setup, "sections" | "readsOff">): string[] {
+  return s.sections.filter((id) => !(menu.sections.find((d) => d.id === id)?.needs ?? []).some((r) => s.readsOff.includes(r)));
+}
+
+/** Is this output on? */
+export const outputOn = (s: Pick<Setup, "outputsOff">, id: string) => !s.outputsOff.includes(id);
 
 /** The agent's active setup. Throws when the table can't be read; see setupOrDefaults. */
 export async function loadSetup(menu: AgentMenu): Promise<Setup> {
@@ -159,43 +239,65 @@ export async function setupOrDefaults(menu: AgentMenu): Promise<{ setup: Setup; 
 /** A short line for run summaries: "setup v3", or "built-in setup". */
 export const setupWords = (s: Setup) => `${s.version == null ? "built-in setup" : `setup v${s.version}`}${s.problems.length ? ` (ignored: ${s.problems.join("; ").slice(0, 160)})` : ""}`;
 
-// ---- Editing a setup in the Control Room (slice 2)
+// ---- Editing a setup in the Control Room (slices 2 and 4)
 
-/** What the Thinking editor sends: every Thinking value, picked from the menu. */
-export interface ThinkingDraft { model: string; effort: Effort; fallback: string | null; instructions: string }
+/** What the setup editors send: every editable value, picked from the menu. One draft covers all the boxes. */
+export interface SetupDraft {
+  model: string; effort: Effort; fallback: string | null; instructions: string;
+  numbers: Record<string, number>;
+  readsOff: string[]; outputsOff: string[]; sections: string[]; notion: NotionTarget | null;
+}
 
-/** The draft laid over `base` (its tuning numbers are kept). Problems mean the draft asks for something the menu doesn't offer. */
-export function fromDraft(menu: AgentMenu, base: Setup, d: ThinkingDraft): Setup {
-  const raw = rawSetup(menu, base, d);
-  const s = resolveSetup(menu, { version: 0, setup: raw, note: null, created_at: "" });
+/** The setup's values as a draft. */
+export const toDraft = (s: Setup): SetupDraft => ({ model: s.model, effort: s.effort, fallback: s.fallback, instructions: s.instructions, numbers: { ...s.numbers }, readsOff: [...s.readsOff], outputsOff: [...s.outputsOff], sections: [...s.sections], notion: s.notion });
+
+/** The draft as a setup. Problems mean the draft asks for something the menu doesn't offer. */
+export function fromDraft(menu: AgentMenu, base: Setup, d: SetupDraft): Setup {
+  const s = resolveSetup(menu, { version: 0, setup: rawSetup(menu, base, d), note: null, created_at: "" });
   return { ...s, version: null, note: null, createdAt: null };
 }
 
+const same = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
+
+/** True when two setups would run the same way. */
+export const sameSetup = (a: Setup, b: Setup) => same(toDraft(a), toDraft(b));
+
 /**
- * The JSON a new version stores: the Thinking values, and the numbers the base setup picked.
- * Instructions are stored only when they differ from the built-in text, so a version that
- * keeps the built-in text follows it when the code's copy is improved.
+ * The JSON a new version stores. Thinking values always; anything else only when it differs
+ * from the menu's default or the base setup already chose it, so a version that keeps a
+ * default follows the code when the default improves (the built-in instructions, a new section).
  */
-function rawSetup(menu: AgentMenu, base: Setup, d: ThinkingDraft) {
+function rawSetup(menu: AgentMenu, base: Setup, d: SetupDraft) {
+  const def = resolveSetup(menu, null);
   const instructions = typeof d.instructions === "string" ? d.instructions.trim() : d.instructions;
+  const keep = <T>(v: T, dv: T, chosen: boolean) => (chosen || !same(v, dv) ? v : undefined);
+  const numbers = Object.fromEntries(Object.entries(d.numbers ?? {}).filter(([k, v]) => base.fromSetup.numbers[k] || v !== def.numbers[k]));
+  const off = keep(d.readsOff, def.readsOff, base.fromSetup.reads);
+  const writes = { off: keep(d.outputsOff, def.outputsOff, base.fromSetup.outputs), sections: keep(d.sections, def.sections, base.fromSetup.sections), notion: d.notion ?? undefined };
   return {
     thinking: { model: d.model, effort: d.effort, fallback: d.fallback ?? null, ...(instructions === menu.instructions.trim() ? {} : { instructions }) },
-    numbers: Object.fromEntries(Object.entries(base.numbers).filter(([k]) => base.fromSetup.numbers[k])),
+    numbers,
+    ...(off ? { reads: { off } } : {}),
+    ...(Object.values(writes).some((v) => v !== undefined) ? { writes } : {}),
   };
 }
 
 const EFFORT_RANK: Record<Effort, number> = { low: 0, medium: 1, high: 2 };
+type Loosen = Pick<Setup, "model" | "effort" | "fallback" | "outputsOff" | "notion">;
 
 /**
- * Why `next` costs more to run than `now`, or [] when it doesn't: a pricier model, a pricier
- * fallback, or more effort. Loosening needs a confirm and DASHBOARD_CONTROLS=on; tightening
+ * Why `next` is looser than `now`, or [] when it isn't: it costs more (a pricier model or
+ * fallback, more effort) or it sends the output somewhere new (an output turned back on, a
+ * different Notion target). Loosening needs a confirm and DASHBOARD_CONTROLS=on; tightening
  * never does. `price` is the model's $ per output token (integrations/anthropic.ts priceOf).
  */
-export function loosening(now: Pick<Setup, "model" | "effort" | "fallback">, next: Pick<Setup, "model" | "effort" | "fallback">, price: (m: string) => number): string[] {
+export function loosening(menu: AgentMenu, now: Loosen, next: Loosen, price: (m: string) => number): string[] {
   const out: string[] = [];
   if (price(next.model) > price(now.model)) out.push(`${next.model} costs more per token than ${now.model}`);
   if (next.fallback && (!now.fallback || price(next.fallback) > price(now.fallback))) out.push(`fallback ${next.fallback} costs more than ${now.fallback ?? "no fallback"}`);
   if (EFFORT_RANK[next.effort] > EFFORT_RANK[now.effort]) out.push(`effort ${next.effort} uses more tokens than ${now.effort}`);
+  for (const o of menu.outputs) if (now.outputsOff.includes(o.id) && !next.outputsOff.includes(o.id)) out.push(`${o.label} turned back on`);
+  if (next.notion && next.notion.id !== now.notion?.id) out.push(`the Notion copy goes to a different ${next.notion.kind}: ${next.notion.title}`);
   return out;
 }
 
@@ -225,7 +327,7 @@ async function activate(agentId: string, version: number, previous: number | nul
  * Saves the draft as the next version and makes it active. The caller has already checked the
  * login, loosening and controls (dashboard/actions.ts). Returns the new version number.
  */
-export async function saveVersion(menu: AgentMenu, base: Setup, d: ThinkingDraft, note: string, by: string): Promise<number> {
+export async function saveVersion(menu: AgentMenu, base: Setup, d: SetupDraft, note: string, by: string): Promise<number> {
   const next = fromDraft(menu, base, d);
   if (next.problems.length) throw new Error(`Not saved: ${next.problems.join("; ")}`);
   const { data: top, error: e1 } = await db().from("agent_setup").select("version").eq("agent_id", menu.agentId).order("version", { ascending: false }).limit(1).maybeSingle();
@@ -257,8 +359,12 @@ export interface SetupPreview {
   focus: { action: string; reason: string };
   remember: string[];
   email: { subject: string; html: string } | null;
-  /** The Briefs database row it would write, as label and value. */
+  /** The Briefs database row it would write, as label and value. Empty when the Notion copy isn't a database. */
   row: [string, string][];
+  /** Where a real run would send it, in words. */
+  sendsTo: string;
+  /** The sections it would include, in order. */
+  sections: string[];
   tokensIn: number;
   tokensOut: number;
   costUsd: number;

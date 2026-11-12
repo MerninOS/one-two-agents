@@ -41,8 +41,10 @@ A number that isn't known is left blank, never written as zero.
 
 | Settings | Result |
 | --- | --- |
-| `NOTION_BRIEFS_DB_ID` set | One row per brief in the database |
-| Blank | One page per brief under `NOTION_BRIEF_PARENT_ID`, as before |
+| A database picked on the Setup tab (Writes) | One row per brief in that database (docs/agent-setup.md, slice 4) |
+| A page picked on the Setup tab | One page per brief under that page |
+| Nothing picked, `NOTION_BRIEFS_DB_ID` set | One row per brief in the database |
+| Nothing picked, it blank | One page per brief under `NOTION_BRIEF_PARENT_ID`, as before |
 
 - **One row per day.** If the brief runs twice on one day, the new row replaces the old
   one. The old row goes to Notion's trash (restorable for 30 days) and its "Focus done"

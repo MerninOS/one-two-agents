@@ -107,3 +107,46 @@ export async function notionPageText(pageId: string, maxChars = 6000): Promise<{
   if (text.length > maxChars) { text = text.slice(0, maxChars); cut = true; }
   return { title, text, cut };
 }
+
+// ---- Finding where an output may go (agent setup: the Notion target picker). Read only.
+
+export interface NotionPlace {
+  kind: "database" | "page";
+  /** 32 hex characters, no dashes */
+  id: string;
+  title: string;
+  url: string;
+  /** A database's properties, name to Notion type. */
+  props?: Record<string, string>;
+}
+
+type Found = { object: "page" | "database"; id: string; url: string; archived?: boolean; in_trash?: boolean; title?: Rich; properties?: Record<string, { type: string; title?: Rich }> };
+
+const place = (r: Found): NotionPlace => {
+  const id = r.id.replace(/-/g, "");
+  if (r.object === "database") {
+    return { kind: "database", id, url: r.url, title: (r.title ?? []).map((t) => t.plain_text ?? "").join("").trim() || "Untitled", props: Object.fromEntries(Object.entries(r.properties ?? {}).map(([k, v]) => [k, v.type])) };
+  }
+  const t = Object.values(r.properties ?? {}).find((v) => v.type === "title");
+  return { kind: "page", id, url: r.url, title: (t?.title ?? []).map((x) => x.plain_text ?? "").join("").trim() || "Untitled" };
+};
+
+/**
+ * Pages and databases the integration can see, matching `query` (blank: the most recently
+ * edited). Only what was shared with the integration ever shows up, so nothing here widens access.
+ */
+export async function notionSearch(query: string, limit = 20): Promise<NotionPlace[]> {
+  const r = await notion<{ results: Found[] }>("POST", "search", { query: query.slice(0, 100), page_size: Math.min(limit, 50), sort: { direction: "descending", timestamp: "last_edited_time" } });
+  return r.results.filter((x) => !x.archived && !x.in_trash && (x.object === "page" || x.object === "database")).map(place);
+}
+
+/** One page or database by id, as the integration sees it. Throws when it isn't shared or doesn't exist. */
+export async function notionPlace(kind: "database" | "page", id: string): Promise<NotionPlace> {
+  const r = await notion<Found>("GET", `${kind === "database" ? "databases" : "pages"}/${id}`);
+  if (r.archived || r.in_trash) throw new Error(`That ${kind} is in Notion's trash.`);
+  return place({ ...r, object: kind });
+}
+
+/** The properties a database is missing, compared with what an output writes (name to type). Empty when it fits. */
+export const missingProps = (have: Record<string, string> | undefined, need: Record<string, string>) =>
+  Object.entries(need).filter(([k, t]) => have?.[k] !== t).map(([k, t]) => `${k} (${t.replace("rich_text", "text")})`);

@@ -6,7 +6,7 @@ import { notFound } from "next/navigation";
 import { discardLessonLine, dryRun, editMemoryLine, forgetMemoryLine, keepLessonLine, realRun, setBudget, setEnabled, teach } from "@/dashboard/actions";
 import { ACCESS, BY_ID, HARD_RULES, INTEGRATIONS, TIERS, type CrewMember } from "@/dashboard/crew";
 import { buildCanvas } from "@/dashboard/canvas";
-import { getBooks, getFloor, getMemory, getMemoryMeter, getPipeline, getSetup, getThinkingEditor, leadsForRun, runSetupVersion, type Books, type Floor } from "@/dashboard/data";
+import { getBooks, getFloor, getMemory, getMemoryMeter, getPipeline, getSetup, getSetupEditor, leadsForRun, runSetupVersion, type Books, type Floor } from "@/dashboard/data";
 import { KEEPS_WORKING, type MemoryRow, type PageLoad } from "@/core/memory";
 import { MemoryLine, TeachForm, type LineView } from "@/dashboard/components/memory";
 import { budget, dur, hm, m2, m4, md, num, when } from "@/dashboard/format";
@@ -132,7 +132,7 @@ export default async function AgentPage({ params, searchParams }: { params: Prom
   );
 }
 
-/** The agent canvas: Replay of the latest real run, and the setup box by box. Thinking is editable for agents with a menu. */
+/** The agent canvas: Replay of the latest real run, and the setup box by box. Reads, Thinking and Writes are editable for agents with a menu. */
 async function SetupTab({ a, f }: { a: CrewMember; f: Floor }) {
   const run = f.runs.find((r) => r.agent_id === a.id && r.status !== "skipped") ?? null;
   const [setup, memory, version, leads] = await Promise.all([
@@ -140,7 +140,7 @@ async function SetupTab({ a, f }: { a: CrewMember; f: Floor }) {
     run ? runSetupVersion(run.id) : Promise.resolve(null),
     run && a.id === "wholesale_hunter" ? leadsForRun(run.id) : Promise.resolve(null),
   ]);
-  const editor = await getThinkingEditor(a.id, f.runs, setup);
+  const editor = await getSetupEditor(a.id, f.runs, f.health, setup);
   return <AgentCanvas model={buildCanvas({ a, row: f.agents[a.id], run, runSetupVersion: version, leads, health: f.health, setup, memory })} editor={editor} />;
 }
 

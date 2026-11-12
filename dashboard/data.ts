@@ -7,12 +7,13 @@ import { redirect } from "next/navigation";
 import { db } from "@/core/db";
 import { env } from "@/core/env";
 import { DEFAULT_BUDGET, MEMORY_AGENTS, loadMemory, memoryView, proposedLessons, readPages, type MemoryEvent, type MemoryLoad, type MemoryRow, type PageLoad } from "@/core/memory";
-import { MAX_INSTRUCTIONS, listVersions, resolveSetup, setupOrDefaults, type Setup, type SetupVersion } from "@/core/setup";
+import { MAX_INSTRUCTIONS, listVersions, liveSections, loosening, resolveSetup, setupOrDefaults, toDraft, type AgentMenu, type Setup, type SetupVersion } from "@/core/setup";
+import { TOOLS } from "@/core/gateway/policy";
 import { hasGateway } from "@/integrations/gateway";
 import { modelDef } from "@/integrations/models";
 import { MENUS } from "@/agents/menus";
 import { BUILT, BY_ID, type IntegrationId } from "./crew";
-import type { EditorVersion, ThinkingEditorData } from "./components/ThinkingEditor";
+import type { EditorVersion, SetupEditorData } from "./components/setupEditor";
 import { lineDiff, trimDiff } from "./diff";
 import { SESSION_COOKIE, controlsOn, validSessionToken } from "./session";
 
@@ -283,7 +284,7 @@ export async function getMemoryMeter(agentId: string): Promise<{ budget: number;
  * choices with prices, the active values, the safety block, the version list with what changed,
  * and the average tokens of the last 10 real runs that called a model. Null for an agent with no menu.
  */
-export async function getThinkingEditor(agentId: string, runs: Run[], got: { setup: Setup; problem?: string } | null): Promise<ThinkingEditorData | null> {
+export async function getSetupEditor(agentId: string, runs: Run[], health: Record<IntegrationId, boolean>, got: { setup: Setup; problem?: string } | null): Promise<SetupEditorData | null> {
   await requireSession();
   const menu = MENUS[agentId];
   if (!menu || !got) return null;
@@ -303,11 +304,14 @@ export async function getThinkingEditor(agentId: string, runs: Run[], got: { set
       ...(v.setup.fallback !== prev.fallback ? [`fallback ${prev.fallback ?? "none"} to ${v.setup.fallback ?? "none"}`] : []),
       ...(v.setup.instructions !== prev.instructions ? [builtIn(v.setup) ? "back to the built-in instructions" : "instructions"] : []),
       ...Object.keys(menu.numbers).filter((n) => v.setup.numbers[n] !== prev.numbers[n]).map((n) => `${menu.numbers[n].label} ${prev.numbers[n]} to ${v.setup.numbers[n]}`),
+      ...partChanges(menu, prev, v.setup),
     ];
     return {
       version: v.version, active: v.active, note: v.note, by: v.createdBy, at: v.createdAt,
       model: v.setup.model, effort: v.setup.effort, fallback: v.setup.fallback,
       instructionsChars: v.setup.instructions.length, builtInText: builtIn(v.setup),
+      parts: partWords(menu, v.setup),
+      looser: v.active ? [] : loosening(menu, s, v.setup, (m) => modelDef(m)?.out ?? Infinity),
       changes: k === versions.length - 1 && !changes.length ? ["first version, same values as the built-in setup"] : changes,
       diff: v.setup.instructions !== prev.instructions ? trimDiff(lineDiff(prev.instructions, v.setup.instructions)) : null,
     };
@@ -317,9 +321,40 @@ export async function getThinkingEditor(agentId: string, runs: Run[], got: { set
     agentId, agentName: BY_ID[agentId]?.name ?? agentId, stepLabel: step.label, needs: step.needs,
     models: step.models.map((id) => { const m = modelDef(id); return { id, label: m?.label ?? id, provider: m?.provider ?? "Unknown", gateway: m?.route === "gateway", in: m?.in ?? null, out: m?.out ?? null }; }),
     gatewayReady: hasGateway(),
-    active: { version: s.version, model: s.model, effort: s.effort, fallback: s.fallback, instructions: s.instructions },
+    active: { version: s.version, ...toDraft(s) },
     builtIn: menu.instructions, safety: menu.safety, maxChars: MAX_INSTRUCTIONS,
     usage: used.length ? { runs: used.length, avgIn: used.reduce((a, r) => a + r.tokens_in, 0) / used.length, avgOut: used.reduce((a, r) => a + r.tokens_out, 0) / used.length } : null,
     controlsOn: controlsOn(), blocked, versions: view,
+    reads: menu.reads.map((r) => ({ id: r.id, label: r.label, detail: r.detail, connected: health[r.integration as IntegrationId] ?? false })),
+    numbers: Object.entries(menu.numbers).map(([key, n]) => ({ key, label: n.label, unit: n.unit, min: n.min, max: n.max, default: n.default, box: n.box })),
+    outputs: menu.outputs.map((o) => { const missing = (o.env ?? []).filter((k) => !process.env[k]?.trim()); return { id: o.id, label: o.label, detail: o.detail, ready: !missing.length, missing }; }),
+    sections: menu.sections.map((x) => ({ id: x.id, label: x.label, detail: x.detail, locked: !!x.locked, needs: (x.needs ?? []).map((id) => ({ id, label: menu.reads.find((r) => r.id === id)?.label ?? id })) })),
+    notion: menu.notion ? {
+      tokenSet: !!env.notionToken,
+      fallback: env.notionBriefsDb ? "The database in NOTION_BRIEFS_DB_ID (Vercel), until you pick one here" : env.notionBriefParent ? "A page per day under NOTION_BRIEF_PARENT_ID (Vercel), until you pick one here" : null,
+    } : null,
+    actions: Object.entries(TOOLS).filter(([, t]) => (t.agents as readonly string[]).includes(agentId)).map(([tool, t]) => ({ tool, tier: t.tier, note: "Every action waits for your approval card. Promotion needs 28 of the last 30 approved unedited." })),
   };
+}
+
+/** Reads and writes changes between two versions, in words. */
+function partChanges(menu: AgentMenu, a: Setup, b: Setup): string[] {
+  const label = (list: readonly { id: string; label: string }[], id: string) => list.find((x) => x.id === id)?.label ?? id;
+  return [
+    ...menu.reads.filter((r) => a.readsOff.includes(r.id) !== b.readsOff.includes(r.id)).map((r) => `${r.label} ${b.readsOff.includes(r.id) ? "off" : "on"}`),
+    ...menu.outputs.filter((o) => a.outputsOff.includes(o.id) !== b.outputsOff.includes(o.id)).map((o) => `${o.label} ${b.outputsOff.includes(o.id) ? "off" : "on"}`),
+    ...(JSON.stringify(a.sections) !== JSON.stringify(b.sections) ? [`sections ${b.sections.map((id) => label(menu.sections, id)).join(", ")}`] : []),
+    ...(a.notion?.id !== b.notion?.id ? [`Notion copy to ${b.notion ? `“${b.notion.title}”` : "the Vercel setting"}`] : []),
+  ];
+}
+
+/** A version's reads and writes in a few words, for the version list. */
+function partWords(menu: AgentMenu, s: Setup): string {
+  const off = menu.reads.filter((r) => s.readsOff.includes(r.id)).map((r) => r.label);
+  const outs = menu.outputs.filter((o) => !s.outputsOff.includes(o.id)).map((o) => o.label);
+  return [
+    off.length ? `not reading ${off.join(", ")}` : "every source on",
+    `to ${outs.join(" and ") || "nowhere"}${s.notion && !s.outputsOff.includes("notion") ? ` (“${s.notion.title}”)` : ""}`,
+    `${liveSections(menu, s).length} sections`,
+  ].join(" · ");
 }

@@ -2,13 +2,16 @@
 // The agent canvas (docs/agent-setup.md): the run canvas as a node graph, with two modes.
 // Replay shows what the latest run did; Edit shows the agent's setup, box by box. Clicking a
 // box lists every value behind it and where that value lives. In Edit, a box marked editable
-// opens its editor (Thinking for agents with a menu: ThinkingEditor.tsx); the rest are read-only.
+// opens its editor (for agents with a menu: Reads and Writes in ReadsWritesEditor.tsx, Thinking in
+// ThinkingEditor.tsx); the rest are read-only.
 // The server builds the whole model (dashboard/canvas.ts); nothing here reads data.
 import { useMemo, useState } from "react";
 import { Handle, Position, ReactFlow, type Edge, type Node, type NodeProps } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import { Icon } from "./Icon";
-import { ThinkingEditor, type ThinkingEditorData } from "./ThinkingEditor";
+import { ReadsEditor, WritesEditor } from "./ReadsWritesEditor";
+import type { SetupEditorData } from "./setupEditor";
+import { ThinkingEditor } from "./ThinkingEditor";
 import { Summary } from "./ui";
 
 export type HomeId = "app" | "code" | "vercel" | "database";
@@ -157,7 +160,7 @@ function Detail({ box, m }: { box: CanvasBox; m: CanvasModel }) {
   );
 }
 
-export function AgentCanvas({ model, start = "edit", editor }: { model: CanvasModel; start?: Mode; editor?: ThinkingEditorData | null }) {
+export function AgentCanvas({ model, start = "edit", editor }: { model: CanvasModel; start?: Mode; editor?: SetupEditorData | null }) {
   const [mode, setMode] = useState<Mode>(start);
   const [sel, setSel] = useState<BoxId>("thinking");
   const box = model.boxes.find((b) => b.id === sel) ?? model.boxes[0];
@@ -177,7 +180,7 @@ export function AgentCanvas({ model, start = "edit", editor }: { model: CanvasMo
         <div className="seg" role="tablist" aria-label="Canvas mode">
           {(["replay", "edit"] as Mode[]).map((k) => <button key={k} role="tab" aria-selected={mode === k} className={mode === k ? "on" : ""} onClick={() => setMode(k)}>{k === "replay" ? "Replay" : "Edit"}</button>)}
         </div>
-        <span className="sub" style={{ flex: 1, minWidth: 180 }}>{mode === "replay" ? (model.hasRun ? "What the latest run did." : "No real run yet. Dry runs aren’t logged.") : `${model.versionLabel}. Click a box to see every value behind it and where it lives.${editor ? " Thinking can be edited." : ""}`}</span>
+        <span className="sub" style={{ flex: 1, minWidth: 180 }}>{mode === "replay" ? (model.hasRun ? "What the latest run did." : "No real run yet. Dry runs aren’t logged.") : `${model.versionLabel}. Click a box to see every value behind it and where it lives.${editor ? " Reads, Thinking and Writes can be edited." : ""}`}</span>
         <span className="row wrap" style={{ gap: 6 }}>{(Object.keys(HOME) as HomeId[]).map((h) => <span key={h} title={HOME[h].about}><HomeChip h={h} /></span>)}</span>
       </div>
       {model.problem && <div className="card dashed" style={{ padding: 14, fontSize: 13 }}>{model.problem}</div>}
@@ -194,7 +197,9 @@ export function AgentCanvas({ model, start = "edit", editor }: { model: CanvasMo
         <ResultBody m={model} mode={mode} />
       </div>
 
-      {mode === "edit" && box.id === "thinking" && editor && <ThinkingEditor key={`${editor.agentId}:${editor.active.version}`} d={editor} />}
+      {mode === "edit" && editor && box.id === "thinking" && <ThinkingEditor key={`t:${editor.agentId}:${editor.active.version}`} d={editor} />}
+      {mode === "edit" && editor && box.id === "reads" && <ReadsEditor key={`r:${editor.agentId}:${editor.active.version}`} d={editor} />}
+      {mode === "edit" && editor && box.id === "writes" && <WritesEditor key={`w:${editor.agentId}:${editor.active.version}`} d={editor} />}
       <Detail box={box} m={model} />
     </div>
   );

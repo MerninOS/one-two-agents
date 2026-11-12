@@ -4,7 +4,9 @@ import "server-only";
 // place it lives. Plain data for dashboard/components/AgentCanvas.tsx; no values of keys.
 import { MENUS } from "@/agents/menus";
 import { DEFAULT_BUDGET, KEEPS_WORKING, MEMORY_AGENTS } from "@/core/memory";
-import type { AgentMenu, Setup } from "@/core/setup";
+import { TOOLS } from "@/core/gateway/policy";
+import { env } from "@/core/env";
+import { liveSections, type AgentMenu, type Setup } from "@/core/setup";
 import { hasGateway } from "@/integrations/gateway";
 import { modelDef } from "@/integrations/models";
 import { ACCESS, HARD_RULES, INTEGRATIONS, type CrewMember, type IntegrationId } from "./crew";
@@ -91,10 +93,14 @@ export function buildCanvas(i: CanvasInput): CanvasModel {
   const reads: CanvasBox = {
     id: "reads", title: "Reads · facts", icon: "shopping-bag",
     replay: readsAccess.length ? readsAccess.map((x) => x.name) : ["No reads"],
-    edit: menu ? [`${menu.reads.length} fact sources`, ...numbers("reads").map((r) => `${r.label} ${r.value}`)] : (readsAccess.length ? readsAccess.map((x) => x.name) : ["No reads"]),
+    edit: menu ? [`${menu.reads.length - (setup?.readsOff.length ?? 0)} of ${menu.reads.length} fact sources on`, ...numbers("reads").map((r) => `${r.label} ${r.value}`)] : (readsAccess.length ? readsAccess.map((x) => x.name) : ["No reads"]),
+    editable: !!(setup && menu),
     rows: menu
       ? [
-        ...menu.reads.map((r): CanvasRow => ({ label: r.label, value: r.detail, home: "code", where: `Always on. ${file}`, status: status(health[r.integration as IntegrationId] ?? false) })),
+        ...menu.reads.map((r): CanvasRow => {
+          const off = !!setup?.readsOff.includes(r.id);
+          return { label: r.label, value: off ? `Off. ${r.detail}` : r.detail, home: "app", where: `${from(setup?.fromSetup.reads)} · built in ${file}`, status: off ? undefined : status(health[r.integration as IntegrationId] ?? false) };
+        }),
         ...numbers("reads"), ...fixed("reads"),
       ]
       : readsAccess.map((x): CanvasRow => ({ label: x.name, value: ACCESS[a.id]?.[x.id]?.[1] ?? "", home: "code", where: file, status: status(health[x.id]) })),
@@ -147,13 +153,21 @@ export function buildCanvas(i: CanvasInput): CanvasModel {
 
   // 6. Writes
   const writesAccess = access(["write", "draft"]);
+  const outOn = (id: string) => !setup?.outputsOff.includes(id);
+  const target = !menu?.notion ? "" : setup?.notion ? `${setup.notion.kind === "database" ? "Database" : "Page"} “${setup.notion.title}”` : env.notionBriefsDb ? "The database in NOTION_BRIEFS_DB_ID" : env.notionBriefParent ? "A page per day under NOTION_BRIEF_PARENT_ID" : "Not set";
+  const sectionLabel = (id: string) => menu?.sections.find((x) => x.id === id)?.label ?? id;
+  const tools = Object.entries(TOOLS).filter(([, t]) => (t.agents as readonly string[]).includes(a.id));
   const writes: CanvasBox = {
     id: "writes", title: "Writes · outputs", icon: "shield-check",
     replay: writesAccess.map((x) => `${x.name}${ACCESS[a.id]?.[x.id]?.[0] === "draft" ? " · draft" : ""}`),
-    edit: menu ? menu.outputs.filter((o) => has(o.env)).map((o) => o.label).concat(menu.outputs.some((o) => !has(o.env)) ? [`${menu.outputs.filter((o) => !has(o.env)).length} not set up`] : []) : writesAccess.map((x) => x.name),
+    edit: menu && setup ? [menu.outputs.filter((o) => outOn(o.id)).map((o) => o.label).join(" + ") || "Nothing on", `${liveSections(menu, setup).length} sections`] : menu ? menu.outputs.map((o) => o.label) : writesAccess.map((x) => x.name),
+    editable: !!(setup && menu),
     rows: menu
       ? [
-        ...menu.outputs.map((o): CanvasRow => ({ label: o.label, value: o.detail, home: "vercel", where: `Vercel, Environment Variables: ${(o.env ?? []).join(", ")}`, status: status(has(o.env)) })),
+        ...menu.outputs.map((o): CanvasRow => ({ label: o.label, value: outOn(o.id) ? o.detail : `Off. ${o.detail}`, home: "app", where: `${from(setup?.fromSetup.outputs)} · keys in Vercel: ${(o.env ?? []).join(", ")}`, status: outOn(o.id) ? status(has(o.env)) : undefined })),
+        ...(menu.notion ? [{ label: "Notion copy goes to", value: target, home: setup?.notion ? "app" : "vercel", where: setup?.notion ? `Setup v${setup.version}. Picked from pages shared with the Notion integration` : `${menu.notion.envDb} or ${menu.notion.envPage} in Vercel, until a target is picked here` } as CanvasRow] : []),
+        ...(setup ? [{ label: "Sections, in order", value: liveSections(menu, setup).map(sectionLabel).join(", "), home: "app", where: `${from(setup.fromSetup.sections)}. A section whose fact source is off is left out` } as CanvasRow] : []),
+        { label: "Gateway actions", value: tools.length ? tools.map(([k, t]) => `${k} (${t.tier})`).join(", ") : "None. It can’t send, pay or post.", home: "code", where: "core/gateway/policy.ts. A new action type is a pull request and starts at Draft" },
         ...numbers("writes"), ...fixed("writes"),
       ]
       : writesAccess.map((x): CanvasRow => ({ label: x.name, value: ACCESS[a.id]?.[x.id]?.[1] ?? "", home: "code", where: file, status: status(health[x.id]) })),

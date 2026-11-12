@@ -11,7 +11,9 @@ import { withRun } from "@/core/runs";
 import { discardLesson, editMemory, forgetMemory, keepLesson, proposeLesson, teach as teachMemory, type Keep } from "@/core/memory";
 import { applyApproved, decide, queueBookkeeperProposals, retry, writeBlocker } from "@/core/gateway";
 import { MENUS } from "@/agents/menus";
-import { EFFORTS, MAX_INSTRUCTIONS, fromDraft, listVersions, loadSetup, loosening, rollBack, saveVersion, type Setup, type SetupPreview, type ThinkingDraft } from "@/core/setup";
+import { EFFORTS, MAX_INSTRUCTIONS, fromDraft, listVersions, loadSetup, loosening, notionTarget, rollBack, sameSetup, saveVersion, type AgentMenu, type Setup, type SetupDraft, type SetupPreview } from "@/core/setup";
+import { missingProps, notionPlace, notionSearch } from "@/integrations/notion";
+import { env } from "@/core/env";
 import { priceOf } from "@/integrations/anthropic";
 import { BUILT, BY_ID } from "./crew";
 import { requireSession } from "./data";
@@ -246,12 +248,31 @@ export async function discardLessonLine(memoryId: string): Promise<ActionResult>
 const outPrice = (m: string) => priceOf(m)?.out ?? Infinity;
 
 /** A draft from the browser, checked field by field before it goes anywhere near the menu. */
-function cleanDraft(d: unknown): ThinkingDraft | null {
+function cleanDraft(d: unknown): SetupDraft | null {
   const x = (d ?? {}) as Record<string, unknown>;
   if (typeof x.model !== "string" || !EFFORTS.includes(x.effort as Setup["effort"]) || typeof x.instructions !== "string") return null;
   if (x.fallback !== null && typeof x.fallback !== "string") return null;
   if (x.instructions.length > MAX_INSTRUCTIONS) return null;
-  return { model: x.model, effort: x.effort as Setup["effort"], fallback: (x.fallback as string | null) || null, instructions: x.instructions };
+  const list = (v: unknown) => (Array.isArray(v) && v.length <= 50 && v.every((s) => typeof s === "string") ? (v as string[]) : null);
+  const numbers = x.numbers && typeof x.numbers === "object" && !Array.isArray(x.numbers) ? x.numbers as Record<string, unknown> : null;
+  const readsOff = list(x.readsOff), outputsOff = list(x.outputsOff), sections = list(x.sections);
+  if (!numbers || !Object.values(numbers).every((n) => typeof n === "number") || !readsOff || !outputsOff || !sections) return null;
+  const notion = x.notion == null ? null : notionTarget(x.notion);
+  if (x.notion != null && !notion) return null;
+  return { model: x.model, effort: x.effort as Setup["effort"], fallback: (x.fallback as string | null) || null, instructions: x.instructions, numbers: numbers as Record<string, number>, readsOff, outputsOff, sections, notion };
+}
+
+/**
+ * A Notion target the draft picks, checked live: the integration must see it, and a database
+ * must have every property the agent writes. Null when it is fine (or unchanged).
+ */
+async function notionProblem(menu: AgentMenu, now: Setup, next: Setup): Promise<string | null> {
+  if (!next.notion || next.notion.id === now.notion?.id || !menu.notion) return null;
+  try {
+    const got = await notionPlace(next.notion.kind, next.notion.id);
+    const miss = got.kind === "database" ? missingProps(got.props, menu.notion.dbProps) : [];
+    return miss.length ? `“${got.title}” is missing ${miss.join(", ")}, so the row would be rejected.` : null;
+  } catch (e) { return `The Notion integration can’t open that ${next.notion.kind}: ${(e instanceof Error ? e.message : String(e)).slice(0, 120)}`; }
 }
 
 /** The agent's menu and active setup. The table must be readable: nothing is saved over a setup that can't be seen. */
@@ -281,7 +302,7 @@ export async function previewSetup(agentId: string, draft: unknown): Promise<Act
     const res = await withRun(agentId, "preview", async () => {
       const p = await preview(next);
       got = p;
-      return { status: "ok", summary: `Preview of an unsaved setup (${next.model}, effort ${next.effort}). Nothing written or sent. Answered by ${p.servedBy}.`, tokensIn: p.tokensIn, tokensOut: p.tokensOut, costUsd: p.costUsd };
+      return { status: "ok", summary: `Preview of an unsaved setup (${next.model}, effort ${next.effort}). Nothing written or sent. Answered by ${p.servedBy}; a real run would send it to ${p.sendsTo}.`, tokensIn: p.tokensIn, tokensOut: p.tokensOut, costUsd: p.costUsd };
     });
     revalidatePath("/", "layout");
     if (!got) return { ok: false, text: res.summary };
@@ -300,8 +321,10 @@ export async function saveSetupVersion(agentId: string, draft: unknown, note: st
     const { menu, now } = await editable(agentId);
     const next = fromDraft(menu, now, d);
     if (next.problems.length) return { ok: false, text: `Not saved: ${next.problems.join("; ")}.` };
-    if (next.model === now.model && next.effort === now.effort && next.fallback === now.fallback && next.instructions === now.instructions) return { ok: false, text: "Nothing changed from the active setup." };
-    const costlier = loosening(now, next, outPrice);
+    if (sameSetup(next, now)) return { ok: false, text: "Nothing changed from the active setup." };
+    const target = await notionProblem(menu, now, next);
+    if (target) return { ok: false, text: `Not saved. ${target}` };
+    const costlier = loosening(menu, now, next, outPrice);
     if (costlier.length && !controlsOn()) return { ok: false, text: `${CONTROLS_OFF} This change costs more: ${costlier.join("; ")}.` };
     if (costlier.length && !confirmed) return { ok: false, text: `Confirm first: ${costlier.join("; ")}.` };
     const v = await saveVersion(menu, now, d, why, "zak (control room)");
@@ -318,11 +341,28 @@ export async function rollBackSetup(agentId: string, version: number, confirmed:
     const { menu, now } = await editable(agentId);
     const target = (await listVersions(menu)).find((v) => v.version === version);
     if (!target) return { ok: false, text: `There is no v${version}.` };
-    const costlier = loosening(now, target.setup, outPrice);
+    const costlier = loosening(menu, now, target.setup, outPrice);
     if (costlier.length && !controlsOn()) return { ok: false, text: `${CONTROLS_OFF} v${version} costs more: ${costlier.join("; ")}.` };
     if (costlier.length && !confirmed) return { ok: false, text: `Confirm first: ${costlier.join("; ")}.` };
     await rollBack(menu, now, version);
     revalidatePath("/", "layout");
     return { ok: true, text: `v${version} is active again. ${BY_ID[agentId].name}’s next run uses it.` };
+  } catch (e) { return fail(e); }
+}
+
+/**
+ * Pages and databases the Notion integration can see, for the Writes box's target picker.
+ * Read only. A database that lacks a property the agent writes is listed with what is missing
+ * and can't be picked.
+ */
+export async function findNotionTargets(agentId: string, query: string): Promise<ActionResult & { places?: { kind: "database" | "page"; id: string; title: string; url: string; missing: string[] }[] }> {
+  await requireSession();
+  const menu = MENUS[agentId];
+  if (!menu?.notion || !known(agentId)) return { ok: false, text: "This agent has no Notion output." };
+  if (!env.notionToken) return { ok: false, text: "NOTION_TOKEN isn’t set in Vercel, so there is nothing to search." };
+  try {
+    const found = await notionSearch(String(query ?? "").trim());
+    const places = found.map((p) => ({ kind: p.kind, id: p.id, title: p.title, url: p.url, missing: p.kind === "database" ? missingProps(p.props, menu.notion!.dbProps) : [] }));
+    return { ok: true, text: places.length ? `${places.length} found.` : "Nothing found. Share the page or database with the Notion integration first.", places };
   } catch (e) { return fail(e); }
 }
