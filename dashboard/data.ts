@@ -7,10 +7,13 @@ import { redirect } from "next/navigation";
 import { db } from "@/core/db";
 import { env } from "@/core/env";
 import { DEFAULT_BUDGET, MEMORY_AGENTS, loadMemory, memoryView, proposedLessons, readPages, type MemoryEvent, type MemoryLoad, type MemoryRow, type PageLoad } from "@/core/memory";
-import { setupOrDefaults, type Setup } from "@/core/setup";
+import { MAX_INSTRUCTIONS, listVersions, resolveSetup, setupOrDefaults, type Setup, type SetupVersion } from "@/core/setup";
+import { priceOf } from "@/integrations/anthropic";
 import { MENUS } from "@/agents/menus";
-import { BUILT, type IntegrationId } from "./crew";
-import { SESSION_COOKIE, validSessionToken } from "./session";
+import { BUILT, BY_ID, type IntegrationId } from "./crew";
+import type { EditorVersion, ThinkingEditorData } from "./components/ThinkingEditor";
+import { lineDiff, trimDiff } from "./diff";
+import { SESSION_COOKIE, controlsOn, validSessionToken } from "./session";
 
 export async function requireSession() {
   const jar = await cookies();
@@ -97,10 +100,13 @@ export const getFloor = cache(async (): Promise<Floor> => {
   ]);
   if (a.error || r.error) return { ...empty, problem: `Supabase: ${(a.error ?? r.error)?.message}` };
   const agents = Object.fromEntries((a.data ?? []).map((x) => [x.id, { ...x, daily_budget_usd: Number(x.daily_budget_usd) } as AgentRow]));
-  const runs = (r.data ?? []).map(toRun);
+  const all = (r.data ?? []).map(toRun);
+  // a Preview from the Setup tab is not a run of the agent: it stays out of the floor, the run log
+  // and Replay, but its cost counts toward today's spend, the same as withRun's budget check
+  const runs = all.filter((x) => x.trigger !== "preview");
   const d0 = budgetDayStart(new Date(now)).getTime();
   const spentToday: Record<string, number> = Object.fromEntries(BUILT.map((b) => [b.id, 0]));
-  for (const run of runs) if (Date.parse(run.started_at) >= d0) spentToday[run.agent_id] = (spentToday[run.agent_id] ?? 0) + run.cost_usd;
+  for (const run of all) if (Date.parse(run.started_at) >= d0) spentToday[run.agent_id] = (spentToday[run.agent_id] ?? 0) + run.cost_usd;
   return { ok: true, now, agents, runs, spentToday, health: h, photosWaiting: ph.error ? null : ph.count ?? 0, approvalsPending: ap.error ? null : ap.count ?? 0, lessonsWaiting };
 });
 
@@ -269,4 +275,49 @@ export async function getMemoryMeter(agentId: string): Promise<{ budget: number;
   if (!MEMORY_AGENTS.has(agentId) || !health().supabase) return null;
   try { const m = await loadMemory(agentId, Date.now(), { pages: false }); return { budget: m.budget, lines: m.rows.length }; }
   catch { return null; }
+}
+
+/**
+ * Everything the Thinking editor shows (dashboard/components/ThinkingEditor.tsx): the menu's
+ * choices with prices, the active values, the safety block, the version list with what changed,
+ * and the average tokens of the last 10 real runs that called a model. Null for an agent with no menu.
+ */
+export async function getThinkingEditor(agentId: string, runs: Run[], got: { setup: Setup; problem?: string } | null): Promise<ThinkingEditorData | null> {
+  await requireSession();
+  const menu = MENUS[agentId];
+  if (!menu || !got) return null;
+  const step = menu.steps[0];
+  const s = got.setup;
+  let versions: SetupVersion[] = [], blocked = got.problem ? `Saving is off: ${got.problem}.` : undefined;
+  if (!blocked) {
+    try { versions = await listVersions(menu); }
+    catch (e) { blocked = `Saving is off: the version list can’t be read (${(e instanceof Error ? e.message : String(e)).slice(0, 100)}).`; }
+  }
+  const builtIn = (v: Setup) => v.instructions.trim() === menu.instructions.trim();
+  const view = versions.map((v, k): EditorVersion => {
+    const prev = versions[k + 1]?.setup ?? resolveSetup(menu, null);
+    const changes = [
+      ...(v.setup.model !== prev.model ? [`model ${prev.model} to ${v.setup.model}`] : []),
+      ...(v.setup.effort !== prev.effort ? [`effort ${prev.effort} to ${v.setup.effort}`] : []),
+      ...(v.setup.fallback !== prev.fallback ? [`fallback ${prev.fallback ?? "none"} to ${v.setup.fallback ?? "none"}`] : []),
+      ...(v.setup.instructions !== prev.instructions ? [builtIn(v.setup) ? "back to the built-in instructions" : "instructions"] : []),
+      ...Object.keys(menu.numbers).filter((n) => v.setup.numbers[n] !== prev.numbers[n]).map((n) => `${menu.numbers[n].label} ${prev.numbers[n]} to ${v.setup.numbers[n]}`),
+    ];
+    return {
+      version: v.version, active: v.active, note: v.note, by: v.createdBy, at: v.createdAt,
+      model: v.setup.model, effort: v.setup.effort, fallback: v.setup.fallback,
+      instructionsChars: v.setup.instructions.length, builtInText: builtIn(v.setup),
+      changes: k === versions.length - 1 && !changes.length ? ["first version, same values as the built-in setup"] : changes,
+      diff: v.setup.instructions !== prev.instructions ? trimDiff(lineDiff(prev.instructions, v.setup.instructions)) : null,
+    };
+  });
+  const used = runs.filter((r) => r.agent_id === agentId && (r.trigger === "cron" || r.trigger === "manual") && r.tokens_in + r.tokens_out > 0).slice(0, 10);
+  return {
+    agentId, agentName: BY_ID[agentId]?.name ?? agentId, stepLabel: step.label, needs: step.needs,
+    models: step.models.map((id) => { const p = priceOf(id); return { id, in: p?.in ?? null, out: p?.out ?? null }; }),
+    active: { version: s.version, model: s.model, effort: s.effort, fallback: s.fallback, instructions: s.instructions },
+    builtIn: menu.instructions, safety: menu.safety, maxChars: MAX_INSTRUCTIONS,
+    usage: used.length ? { runs: used.length, avgIn: used.reduce((a, r) => a + r.tokens_in, 0) / used.length, avgOut: used.reduce((a, r) => a + r.tokens_out, 0) / used.length } : null,
+    controlsOn: controlsOn(), blocked, versions: view,
+  };
 }

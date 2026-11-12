@@ -4,10 +4,10 @@ import "server-only";
 // in vercel.json if it runs on a schedule.
 import type { MemoryLoad } from "@/core/memory";
 import type { RunResult } from "@/core/runs";
-import type { Setup } from "@/core/setup";
+import type { Setup, SetupPreview } from "@/core/setup";
 import { runCfoSnapshot } from "./cfo";
 import { runBookkeeper } from "./bookkeeper";
-import { runBrief } from "./chief-of-staff";
+import { previewBrief, runBrief } from "./chief-of-staff";
 import { runHunter } from "./wholesale-hunter";
 
 export interface JobOpts {
@@ -24,11 +24,13 @@ export interface AgentDef {
   job: (opts: JobOpts) => Promise<RunResult>;
   /** Only runs when called with ?trigger=manual; anything else is skipped (see the route). */
   manualOnly?: boolean;
+  /** Setup tab Preview: the agent's real output for a draft setup, writing and sending nothing. Agents with a menu only. */
+  preview?: (setup: Setup) => Promise<SetupPreview>;
 }
 
 export const AGENTS: Record<string, AgentDef> = {
   cfo: { job: ({ dryRun }) => runCfoSnapshot({ dryRun }) },
-  chief_of_staff: { job: ({ dryRun, memory, setup }) => runBrief({ dryRun, memory, setup }) },
+  chief_of_staff: { job: ({ dryRun, memory, setup }) => runBrief({ dryRun, memory, setup }), preview: previewBrief },
   // ~$1 of Claude credit a run, so it has no schedule and never runs on its own.
   wholesale_hunter: { job: ({ runId, dryRun, memory }) => runHunter(runId, { dryRun, memory }), manualOnly: true },
   // Manual only until launch (planned daily 6:00 AM CT, after the CFO snapshot). Reads Mercury,

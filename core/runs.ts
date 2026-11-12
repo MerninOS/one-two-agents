@@ -21,10 +21,14 @@ export interface RunResult {
   readMemory?: boolean;
 }
 
-/** Why the agent may not run now (disabled, or over today's budget), or null. */
-async function blockedReason(agentId: string) {
+/**
+ * Why the agent may not run now (disabled, or over today's budget), or null. A Preview (Setup
+ * tab) writes and sends nothing, so it may run while the agent is off duty; it still needs budget.
+ */
+async function blockedReason(agentId: string, trigger: string) {
   const { data: agent } = await db().from("agents").select("enabled, daily_budget_usd").eq("id", agentId).single();
-  if (!agent?.enabled) return "Agent is disabled.";
+  if (!agent) return "Agent is not in the agents table.";
+  if (!agent.enabled && trigger !== "preview") return "Agent is disabled.";
   const since = new Date(); since.setUTCHours(0, 0, 0, 0);
   const { data: runs } = await db().from("agent_runs").select("cost_usd").eq("agent_id", agentId).gte("started_at", since.toISOString());
   const spent = (runs ?? []).reduce((a, r) => a + Number(r.cost_usd), 0);
@@ -42,6 +46,8 @@ const setupCol = (s: Setup | null) => (s?.version != null ? { setup_version: s.v
  * be read never stops the run: the job gets null and the summary says so.
  * Agents with a menu (agents/menus.ts) also get their active setup (core/setup.ts). A setup that
  * can't be read never stops the run either: the job gets the menu's defaults and the summary says so.
+ * Trigger "preview" (a draft setup tried from the Setup tab) gets neither: the job brings its own
+ * draft and reads memory without changing it.
  */
 export async function withRun(agentId: string, trigger: string, job: (runId: string, memory: MemoryLoad | null, setup: Setup | null) => Promise<RunResult>): Promise<RunResult & { runId: string }> {
   const { data: run, error } = await db().from("agent_runs").insert({ agent_id: agentId, trigger }).select("id").single();
@@ -50,7 +56,7 @@ export async function withRun(agentId: string, trigger: string, job: (runId: str
   let memory: MemoryLoad | null = null, memoryNote = "";
   let setup: Setup | null = null;
   try {
-    const blocked = await blockedReason(agentId);
+    const blocked = await blockedReason(agentId, trigger);
     const agentRun = !blocked && (trigger === "cron" || trigger === "manual");
     if (agentRun && MENUS[agentId]) {
       const got = await setupOrDefaults(MENUS[agentId]);
@@ -58,7 +64,8 @@ export async function withRun(agentId: string, trigger: string, job: (runId: str
       if (got.problem) memoryNote = ` (setup not loaded, built-in values used: ${got.problem})`;
       else if (setup.problems.length) memoryNote = ` (setup v${setup.version} values ignored: ${setup.problems.join("; ").slice(0, 200)})`;
     }
-    // only agent runs load memory; a gateway apply run (trigger "approval") is not the agent thinking
+    // only agent runs load memory; a gateway apply run (trigger "approval") is not the agent thinking,
+    // and a Preview reads memory itself without counting anything down
     if (agentRun && MEMORY_AGENTS.has(agentId)) {
       try { memory = await loadMemory(agentId); }
       catch (e) { memoryNote += ` (memory not loaded: ${(e instanceof Error ? e.message : String(e)).slice(0, 100)})`; }
