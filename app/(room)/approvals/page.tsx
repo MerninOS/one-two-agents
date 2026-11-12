@@ -4,7 +4,7 @@ import { BY_ID } from "@/dashboard/crew";
 import { getApprovals, getFloor, type ApprovalItem } from "@/dashboard/data";
 import { m2, md, when } from "@/dashboard/format";
 import { controlsOn } from "@/dashboard/session";
-import { ActionButton } from "@/dashboard/components/client";
+import { ActionButton, RejectButton } from "@/dashboard/components/client";
 import { Avatar, Empty } from "@/dashboard/components/ui";
 import { writeBlocker } from "@/core/gateway";
 
@@ -83,7 +83,7 @@ export default async function Approvals() {
                   {i.reasoning && <span style={{ fontSize: 13, lineHeight: 1.5 }} className="ink2">{i.reasoning}</span>}
                   <div className="row" style={{ gap: 8, marginTop: 6 }}>
                     <ActionButton className="btn primary" action={approve.bind(null, i.id)}>Approve</ActionButton>
-                    <ActionButton className="btn ghost" action={reject.bind(null, i.id)}>Reject</ActionButton>
+                    <RejectButton reject={reject.bind(null, i.id)} agentName={a?.name ?? "the agent"} />
                   </div>
                 </div>
                 <Change i={i} />

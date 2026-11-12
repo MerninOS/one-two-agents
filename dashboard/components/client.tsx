@@ -200,3 +200,37 @@ export function LiveRefresher({ runs }: { runs: RecentRun[] }) {
     </div>
   );
 }
+
+/** Reject with an optional reason. A reason becomes a proposed lesson for the agent. */
+export function RejectButton({ reject, agentName }: { reject: (reason: string) => Promise<ActionResult>; agentName: string }) {
+  const [open, setOpen] = useState(false);
+  const [why, setWhy] = useState("");
+  const [toast, setToast] = useState<ActionResult | null>(null);
+  const [busy, start] = useTransition();
+  const router = useRouter();
+  const go = () => start(async () => {
+    let r: ActionResult;
+    try { r = await reject(why); } catch (e) { r = { ok: false, text: e instanceof Error ? e.message : "Something went wrong." }; }
+    setOpen(false); setWhy(""); setToast(r); router.refresh();
+  });
+  return (
+    <>
+      <button className="btn ghost" disabled={busy} onClick={() => setOpen(true)}>{busy ? "Working…" : "Reject"}</button>
+      {open && (
+        <div className="modal-bg" onClick={busy ? undefined : () => setOpen(false)}>
+          <div className="modal" role="dialog" aria-modal="true" aria-label="Reject" onClick={(e) => e.stopPropagation()}>
+            <h3 style={{ fontSize: 20, fontWeight: 600, letterSpacing: "-.02em" }}>Reject this change?</h3>
+            <p style={{ fontSize: 14, lineHeight: 1.55, color: "var(--ink2)" }}>Nothing goes to Mercury. If you say why, {agentName} gets it as a proposed lesson on its Memory tab, and it only sticks once you tap Keep.</p>
+            <textarea className="input" rows={3} maxLength={400} value={why} onChange={(e) => setWhy(e.target.value)} disabled={busy} placeholder="Why not? (optional) e.g. Costco runs are supplies, not COGS"
+              style={{ height: "auto", borderRadius: 14, padding: "10px 14px", resize: "vertical", lineHeight: 1.45 }} aria-label="Reason" />
+            <div className="row wrap" style={{ justifyContent: "flex-end", gap: 8, paddingTop: 4 }}>
+              <button className="btn ghost" style={{ height: 42 }} onClick={() => setOpen(false)} disabled={busy}>Cancel</button>
+              <button className="btn dark" style={{ height: 42 }} onClick={go} disabled={busy}>{busy ? "Working…" : why.trim() ? "Reject and propose a lesson" : "Reject"}</button>
+            </div>
+          </div>
+        </div>
+      )}
+      <Toast t={toast} onDone={() => setToast(null)} />
+    </>
+  );
+}

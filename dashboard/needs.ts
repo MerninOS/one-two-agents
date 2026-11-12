@@ -31,6 +31,10 @@ export function needs(f: Floor, now = Date.now(), seen: Seen = {}): Need[] {
     if (f.ok && !f.agents[a.id]) out.push({ pri: "High", title: `${a.name} isn’t in the agents table`, sub: "Apply the migrations to the one-two-agents Supabase project.", href: `/agents/${a.id}`, agentId: a.id });
   }
   if (f.approvalsPending) out.push({ pri: "High", title: `${f.approvalsPending} Mercury change${f.approvalsPending === 1 ? "" : "s"} waiting for your OK`, sub: "Quinn’s matched receipts and category suggestions. Nothing goes to Mercury until you approve.", href: "/approvals", agentId: "bookkeeper" });
+  for (const [agentId, n] of Object.entries(f.lessonsWaiting)) {
+    const a = BY_ID[agentId];
+    if (a && n) out.push({ pri: "Low", title: `Review ${n} lesson${n === 1 ? "" : "s"} for ${a.name}`, sub: "Proposed from your rejections. Keep, edit or discard each one.", href: `/agents/${agentId}?tab=memory`, agentId });
+  }
   if (f.photosWaiting) out.push({ pri: "Medium", title: `${f.photosWaiting} charge${f.photosWaiting === 1 ? "" : "s"} need a receipt photo`, sub: "Quinn couldn’t find a receipt. The list is on Quinn’s profile and the latest Books page in Notion.", href: "/agents/bookkeeper", agentId: "bookkeeper" });
   for (const i of INTEGRATIONS) {
     if (f.health[i.id] || i.id === "supabase") continue;

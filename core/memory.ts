@@ -265,3 +265,52 @@ export async function memoryView(agentId: string) {
   if (rows.error) throw new Error(rows.error.message);
   return { rows: (rows.data ?? []) as MemoryRow[], events: (events.data ?? []) as MemoryEvent[] };
 }
+
+// ---- Lessons. Proposed by code from Zak's own words when he rejects an approval with a reason
+// (no model call, so $0). A lesson is loaded only after Zak taps Keep.
+
+/** Proposes a lesson from a rejection. Returns false when there is nothing to learn (no reason given). */
+export async function proposeLesson(agentId: string, approvalId: string, title: string, reason: string) {
+  safeId(agentId);
+  const why = reason.replace(/\s+/g, " ").trim();
+  if (!why) return false;
+  const head = `Zak said no to "${title.replace(/\s+/g, " ").trim()}": `;
+  let text = `${head}${why}`;
+  if (text.length > MAX_LINE) text = why.length <= MAX_LINE ? why : `${why.slice(0, MAX_LINE - 1)}…`;
+  const { data, error } = await db().from("agent_memory").insert({
+    agent_id: agentId, grp: "lesson", text, source: "approval", source_tag: `approval:${approvalId}`,
+    trust: "note", state: "proposed", keep: "always", tokens: countTokens(text),
+  }).select("id").single();
+  if (error) throw new Error(error.message);
+  await logEvent({ memory_id: data.id, agent_id: agentId, kind: "proposed", before: null, after: text, by: `approval ${approvalId}` });
+  return true;
+}
+
+/** Keep a proposed lesson for its agent, or for the whole crew (it then becomes a crew line). */
+export async function keepLesson(id: string, forCrew = false) {
+  const r = await getRow(id);
+  if (r.grp !== "lesson" || r.state !== "proposed") throw new Error("Only a proposed lesson can be kept.");
+  const now = new Date().toISOString();
+  const patch = forCrew ? { state: "kept", grp: "crew", agent_id: null, decided_at: now, updated_at: now } : { state: "kept", decided_at: now, updated_at: now };
+  const { error } = await db().from("agent_memory").update(patch).eq("id", id).eq("state", "proposed");
+  if (error) throw new Error(error.message);
+  await logEvent({ memory_id: id, agent_id: forCrew ? null : r.agent_id, kind: "kept", before: null, after: r.text, by: `${BY_ZAK}${forCrew ? ", for the crew" : ""}` });
+}
+
+export async function discardLesson(id: string) {
+  const r = await getRow(id);
+  if (r.state !== "proposed") throw new Error("Only a proposed lesson can be discarded.");
+  const now = new Date().toISOString();
+  const { error } = await db().from("agent_memory").update({ state: "discarded", decided_at: now, updated_at: now }).eq("id", id).eq("state", "proposed");
+  if (error) throw new Error(error.message);
+  await logEvent({ memory_id: id, agent_id: r.agent_id, kind: "discarded", before: r.text, after: null, by: BY_ZAK });
+}
+
+/** Proposed lessons waiting on Zak, per agent. Empty when the table isn't there. */
+export async function proposedLessons(): Promise<Record<string, number>> {
+  const { data, error } = await db().from("agent_memory").select("agent_id").eq("state", "proposed").eq("grp", "lesson").limit(500);
+  if (error) return {};
+  const out: Record<string, number> = {};
+  for (const r of data ?? []) if (r.agent_id) out[r.agent_id] = (out[r.agent_id] ?? 0) + 1;
+  return out;
+}

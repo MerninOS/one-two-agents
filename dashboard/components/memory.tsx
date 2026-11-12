@@ -57,7 +57,12 @@ export function TeachForm({ name, enabled, why, teach, compact }: { name: string
 export interface LineView { id: string; text: string; meta: string; data?: boolean }
 
 /** One memory line with Edit (inline) and Forget. Read-only when no actions are passed. */
-export function MemoryLine({ line, color, edit, forget }: { line: LineView; color: string; edit?: (text: string) => Promise<ActionResult>; forget?: () => Promise<ActionResult> }) {
+export function MemoryLine({ line, color, edit, forget, keep, keepCrew, discard }: {
+  line: LineView; color: string;
+  edit?: (text: string) => Promise<ActionResult>; forget?: () => Promise<ActionResult>;
+  /** Proposed lessons: Keep, Keep for the crew, Discard. */
+  keep?: () => Promise<ActionResult>; keepCrew?: () => Promise<ActionResult>; discard?: () => Promise<ActionResult>;
+}) {
   const [editing, setEditing] = useState(false);
   const [text, setText] = useState(line.text);
   const [toast, setToast] = useState<ActionResult | null>(null);
@@ -91,8 +96,16 @@ export function MemoryLine({ line, color, edit, forget }: { line: LineView; colo
           </span>
         )}
         <span className="muted" style={{ fontSize: 11.5 }}>{line.meta}</span>
+        {!editing && keep && (
+          <div className="row wrap" style={{ gap: 6, paddingTop: 4 }}>
+            <ActionButton className="btn primary xs" action={keep}>Keep</ActionButton>
+            {keepCrew && <ActionButton className="btn outline xs" action={keepCrew} confirm={{ title: "Keep it for the whole crew?", body: "Every agent loads it from its next run, not just this one.", confirmLabel: "Keep for the crew" }}>Keep for crew</ActionButton>}
+            {edit && <button className="btn ghost xs" onClick={() => setEditing(true)}>Edit</button>}
+            {discard && <ActionButton className="btn ghost xs" action={discard}>Discard</ActionButton>}
+          </div>
+        )}
       </div>
-      {!editing && (edit || forget) && (
+      {!editing && !keep && (edit || forget) && (
         <div className="row" style={{ gap: 4, flex: "none" }}>
           {edit && <button className="btn ghost xs" onClick={() => setEditing(true)} title="Edit"><Icon name="pencil" size={12} /></button>}
           {forget && (
