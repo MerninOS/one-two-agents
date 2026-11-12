@@ -136,7 +136,7 @@ export async function readPages(rows: MemoryRow[], room: number): Promise<PageLo
       return { memoryId: r.id, pageId, title: p.title, text: p.text, cut: p.cut, tokens: 0 } as PageLoad;
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
-      const problem = /NOTION_TOKEN/.test(msg) ? "NOTION_TOKEN isn’t set" : /\b404\b|object_not_found/.test(msg) ? "Notion can’t find it. Share the page with the One Two Agents integration." : /\b40[13]\b/.test(msg) ? "Notion refused access. Share the page with the One Two Agents integration." : `Notion couldn’t be read (${msg.slice(0, 80)})`;
+      const problem = /NOTION_TOKEN/.test(msg) ? "NOTION_TOKEN isn’t set" : /\b404\b|object_not_found/.test(msg) ? "Notion can’t find it. Share the page with the agents’ Notion integration." : /\b40[13]\b/.test(msg) ? "Notion refused access. Share the page with the agents’ Notion integration." : `Notion couldn’t be read (${msg.slice(0, 80)})`;
       return { memoryId: r.id, pageId, title: "Notion page", tokens: 0, cut: false, problem } as PageLoad;
     }
   }));

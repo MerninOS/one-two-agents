@@ -53,7 +53,7 @@ export function TeachForm({ name, enabled, why, teach, compact }: { name: string
         <label className="stack" style={{ gap: 4 }}>
           <input className="input" type="url" value={link} disabled={!enabled || busy} onChange={(e) => setLink(e.target.value)} maxLength={500}
             placeholder="Optional: a Notion page to read each run" aria-label="Notion page link" style={{ height: 38, fontSize: 13 }} />
-          <span className="muted" style={{ fontSize: 11.5 }}>In Notion: Share, then Copy link. The page must be shared with the One Two Agents integration. Read fresh each run, up to 1,500 tokens.</span>
+          <span className="muted" style={{ fontSize: 11.5 }}>In Notion: Share, then Copy link. The page must be shared with the agents’ Notion integration. Read fresh each run, up to 1,500 tokens.</span>
         </label>
       )}
       <button className="btn primary" style={{ height: 42 }} disabled={!enabled || busy || !text.trim() || left < 0} onClick={go}>{busy ? "Saving…" : keepAs === "crew" ? "Teach the crew" : `Teach ${name}`}</button>

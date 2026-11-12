@@ -62,6 +62,6 @@ so he teaches an agent once instead of rewriting its prompt.
 3. Notion pages linked from standing orders: Teach shows an optional Notion link when "A standing
    order" is picked; the order's line on the Memory tab shows the page, its size and whether it
    can be read; the context meter has a Notion pages segment; `memory_json.pages` records what each
-   run read. To link a page, it must be shared with the One Two Agents integration in Notion.
+   run read. To link a page, it must be shared with the agents’ Notion integration in Notion.
 4. Rowan and Quinn load memory; derived facts and don't repeat; mission control meters; the
    run canvas Memory node; last "coming later" tags removed.
