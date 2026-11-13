@@ -100,12 +100,37 @@ from the tools the spec grants, code runs them, hard limits stop it.
 - Builder screen: Sources shows the agents it may read from when the tool is ticked; Output shows
   the latest output with each number and the tool it came from.
 
+## Slice 4: playbooks (built)
+
+- **Tables** (migration `20261113170000_agent_playbooks.sql`): `agent_playbooks` (versioned per
+  agent: steps `[{ tool, input }]`, status proposed / approved / rejected / replaced, the run it came
+  from, what changed, whether it applied on its own; one approved at a time) and
+  `agent_playbook_holds` (an agent whose next playbook must wait for Zak, and why).
+- **Drafting** (`core/playbook.ts`, no model): after an explore run that finished, code takes the
+  tool calls that worked, in order and without repeats (`draftSteps`). The first one is proposed for
+  Zak's approval; he can drop steps before approving.
+- **Following** (`runExplore` with `playbook`): code makes the playbook's tool calls (each checked
+  against the spec and its inputs again, counted against the step limit), then the model is offered
+  only `finish` and writes the result from the data, citing numbers by step as in slice 3. If a step
+  fails or is no longer granted, the run **falls back** to exploring with the agent's tools, and the
+  summary says so.
+- **Updates** (Zak, Nov 13): with an approved playbook and no hold, a playbook drafted from a
+  **Re-explore** applies on its own (`auto`), with what changed (`stepChanges`). A run that falls back
+  or doesn't finish puts the agent **on hold**: the next draft waits for approval, and approving
+  clears the hold. Rejected actions will do the same from slice 5.
+- **Builder screen**: Preview follows the approved playbook (or explores when there is none);
+  Re-explore forces an explore run. A Playbook card shows the hold, a draft waiting for approval
+  (tick the steps to keep, Approve or Reject), the approved steps, and the history. Latest runs say
+  whether a run explored, followed the playbook or fell back.
+- Running on a trigger stays locked: it arrives when the four agents move to the runner (slices 6-7).
+- Lint: `core/gateway` and `integrations/` may not import `core/playbook` either.
+
 ## Slices
 
 1. Tool list and runner (built).
 2. Builder screen: New agent, the eight sections, Preview, versions (built).
 3. Outputs as sources: every run saves one named output; numbers must trace to a tool result (built).
-4. Playbooks: explore, approve, follow, fall back, auto-update, drop back, Re-explore.
+4. Playbooks: explore, approve, follow, fall back, auto-update, drop back, Re-explore (built).
 5. Report and Action tools, actions only through `core/gateway`.
 6. Morgan (with the burn rate step) and Avery on the runner.
 7. Rowan and Quinn on the runner; retire the old agent code, menus and Setup tab.

@@ -82,6 +82,10 @@ async function saveSteps(runId: string, steps: Step[]): Promise<string> {
   return error ? ` (steps not saved: ${error.message.slice(0, 100)})` : "";
 }
 
+/** One step of a playbook: a granted tool and the inputs to call it with, both checked again on every run. */
+export interface PlaybookStep { tool: string; input: Record<string, string | number> }
+export type RunMode = "explore" | "playbook" | "fallback";
+
 /** A number in a run's output: its value always copied by code from a tool result in the same run. */
 export interface OutputNumber { label: string; value: number; tool: string; step: number; key: string }
 
@@ -116,16 +120,21 @@ export interface ExploreOpts {
   runId?: string;
   /** The memory block (standing orders, lessons), or "" for none. */
   memoryBlock?: string;
+  /**
+   * An approved playbook (slice 4): code runs its tool calls in order, then the model writes the
+   * result from what they returned. If a step fails, the run falls back to exploring.
+   */
+  playbook?: { version: number; steps: PlaybookStep[] };
   /** Tests only (scripts/check-runner.ts): a stand-in for the Claude client. */
   client?: { beta: { messages: { create: (body: Anthropic.Beta.MessageCreateParamsNonStreaming) => Promise<Anthropic.Beta.BetaMessage> } } };
 }
 
 /** One explore run. Throws only when the model can't be used at all; limits end the run with a summary that says so. */
-export async function runExplore(spec: AgentSpec, opts: ExploreOpts): Promise<RunResult & { steps: Step[]; finished: boolean; output: OutputNumber[] }> {
+export async function runExplore(spec: AgentSpec, opts: ExploreOpts): Promise<RunResult & { steps: Step[]; finished: boolean; output: OutputNumber[]; mode: RunMode; fellBack: string | null }> {
   if (!isModel(spec.model)) throw new Error(`No price for ${spec.model}, so its cost can't be computed`);
   const ctx: ToolCtx = { agentId: opts.agentId, notionPages: spec.notionPages, outputSources: spec.readsFrom };
   const granted = spec.tools.map((id) => TOOLS[id]).filter((t) => !!t);
-  const tools = [
+  let tools = [
     ...granted.map((t) => ({ name: t.id, description: `${t.label}. ${t.detail}.`, input_schema: inputSchema(paramsOf(t, ctx)) })),
     FINISH,
   ];
@@ -135,7 +144,8 @@ export async function runExplore(spec: AgentSpec, opts: ExploreOpts): Promise<Ru
     { type: "text" as const, text: `Your name: ${spec.name}.\n\nYour job, from Zak:\n${spec.directive}${spec.goodResult ? `\n\nWhat a good result looks like:\n${spec.goodResult}` : ""}` },
     ...(opts.memoryBlock ? [{ type: "text" as const, text: opts.memoryBlock }] : []),
   ];
-  const messages: Anthropic.Beta.BetaMessageParam[] = [{ role: "user", content: `Today is ${dayTitle(today)} (${today}, Central time). Do your job with the tools you have, then call finish.` }];
+  const explorePrompt = `Today is ${dayTitle(today)} (${today}, Central time). Do your job with the tools you have, then call finish.`;
+  let messages: Anthropic.Beta.BetaMessageParam[] = [{ role: "user", content: explorePrompt }];
 
   const steps: Step[] = [];
   const numbers: Record<string, number> = {};
@@ -143,8 +153,61 @@ export async function runExplore(spec: AgentSpec, opts: ExploreOpts): Promise<Ru
   let cited: unknown = null;
   let result: string | null = null, stopped: string | null = null, wrapUp = false, nudged = false;
   const step = (s: Omit<Step, "idx">) => steps.push({ idx: steps.length, ...s });
+  let mode: RunMode = "explore", fellBack: string | null = null;
+
+  /** Runs one granted tool with checked input and records the step. The content is what goes back to the model. */
+  const runTool = async (name: string, rawInput: unknown): Promise<{ ok: boolean; content: string }> => {
+    const t = TOOLS[name];
+    const t1 = Date.now();
+    if (!t || !spec.tools.includes(name)) {
+      step({ kind: "tool", tool: name, input: rawInput, output: "Not a tool this agent has.", ok: false, ms: 0 });
+      return { ok: false, content: "You don't have that tool." };
+    }
+    const checked = checkInput(paramsOf(t, ctx), rawInput);
+    if ("problem" in checked) {
+      step({ kind: "tool", tool: t.id, input: rawInput, output: `Input refused: ${checked.problem}`, ok: false, ms: 0 });
+      return { ok: false, content: `Input refused: ${checked.problem}.` };
+    }
+    try {
+      const out = await t.run(checked.input, ctx);
+      const body = cut(JSON.stringify(out.data ?? null), MAX_RESULT_CHARS);
+      if (out.numbers) for (const [k, v] of Object.entries(out.numbers)) if (Number.isFinite(v)) numbers[k] = v;
+      const idx = steps.length;
+      step({ kind: "tool", tool: t.id, input: checked.input, output: body, ok: true, numbers: out.numbers, costUsd: t.costUsd, ms: Date.now() - t1 });
+      spent += t.costUsd;
+      const nums = Object.entries(out.numbers ?? {}).filter(([, v]) => Number.isFinite(v)).map(([k, v]) => `${k}=${v}`).join(", ");
+      const cite = nums ? `\nNumbers computed in code (step ${idx}): ${nums}` : "";
+      return { ok: true, content: `<tool_data tool="${t.id}" trusted="${t.trusted ? "yes" : "no"}">\n${esc(body)}\n</tool_data>${cite}` };
+    } catch (e) {
+      const msg = (e instanceof Error ? e.message : String(e)).slice(0, 300);
+      step({ kind: "tool", tool: t.id, input: checked.input, output: msg, ok: false, ms: Date.now() - t1 });
+      return { ok: false, content: `The tool failed: ${msg}` };
+    }
+  };
 
   try {
+    // follow an approved playbook: code makes its tool calls, the model only writes the result
+    if (opts.playbook) {
+      mode = "playbook";
+      const gathered: string[] = [];
+      for (const ps of opts.playbook.steps) {
+        if (toolCalls >= spec.limits.maxSteps) { fellBack = `the playbook has more steps than the ${spec.limits.maxSteps}-step limit`; break; }
+        toolCalls++;
+        const r = await runTool(ps.tool, ps.input);
+        if (!r.ok) { fellBack = `${TOOLS[ps.tool]?.label ?? ps.tool}: ${r.content}`; break; }
+        gathered.push(r.content);
+      }
+      if (fellBack) {
+        mode = "fallback";
+        messages = [{ role: "user", content: `${explorePrompt}\n\nYour playbook (v${opts.playbook.version}) stopped at a step: ${fellBack.slice(0, 300)}. Work it out with your tools instead.` }];
+      } else {
+        tools = [FINISH];
+        const data = gathered.join("\n\n");
+        lastIn = 3000 + Math.ceil(data.length / 3.5);
+        messages = [{ role: "user", content: `Today is ${dayTitle(today)} (${today}, Central time). Your approved playbook (v${opts.playbook.version}) has gathered this data for you:\n\n${data}\n\nWrite your result from it and call finish. If the data isn't enough to do the job, say exactly what is missing in finish.` }];
+      }
+    }
+
     for (let turn = 0; turn < spec.limits.maxSteps + 4; turn++) {
       // hard stop on cost: the worst this next turn could cost, before it is sent
       const worst = costUsd(spec.model, lastIn + 3000, MAX_OUT);
@@ -180,40 +243,14 @@ export async function runExplore(spec: AgentSpec, opts: ExploreOpts): Promise<Ru
 
       const results: Anthropic.Beta.BetaToolResultBlockParam[] = [];
       for (const call of calls) {
-        const t = TOOLS[call.name];
-        const t1 = Date.now();
         if (toolCalls >= spec.limits.maxSteps) {
           wrapUp = true;
           results.push({ type: "tool_result", tool_use_id: call.id, is_error: true, content: "Step limit reached. Call finish now with what you have." });
           continue;
         }
         toolCalls++;
-        if (!t || !spec.tools.includes(call.name)) {
-          step({ kind: "tool", tool: call.name, input: call.input, output: "Not a tool this agent has.", ok: false, ms: 0 });
-          results.push({ type: "tool_result", tool_use_id: call.id, is_error: true, content: "You don't have that tool." });
-          continue;
-        }
-        const checked = checkInput(paramsOf(t, ctx), call.input);
-        if ("problem" in checked) {
-          step({ kind: "tool", tool: t.id, input: call.input, output: `Input refused: ${checked.problem}`, ok: false, ms: 0 });
-          results.push({ type: "tool_result", tool_use_id: call.id, is_error: true, content: `Input refused: ${checked.problem}.` });
-          continue;
-        }
-        try {
-          const out = await t.run(checked.input, ctx);
-          const body = cut(JSON.stringify(out.data ?? null), MAX_RESULT_CHARS);
-          if (out.numbers) for (const [k, v] of Object.entries(out.numbers)) if (Number.isFinite(v)) numbers[k] = v;
-          const idx = steps.length;
-          step({ kind: "tool", tool: t.id, input: checked.input, output: body, ok: true, numbers: out.numbers, costUsd: t.costUsd, ms: Date.now() - t1 });
-          spent += t.costUsd;
-          const nums = Object.entries(out.numbers ?? {}).filter(([, v]) => Number.isFinite(v)).map(([k, v]) => `${k}=${v}`).join(", ");
-          const cite = nums ? `\nNumbers computed in code (step ${idx}): ${nums}` : "";
-          results.push({ type: "tool_result", tool_use_id: call.id, content: `<tool_data tool="${t.id}" trusted="${t.trusted ? "yes" : "no"}">\n${esc(body)}\n</tool_data>${cite}` });
-        } catch (e) {
-          const msg = (e instanceof Error ? e.message : String(e)).slice(0, 300);
-          step({ kind: "tool", tool: t.id, input: checked.input, output: msg, ok: false, ms: Date.now() - t1 });
-          results.push({ type: "tool_result", tool_use_id: call.id, is_error: true, content: `The tool failed: ${msg}` });
-        }
+        const r = await runTool(call.name, call.input);
+        results.push({ type: "tool_result", tool_use_id: call.id, content: r.content, ...(r.ok ? {} : { is_error: true }) });
       }
       messages.push({ role: "user", content: results });
     }
@@ -229,14 +266,15 @@ export async function runExplore(spec: AgentSpec, opts: ExploreOpts): Promise<Ru
   const used = steps.filter((s) => s.kind === "tool").length;
   const traced = traceNumbers(cited, steps);
   let summary = finished ? result! : `Stopped at ${stopped} after ${used} tool calls, before finishing.${result ? ` ${result}` : ""}`;
+  if (mode === "fallback") summary = `Playbook v${opts.playbook?.version} stopped (${(fellBack ?? "").slice(0, 160)}), so it explored instead. ${summary}`;
   if (traced.refused) summary += ` (${traced.refused} number${traced.refused === 1 ? "" : "s"} left out of the output: not from a tool result in this run)`;
   if (opts.runId) summary += await saveOutput(opts.runId, opts.agentId, spec.outputName, summary, traced.numbers, finished);
   return {
     status: "ok",
     summary,
     tokensIn, tokensOut, costUsd: Number(spent.toFixed(4)),
-    metrics: { ...numbers, finished: finished ? 1 : 0, tool_calls: used },
-    steps, finished, output: traced.numbers,
+    metrics: { ...numbers, finished: finished ? 1 : 0, tool_calls: used, playbook: mode === "playbook" ? 1 : 0, fell_back: mode === "fallback" ? 1 : 0 },
+    steps, finished, output: traced.numbers, mode, fellBack,
   };
 }
 

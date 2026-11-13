@@ -1,13 +1,13 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { activateSpec, addStandard, dryRunBuilt, forgetMemoryLine, previewBuilt, saveSpec, setBuiltBudget } from "@/dashboard/actions";
+import { activateSpec, addStandard, approveBuiltPlaybook, dryRunBuilt, forgetMemoryLine, previewBuilt, rejectBuiltPlaybook, saveSpec, setBuiltBudget } from "@/dashboard/actions";
 import { builderMenu, getBuilder } from "@/dashboard/builder";
 import { requireSession } from "@/dashboard/data";
 import { controlsOn } from "@/dashboard/session";
 import { m4, when } from "@/dashboard/format";
 import { specLooser } from "@/core/agent-spec";
 import { BudgetForm } from "@/dashboard/components/client";
-import { Builder, SpecVersions } from "@/dashboard/components/Builder";
+import { Builder, PlaybookPanel, SpecVersions } from "@/dashboard/components/Builder";
 import { RunSteps } from "@/dashboard/components/RunSteps";
 
 // One agent's builder screen (docs/agent-builder.md, slice 2): the eight parts as a draft, Preview,
@@ -47,6 +47,8 @@ export default async function BuildAgent({ params }: { params: Promise<{ id: str
         controls={controls}
         dryRun={dryRunBuilt.bind(null, id)}
         preview={previewBuilt.bind(null, id)}
+        playbook={b.playbooks?.active ? { version: b.playbooks.active.version, steps: b.playbooks.active.steps.length } : null}
+        pendingPlaybook={b.playbooks?.pending?.version ?? null}
         save={saveSpec.bind(null, id)}
         addStandard={addStandard.bind(null, id)}
         forget={forgetMemoryLine}
@@ -58,6 +60,10 @@ export default async function BuildAgent({ params }: { params: Promise<{ id: str
           </div>
         }
       />
+
+      {b.playbooks ? (
+        <PlaybookPanel key={`${b.playbooks.pending?.id ?? 0}-${b.playbooks.active?.id ?? 0}`} view={b.playbooks} approve={approveBuiltPlaybook.bind(null, id)} reject={rejectBuiltPlaybook.bind(null, id)} />
+      ) : <div className="card"><span className="sub">Playbooks need the migration 20261113170000_agent_playbooks.sql.</span></div>}
 
       <SpecVersions
         versions={b.versions.map((v) => ({ version: v.version, note: v.note, createdAt: v.createdAt, active: v.active, createdBy: v.createdBy, problems: v.problems, looser: specLooser(s, v.spec), when: when(v.createdAt) }))}
@@ -72,7 +78,7 @@ export default async function BuildAgent({ params }: { params: Promise<{ id: str
           <details key={r.id} open={i === 0} className={i ? "rule" : undefined} style={{ paddingTop: i ? 10 : 0 }}>
             <summary style={{ cursor: "pointer", fontSize: 14, display: "flex", gap: 10, flexWrap: "wrap" }}>
               <span style={{ fontWeight: 600 }}>{when(r.started_at)}</span>
-              <span className="muted">{r.trigger}</span>
+              <span className="muted">{r.trigger}{r.mode ? ` · ${r.mode}` : ""}</span>
               <span className="muted">{r.status}</span>
               <span className="muted">{r.steps.filter((x) => x.kind === "tool").length} tool calls · {m4(r.cost_usd)}</span>
             </summary>
