@@ -20,15 +20,17 @@ export default async function RoomLayout({ children }: { children: React.ReactNo
     const st = stateOf(a, floor.agents[a.id], floor.runs, floor.spentToday[a.id] ?? 0);
     return { a, st, badge: open.filter((n) => n.agentId === a.id).length };
   });
-  const firstBuilt = BUILT[0].id;
   // runs from the last 10 minutes, so the refresher can poll while one is live and say when it ends
   const recent: RecentRun[] = floor.runs
     .filter((r) => floor.now - Date.parse(r.started_at) < 10 * 6e4)
     .map((r) => ({ id: r.id, name: BY_ID[r.agent_id]?.name ?? r.agent_id, status: r.status, live: isLive(r, floor.now) }));
+  // six places (docs/builder-flow.md, slice 5): Settings sits apart at the bottom of the sidebar
   const nav = [
-    { label: "Floor", items: [{ href: "/", match: "/", icon: "layout-dashboard", label: "Mission control" }, { href: "/runs/latest", match: "/runs/*", icon: "history", label: "Run replay" }, { href: "/runs", match: "/runs", icon: "list", label: "Run log" }] },
-    { label: "Crew", items: [{ href: `/agents/${firstBuilt}`, match: "/agents/*", tab: "!memory", icon: "users", label: "Crew profiles", count: `${BUILT.length} + ${PLANNED.length}` }, { href: `/agents/${firstBuilt}?tab=memory`, match: "/agents/*", tab: "memory", icon: "brain", label: "Memory" }, { href: "/crew", match: "/crew", icon: "git-pull-request", label: "Crew canvas" }, { href: "/build", match: "/build*", icon: "pencil", label: "Agent builder" }] },
-    { label: "Trust", items: [{ href: "/approvals", match: "/approvals", icon: "inbox", label: "Approvals", count: floor.approvalsPending ? String(floor.approvalsPending) : undefined }, { href: "/connections", match: "/connections", icon: "plug", label: "Connections", note: notSetUp ? `${notSetUp} to fix` : undefined, noteColor: "var(--red-ink)" }] },
+    { href: "/", match: "/", icon: "layout-dashboard", label: "Today" },
+    { href: "/approvals", match: "/approvals", icon: "inbox", label: "Approvals", count: floor.approvalsPending ? String(floor.approvalsPending) : undefined },
+    { href: "/crew", match: ["/crew", "/agents/*", "/build*"], icon: "users", label: "Crew", count: `${BUILT.length} + ${PLANNED.length}` },
+    { href: "/runs", match: "/runs*", icon: "history", label: "Runs" },
+    { href: "/connections", match: "/connections", icon: "plug", label: "Connections", note: notSetUp ? `${notSetUp} to fix` : undefined, noteColor: "var(--red-ink)" },
   ];
 
   return (
@@ -53,12 +55,9 @@ export default async function RoomLayout({ children }: { children: React.ReactNo
             <span className="date-pill"><Icon name="calendar" size={16} />{longDay(floor.now).replace(/^(\w{3})\w*/, "$1")}</span>
             <span className="me" title="Zak">Z</span>
             <MobileMenu alert={!!floor.approvalsPending}>
-              {nav.map((g) => (
-                <div key={g.label} className="sheet-group">
-                  <span className="side-label">{g.label}</span>
-                  {g.items.map((it) => <SideLink key={it.label} {...it} />)}
-                </div>
-              ))}
+              <div className="sheet-group">
+                {nav.map((it) => <SideLink key={it.label} {...it} />)}
+              </div>
               <div className="sheet-group">
                 <SideLink href="/settings" match="/settings" icon="settings" label="Settings" />
                 <div style={{ padding: "8px 12px 0" }}><ThemeToggle initial={theme} wide /></div>
@@ -68,12 +67,9 @@ export default async function RoomLayout({ children }: { children: React.ReactNo
         </header>
         <div className="body">
           <aside className="side">
-            {nav.map((g) => (
-              <div key={g.label} className="side-group">
-                <span className="side-label">{g.label}</span>
-                {g.items.map((it) => <SideLink key={it.label} {...it} />)}
-              </div>
-            ))}
+            <div className="side-group">
+              {nav.map((it) => <SideLink key={it.label} {...it} />)}
+            </div>
             <div className="side-spacer" style={{ flex: 1 }} />
             <SideLink href="/settings" match="/settings" icon="settings" label="Settings" />
           </aside>

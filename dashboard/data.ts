@@ -60,6 +60,8 @@ export interface Floor {
   grants: Record<string, string[]>;
   /** Names from saved setups, for agents built in the app that aren't in dashboard/crew.ts. */
   setupNames: Record<string, string>;
+  /** The live (active) saved-setup version of each agent, by agent id. */
+  liveVersion: Record<string, number>;
 }
 
 const RUN_COLS = "id, agent_id, trigger, started_at, ended_at, status, tokens_in, tokens_out, cost_usd, summary, error, memory_json";
@@ -90,7 +92,7 @@ export const getFloor = cache(async (): Promise<Floor> => {
   await requireSession();
   const h = health();
   const now = Date.now();
-  const empty: Floor = { ok: false, now, agents: {}, runs: [], spentToday: {}, health: h, photosWaiting: null, approvalsPending: null, lessonsWaiting: {}, grants: {}, setupNames: {} };
+  const empty: Floor = { ok: false, now, agents: {}, runs: [], spentToday: {}, health: h, photosWaiting: null, approvalsPending: null, lessonsWaiting: {}, grants: {}, setupNames: {}, liveVersion: {} };
   if (!h.supabase) return { ...empty, problem: "SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY are not set, so there is nothing to show yet." };
   const since = new Date(now - 60 * 864e5).toISOString();
   const [a, r, ph, ap, lessonsWaiting, defs] = await Promise.all([
@@ -99,7 +101,7 @@ export const getFloor = cache(async (): Promise<Floor> => {
     db().from("expense_docs").select("id", { count: "exact", head: true }).eq("status", "needs_photo"),
     db().from("approvals").select("id", { count: "exact", head: true }).eq("status", "pending"),
     proposedLessons(),
-    db().from("agent_defs").select("agent_id, spec").eq("active", true),
+    db().from("agent_defs").select("agent_id, version, spec").eq("active", true),
   ]);
   if (a.error || r.error) return { ...empty, problem: `Supabase: ${(a.error ?? r.error)?.message}` };
   const agents = Object.fromEntries((a.data ?? []).map((x) => [x.id, { ...x, daily_budget_usd: Number(x.daily_budget_usd) } as AgentRow]));
@@ -110,13 +112,14 @@ export const getFloor = cache(async (): Promise<Floor> => {
   const d0 = budgetDayStart(new Date(now)).getTime();
   const spentToday: Record<string, number> = Object.fromEntries(BUILT.map((b) => [b.id, 0]));
   for (const run of all) if (Date.parse(run.started_at) >= d0) spentToday[run.agent_id] = (spentToday[run.agent_id] ?? 0) + run.cost_usd;
-  const grants: Record<string, string[]> = {}, setupNames: Record<string, string> = {};
+  const grants: Record<string, string[]> = {}, setupNames: Record<string, string> = {}, liveVersion: Record<string, number> = {};
   for (const d of defs.error ? [] : defs.data ?? []) {
     const spec = (d.spec ?? {}) as { tools?: unknown; name?: unknown };
     grants[d.agent_id] = Array.isArray(spec.tools) ? spec.tools.filter((t): t is string => typeof t === "string") : [];
     if (typeof spec.name === "string" && spec.name) setupNames[d.agent_id] = spec.name;
+    liveVersion[d.agent_id] = Number(d.version);
   }
-  return { ok: true, now, agents, runs, spentToday, health: h, photosWaiting: ph.error ? null : ph.count ?? 0, approvalsPending: ap.error ? null : ap.count ?? 0, lessonsWaiting, grants, setupNames };
+  return { ok: true, now, agents, runs, spentToday, health: h, photosWaiting: ph.error ? null : ph.count ?? 0, approvalsPending: ap.error ? null : ap.count ?? 0, lessonsWaiting, grants, setupNames, liveVersion };
 });
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;

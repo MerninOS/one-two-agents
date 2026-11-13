@@ -57,7 +57,7 @@ from the tools the spec grants, code runs them, hard limits stop it.
 
 ## Slice 2: the builder screen (built)
 
-- **Agent builder** (`/build`, Crew menu): every agent built in the app, and **New agent** (a name,
+- **Agent builder** (`/build`, Crew menu; since builder flow slice 5, New agent on Crew): every agent built in the app, and **New agent** (a name,
   one line on its job, and Blank or a copy of another built agent). A new agent gets an id
   `b_<name>`, is off duty with no schedule and $1 a day, and its spec is saved as v1. No migration:
   it uses the slice 1 tables.

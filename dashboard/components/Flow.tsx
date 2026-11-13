@@ -60,7 +60,7 @@ export function Flow(p: FlowProps) {
   const change = (x: Partial<AgentSpec>) => { setTouched(true); setD((c) => ({ ...c, ...x })); };
   const dirty = JSON.stringify(d) !== JSON.stringify(start);
   const key = `cr_flow:${p.agentId ?? "new"}`;
-  const back = p.agentId ? `/build/${p.agentId}` : "/build";
+  const back = p.agentId ? `/build/${p.agentId}` : "/crew";
   const step = STEPS[cur].key;
   const last = cur === STEPS.length - 1;
   const nm = !d.name.trim() || (!p.agentId && d.name.trim() === "New agent") ? "your new agent" : d.name.trim();

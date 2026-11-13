@@ -118,7 +118,7 @@ export async function loadSpec(agentId: string): Promise<SpecVersion | null> {
 // 4), and only Go live makes a draft the active one, after a try where every step worked. Every run
 // can be traced to the exact spec it used, and an earlier version can be made active again.
 
-/** Daily budget ceiling for any agent, the same as setBudget for the hand-built agents. */
+/** Daily budget ceiling for any agent (set in the flow's step 4). */
 export const BUDGET_CEILING = 50;
 
 /** Every version of a built agent's spec, newest first. */
