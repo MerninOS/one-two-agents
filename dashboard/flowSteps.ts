@@ -79,18 +79,6 @@ export function problemsOf(d: AgentSpec, menu: BuilderMenu): Problem[] {
   return out;
 }
 
-/** What lets the draft do more than the saved version (the same list the server checks before saving). */
-export function looserThan(saved: AgentSpec | null, d: AgentSpec, menu: BuilderMenu): string[] {
-  if (!saved) return [];
-  const tool = (id: string) => menu.tools.find((t) => t.id === id);
-  return [
-    ...d.tools.filter((id) => !saved.tools.includes(id)).map(tool).filter((t) => t && (t.kind === "report" || t.kind === "action")).map((t) => `adds ${t!.kind === "action" ? "the action" : "the report"} “${t!.label}”`),
-    d.tools.includes("report_notion_page") && saved.tools.includes("report_notion_page") && d.reportPage?.id !== saved.reportPage?.id && `writes to a different Notion page (${d.reportPage?.label ?? "none"})`,
-    d.limits.maxCostUsd > saved.limits.maxCostUsd && `cost per run goes from $${saved.limits.maxCostUsd.toFixed(2)} to $${d.limits.maxCostUsd.toFixed(2)}`,
-    d.limits.maxSteps > saved.limits.maxSteps && `the step limit goes from ${saved.limits.maxSteps} to ${d.limits.maxSteps}`,
-  ].filter(Boolean) as string[];
-}
-
 /** Which steps a draft changes, for the version note. */
 export function changedSteps(saved: AgentSpec | null, d: AgentSpec, menu: BuilderMenu): StepKey[] {
   if (!saved) return [];

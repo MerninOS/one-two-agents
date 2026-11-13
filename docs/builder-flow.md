@@ -83,3 +83,20 @@ Flow feel: a card per step that slides in, a 6-segment progress bar that fills a
 **What it replaces.** `RunCanvas.tsx`, the read-only builder rail with edit links (`SoFar` is now private to the flow), and their CSS (`.canvas-inner`, `.node`, `.node-line`, `.node.out`, `.progress`, `acrPulse`, `.bf-rail.still`).
 
 **Checks.** `npm run check`, `npm run build`. No migration.
+
+## Slice 4: Try it and Go live
+
+**Why.** Testing and switching were five overlapping things: Preview (with a Deliver checkbox that could really send), Compare (two dry runs side by side), Switch (code vs runner), the engine panel and the playbook panel, and every save went straight to what runs. The known Switch-with-failed-steps gap was fixed in slice 1; this slice removes the second way to do it.
+
+**What it is.**
+
+- **A save is a draft.** Saving in the flow adds the next version without making it active (`saveSpecVersion` in `core/agent-spec.ts`; `draftOf` finds the draft: the newest version when it is newer than the live one). Today's version keeps running. The flow edits the draft when there is one. Nothing about a save needs Controls or a confirm any more: that moved to Go live, where it changes what runs.
+- **Step 5, Try it** (`tryBuilt`): one real run of the draft (else the live version) on today's data, logged as trigger `preview` with `metrics.spec_version`. It sends nothing, queues nothing and saves no output for other agents (`runExplore`'s `trying` option). Its steps are saved as they happen, and the page polls `/build/[id]/try` so the map plays the run: each read gets a tick or a cross with its time, the brain glows while it works, and the boxes for reports, actions and the saved output say "not sent / not queued / not saved in a try". Afterwards the result sits next to what today's version last handed you (the latest finished run that wasn't a try), with a verdict: "Every step worked. Go live is unlocked." or "Go live is locked: the latest try …". "Try fresh" lets the model pick its own steps instead of following the routine. Needs Controls on, counts against the daily budget, may run off duty (as Preview did).
+- **Step 6, Go live** (`goLive`): makes the version the one that runs, only when its latest try ran to the end with every tool step working and without leaving its routine (checked in code from the run log and `run_steps`, `lastTry` in `dashboard/builder.ts`). It approves the routine that try drafted (Zak can untick steps), refuses when there is no routine at all, and for Morgan, Avery, Rowan and Quinn turns `on_runner` on. Controls on, and a confirm naming anything that lets it do or spend more. On or off duty, schedules and chains never change here.
+- **Go back:** an older version is one tap (`goBack`, the same confirm when it loosens anything). A version newer than the live one needs a try and Go live. Morgan, Avery, Rowan and Quinn also get "Go back to its own code" once live (`backToOwnCode`).
+- The run replay calls a try a try.
+
+**What it replaces.** `previewBuilt` and its Deliver checkbox, `compareEngines`, `switchEngine`, `approveBuiltPlaybook`, `rejectBuiltPlaybook` (and `rejectPlaybook`), `activateSpec`, `OWN_JOBS` in `agents/registry.ts`, `looserThan` in the flow, `dashboard/components/Builder.tsx` (TryPanel, SpecVersions, EnginePanel, PlaybookPanel) and the `/lab` redirect. `dryRunPlaybook` stays: it is what a Dry run of a live runner agent does.
+
+**Checks.** `npm run check`, `npm run check:runner`, `npm run build`. No migration.
+

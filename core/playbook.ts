@@ -169,11 +169,3 @@ export async function approvePlaybook(agentId: string, id: number, keep: number[
   return p.version;
 }
 
-export async function rejectPlaybook(agentId: string, id: number): Promise<number> {
-  const all = await listPlaybooks(agentId);
-  const p = all.find((x) => x.id === id);
-  if (!p || p.status !== "proposed") throw new Error("That playbook isn't waiting for approval.");
-  const { error } = await db().from("agent_playbooks").update({ status: "rejected", decided_at: new Date().toISOString(), decided_by: "zak (control room)" }).eq("id", id);
-  if (error) throw new Error(error.message);
-  return p.version;
-}

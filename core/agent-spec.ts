@@ -114,9 +114,9 @@ export async function loadSpec(agentId: string): Promise<SpecVersion | null> {
   return { agentId, version: data.version, spec, problems, note: data.note, createdAt: data.created_at };
 }
 
-// ---- Versions (builder screen, slice 2). Saving never edits a version: it adds the next one and
-// makes it active, so every run can be traced to the exact spec it used, and any version can be
-// made active again.
+// ---- Versions. Saving never edits a version: it adds the next one as a draft (builder flow slice
+// 4), and only Go live makes a draft the active one, after a try where every step worked. Every run
+// can be traced to the exact spec it used, and an earlier version can be made active again.
 
 /** Daily budget ceiling for any agent, the same as setBudget for the hand-built agents. */
 export const BUDGET_CEILING = 50;
@@ -153,26 +153,31 @@ async function activate(agentId: string, version: number) {
   if (on.error) throw new Error(on.error.message);
 }
 
-/** Saves a checked spec as the next version and makes it active. Returns the new version number. */
+/** The draft: the newest version when it is newer than the active one. Null when there is none. */
+export const draftOf = <V extends { version: number; active: boolean }>(versions: V[]): V | null => {
+  const active = versions.find((v) => v.active);
+  const top = versions.reduce<V | null>((m, v) => (!m || v.version > m.version ? v : m), null);
+  return top && !top.active && (!active || top.version > active.version) ? top : null;
+};
+
+/** Saves a checked spec as the next version, a draft: what runs doesn't change until it goes live. Returns the new version number. */
 export async function saveSpecVersion(agentId: string, spec: AgentSpec, note: string, by: string): Promise<number> {
   const { data: top, error } = await db().from("agent_defs").select("version").eq("agent_id", agentId).order("version", { ascending: false }).limit(1).maybeSingle();
   if (error) throw new Error(error.message);
   const version = (top?.version ?? 0) + 1;
   const ins = await db().from("agent_defs").insert({ agent_id: agentId, version, spec, note: note || null, created_by: by, active: false });
   if (ins.error) throw new Error(ins.error.message);
-  await activate(agentId, version);
-  // the agents row keeps a readable name and model for the run log
-  await db().from("agents").update({ name: spec.name, model: spec.model }).eq("id", agentId);
   return version;
 }
 
-/** Makes an earlier version active again. */
+/** Makes a version the active one (Go live, or going back to an earlier one). */
 export async function activateSpecVersion(agentId: string, version: number) {
   const { data, error } = await db().from("agent_defs").select("version, spec").eq("agent_id", agentId).eq("version", version).maybeSingle();
   if (error) throw new Error(error.message);
   if (!data) throw new Error(`There is no v${version}.`);
   await activate(agentId, version);
   const { spec } = readSpec(data.spec);
+  // the agents row keeps a readable name and model for the run log
   await db().from("agents").update({ name: spec.name, model: spec.model }).eq("id", agentId);
 }
 

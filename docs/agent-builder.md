@@ -1,6 +1,6 @@
 # Agent builder
 
-> **Nov 13:** the builder screen's eight sections became the builder flow, one question per card (docs/builder-flow.md, slice 2). The spec, versions, playbooks and runner below are unchanged.
+> **Nov 13:** the builder screen's eight sections became the builder flow, one question per card (docs/builder-flow.md, slice 2). Slice 4 replaced Preview, the Deliver switch, Compare, Switch, the engine and playbook panels and `/lab` with Try it and Go live: a save is now a draft, and only Go live (after a try of that version where every step worked) makes it the version that runs. The spec, playbooks (called "its routine" on screen) and runner below are otherwise unchanged.
 
 Plan (approved by Zak 2026-11-13): https://claude.ai/artifact/VNbJQM4SMTWDbKH9CfjHMh.
 Mockup: https://claude.ai/artifact/FwFFc3nmJK7QuRvag7LAW2.

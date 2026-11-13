@@ -5,7 +5,7 @@ import { cookies, headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { after } from "next/server";
-import { AGENTS, OWN_JOBS } from "@/agents/registry";
+import { AGENTS } from "@/agents/registry";
 import { db } from "@/core/db";
 import { withRun } from "@/core/runs";
 import { discardLesson, editMemory, forgetMemory, keepLesson, proposeLesson, teach as teachMemory, type Keep } from "@/core/memory";
@@ -15,11 +15,12 @@ import { env } from "@/core/env";
 import { approvalDecided, startStep } from "@/core/chain";
 import { activateFlow, flowLooser, flowProblems, listFlowVersions, loadFlow, saveFlowVersion, type Flow } from "@/core/flow";
 import { ANNOTATE } from "@/core/gateway";
-import { BUDGET_CEILING, activateSpecVersion, createBuiltAgent, listSpecVersions, loadSpec, readSpec, saveSpecVersion, specLooser, type AgentSpec } from "@/core/agent-spec";
+import { BUDGET_CEILING, activateSpecVersion, createBuiltAgent, draftOf, listSpecVersions, loadSpec, readSpec, saveSpecVersion, specLooser, type AgentSpec } from "@/core/agent-spec";
 import { dryRunTools, runExplore, type PlaybookStep } from "@/core/runner";
 import { TOOLS } from "@/core/tools/catalog";
-import { REBUILT, dryRunPlaybook, setOnRunner } from "@/core/built";
-import { activePlaybook, afterRun, approvePlaybook, holdAfterRejection, listPlaybooks, rejectPlaybook } from "@/core/playbook";
+import { REBUILT, onRunner, setOnRunner } from "@/core/built";
+import { lastTry } from "./builder";
+import { activePlaybook, afterRun, approvePlaybook, holdAfterRejection, listPlaybooks, pendingPlaybook } from "@/core/playbook";
 import { loadMemory } from "@/core/memory";
 import { BY_ID } from "./crew";
 import { requireSession } from "./data";
@@ -431,14 +432,14 @@ export async function suppressEmail(address: string, reason: string): Promise<Ac
   return { ok: true, text: `No agent will email ${email}.` };
 }
 
-// ---- Agent builder (docs/agent-builder.md). An agent built in the app is a versioned spec that
-// picks from the tool list and models in code. Creating, saving and making a version active spend
-// nothing and wake nothing, so they need only the login, except a change that lets a run spend
-// more, which needs a confirm and DASHBOARD_CONTROLS=on (like any other loosening). A built agent can't
-// be put on duty or scheduled yet: explore runs are by hand only until its first playbook is
-// approved (slice 4). Preview is a real explore run, so it needs DASHBOARD_CONTROLS=on and counts
-// against the agent's daily budget; it may run while the agent is off duty because no tool writes
-// anything yet. The tool check is free.
+// ---- Agent builder (docs/agent-builder.md, docs/builder-flow.md). An agent built in the app is a
+// versioned spec that picks from the tool list and models in code. Saving adds a draft, which
+// spends nothing and changes nothing that runs, so it needs only the login. Try it is a real run of
+// the draft that sends and saves nothing: it needs DASHBOARD_CONTROLS=on and counts against the
+// agent's daily budget, even off duty. Go live makes the draft the version that runs, only after a
+// try of that version where every step worked, with Controls on and a confirm for anything that
+// lets it do or spend more. Going back to an earlier version is one tap, with the same confirm.
+// The tool check is free. Being on or off duty is never changed here.
 
 
 /** The active spec of an agent built in the app. Throws when the agent wasn't built here. */
@@ -473,40 +474,39 @@ export async function createBuilt(draft: unknown): Promise<ActionResult & { id?:
   } catch (e) { return fail(e); }
 }
 
-/** Saves the draft as the next version and makes it active. */
-export async function saveSpec(agentId: string, draft: unknown, note: string, confirmed: boolean): Promise<ActionResult> {
+/** Saves the flow's draft as the next version, a draft: today's version keeps running until Go live. */
+export async function saveSpec(agentId: string, draft: unknown, note: string): Promise<ActionResult> {
   await requireSession();
-  const why = String(note ?? "").trim().slice(0, 300);
-  if (!why) return { ok: false, text: "Add a short note saying what changed, so the version list makes sense later." };
+  const why = String(note ?? "").trim().slice(0, 300) || "Edited in the builder";
   try {
-    const now = await builtAgent(agentId);
+    await builtAgent(agentId);
     const got = checkedDraft(draft, agentId);
     if ("error" in got) return { ok: false, text: `Not saved. ${got.error}` };
-    if (now && JSON.stringify(now.spec) === JSON.stringify(got.spec)) return { ok: false, text: "Nothing changed from the active version." };
-    const looser = specLooser(now?.spec ?? null, got.spec);
-    if (looser.length && !controlsOn()) return { ok: false, text: `${CONTROLS_OFF} This change lets a run spend more: ${looser.join("; ")}.` };
-    if (looser.length && !confirmed) return { ok: false, text: `Confirm first: ${looser.join("; ")}.` };
+    const versions = await listSpecVersions(agentId);
+    const base = draftOf(versions) ?? versions.find((v) => v.active);
+    if (base && JSON.stringify(base.spec) === JSON.stringify(got.spec)) return { ok: false, text: `Nothing changed from v${base.version}.` };
     const v = await saveSpecVersion(agentId, got.spec, why, BY);
     revalidatePath("/", "layout");
-    return { ok: true, text: `Saved as v${v}. The next run uses it.` };
+    return { ok: true, text: `Saved as draft v${v}. Try it, then go live; what runs today hasn’t changed.` };
   } catch (e) { return fail(e); }
 }
 
-/** Makes an earlier version active again, with the same confirm as saving it. */
-export async function activateSpec(agentId: string, version: number, confirmed: boolean): Promise<ActionResult> {
+/** Goes back to an earlier version in one tap. Anything that lets it do or spend more needs Controls on and a confirm. */
+export async function goBack(agentId: string, version: number, confirmed: boolean): Promise<ActionResult> {
   await requireSession();
   if (!Number.isInteger(version) || version < 1) return { ok: false, text: "Unknown version." };
   try {
     const now = await builtAgent(agentId);
     const target = (await listSpecVersions(agentId)).find((v) => v.version === version);
     if (!target) return { ok: false, text: `There is no v${version}.` };
+    if (now && version >= now.version) return { ok: false, text: `v${version} is newer than the live v${now.version}: try it, then go live.` };
     if (target.problems.length) return { ok: false, text: `v${version} asks for something code no longer offers: ${target.problems.join("; ")}.` };
     const looser = specLooser(now?.spec ?? null, target.spec);
-    if (looser.length && !controlsOn()) return { ok: false, text: `${CONTROLS_OFF} v${version} lets a run spend more: ${looser.join("; ")}.` };
+    if (looser.length && !controlsOn()) return { ok: false, text: `${CONTROLS_OFF} v${version} lets a run do or spend more: ${looser.join("; ")}.` };
     if (looser.length && !confirmed) return { ok: false, text: `Confirm first: ${looser.join("; ")}.` };
     await activateSpecVersion(agentId, version);
     revalidatePath("/", "layout");
-    return { ok: true, text: `v${version} is active again. The next run uses it.` };
+    return { ok: true, text: `Back on v${version}. The next run uses it.` };
   } catch (e) { return fail(e); }
 }
 
@@ -554,91 +554,81 @@ export async function dryRunBuilt(agentId: string, draft?: unknown): Promise<Act
 }
 
 /**
- * One run of the draft (or the saved spec), logged with trigger "preview" and its steps saved for
- * replay. It follows the approved playbook when there is one, unless `explore` asks for a fresh
- * explore run (Re-explore). Afterwards code drafts or updates the playbook (core/playbook.ts).
+ * Try it (step 5): one real run of the draft (or the live version when there is no draft) on
+ * today's data, logged with trigger "preview" and its spec version, its steps saved as they happen
+ * so the map can play it. It sends nothing, queues nothing and saves no output for other agents.
+ * It follows the approved routine unless `fresh` asks the model to pick its own calls; afterwards
+ * code drafts or updates the routine (core/playbook.ts), which Go live approves.
  */
-export async function previewBuilt(agentId: string, draft?: unknown, explore = false, deliver = false): Promise<ActionResult> {
+export async function tryBuilt(agentId: string, fresh = false): Promise<ActionResult & { runId?: string }> {
   await requireSession();
-  if (!controlsOn()) return { ok: false, text: `${CONTROLS_OFF} A preview makes real model calls.` };
+  if (!controlsOn()) return { ok: false, text: `${CONTROLS_OFF} A try makes real model calls.` };
   try {
-    const now = await builtAgent(agentId);
-    let spec = now?.spec;
-    if (draft !== undefined && draft !== null) { const g = checkedDraft(draft, agentId); if ("error" in g) return { ok: false, text: g.error }; spec = g.spec; }
-    else if (now?.problems.length) return { ok: false, text: `The spec asks for something code doesn’t offer: ${now.problems.join("; ")}.` };
-    if (!spec) return { ok: false, text: "That agent has no saved spec." };
-    const run = spec;
+    await builtAgent(agentId);
+    const versions = await listSpecVersions(agentId);
+    const target = draftOf(versions) ?? versions.find((v) => v.active);
+    if (!target) return { ok: false, text: "That agent has no saved version." };
+    if (target.problems.length) return { ok: false, text: `v${target.version} asks for something code doesn’t offer: ${target.problems.join("; ")}.` };
     let block = "";
-    try { block = (await loadMemory(agentId)).block; } catch { /* a preview without memory is fine */ }
+    try { block = (await loadMemory(agentId)).block; } catch { /* a try without memory is fine */ }
     let playbook: { version: number; steps: PlaybookStep[] } | undefined;
-    if (!explore) { try { const a = activePlaybook(await listPlaybooks(agentId)); if (a) playbook = { version: a.version, steps: a.steps }; } catch { /* no playbook table yet: explore */ } }
+    if (!fresh) { try { const a = activePlaybook(await listPlaybooks(agentId)); if (a) playbook = { version: a.version, steps: a.steps }; } catch { /* no playbook table yet: explore */ } }
     let got: Awaited<ReturnType<typeof runExplore>> | null = null;
     let rid: string | null = null;
     const res = await withRun(agentId, "preview", async (runId) => {
       rid = runId;
-      const r = await runExplore(run, { agentId, runId, memoryBlock: block, playbook, deliver: !!deliver });
+      const r = await runExplore(target.spec, { agentId, runId, memoryBlock: block, playbook, trying: true });
       got = r;
-      return { status: r.status, summary: r.summary, tokensIn: r.tokensIn, tokensOut: r.tokensOut, costUsd: r.costUsd, metrics: r.metrics };
+      return { status: r.status, summary: r.summary, tokensIn: r.tokensIn, tokensOut: r.tokensOut, costUsd: r.costUsd, metrics: { ...r.metrics, spec_version: target.version } };
     });
     let note = "";
-    if (got) { try { note = ` ${await afterRun(agentId, rid, got)}`; } catch (e) { note = ` (Playbook not updated: ${e instanceof Error ? e.message : String(e)})`; } }
+    if (got) { try { note = ` ${await afterRun(agentId, rid, got)}`; } catch (e) { note = ` (Routine not updated: ${e instanceof Error ? e.message : String(e)})`; } }
     revalidatePath("/", "layout");
-    return { ok: res.status === "ok", text: `${res.summary.slice(0, 300)}${res.summary.length > 300 ? "…" : ""} ($${(res.costUsd ?? 0).toFixed(4)})${note}` };
+    return { ok: res.status === "ok", text: `Try of v${target.version} done ($${(res.costUsd ?? 0).toFixed(4)}).${note}`, runId: rid ?? undefined };
   } catch (e) { revalidatePath("/", "layout"); return fail(e); }
 }
 
-/** Approves a drafted playbook with the steps Zak kept. Spends nothing and runs nothing. */
-export async function approveBuiltPlaybook(agentId: string, playbookId: number, keep: number[]): Promise<ActionResult> {
-  await requireSession();
-  try {
-    await builtAgent(agentId);
-    const v = await approvePlaybook(agentId, Number(playbookId), (Array.isArray(keep) ? keep : []).map(Number).filter(Number.isInteger));
-    revalidatePath("/", "layout");
-    return { ok: true, text: `Playbook v${v} approved. Preview now follows it; later updates apply on their own unless a run falls back.` };
-  } catch (e) { return fail(e); }
-}
-
 /**
- * Side by side (slice 6): the agent's own code and the runner, both as free dry runs on today's
- * data. Neither calls a model or writes anything. Preview shows what the runner's model writes.
+ * Go live (step 6): makes a version the one that runs, only after its latest try worked on every
+ * step. It approves the routine that try drafted (with the steps Zak kept), and moves Morgan,
+ * Avery, Rowan or Quinn off their own code. On or off duty, schedules and chains don't change.
  */
-export async function compareEngines(agentId: string): Promise<ActionResult> {
+export async function goLive(agentId: string, version: number, keep: number[] | null, confirmed: boolean): Promise<ActionResult> {
   await requireSession();
-  if (!REBUILT.has(agentId) || !OWN_JOBS[agentId]) return { ok: false, text: "Only Morgan, Avery, Rowan and Quinn have their own code to compare with." };
+  if (!controlsOn()) return { ok: false, text: `${CONTROLS_OFF} Going live changes what runs.` };
+  if (!Number.isInteger(version) || version < 1) return { ok: false, text: "Unknown version." };
   try {
-    const [own, built] = await Promise.allSettled([OWN_JOBS[agentId]({ dryRun: true }), dryRunPlaybook(agentId)]);
-    const ownText = own.status === "fulfilled" ? own.value.summary : `failed: ${own.reason instanceof Error ? own.reason.message : String(own.reason)}`;
-    const builtText = built.status === "fulfilled" ? `${built.value.summary} ${built.value.lines.join(" · ")}` : `failed: ${built.reason instanceof Error ? built.reason.message : String(built.reason)}`;
-    return { ok: own.status === "fulfilled" && built.status === "fulfilled", text: `Own code: ${ownText}\n\nRunner: ${builtText}` };
+    const now = await builtAgent(agentId);
+    const target = (await listSpecVersions(agentId)).find((v) => v.version === version);
+    if (!target) return { ok: false, text: `There is no v${version}.` };
+    if (target.problems.length) return { ok: false, text: `v${version} asks for something code no longer offers: ${target.problems.join("; ")}.` };
+    const t = await lastTry(agentId, version);
+    if (!t) return { ok: false, text: `Try v${version} first. Go live unlocks after a try where every step worked.` };
+    if (!t.clean) return { ok: false, text: `Go live is locked: the latest try of v${version} ${t.why}. Try it again.` };
+    const looser = target.active ? [] : specLooser(now?.spec ?? null, target.spec);
+    const offOwnCode = REBUILT.has(agentId) && !(await onRunner(agentId));
+    if ((looser.length || offOwnCode) && !confirmed) return { ok: false, text: `Confirm first${looser.length ? `: ${looser.join("; ")}` : ""}.` };
+    const all = await listPlaybooks(agentId);
+    const pending = pendingPlaybook(all);
+    let routine = "";
+    if (pending) {
+      const v = await approvePlaybook(agentId, pending.id, Array.isArray(keep) ? keep.map(Number).filter(Number.isInteger) : pending.steps.map((_, i) => i));
+      routine = ` Routine v${v} approved.`;
+    } else if (!activePlaybook(all)) return { ok: false, text: "No routine yet: try it fresh, so code can save the calls that worked." };
+    if (!target.active) await activateSpecVersion(agentId, version);
+    if (offOwnCode) await setOnRunner(agentId, true);
+    revalidatePath("/", "layout");
+    return { ok: true, text: `v${version} is live.${routine}${offOwnCode ? " Its runs follow this version now, not its own code." : ""} On or off duty hasn’t changed.` };
   } catch (e) { return fail(e); }
 }
 
-/** Switches which one runs on schedules, chains and by hand. To the runner needs Controls on and a confirm; back is always allowed. */
-export async function switchEngine(agentId: string, toRunner: boolean, confirmed: boolean): Promise<ActionResult> {
+/** Morgan, Avery, Rowan and Quinn: back to their own code, always allowed. */
+export async function backToOwnCode(agentId: string): Promise<ActionResult> {
   await requireSession();
-  if (!REBUILT.has(agentId)) return { ok: false, text: "Only Morgan, Avery, Rowan and Quinn can be switched." };
+  if (!REBUILT.has(agentId)) return { ok: false, text: "Only Morgan, Avery, Rowan and Quinn have their own code." };
   try {
-    if (toRunner) {
-      if (!controlsOn()) return { ok: false, text: `${CONTROLS_OFF} Switching changes what runs on the schedule.` };
-      if (!confirmed) return { ok: false, text: "Confirm first." };
-      const dry = await dryRunPlaybook(agentId);
-      if (dry.status !== "ok") return { ok: false, text: dry.summary };
-      // the dry run returning is not enough: every playbook step has to have worked
-      if (!dry.steps) return { ok: false, text: "Not switched: its playbook has no steps to check yet." };
-      if (dry.failed) return { ok: false, text: `Not switched: ${dry.failed} of ${dry.steps} playbook steps didn't work in the check just now. ${dry.lines.filter((l) => l.startsWith("FAILED")).join(" · ")}` };
-    }
-    await setOnRunner(agentId, toRunner);
+    await setOnRunner(agentId, false);
     revalidatePath("/", "layout");
-    return { ok: true, text: toRunner ? "Switched. Its next run, on the schedule, in a chain or by hand, follows the approved playbook on the runner." : "Switched back. Its next run uses its own code again." };
-  } catch (e) { return fail(e); }
-}
-
-export async function rejectBuiltPlaybook(agentId: string, playbookId: number): Promise<ActionResult> {
-  await requireSession();
-  try {
-    await builtAgent(agentId);
-    const v = await rejectPlaybook(agentId, Number(playbookId));
-    revalidatePath("/", "layout");
-    return { ok: true, text: `Playbook v${v} rejected. Re-explore to draft another.` };
+    return { ok: true, text: "Back on its own code from its next run." };
   } catch (e) { return fail(e); }
 }

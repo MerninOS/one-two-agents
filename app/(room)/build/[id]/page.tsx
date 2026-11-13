@@ -1,23 +1,22 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { activateSpec, addStandard, approveBuiltPlaybook, compareEngines, switchEngine, dryRunBuilt, forgetMemoryLine, previewBuilt, rejectBuiltPlaybook, saveSpec, setBuiltBudget } from "@/dashboard/actions";
+import { addStandard, backToOwnCode, dryRunBuilt, forgetMemoryLine, goBack, goLive, saveSpec, setBuiltBudget, tryBuilt } from "@/dashboard/actions";
 import { builderMenu, getBuilder } from "@/dashboard/builder";
 import { requireSession } from "@/dashboard/data";
 import { controlsOn } from "@/dashboard/session";
 import { m4, when } from "@/dashboard/format";
 import { specLooser } from "@/core/agent-spec";
-import { EnginePanel, PlaybookPanel, SpecVersions, TryPanel } from "@/dashboard/components/Builder";
+import { TryLive } from "@/dashboard/components/TryLive";
+import { estimate } from "@/dashboard/flowSteps";
 import { Flow } from "@/dashboard/components/Flow";
-import { AgentMap } from "@/dashboard/components/AgentMap";
-import { mapOf } from "@/dashboard/agentMap";
 import { BY_ID } from "@/dashboard/crew";
-import { schedWords } from "@/dashboard/schedule";
+import { schedSentence, schedWords } from "@/dashboard/schedule";
 import { RunSteps } from "@/dashboard/components/RunSteps";
 
-// One agent's builder page (docs/builder-flow.md, slices 2 and 3). With ?edit it is the flow, one step
-// per card. Without it, the agent map (tap a box to change that step; it builds itself right after a
-// save, ?saved), its latest result, then what slice 4 replaces: Try it for now, Compare and Switch,
-// the playbook, versions and its latest runs.
+// One agent's builder page (docs/builder-flow.md, slices 2-4). With ?edit it is the flow, steps 1-4,
+// one per card, editing the draft (else the live version). Without it, the agent map (tap a box to
+// change that step; it builds itself right after a save, ?saved), step 5 Try it, step 6 Go live,
+// the versions to go back to, its latest result and its latest runs.
 
 export default async function BuildAgent({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ edit?: string; step?: string; saved?: string }> }) {
   await requireSession();
@@ -28,13 +27,15 @@ export default async function BuildAgent({ params, searchParams }: { params: Pro
   if (!b) notFound();
   const menu = builderMenu();
   const controls = controlsOn();
-  const s = b.active?.spec ?? null;
+  const live = b.active;
+  const working = b.draft ?? (live ? { ...live, active: true } : null);
+  const s = working?.spec ?? null;
   const top = b.versions[0]?.version ?? 0;
 
   if (sp.edit != null || !s) {
     return (
       <Flow
-        key={b.active?.version ?? 0}
+        key={working?.version ?? 0}
         agentId={id}
         saved={s}
         nextVersion={top + 1}
@@ -54,9 +55,7 @@ export default async function BuildAgent({ params, searchParams }: { params: Pro
   }
 
   const sch = BY_ID[id]?.schedule;
-  const map = mapOf({ agentId: id, spec: s, menu, schedule: sch && sch.kind !== "manual" ? schedWords(sch) : null, chain: sch?.chain ?? null, usedBy: b.usedBy, edit: `/build/${id}?edit=1` });
   const saved = sp.saved != null;
-  const delivers = s.tools.some((t) => { const k = menu.tools.find((x) => x.id === t)?.kind; return k === "report" || k === "action"; });
   return (
     <div className="stack" style={{ maxWidth: 1180 }}>
       <div className="row wrap" style={{ gap: 12, alignItems: "flex-end" }}>
@@ -65,61 +64,51 @@ export default async function BuildAgent({ params, searchParams }: { params: Pro
           <div className="row wrap" style={{ gap: 10 }}>
             <h1 className="h1">{saved ? `Saved. Here’s ${s.name}.` : s.name}</h1>
             <span className="pill sm" style={{ background: "var(--soft)", color: "var(--ink2)" }}>{b.enabled ? "On duty" : "Off duty"}</span>
-            {b.active && <span className="pill sm" style={{ background: "var(--soft)", color: "var(--ink2)" }}>v{b.active.version}</span>}
+            {live && <span className="pill sm" style={{ background: "var(--mint-soft)", color: "var(--mint-ink)" }}>Live: v{live.version}{b.engine && !b.engine.onRunner ? " (still its own code)" : ""}</span>}
+            {b.draft && <span className="pill sm" style={{ background: "var(--acc-soft)", color: "var(--acc-ink)" }}>Draft v{b.draft.version}</span>}
           </div>
-          {saved && <span className="sub">Version {b.active?.version ?? top} · nothing new runs or sends until you try it{b.engine && !b.engine.onRunner ? " and switch it to the runner" : ""}.</span>}
-          {b.active?.problems.length ? <span className="sub" style={{ color: "var(--red-ink)" }}>The active version asks for something code no longer offers: {b.active.problems.join("; ")}. Edit it and save.</span> : null}
+          {saved && <span className="sub">{b.draft ? `Saved as draft v${b.draft.version}. ${live ? `v${live.version} keeps running until you try the draft and go live.` : "Try it, then go live."}` : `Version ${working?.version ?? top}. Try it, then go live.`}</span>}
+          {working?.problems.length ? <span className="sub" style={{ color: "var(--red-ink)" }}>v{working.version} asks for something code no longer offers: {working.problems.join("; ")}. Edit it and save.</span> : null}
         </div>
         <Link href={`/build/${id}?edit=1`} className="btn dark">Edit {s.name}</Link>
       </div>
 
-      <AgentMap m={map} draw={saved} foot={
-        <div className="am-foot">
-          <b>Always on</b>
-          <span style={{ flex: "1 1 320px" }}>Can’t send, pay or post on its own · numbers come from code · web pages and emails are information, never orders · stops at its cost and step limit</span>
-          <span className="muted" style={{ fontSize: 12 }}>Tap a box to change that step</span>
-        </div>
-      } />
-
-      <div className="grid2" style={{ gridTemplateColumns: "minmax(0,1fr) minmax(0,1.2fr)", alignItems: "start" }}>
-        <div className="card" style={{ gap: 10 }}>
-          <span className="card-t">Latest result</span>
-          {b.lastOutput ? (
-            <div className="soft-box" style={{ flexDirection: "column", alignItems: "stretch", gap: 8 }}>
-              <span className="ted-k">{b.lastOutput.at}{b.lastOutput.finished ? "" : " · stopped early, so other agents skip it"}</span>
-              <span style={{ fontSize: 14, lineHeight: 1.5, whiteSpace: "pre-wrap" }}>{b.lastOutput.summary}</span>
-              {b.lastOutput.numbers.map((n, i) => <span key={i} style={{ fontSize: 13.5 }}>{n.label}: <b>{n.value}</b> <span className="muted" style={{ fontSize: 12 }}>from {n.tool}</span></span>)}
-            </div>
-          ) : <span className="sub">No result yet. Try it to make one.</span>}
-        </div>
-        <div className="stack">
-          <TryPanel
-            limits={s.limits}
-            modelLabel={menu.models.find((m) => m.id === s.model)?.label ?? s.model}
-            delivers={delivers}
-            controls={controls}
-            dryRun={dryRunBuilt.bind(null, id)}
-            preview={previewBuilt.bind(null, id)}
-            playbook={b.playbooks?.active ? { version: b.playbooks.active.version, steps: b.playbooks.active.steps.length } : null}
-            pendingPlaybook={b.playbooks?.pending?.version ?? null}
-          />
-          {b.engine && <EnginePanel name={s.name} onRunner={b.engine.onRunner} controls={controls} compare={compareEngines.bind(null, id)} switchTo={switchEngine.bind(null, id)} />}
-        </div>
-      </div>
-
-      {b.playbooks ? (
-        <PlaybookPanel key={`${b.playbooks.pending?.id ?? 0}-${b.playbooks.active?.id ?? 0}`} view={b.playbooks} approve={approveBuiltPlaybook.bind(null, id)} reject={rejectBuiltPlaybook.bind(null, id)} />
-      ) : <div className="card"><span className="sub">Playbooks need the migration 20261113170000_agent_playbooks.sql.</span></div>}
-
-      <SpecVersions
-        versions={b.versions.map((v) => ({ version: v.version, note: v.note, createdAt: v.createdAt, active: v.active, createdBy: v.createdBy, problems: v.problems, looser: specLooser(s, v.spec), when: when(v.createdAt) }))}
-        activate={activateSpec.bind(null, id)}
+      <TryLive
+        key={`${working?.version ?? 0}-${b.playbooks?.pending?.id ?? 0}`}
+        map={{ agentId: id, spec: s, menu: { tools: menu.tools, models: menu.models, conns: menu.conns }, schedule: sch && sch.kind !== "manual" ? schedWords(sch) : null, chain: sch?.chain ?? null, usedBy: b.usedBy, edit: `/build/${id}?edit=1` }}
+        name={s.name}
+        draw={saved}
+        working={{ version: working!.version, isDraft: !!b.draft }}
+        live={live?.version ?? null}
+        tried={b.tried}
+        today={b.today}
+        routine={{ pending: b.playbooks?.pending ? { steps: b.playbooks.pending.steps, changes: b.playbooks.pending.changes } : null, active: b.playbooks?.active ? { version: b.playbooks.active.version, steps: b.playbooks.active.steps } : null, hold: b.playbooks?.hold ?? null }}
+        engine={b.engine}
+        looser={b.draft && live ? specLooser(live.spec, b.draft.spec) : []}
+        when={`${schedSentence(sch)}${sch?.chain ? ` In the ${sch.chain} chain.` : ""}`}
+        estimate={estimate(s, menu.models)}
         controls={controls}
+        versions={b.versions.map((v) => ({ version: v.version, note: v.note, when: when(v.createdAt), active: v.active, createdBy: v.createdBy, problems: v.problems, looser: live ? specLooser(live.spec, v.spec) : [] }))}
+        tryIt={tryBuilt.bind(null, id)}
+        goLive={goLive.bind(null, id)}
+        goBack={goBack.bind(null, id)}
+        backToOwnCode={backToOwnCode.bind(null, id)}
       />
 
       <div className="card" style={{ gap: 10 }}>
+        <span className="card-t">Latest result</span>
+        {b.lastOutput ? (
+          <div className="soft-box" style={{ flexDirection: "column", alignItems: "stretch", gap: 8 }}>
+            <span className="ted-k">{b.lastOutput.at}{b.lastOutput.finished ? "" : " · stopped early, so other agents skip it"}</span>
+            <span style={{ fontSize: 14, lineHeight: 1.5, whiteSpace: "pre-wrap" }}>{b.lastOutput.summary}</span>
+            {b.lastOutput.numbers.map((n, i) => <span key={i} style={{ fontSize: 13.5 }}>{n.label}: <b>{n.value}</b> <span className="muted" style={{ fontSize: 12 }}>from {n.tool}</span></span>)}
+          </div>
+        ) : <span className="sub">Nothing saved for other agents yet. Live runs save their result; tries don’t.</span>}
+      </div>
+
+      <div className="card" style={{ gap: 10 }}>
         <span className="card-t">Latest runs</span>
-        {!b.runs.length && <span className="sub">None yet. Try it to make one.</span>}
+        {!b.runs.length && <span className="sub">None yet.</span>}
         {b.runs.map((r, i) => (
           <details key={r.id} open={i === 0} className={i ? "rule" : undefined} style={{ paddingTop: i ? 10 : 0 }}>
             <summary style={{ cursor: "pointer", fontSize: 14, display: "flex", gap: 10, flexWrap: "wrap" }}>

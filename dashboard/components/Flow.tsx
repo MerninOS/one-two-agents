@@ -10,7 +10,7 @@ import { useCallback, useEffect, useMemo, useState, useSyncExternalStore, useTra
 import type { AgentSpec } from "@/core/agent-spec";
 import type { BuilderMenu, FlowConn, Standard } from "@/dashboard/builder";
 import {
-  AFTER_STEPS, STEPS, TOTAL_STEPS, abilityOf, blankSpec, blockedFor, changedSteps, estimate, looserThan, money, presetOf, presets,
+  AFTER_STEPS, STEPS, TOTAL_STEPS, abilityOf, blankSpec, blockedFor, changedSteps, estimate, money, presetOf, presets,
   problemsOf, stepFill, stepIndex, summarize, type StepKey, type Tool,
 } from "@/dashboard/flowSteps";
 import type { ActionResult } from "../actions";
@@ -36,7 +36,7 @@ export interface FlowProps {
   others: { id: string; name: string; outputName: string; hasOutput: boolean }[];
   standards?: Standard[];
   budget?: { current: number; spentToday: number; ceiling: number };
-  save?: Act<[unknown, string, boolean]>;
+  save?: Act<[unknown, string]>;
   create?: (draft: unknown) => Promise<ActionResult & { id?: string }>;
   dryRun?: Act<[unknown]>;
   saveBudget?: Act<[number]>;
@@ -88,8 +88,7 @@ export function Flow(p: FlowProps) {
     setToast(r); after?.(r); router.refresh();
   });
 
-  const looser = looserThan(p.saved, d, p.menu);
-  const doSave = (confirmed: boolean) => {
+  const doSave = () => {
     if (!p.agentId) {
       startT(async () => {
         const r = await p.create!(d).catch((e) => ({ ok: false, text: e instanceof Error ? e.message : "Something went wrong." }) as ActionResult & { id?: string });
@@ -100,14 +99,13 @@ export function Flow(p: FlowProps) {
     }
     const steps = changedSteps(p.saved, d, p.menu).map((k) => STEPS[stepIndex(k)].title.toLowerCase());
     const why = note.trim() || (steps.length ? `Changed ${steps.join(", ")}` : "Edited in the builder");
-    act(() => p.save!(d, why, confirmed), (r) => { if (r.ok) { forgetDraft(); router.push(`${back}?saved=1`); } });
+    act(() => p.save!(d, why), (r) => { if (r.ok) { forgetDraft(); router.push(`${back}?saved=1`); } });
   };
   const onSave = () => {
     if (problems.length) { go(stepIndex(problems[0].step)); setToast({ ok: false, text: `Fix first: ${problems.map((x) => x.text).join("; ")}.` }); return; }
     if (p.agentId && !dirty) { router.push(back); return; }
-    if (looser.length && !p.controls) { setToast({ ok: false, text: `Controls are off. Set DASHBOARD_CONTROLS=on in Vercel to allow this: ${looser.join("; ")}.` }); return; }
-    if (looser.length) setConfirm({ c: { title: `Save as v${p.nextVersion}?`, body: "This version lets a run do or spend more than the active one.", lines: looser.map((x) => ({ k: "Change", v: x })), confirmLabel: `Save v${p.nextVersion}`, kind: "dark" }, go: () => doSave(true) });
-    else doSave(false);
+    // a save is a draft: what runs changes only at Go live, which asks about anything that loosens
+    doSave();
   };
   const next = () => (last ? onSave() : go(cur + 1));
 
@@ -174,7 +172,7 @@ export function Flow(p: FlowProps) {
               {cur > 0 ? <button type="button" className="linkish" onClick={() => go(cur - 1)}>← Back</button> : <span />}
               <span className="bf-hint">Press Enter</span>
               <button type="button" className="btn dark bf-go" disabled={busy} onClick={next}>
-                {busy ? "Saving…" : !last ? "Continue →" : p.agentId ? (dirty ? `Save as v${p.nextVersion} →` : "Done →") : `Create ${nm}, off duty →`}
+                {busy ? "Saving…" : !last ? "Continue →" : p.agentId ? (dirty ? `Save draft v${p.nextVersion} →` : "Done →") : `Create ${nm}, off duty →`}
               </button>
             </div>
 

@@ -4,7 +4,7 @@ import "server-only";
 // with its connection, docs/builder-flow.md), the Claude models, its standards from the memory
 // store, and its latest runs step by step.
 import { db } from "@/core/db";
-import { BUDGET_CEILING, EFFORTS, RUN_LIMITS, listSpecVersions, loadSpec, readSpec, type AgentSpec, type SpecVersion } from "@/core/agent-spec";
+import { BUDGET_CEILING, EFFORTS, RUN_LIMITS, draftOf, listSpecVersions, loadSpec, readSpec, type AgentSpec, type SpecVersion } from "@/core/agent-spec";
 import { SAFETY } from "@/core/runner";
 import { TOOL_LIST, TOOLS } from "@/core/tools/catalog";
 import { MODEL_LIST } from "@/integrations/models";
@@ -116,6 +116,38 @@ export async function mapSteps(runId: string): Promise<{ kind: string; tool: str
   return error ? [] : (data ?? []).map((s) => ({ kind: s.kind, tool: s.tool, ok: !!s.ok, ms: Number(s.ms ?? 0) }));
 }
 
+/** A try (builder flow step 5): one preview run of a spec version, and whether Go live may use it. */
+export interface TryView {
+  runId: string; version: number; at: string; status: string; summary: string; costUsd: number; secs: number | null;
+  steps: { kind: string; tool: string | null; ok: boolean; ms: number }[];
+  /** True when the run finished, followed or explored without falling back, and no tool step failed. */
+  clean: boolean;
+  /** Why it isn't clean, as the end of "the latest try …". */
+  why: string | null;
+}
+
+/** The latest try of one version, from the run log (trigger "preview", metrics.spec_version). Null when it was never tried. */
+export async function lastTry(agentId: string, version: number): Promise<TryView | null> {
+  const { data, error } = await db().from("agent_runs").select("id, started_at, ended_at, status, summary, error, cost_usd, metrics").eq("agent_id", agentId).eq("trigger", "preview").order("started_at", { ascending: false }).limit(30);
+  if (error) return null;
+  const r = (data ?? []).find((x) => Number((x.metrics ?? {}).spec_version) === version);
+  if (!r) return null;
+  const m = (r.metrics ?? {}) as Record<string, number>;
+  const steps = await mapSteps(r.id);
+  const failed = steps.filter((x) => x.kind === "tool" && !x.ok).length;
+  const why = r.status === "running" ? "is still running"
+    : r.status !== "ok" ? "failed"
+    : m.finished !== 1 ? "didn’t finish"
+    : failed ? `had ${failed} step${failed === 1 ? "" : "s"} that didn’t work`
+    : m.fell_back === 1 ? "left its routine and explored instead"
+    : null;
+  return {
+    runId: r.id, version, at: when(r.started_at), status: r.status, summary: r.error ?? r.summary ?? "", costUsd: Number(r.cost_usd ?? 0),
+    secs: r.ended_at ? Math.round((new Date(r.ended_at).getTime() - new Date(r.started_at).getTime()) / 1000) : null,
+    steps, clean: why === null, why,
+  };
+}
+
 async function standards(agentId: string): Promise<Standard[]> {
   const { data, error } = await db().from("agent_memory").select("id, grp, text, notion_page_id, agent_id").or(`agent_id.eq.${agentId},agent_id.is.null`).eq("state", "kept").in("grp", ["standing_order", "crew"]).order("created_at", { ascending: true }).limit(100);
   if (error) return [];
@@ -139,6 +171,12 @@ export interface BuilderData {
   standards: Standard[]; runs: BuildRun[]; spentToday: number;
   others: { id: string; name: string; outputName: string; hasOutput: boolean }[];
   usedBy: { id: string; name: string }[];
+  /** The newest version when it is newer than the live one: what Try it and Go live work on. */
+  draft: (SpecVersion & { active: boolean; createdBy: string }) | null;
+  /** The latest try of the version being worked on (the draft, else the live one). */
+  tried: TryView | null;
+  /** What the live version handed you last: the latest finished run that wasn't a try. */
+  today: { at: string; summary: string } | null;
   lastOutput: { name: string; summary: string; numbers: { label: string; value: number; tool: string }[]; at: string; finished: boolean } | null;
   playbooks: PlaybookView | null;
   /** Morgan, Avery, Rowan and Quinn (slices 6 and 7): whether runs use their own code or the runner. Null for agents built here. */
@@ -146,7 +184,7 @@ export interface BuilderData {
 }
 
 export interface PlaybookRow { id: number; version: number; status: string; steps: string[]; changes: string | null; auto: boolean; when: string }
-export interface PlaybookView { active: PlaybookRow | null; pending: PlaybookRow | null; history: PlaybookRow[]; hold: string | null }
+export interface PlaybookView { active: PlaybookRow | null; pending: PlaybookRow | null; hold: string | null }
 
 /** Null when the playbook migration isn't applied yet. */
 async function playbookView(agentId: string): Promise<PlaybookView | null> {
@@ -154,7 +192,7 @@ async function playbookView(agentId: string): Promise<PlaybookView | null> {
     const [all, hold] = await Promise.all([listPlaybooks(agentId), playbookHold(agentId)]);
     const view = (p: (typeof all)[number]): PlaybookRow => ({ id: p.id, version: p.version, status: p.status, steps: p.steps.map(stepLabel), changes: p.changes, auto: p.auto, when: when(p.decidedAt ?? p.createdAt) });
     const a = activePlaybook(all), q = pendingPlaybook(all);
-    return { active: a && view(a), pending: q && view(q), history: all.map(view), hold: hold?.reason ?? null };
+    return { active: a && view(a), pending: q && view(q), hold: hold?.reason ?? null };
   } catch { return null; }
 }
 
@@ -172,7 +210,13 @@ export async function getBuilder(agentId: string): Promise<BuilderData | null> {
     db().from("agent_outputs").select("agent_id, name, summary, numbers, created_at, finished").order("created_at", { ascending: false }).limit(200),
     playbookView(agentId),
   ]);
-  const engine = REBUILT.has(agentId) ? { onRunner: await onRunner(agentId) } : null;
+  const draft = draftOf(versions);
+  const working = draft ?? versions.find((v) => v.active) ?? null;
+  const [engine, tried, today] = await Promise.all([
+    REBUILT.has(agentId) ? onRunner(agentId).then((onRunner) => ({ onRunner })) : null,
+    working ? lastTry(agentId, working.version) : null,
+    db().from("agent_runs").select("started_at, summary").eq("agent_id", agentId).eq("status", "ok").neq("trigger", "preview").order("started_at", { ascending: false }).limit(1).maybeSingle(),
+  ]);
   const outRows = outs.error ? [] : outs.data ?? [];
   const mine = outRows.find((o) => o.agent_id === agentId);
   return {
@@ -183,6 +227,8 @@ export async function getBuilder(agentId: string): Promise<BuilderData | null> {
       return { id: d.agent_id as string, name: sp.name || d.agent_id, outputName: sp.outputName || "result", hasOutput: outRows.some((o) => o.agent_id === d.agent_id && o.finished) };
     }).sort((x, y) => x.name.localeCompare(y.name)),
     usedBy: usedByOf(agentId, defs.data ?? []),
+    draft, tried,
+    today: today.data?.summary ? { at: when(today.data.started_at), summary: today.data.summary } : null,
     playbooks, engine,
     lastOutput: mine ? { name: mine.name, summary: mine.summary, numbers: (Array.isArray(mine.numbers) ? mine.numbers : []) as { label: string; value: number; tool: string }[], at: when(mine.created_at), finished: mine.finished } : null,
   };
