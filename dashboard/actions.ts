@@ -21,6 +21,7 @@ import { TOOLS } from "@/core/tools/catalog";
 import { lastTry } from "./builder";
 import { activePlaybook, afterRun, approvePlaybook, holdAfterRejection, listPlaybooks, pendingPlaybook } from "@/core/playbook";
 import { loadMemory } from "@/core/memory";
+import { loadOrg, seatPath, setHolder } from "@/core/org";
 import { BY_ID } from "./crew";
 import { requireSession } from "./data";
 import { SESSION_COOKIE, SESSION_DAYS, checkPassword, controlsOn, newSessionToken } from "./session";
@@ -446,15 +447,24 @@ function checkedDraft(draft: unknown, agentId: string): { spec: AgentSpec } | { 
  * draft is checked against code like any save; a new agent has no gateway actions, since the
  * gateway names the agents that may ask for each one.
  */
-export async function createBuilt(draft: unknown): Promise<ActionResult & { id?: string }> {
+/** Creates the agent off duty as v1, and puts it in the seat picked in step 1 when that seat is still open. */
+export async function createBuilt(draft: unknown, seatId?: string | null): Promise<ActionResult & { id?: string }> {
   await requireSession();
   try {
     const { spec, problems } = readSpec(draft);
     if (problems.length) return { ok: false, text: `Not created. This draft asks for something code doesn’t offer: ${problems.join("; ")}.` };
     if (spec.tools.some((t) => TOOLS[t]?.kind === "action")) return { ok: false, text: "Not created. A new agent can’t ask for actions: code names which agents may." };
     const id = await createBuiltAgent(spec, BY);
+    let seated = "";
+    if (seatId && UUID.test(seatId)) {
+      const o = await loadOrg();
+      const seat = o?.seats.find((s) => s.id === seatId);
+      if (o && seat?.holder === "open") {
+        try { await setHolder(seat.id, "agent", id); seated = ` It sits in ${seatPath(o, seat)}.`; } catch (e) { seated = ` It isn’t on the chart yet: ${e instanceof Error ? e.message : e}`; }
+      } else seated = " That seat was taken meanwhile, so it isn’t on the chart yet.";
+    }
     revalidatePath("/", "layout");
-    return { ok: true, text: `${spec.name} is saved as v1, off duty.`, id };
+    return { ok: true, text: `${spec.name} is saved as v1, off duty.${seated}`, id };
   } catch (e) { return fail(e); }
 }
 

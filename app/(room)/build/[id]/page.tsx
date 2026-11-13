@@ -13,6 +13,9 @@ import { BY_ID } from "@/dashboard/crew";
 import { schedSentence, schedWords } from "@/dashboard/schedule";
 import { RunSteps } from "@/dashboard/components/RunSteps";
 import { AgentTabs } from "@/dashboard/components/ui";
+import { placeAgent } from "@/dashboard/orgActions";
+import { seatChoices } from "@/dashboard/org";
+import { loadOrg, seatOf } from "@/core/org";
 
 // One agent's builder page, its Edit tab (docs/builder-flow.md, slices 2-5). With ?edit it is the flow, steps 1-4,
 // one per card, editing the draft (else the live version). Without it, the agent map (tap a box to
@@ -34,6 +37,7 @@ export default async function BuildAgent({ params, searchParams }: { params: Pro
   const top = b.versions[0]?.version ?? 0;
 
   if (sp.edit != null || !s) {
+    const org = await loadOrg();
     return (
       <Flow
         key={working?.version ?? 0}
@@ -51,6 +55,9 @@ export default async function BuildAgent({ params, searchParams }: { params: Pro
         saveBudget={setBuiltBudget.bind(null, id)}
         addStandard={addStandard.bind(null, id)}
         forget={forgetMemoryLine}
+        seats={org ? seatChoices(org, id) : undefined}
+        seatId={org ? seatOf(org, id)?.id ?? null : null}
+        place={placeAgent.bind(null, id)}
       />
     );
   }

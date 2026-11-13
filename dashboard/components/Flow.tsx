@@ -37,7 +37,15 @@ export interface FlowProps {
   standards?: Standard[];
   budget?: { current: number; spentToday: number; ceiling: number };
   save?: Act<[unknown, string]>;
-  create?: (draft: unknown) => Promise<ActionResult & { id?: string }>;
+  create?: (draft: unknown, seatId?: string | null) => Promise<ActionResult & { id?: string }>;
+  /** Org chart seats it can sit in (docs/org-chart.md); undefined before the org chart migration. */
+  seats?: { id: string; label: string; free: boolean }[];
+  /** Its seat now, or for a new agent the seat it was opened from. */
+  seatId?: string | null;
+  /** An existing agent's seat is saved straight away, not as part of a version. */
+  place?: Act<[string | null]>;
+  /** Answers a new agent starts with (from the seat it was opened from). */
+  seed?: Partial<AgentSpec>;
   dryRun?: Act<[unknown]>;
   saveBudget?: Act<[number]>;
   addStandard?: Act<[string, string]>;
@@ -46,7 +54,9 @@ export interface FlowProps {
 
 export function Flow(p: FlowProps) {
   const router = useRouter();
-  const start = useMemo(() => p.saved ?? blankSpec(p.menu), [p.saved, p.menu]);
+  const start = useMemo(() => p.saved ?? { ...blankSpec(p.menu), ...p.seed }, [p.saved, p.menu, p.seed]);
+  // a new agent takes this seat when it is created; an existing one saves its seat straight away
+  const [seat, setSeat] = useState<string | null>(p.seatId ?? null);
   const [d, setD] = useState<AgentSpec>(start);
   const [cur, setCur] = useState(stepIndex(p.step));
   const [dir, setDir] = useState<1 | -1>(1);
@@ -91,7 +101,7 @@ export function Flow(p: FlowProps) {
   const doSave = () => {
     if (!p.agentId) {
       startT(async () => {
-        const r = await p.create!(d).catch((e) => ({ ok: false, text: e instanceof Error ? e.message : "Something went wrong." }) as ActionResult & { id?: string });
+        const r = await p.create!(d, seat).catch((e) => ({ ok: false, text: e instanceof Error ? e.message : "Something went wrong." }) as ActionResult & { id?: string });
         setToast(r);
         if (r.ok && r.id) { forgetDraft(); router.push(`/build/${r.id}?saved=1`); }
       });
@@ -157,7 +167,7 @@ export function Flow(p: FlowProps) {
               <p className="bf-sub">{SUBS[step]}</p>
             </div>
 
-            {step === "job" && <JobStep d={d} change={change} p={p} from={from} setFrom={setFrom} act={act} busy={busy} />}
+            {step === "job" && <JobStep d={d} change={change} p={p} from={from} setFrom={setFrom} act={act} busy={busy} seat={seat} setSeat={setSeat} />}
             {step === "connections" && <ConnStep d={d} change={change} p={p} setToast={setToast} act={act} busy={busy} />}
             {step === "hands" && <HandsStep d={d} change={change} p={p} setToast={setToast} />}
             {step === "brain" && <BrainStep d={d} change={change} p={p} />}
@@ -210,7 +220,7 @@ function Field({ k, children, sub }: { k: string; children: React.ReactNode; sub
   return <label className="bf-field"><span className="bf-k">{k}</span>{children}{sub && <span className="sub">{sub}</span>}</label>;
 }
 
-function JobStep({ d, change, p, from, setFrom, act, busy }: StepProps & { from: string; setFrom: (s: string) => void; act: Run; busy: boolean }) {
+function JobStep({ d, change, p, from, setFrom, act, busy, seat, setSeat }: StepProps & { from: string; setFrom: (s: string) => void; act: Run; busy: boolean; seat: string | null; setSeat: (s: string | null) => void }) {
   const [std, setStd] = useState(""), [link, setLink] = useState("");
   const label = (t: { name: string; spec: AgentSpec }) => { const o = t.spec.outputName; return o && o !== "result" ? o.charAt(0).toUpperCase() + o.slice(1) : `Like ${t.name}`; };
   return (
@@ -229,6 +239,23 @@ function JobStep({ d, change, p, from, setFrom, act, busy }: StepProps & { from:
       <Field k="Its job, in your words" sub={`${d.directive.length} of 4,000`}><textarea className="input ted-text" rows={6} maxLength={4000} value={d.directive} onChange={(e) => change({ directive: e.target.value })} placeholder="Each weekday morning, tell me the one thing I should focus on today and why…" /></Field>
       <Field k="What a good result looks like"><textarea className="input ted-text" rows={3} maxLength={1000} value={d.goodResult} onChange={(e) => change({ goodResult: e.target.value })} placeholder="A focus line, then at most five short watch lines. Every number exactly as the data says." /></Field>
       <Field k="One line for the agent list"><input className="input" value={d.mandate} maxLength={200} onChange={(e) => change({ mandate: e.target.value })} placeholder="Morning focus and watch list" /></Field>
+      {p.seats && (
+        <Field k="Where it sits on the org chart" sub={p.agentId ? "Saved straight away, not as part of a version. A seat gives it no access: what it can reach is step 2." : "It takes this seat when you save. A seat gives it no access: what it can reach is step 2."}>
+          <select
+            className="input"
+            value={seat ?? ""}
+            disabled={busy}
+            onChange={(e) => {
+              const next = e.target.value || null;
+              setSeat(next);
+              if (p.agentId && p.place) act(() => p.place!(next));
+            }}
+          >
+            <option value="">Not on the chart</option>
+            {p.seats.filter((x) => x.free || x.id === seat).map((x) => <option key={x.id} value={x.id}>{x.label}</option>)}
+          </select>
+        </Field>
+      )}
       {p.agentId && p.standards && (
         <details className="bf-more">
           <summary>Rules it always follows ({p.standards.length})</summary>
