@@ -12,8 +12,9 @@ import { dur, m4, num, utcStr, when } from "@/dashboard/format";
 import { RUN_LOOK } from "@/dashboard/status";
 import { DryRun, MarkSeen } from "@/dashboard/components/client";
 import { Icon } from "@/dashboard/components/Icon";
-import { RunCanvas } from "@/dashboard/components/RunCanvas";
-import { reachOf } from "@/dashboard/connections";
+import { AgentMap } from "@/dashboard/components/AgentMap";
+import { mapOf, mapRunOf } from "@/dashboard/agentMap";
+import { builderMenu, mapFor, mapSteps } from "@/dashboard/builder";
 import { Avatar, Summary } from "@/dashboard/components/ui";
 
 export default async function Replay({ params }: { params: Promise<{ id: string }> }) {
@@ -25,7 +26,8 @@ export default async function Replay({ params }: { params: Promise<{ id: string 
   const f = await getFloor();
   const unseen = needs(f, f.now, parseSeen((await cookies()).get(SEEN_COOKIE)?.value)).some((n) => n.run && n.agentId === a.id);
   const others = f.runs.filter((r) => r.agent_id === a.id && r.status !== "skipped" && r.id !== run.id).slice(0, 6);
-  const leads = a.id === "wholesale_hunter" ? await leadsForRun(run.id) : null;
+  const [leads, mf, steps] = await Promise.all([a.id === "wholesale_hunter" ? leadsForRun(run.id) : null, mapFor(a.id), mapSteps(run.id)]);
+  const map = mf && mapOf({ agentId: a.id, spec: mf.spec, menu: builderMenu(), schedule: null, chain: null, usedBy: mf.usedBy, edit: null, run: mapRunOf(run, steps) });
   const chain = run.trigger === "chain" ? await getChainRuns(run.id) : null;
   const look = RUN_LOOK[run.status];
 
@@ -126,7 +128,12 @@ export default async function Replay({ params }: { params: Promise<{ id: string 
         </div>
       )}
 
-      {run.status !== "skipped" && <div className="card" style={{ padding: 16 }}><RunCanvas a={a} run={run} leads={leads} reach={reachOf(a.id, f.grants)} /></div>}
+      {run.status !== "skipped" && map && (
+        <div className="card" style={{ padding: 16, gap: 10 }}>
+          <span className="card-t" style={{ padding: "0 4px" }}>How this run went{steps.length ? "" : " · its own code logs no steps, so only the brain shows the result"}</span>
+          <AgentMap m={map} />
+        </div>
+      )}
 
       <div className="grid2">
         <div className="card" style={{ gap: 12 }}>

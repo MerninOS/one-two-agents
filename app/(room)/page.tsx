@@ -3,15 +3,17 @@ import { SEEN_COOKIE, parseSeen } from "@/dashboard/seen";
 import Link from "next/link";
 import { chicagoDate } from "@/core/time";
 import { BUILT, BY_ID, PLANNED } from "@/dashboard/crew";
-import { CONNECTIONS, isSetUp, reachOf } from "@/dashboard/connections";
+import { CONNECTIONS, isSetUp } from "@/dashboard/connections";
 import { getFloor, getMemoryMeters, getPipeline, leadsForRun } from "@/dashboard/data";
-import { dow, hm, longDay, m2, m4, num, shortHm, when } from "@/dashboard/format";
+import { dow, dur, hm, longDay, m2, m4, num, shortHm, when } from "@/dashboard/format";
 import { PRI_COLOR, needs } from "@/dashboard/needs";
 import { firingOn, schedWords, weekFrom } from "@/dashboard/schedule";
 import { RUN_LOOK, STATE_LOOK, stateOf } from "@/dashboard/status";
 import { Icon } from "@/dashboard/components/Icon";
-import { RunCanvas } from "@/dashboard/components/RunCanvas";
-import { Avatar, Pill } from "@/dashboard/components/ui";
+import { AgentMap } from "@/dashboard/components/AgentMap";
+import { Avatar, Pill, Summary } from "@/dashboard/components/ui";
+import { mapOf, mapRunOf } from "@/dashboard/agentMap";
+import { builderMenu, mapFor, mapSteps } from "@/dashboard/builder";
 
 export default async function MissionControl() {
   const f = await getFloor();
@@ -28,7 +30,12 @@ export default async function MissionControl() {
 
   const latest = f.runs.find((r) => r.status !== "skipped" && BY_ID[r.agent_id]?.built) ?? null;
   const floorAgent = latest ? BY_ID[latest.agent_id] : BY_ID.wholesale_hunter;
-  const leads = latest?.agent_id === "wholesale_hunter" ? await leadsForRun(latest.id) : null;
+  const [leads, mf, steps] = await Promise.all([
+    latest?.agent_id === "wholesale_hunter" ? leadsForRun(latest.id) : null,
+    mapFor(floorAgent.id),
+    latest ? mapSteps(latest.id) : [],
+  ]);
+  const floorMap = mf && mapOf({ agentId: floorAgent.id, spec: mf.spec, menu: builderMenu(), schedule: null, chain: null, usedBy: mf.usedBy, edit: null, run: latest && mapRunOf(latest, steps) });
 
   const states = BUILT.map((a) => ({ a, st: stateOf(a, f.agents[a.id], f.runs, f.spentToday[a.id] ?? 0) }));
   const off = states.filter((s) => s.st === "paused").map((s) => s.a.name);
@@ -72,7 +79,14 @@ export default async function MissionControl() {
           {latest && <Pill look={RUN_LOOK[latest.status]} />}
           {latest && <Link href={`/runs/${latest.id}`} className="btn outline" style={{ height: 38, fontSize: 13.5 }}>Replay run<Icon name="history" size={15} /></Link>}
         </div>
-        <RunCanvas a={floorAgent} run={latest} leads={leads} reach={reachOf(floorAgent.id, f.grants)} />
+        {floorMap ? (
+          <AgentMap m={floorMap} foot={latest && (
+            <div className="am-foot">
+              <span style={{ flex: "1 1 320px", minWidth: 0 }}><Summary text={(latest.error ?? latest.summary ?? (latest.status === "running" ? "Working now…" : "No summary.")).slice(0, 320)} /></span>
+              <span className="muted">{latest.status === "running" ? "Working now" : `${latest.status === "failed" ? "Failed after" : "Done in"} ${dur(latest.started_at, latest.ended_at)} · ${m4(latest.cost_usd)}`}{leads != null ? ` · ${leads} new leads` : ""}</span>
+            </div>
+          )} />
+        ) : <span className="sub" style={{ padding: "0 8px 8px" }}>{floorAgent.name} has no saved setup yet, so there is no map to draw.</span>}
       </div>
 
       <div className="home-grid">

@@ -29,7 +29,6 @@ a:hover { text-decoration: underline; }
 button, input, select, textarea { font: inherit; color: inherit; }
 button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible, a:focus-visible { outline: 2px solid var(--acc); outline-offset: 2px; }
 h1, h2, h3, p { margin: 0; }
-@keyframes acrPulse { 0%, 100% { box-shadow: 0 0 0 0 rgba(242, 136, 75, .4) } 50% { box-shadow: 0 0 0 8px rgba(242, 136, 75, 0) } }
 
 /* frame */
 .page { min-height: 100vh; padding: 16px; }
@@ -149,14 +148,8 @@ h1, h2, h3, p { margin: 0; }
 
 /* canvas */
 .canvas { overflow-x: auto; border-radius: 20px; border: 1px solid var(--bd); background-color: var(--canvas); background-image: radial-gradient(var(--dots) 1.2px, transparent 1.3px); background-size: 18px 18px; }
-.canvas-inner { position: relative; width: 1064px; height: 360px; margin: 0 auto; }
-.node { position: absolute; background: var(--card); border: 1px solid var(--bd); border-radius: 18px; box-shadow: var(--sh); padding: 12px 14px; display: flex; flex-direction: column; gap: 8px; transition: opacity .5s; font-size: 12px; }
 .node-h { display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 600; }
 .node-ic { width: 26px; height: 26px; border-radius: 999px; background: var(--soft); display: grid; place-items: center; flex: none; }
-.node-line { display: flex; align-items: center; gap: 7px; }
-.node.out { background: var(--dark); color: #F4F4F6; border-color: var(--dark2); border-radius: 20px; padding: 16px; box-shadow: 0 14px 34px rgba(17, 17, 26, .18); }
-.progress { height: 8px; border-radius: 999px; background: #2A2A30; overflow: hidden; }
-.progress > div { height: 100%; border-radius: 999px; background: linear-gradient(90deg, #F5D35C, #F2884B); }
 
 /* agent canvas (node graph): Replay and Edit */
 .flow-wide { height: 400px; overflow: hidden; }
@@ -262,10 +255,6 @@ h1, h2, h3, p { margin: 0; }
   .flow-stack .fnode { height: auto; min-height: 96px; }
   .flow-stack .fnode-line { white-space: normal; }
   .canvas { overflow: visible; }
-  .canvas-inner { width: auto; height: auto; display: flex; flex-direction: column; gap: 20px; padding: 16px; }
-  .canvas-inner > svg { display: none; }
-  .canvas-inner .node { position: relative; left: auto !important; top: auto !important; width: auto !important; height: auto !important; }
-  .canvas-inner .node + .node::before { content: ""; position: absolute; left: 28px; top: -21px; height: 20px; border-left: 1.6px dashed var(--mut2); }
 
   /* agent profile */
   .hero { grid-template-columns: minmax(0, 1fr) !important; padding: 18px !important; gap: 18px !important; }
@@ -386,12 +375,9 @@ h1, h2, h3, p { margin: 0; }
 .bf-always details { flex-basis: 100%; }
 .bf-always summary { cursor: pointer; color: #8A8A93; font-size: 12px; }
 .bf-rail { display: flex; flex-direction: column; padding-top: 6px; position: sticky; top: 16px; min-width: 0; }
-.bf-rail.still { position: static; padding-top: 0; }
 .bf-rail-row { all: unset; display: flex; gap: 12px; align-items: flex-start; cursor: pointer; color: var(--ink); min-width: 0; }
-div.bf-rail-row { cursor: default; }
 .bf-rail-row:hover { text-decoration: none; }
 .bf-rail-row:hover b { text-decoration: underline; }
-div.bf-rail-row:hover b { text-decoration: none; }
 .bf-rail-row.later { opacity: .45; }
 .bf-node { display: flex; flex-direction: column; align-items: center; flex: none; align-self: stretch; }
 .bf-dot { width: 28px; height: 28px; border-radius: 999px; display: grid; place-items: center; font-size: 12px; font-weight: 700; box-sizing: border-box; flex: none; }
@@ -421,4 +407,56 @@ div.bf-rail-row:hover b { text-decoration: none; }
   .bf-card, .bf-card.back, .bf-panel, .bf-check { animation: bfFade .2s ease-out both; }
   .bf-pop, .bf-dot.now { animation: none; }
   .bf-seg > i, .bf-tile, .bf-preset, .bf-chip { transition: none; }
+}
+
+/* The agent map (dashboard/components/AgentMap.tsx, builder flow slice 3) */
+.am { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+.am-scroll { overflow-x: auto; border-radius: 20px; border: 1px solid var(--bd); background-color: var(--canvas); background-image: radial-gradient(var(--dots) 1.2px, transparent 1.3px); background-size: 18px 18px; }
+.am-inner { position: relative; min-width: 960px; }
+.am-lines { position: absolute; inset: 0; pointer-events: none; }
+.am-line { fill: none; stroke: var(--mut2); stroke-width: 1.8; stroke-linecap: round; vector-effect: non-scaling-stroke; }
+.am-line.done { stroke: var(--mint); }
+.am-line.fail { stroke: var(--red); }
+.am-line.dim { stroke-dasharray: 3 7; opacity: .7; }
+.am-line.live { stroke: var(--acc); stroke-dasharray: 4 8; animation: amFlow 1s linear infinite; }
+.am-col { position: absolute; top: 0; }
+.am-col-t { position: absolute; top: 14px; left: 2px; font-size: 11px; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; color: var(--mut); }
+.am-node { position: absolute; left: 0; right: 0; display: flex; flex-direction: column; gap: 3px; padding: 11px 13px; border-radius: 16px; background: var(--card); border: 1px solid var(--bd); box-shadow: var(--sh); color: var(--ink); overflow: hidden; }
+a.am-node:hover { text-decoration: none; border-color: var(--mut2); }
+a.am-node:hover .am-t { text-decoration: underline; }
+.am-k { font-size: 10.5px; font-weight: 700; letter-spacing: .07em; text-transform: uppercase; color: var(--mut); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; padding-right: 16px; }
+.am-t { font-size: 13.5px; font-weight: 650; line-height: 1.3; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; overflow-wrap: anywhere; }
+.am-s { font-size: 12px; line-height: 1.4; color: var(--ink2); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; overflow-wrap: anywhere; }
+.am-node.look-brain { background: var(--acc-soft); border-color: transparent; }
+.am-node.look-brain .am-k { color: var(--acc-ink); }
+.am-node.look-brain .am-s { -webkit-line-clamp: 3; }
+.am-f { margin-top: auto; font-size: 12px; font-weight: 650; color: var(--acc-ink); }
+.am-node.look-do .am-k { color: var(--acc-ink); }
+.am-node.look-out .am-k { color: var(--mint-ink); }
+.am-node.look-dashed { background: transparent; border: 1.5px dashed var(--mut2); box-shadow: none; }
+.am-node.st-unused { opacity: .5; }
+.am-node.st-failed { border-color: var(--red); }
+.am-node.st-live { box-shadow: 0 0 0 2px var(--acc); animation: amGlow 1.6s ease-in-out infinite; }
+.am-badge { position: absolute; top: 8px; right: 8px; width: 18px; height: 18px; border-radius: 999px; display: grid; place-items: center; font-size: 10.5px; font-weight: 800; color: #fff; }
+.am-badge.ok { background: var(--mint-ink); }
+.am-badge.fail { background: var(--red); }
+.am-foot { display: flex; gap: 12px; flex-wrap: wrap; align-items: center; padding: 12px 16px; border-radius: 16px; background: var(--soft); font-size: 13px; color: var(--ink2); line-height: 1.5; }
+.am-foot b { font-size: 11px; letter-spacing: .1em; text-transform: uppercase; color: var(--mint-ink); }
+@keyframes amFlow { to { stroke-dashoffset: -24; } }
+@keyframes amGlow { 0%, 100% { box-shadow: 0 0 0 2px var(--acc); } 50% { box-shadow: 0 0 0 7px rgba(242, 136, 75, .15); } }
+@keyframes amNode { from { opacity: 0; transform: translateY(10px) scale(.94); } to { opacity: 1; transform: none; } }
+@keyframes amDraw { from { stroke-dashoffset: 600; } to { stroke-dashoffset: 0; } }
+.am-draw .am-node { animation: amNode .5s cubic-bezier(.2, .8, .2, 1) both; animation-delay: calc(var(--i) * 260ms + var(--k) * 70ms); }
+.am-draw .am-line:not(.live):not(.dim) { stroke-dasharray: 600; animation: amDraw .7s ease-out both; animation-delay: calc(var(--i) * 260ms + 180ms); }
+@media (prefers-reduced-motion: reduce) {
+  .am-draw .am-node, .am-draw .am-line:not(.live):not(.dim) { animation: none; stroke-dasharray: none; }
+  .am-line.live, .am-node.st-live { animation: none; }
+}
+@media (max-width: 760px) {
+  .am-scroll { overflow: visible; }
+  .am-inner { min-width: 0; height: auto !important; display: flex; flex-direction: column; gap: 18px; padding: 16px; }
+  .am-lines { display: none; }
+  .am-col { position: static; width: auto !important; height: auto !important; display: flex; flex-direction: column; gap: 8px; }
+  .am-col-t { position: static; }
+  .am-node { position: relative; top: auto !important; height: auto !important; }
 }

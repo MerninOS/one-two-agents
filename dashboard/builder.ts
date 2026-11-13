@@ -95,6 +95,27 @@ export async function listOthers(): Promise<BuilderData["others"]> {
   }).sort((x, y) => x.name.localeCompare(y.name));
 }
 
+type DefRow = { agent_id: unknown; spec: unknown };
+/** Agents whose saved spec reads this one's result (agent_output with it picked), for the map's Used by column. */
+const usedByOf = (agentId: string, defs: DefRow[]) => defs.filter((d) => d.agent_id !== agentId).flatMap((d) => {
+  const { spec } = readSpec(d.spec, d.agent_id as string);
+  return spec.tools.includes("agent_output") && spec.readsFrom.some((r) => r.agentId === agentId) ? [{ id: d.agent_id as string, name: spec.name }] : [];
+}).sort((x, y) => x.name.localeCompare(y.name));
+
+/** What the agent map needs from the database: the active spec and which agents use its result. Null without a saved spec. */
+export async function mapFor(agentId: string): Promise<{ spec: AgentSpec; usedBy: { id: string; name: string }[] } | null> {
+  const { data, error } = await db().from("agent_defs").select("agent_id, spec").eq("active", true);
+  if (error) return null;
+  const mine = (data ?? []).find((d) => d.agent_id === agentId);
+  return mine ? { spec: readSpec(mine.spec, agentId).spec, usedBy: usedByOf(agentId, data ?? []) } : null;
+}
+
+/** One run's tool calls, for laying the run over the map. Empty for runs of an agent's own code. */
+export async function mapSteps(runId: string): Promise<{ kind: string; tool: string | null; ok: boolean; ms: number }[]> {
+  const { data, error } = await db().from("run_steps").select("kind, tool, ok, ms").eq("run_id", runId).order("idx");
+  return error ? [] : (data ?? []).map((s) => ({ kind: s.kind, tool: s.tool, ok: !!s.ok, ms: Number(s.ms ?? 0) }));
+}
+
 async function standards(agentId: string): Promise<Standard[]> {
   const { data, error } = await db().from("agent_memory").select("id, grp, text, notion_page_id, agent_id").or(`agent_id.eq.${agentId},agent_id.is.null`).eq("state", "kept").in("grp", ["standing_order", "crew"]).order("created_at", { ascending: true }).limit(100);
   if (error) return [];
@@ -117,6 +138,7 @@ export interface BuilderData {
   versions: (SpecVersion & { active: boolean; createdBy: string })[];
   standards: Standard[]; runs: BuildRun[]; spentToday: number;
   others: { id: string; name: string; outputName: string; hasOutput: boolean }[];
+  usedBy: { id: string; name: string }[];
   lastOutput: { name: string; summary: string; numbers: { label: string; value: number; tool: string }[]; at: string; finished: boolean } | null;
   playbooks: PlaybookView | null;
   /** Morgan, Avery, Rowan and Quinn (slices 6 and 7): whether runs use their own code or the runner. Null for agents built here. */
@@ -160,6 +182,7 @@ export async function getBuilder(agentId: string): Promise<BuilderData | null> {
       const sp = (d.spec ?? {}) as Partial<AgentSpec>;
       return { id: d.agent_id as string, name: sp.name || d.agent_id, outputName: sp.outputName || "result", hasOutput: outRows.some((o) => o.agent_id === d.agent_id && o.finished) };
     }).sort((x, y) => x.name.localeCompare(y.name)),
+    usedBy: usedByOf(agentId, defs.data ?? []),
     playbooks, engine,
     lastOutput: mine ? { name: mine.name, summary: mine.summary, numbers: (Array.isArray(mine.numbers) ? mine.numbers : []) as { label: string; value: number; tool: string }[], at: when(mine.created_at), finished: mine.finished } : null,
   };

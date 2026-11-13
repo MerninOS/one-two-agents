@@ -60,10 +60,26 @@ Flow feel: a card per step that slides in, a 6-segment progress bar that fills a
   4. **Brain and budget:** Quick, Balanced, Deep (the cheapest, middle and priciest Claude model with low, medium, high effort), each with its estimate; the cost cap per run; the daily budget (saved straight away); step limit, exact model and effort under Advanced. Budgets stay per agent so they can later sit under a department budget.
 - Save is the last step. An existing agent saves the next version (the note is optional: it defaults to the steps that changed), with the same confirm and Controls rule as before when it loosens anything. A new agent is created off duty as v1 (`createBuilt` in `dashboard/actions.ts`, checked by `readSpec` like any save).
 - The draft is kept on this device (localStorage) until it is saved or discarded; coming back offers "Pick it up" or "Discard it". Nothing reaches the agent until Save.
-- `/build/[id]` without `?edit` shows the agent so far (the same rail, each step links into the flow), its latest result, then what slice 4 replaces: Try it for now (tool check, Preview, Deliver), Compare and Switch, the playbook, versions and latest runs.
+- `/build/[id]` without `?edit` shows the agent so far (the same rail, each step links into the flow; the agent map since slice 3), its latest result, then what slice 4 replaces: Try it for now (tool check, Preview, Deliver), Compare and Switch, the playbook, versions and latest runs.
 
 **What it replaces.** The builder page's eight sections and New agent form (`Builder`, `NewAgentForm`, `createAgent`). The agent profile's Setup tab and everything only it used: `AgentCanvas.tsx`, `dashboard/canvas.ts`, `setupEditor.tsx`, `ThinkingEditor.tsx`, `ReadsWritesEditor.tsx`, `GuardrailsEditor.tsx`, the setup editor actions (`previewSetup`, `saveSetupVersion`, `rollBackSetup`, `findNotionTargets`), `getSetup`, `getSetupEditor`, `runSetupVersion`, `getMemoryMeter`, `dashboard/diff.ts`, the setup store's edit functions in `core/setup.ts` and Avery's Setup preview (`previewBrief`). The profile gets "Edit in the builder" instead. The money and email caps, which were only editable in the Guardrails box, are now edited on Settings (`CapForm`, same rules: lower any time, raise with a confirm and Controls on, never past the limit in code). Dead CSS went with them.
 
 **Note.** Morgan, Avery, Rowan and Quinn keep running their own code with their last saved setup (`agent_setup`) until each goes live on the runner; their runner spec is what the flow edits. The setup store itself is retired in slice 6.
+
+**Checks.** `npm run check`, `npm run build`. No migration.
+
+## Slice 3: The agent map
+
+**Why.** What an agent is was shown three different ways: the "so far" rail on its builder page, the Live floor canvas on Today and the canvas on each run replay (RunCanvas). RunCanvas was drawn by hand, the same six boxes for every agent with special cases by agent id, so it couldn't show what a built agent really reads or hands you.
+
+**What it is.**
+
+- One map, drawn from the saved spec (`dashboard/agentMap.ts` builds it, `dashboard/components/AgentMap.tsx` draws it): When (schedule and chain, or the run's trigger), Reads (memory, then each read and calculate tool by its connection, and each agent it reads from), Thinks (model, effort, the job, the cost estimate and cap), Hands you (each report, each action marked "asks you first", and the saved output by name) and Used by (agents whose spec reads this one's result; a dashed "Nobody yet" box when none). Nothing is drawn per agent by hand.
+- The columns are a list (`MAP_COLS`), so the departments epic adds "Reports to" (and a head's team outputs under Reads) without reworking it. Used by is already drawn from data, which is how a head reading its team will show.
+- On `/build/[id]` it replaces the "so far" rail: every box links to the step that changes it. Right after a save (`?saved`) the page says "Saved. Here's ..." and the map builds itself box by box, then lines; "reduce motion" shows it at once.
+- On Today (Live floor) and on run replay it replaces RunCanvas, with the run laid over it: runs on the runner light each tool by its calls in `run_steps` (worked, failed, not used, time taken); runs of an agent's own code log no steps, so only the brain shows how the run went (tokens, cost, working or failed). Today keeps the run's summary, time, cost and Rowan's new leads under the map.
+- Laid out on a 1220-wide grid and stretched to the space there is, with a minimum width (it scrolls inside its box below that). Phones get the columns stacked, without lines.
+
+**What it replaces.** `RunCanvas.tsx`, the read-only builder rail with edit links (`SoFar` is now private to the flow), and their CSS (`.canvas-inner`, `.node`, `.node-line`, `.node.out`, `.progress`, `acrPulse`, `.bf-rail.still`).
 
 **Checks.** `npm run check`, `npm run build`. No migration.
