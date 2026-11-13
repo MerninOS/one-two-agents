@@ -28,7 +28,7 @@ export default async function RoomLayout({ children }: { children: React.ReactNo
     { label: "Floor", items: [{ href: "/", match: "/", icon: "layout-dashboard", label: "Mission control" }, { href: "/runs/latest", match: "/runs/*", icon: "history", label: "Run replay" }, { href: "/runs", match: "/runs", icon: "list", label: "Run log" }] },
     { label: "Crew", items: [{ href: `/agents/${firstBuilt}`, match: "/agents/*", tab: "!memory", icon: "users", label: "Crew profiles", count: `${BUILT.length} + ${PLANNED.length}` }, { href: `/agents/${firstBuilt}?tab=memory`, match: "/agents/*", tab: "memory", icon: "brain", label: "Memory" }, { href: "/crew", match: "/crew", icon: "git-pull-request", label: "Crew canvas" }] },
     { label: "Trust", items: [{ href: "/access", match: "/access", icon: "shield-check", label: "Access" }, { href: "/approvals", match: "/approvals", icon: "inbox", label: "Approvals", count: floor.approvalsPending ? String(floor.approvalsPending) : undefined }] },
-    { label: "System", items: [{ href: "/integrations", match: "/integrations", icon: "plug", label: "Integrations", note: notSetUp ? `${notSetUp} not set up` : undefined, noteColor: "var(--red-ink)" }] },
+    { label: "System", items: [{ href: "/integrations", match: "/integrations", icon: "plug", label: "Integrations", note: notSetUp ? `${notSetUp} not set up` : undefined, noteColor: "var(--red-ink)" }, { href: "/lab", match: "/lab", icon: "flask-conical", label: "Runner test" }] },
   ];
 
   return (
