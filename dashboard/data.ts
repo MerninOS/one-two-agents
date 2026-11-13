@@ -7,17 +7,10 @@ import { redirect } from "next/navigation";
 import { db } from "@/core/db";
 import { env } from "@/core/env";
 import { DEFAULT_BUDGET, MEMORY_AGENTS, loadMemory, memoryView, proposedLessons, readPages, type MemoryEvent, type MemoryLoad, type MemoryRow, type PageLoad } from "@/core/memory";
-import { MAX_INSTRUCTIONS, listVersions, liveSections, loosening, resolveSetup, setupOrDefaults, toDraft, type AgentMenu, type Setup, type SetupVersion } from "@/core/setup";
-import { TOOLS } from "@/core/gateway/policy";
-import { hasGateway } from "@/integrations/gateway";
-import { modelDef } from "@/integrations/models";
-import { MENUS } from "@/agents/menus";
 import { AGENTS } from "@/agents/registry";
 import { APPROVAL_LABELS, APPROVAL_TOOLS, BUTTON_ONLY, MAX_CHAINS, MAX_STEPS, METRICS, TAKES_HANDOFF, listFlowVersions, loadFlow, nextFirings } from "@/core/flow";
 import { BUILT, BY_ID, type IntegrationId } from "./crew";
 import type { CrewAgent, CrewCanvasData } from "./components/CrewCanvas";
-import type { EditorVersion, SetupEditorData } from "./components/setupEditor";
-import { lineDiff, trimDiff } from "./diff";
 import { SESSION_COOKIE, controlsOn, validSessionToken } from "./session";
 
 export async function requireSession() {
@@ -111,7 +104,7 @@ export const getFloor = cache(async (): Promise<Floor> => {
   if (a.error || r.error) return { ...empty, problem: `Supabase: ${(a.error ?? r.error)?.message}` };
   const agents = Object.fromEntries((a.data ?? []).map((x) => [x.id, { ...x, daily_budget_usd: Number(x.daily_budget_usd) } as AgentRow]));
   const all = (r.data ?? []).map(toRun);
-  // a Preview from the Setup tab is not a run of the agent: it stays out of the floor, the run log
+  // a Preview is not a run of the agent: it stays out of the floor, the run log
   // and Replay, but its cost counts toward today's spend, the same as withRun's budget check
   const runs = all.filter((x) => x.trigger !== "preview");
   const d0 = budgetDayStart(new Date(now)).getTime();
@@ -265,134 +258,6 @@ export async function getMemory(agentId: string): Promise<{ tab: MemoryTab | nul
     const msg = e instanceof Error ? e.message : String(e);
     return { tab: null, problem: /agent_memory|memory_events|schema cache|does not exist/i.test(msg) ? "The memory tables aren’t in Supabase yet. Apply the agent memory migration (see the PR) and this tab fills in." : msg };
   }
-}
-
-// ---- Setup (docs/agent-setup.md)
-
-/** The agent's active setup over its menu, for the canvas. Null for an agent that has no menu yet. */
-export async function getSetup(agentId: string): Promise<{ setup: Setup; problem?: string } | null> {
-  await requireSession();
-  const menu = MENUS[agentId];
-  if (!menu) return null;
-  if (!health().supabase) return { ...(await setupOrDefaults(menu)), problem: "Supabase isn’t set up" };
-  const got = await setupOrDefaults(menu);
-  return got.problem && /agent_setup|schema cache|does not exist/i.test(got.problem) ? { setup: got.setup, problem: "the agent_setup table isn’t in Supabase yet" } : got;
-}
-
-/** Which setup version a run used. Null for a run on built-in values, or until the column exists. */
-export async function runSetupVersion(runId: string): Promise<number | null> {
-  await requireSession();
-  if (!health().supabase) return null;
-  const { data, error } = await db().from("agent_runs").select("setup_version").eq("id", runId).maybeSingle();
-  return error ? null : (data?.setup_version as number | null) ?? null;
-}
-
-/** What one agent's next run would load from memory, for the canvas. Null when it loads none or the store can't be read. */
-export async function getMemoryMeter(agentId: string): Promise<{ budget: number; lines: number } | null> {
-  await requireSession();
-  if (!MEMORY_AGENTS.has(agentId) || !health().supabase) return null;
-  try { const m = await loadMemory(agentId, Date.now(), { pages: false }); return { budget: m.budget, lines: m.rows.length }; }
-  catch { return null; }
-}
-
-/**
- * Everything the Thinking editor shows (dashboard/components/ThinkingEditor.tsx): the menu's
- * choices with prices, the active values, the safety block, the version list with what changed,
- * and the average tokens of the last 10 real runs that called a model. Null for an agent with no menu.
- */
-export async function getSetupEditor(agentId: string, runs: Run[], health: Record<IntegrationId, boolean>, got: { setup: Setup; problem?: string } | null): Promise<SetupEditorData | null> {
-  await requireSession();
-  const menu = MENUS[agentId];
-  if (!menu || !got) return null;
-  const step = menu.steps[0] as AgentMenu["steps"][number] | undefined;
-  const s = got.setup;
-  const models = (ids: readonly string[]) => ids.map((id) => { const m = modelDef(id); return { id, label: m?.label ?? id, provider: m?.provider ?? "Unknown", gateway: m?.route === "gateway", in: m?.in ?? null, out: m?.out ?? null }; });
-  const optLabel = (k: string, id: string) => menu.choices?.[k]?.options.find((o) => o.id === id)?.label ?? id;
-  let versions: SetupVersion[] = [], blocked = got.problem ? `Saving is off: ${got.problem}.` : undefined;
-  if (!blocked) {
-    try { versions = await listVersions(menu); }
-    catch (e) { blocked = `Saving is off: the version list can’t be read (${(e instanceof Error ? e.message : String(e)).slice(0, 100)}).`; }
-  }
-  const builtIn = (v: Setup) => v.instructions.trim() === menu.instructions.trim();
-  const view = versions.map((v, k): EditorVersion => {
-    const prev = versions[k + 1]?.setup ?? resolveSetup(menu, null);
-    const changes = [
-      ...(v.setup.model !== prev.model ? [`model ${prev.model} to ${v.setup.model}`] : []),
-      ...(v.setup.effort !== prev.effort ? [`effort ${prev.effort} to ${v.setup.effort}`] : []),
-      ...(v.setup.fallback !== prev.fallback ? [`fallback ${prev.fallback ?? "none"} to ${v.setup.fallback ?? "none"}`] : []),
-      ...(v.setup.instructions !== prev.instructions ? [builtIn(v.setup) ? "back to the built-in instructions" : "instructions"] : []),
-      ...menu.steps.slice(1).filter((d) => JSON.stringify(v.setup.more[d.id]) !== JSON.stringify(prev.more[d.id])).map((d) => `${d.label} ${prev.more[d.id]?.model} ${prev.more[d.id]?.effort} to ${v.setup.more[d.id]?.model} ${v.setup.more[d.id]?.effort}`),
-      ...Object.entries(menu.choices ?? {}).filter(([k]) => JSON.stringify(v.setup.choices[k]) !== JSON.stringify(prev.choices[k])).map(([k, d]) => `${d.label}: ${(v.setup.choices[k] ?? []).map((id) => optLabel(k, id)).join(", ")}`),
-      ...Object.keys(menu.numbers).filter((n) => v.setup.numbers[n] !== prev.numbers[n]).map((n) => `${menu.numbers[n].label} ${prev.numbers[n]} to ${v.setup.numbers[n]}`),
-      ...partChanges(menu, prev, v.setup),
-    ];
-    return {
-      version: v.version, active: v.active, note: v.note, by: v.createdBy, at: v.createdAt,
-      model: v.setup.model, effort: v.setup.effort, fallback: v.setup.fallback,
-      instructionsChars: v.setup.instructions.length, builtInText: builtIn(v.setup),
-      parts: partWords(menu, v.setup),
-      looser: v.active ? [] : loosening(menu, s, v.setup, (m) => modelDef(m)?.out ?? Infinity),
-      changes: k === versions.length - 1 && !changes.length ? ["first version, same values as the built-in setup"] : changes,
-      diff: v.setup.instructions !== prev.instructions ? trimDiff(lineDiff(prev.instructions, v.setup.instructions)) : null,
-    };
-  });
-  const used = runs.filter((r) => r.agent_id === agentId && (r.trigger === "cron" || r.trigger === "manual") && r.tokens_in + r.tokens_out > 0).slice(0, 10);
-  return {
-    agentId, agentName: BY_ID[agentId]?.name ?? agentId, stepLabel: step?.label ?? "Computed in code", needs: step?.needs ?? "No model",
-    models: models(step?.models ?? []), fallbackOff: !step || !!step.fallbackOff,
-    more: menu.steps.slice(1).map((d) => ({ id: d.id, label: d.label, needs: d.needs, models: models(d.models) })),
-    instructionsLocked: !!menu.instructionsLocked || !step,
-    // Avery's preview writes today's real brief with one model call; the others get a free dry run with the draft
-    previewKind: AGENTS[agentId]?.preview ? "model" : "dry",
-    gatewayReady: hasGateway(),
-    active: { version: s.version, ...toDraft(s) },
-    builtIn: menu.instructions, safety: menu.safety, maxChars: MAX_INSTRUCTIONS,
-    usage: used.length ? { runs: used.length, avgIn: used.reduce((a, r) => a + r.tokens_in, 0) / used.length, avgOut: used.reduce((a, r) => a + r.tokens_out, 0) / used.length } : null,
-    controlsOn: controlsOn(), blocked, versions: view,
-    reads: menu.reads.map((r) => ({ id: r.id, label: r.label, detail: r.detail, locked: !!r.locked, connected: (health[r.integration as IntegrationId] ?? false) && (r.env ?? []).every((k) => !!process.env[k]?.trim()) })),
-    numbers: Object.entries(menu.numbers).map(([key, n]) => ({ key, label: n.label, unit: n.unit, min: n.min, max: n.max, default: n.default, box: n.box })),
-    choices: Object.entries(menu.choices ?? {}).map(([key, c]) => ({ key, label: c.label, detail: c.detail, box: c.box, options: c.options.map((o) => ({ id: o.id, label: o.label })), default: [...c.default], min: c.min, max: c.max })),
-    outputs: menu.outputs.map((o) => { const missing = (o.env ?? []).filter((k) => !process.env[k]?.trim()); return { id: o.id, label: o.label, detail: o.detail, locked: !!o.locked, ready: o.locked ? (health[o.integration as IntegrationId] ?? false) : !missing.length, missing }; }),
-    sections: menu.sections.map((x) => ({ id: x.id, label: x.label, detail: x.detail, locked: !!x.locked, needs: (x.needs ?? []).map((id) => ({ id, label: menu.reads.find((r) => r.id === id)?.label ?? id })) })),
-    notion: menu.notion ? {
-      tokenSet: !!env.notionToken, pageOnly: !!menu.notion.pageOnly,
-      fallback: notionFallback(menu.notion),
-    } : null,
-    actions: Object.entries(TOOLS).filter(([, t]) => (t.agents as readonly string[]).includes(agentId)).map(([tool, t]) => ({ tool, tier: t.tier, note: "Every action waits for your approval card. Promotion needs 28 of the last 30 approved unedited." })),
-  };
-}
-
-/** What the Notion env vars point at when the setup picks no target, in words. */
-function notionFallback(n: NonNullable<AgentMenu["notion"]>): string | null {
-  const set = (k?: string) => !!(k && process.env[k]?.trim());
-  if (set(n.envDb)) return `The database in ${n.envDb} (Vercel), until you pick one here`;
-  if (set(n.envPage)) return `A page per ${n.pageOnly ? "run" : "day"} under ${n.envPage} (Vercel), until you pick one here`;
-  // core/env.ts falls back to the brief's parent page for Rowan's and Quinn's pages
-  if (n.pageOnly && env.notionBriefParent) return "A page per run under NOTION_BRIEF_PARENT_ID (Vercel), until you pick one here";
-  return null;
-}
-
-/** Reads and writes changes between two versions, in words. */
-function partChanges(menu: AgentMenu, a: Setup, b: Setup): string[] {
-  const label = (list: readonly { id: string; label: string }[], id: string) => list.find((x) => x.id === id)?.label ?? id;
-  return [
-    ...menu.reads.filter((r) => a.readsOff.includes(r.id) !== b.readsOff.includes(r.id)).map((r) => `${r.label} ${b.readsOff.includes(r.id) ? "off" : "on"}`),
-    ...menu.outputs.filter((o) => a.outputsOff.includes(o.id) !== b.outputsOff.includes(o.id)).map((o) => `${o.label} ${b.outputsOff.includes(o.id) ? "off" : "on"}`),
-    ...(JSON.stringify(a.sections) !== JSON.stringify(b.sections) ? [`sections ${b.sections.map((id) => label(menu.sections, id)).join(", ")}`] : []),
-    ...(a.notion?.id !== b.notion?.id ? [`Notion copy to ${b.notion ? `“${b.notion.title}”` : "the Vercel setting"}`] : []),
-  ];
-}
-
-/** A version's reads and writes in a few words, for the version list. */
-function partWords(menu: AgentMenu, s: Setup): string {
-  const off = menu.reads.filter((r) => s.readsOff.includes(r.id)).map((r) => r.label);
-  const outs = menu.outputs.filter((o) => !s.outputsOff.includes(o.id)).map((o) => o.label);
-  return [
-    off.length ? `not reading ${off.join(", ")}` : "every source on",
-    `to ${outs.join(" and ") || "nowhere"}${s.notion && !s.outputsOff.includes("notion") ? ` (“${s.notion.title}”)` : ""}`,
-    ...(menu.sections.length ? [`${liveSections(menu, s).length} sections`] : []),
-    ...Object.entries(menu.numbers).filter(([, d]) => d.box === "writes").map(([k, d]) => `${s.numbers[k]} ${d.unit}`),
-  ].join(" · ");
 }
 
 // ---- Crew canvas (docs/agent-setup.md, slice 5)

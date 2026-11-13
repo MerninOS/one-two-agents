@@ -4,11 +4,11 @@ import "server-only";
 // crew flow (core/flow.ts), set on the Crew canvas, not vercel.json.
 import type { MemoryLoad } from "@/core/memory";
 import type { RunResult } from "@/core/runs";
-import type { Setup, SetupPreview } from "@/core/setup";
+import type { Setup } from "@/core/setup";
 import type { Handoff } from "@/core/chain";
 import { runCfoSnapshot } from "./cfo";
 import { runBookkeeper } from "./bookkeeper";
-import { previewBrief, runBrief } from "./chief-of-staff";
+import { runBrief } from "./chief-of-staff";
 import { runHunter } from "./wholesale-hunter";
 import { onRunner, runBuilt } from "@/core/built";
 
@@ -36,13 +36,11 @@ export interface AgentDef {
   job: (opts: JobOpts) => Promise<RunResult>;
   /** Only runs when called with ?trigger=manual or from a chain Zak saved; anything else is skipped (see the route). */
   manualOnly?: boolean;
-  /** Setup tab Preview: the agent's real output for a draft setup, writing and sending nothing. Agents with a menu only. */
-  preview?: (setup: Setup) => Promise<SetupPreview>;
 }
 
 export const AGENTS: Record<string, AgentDef> = {
   cfo: { job: switchable("cfo", ({ dryRun }) => runCfoSnapshot({ dryRun })) },
-  chief_of_staff: { job: switchable("chief_of_staff", ({ dryRun, memory, setup, handoff }) => runBrief({ dryRun, memory, setup, handoff })), preview: previewBrief },
+  chief_of_staff: { job: switchable("chief_of_staff", ({ dryRun, memory, setup, handoff }) => runBrief({ dryRun, memory, setup, handoff })) },
   // ~$1 of Claude credit a run, so it has no schedule and never runs on its own.
   wholesale_hunter: { job: switchable("wholesale_hunter", ({ runId, dryRun, memory, setup }) => runHunter(runId, { dryRun, memory, setup })), manualOnly: true },
   // Manual only until launch (planned daily 6:00 AM CT, after the CFO snapshot). Reads Mercury,

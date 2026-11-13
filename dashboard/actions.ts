@@ -11,11 +11,7 @@ import { withRun } from "@/core/runs";
 import { discardLesson, editMemory, forgetMemory, keepLesson, proposeLesson, teach as teachMemory, type Keep } from "@/core/memory";
 import { applyApproved, decide, loadCaps, queueBookkeeperProposals, retry } from "@/core/gateway";
 import { CAPS, capChange, fmtCap, type CapKey } from "@/core/gateway/policy";
-import { MENUS } from "@/agents/menus";
-import { EFFORTS, MAX_INSTRUCTIONS, fromDraft, listVersions, loadSetup, loosening, notionTarget, rollBack, sameSetup, saveVersion, type AgentMenu, type Setup, type SetupDraft, type SetupPreview } from "@/core/setup";
-import { missingProps, notionPlace, notionSearch } from "@/integrations/notion";
 import { env } from "@/core/env";
-import { priceOf } from "@/integrations/anthropic";
 import { approvalDecided, startStep } from "@/core/chain";
 import { activateFlow, flowLooser, flowProblems, listFlowVersions, loadFlow, saveFlowVersion, type Flow } from "@/core/flow";
 import { ANNOTATE } from "@/core/gateway";
@@ -281,148 +277,6 @@ export async function discardLessonLine(memoryId: string): Promise<ActionResult>
   try { await discardLesson(memoryId); revalidatePath("/", "layout"); return { ok: true, text: "Discarded. The timeline keeps a record of it." }; } catch (e) { return fail(e); }
 }
 
-// ---- Agent setup (docs/agent-setup.md): the Thinking editor on the Setup tab
-
-/** $ per output token; a model without a price counts as the most expensive, so it always needs a confirm. */
-const outPrice = (m: string) => priceOf(m)?.out ?? Infinity;
-
-/** A draft from the browser, checked field by field before it goes anywhere near the menu. */
-function cleanDraft(d: unknown): SetupDraft | null {
-  const x = (d ?? {}) as Record<string, unknown>;
-  if (typeof x.model !== "string" || !EFFORTS.includes(x.effort as Setup["effort"]) || typeof x.instructions !== "string") return null;
-  if (x.fallback !== null && typeof x.fallback !== "string") return null;
-  if (x.instructions.length > MAX_INSTRUCTIONS) return null;
-  const list = (v: unknown) => (Array.isArray(v) && v.length <= 50 && v.every((s) => typeof s === "string") ? (v as string[]) : null);
-  const numbers = x.numbers && typeof x.numbers === "object" && !Array.isArray(x.numbers) ? x.numbers as Record<string, unknown> : null;
-  const readsOff = list(x.readsOff), outputsOff = list(x.outputsOff), sections = list(x.sections);
-  if (!numbers || !Object.values(numbers).every((n) => typeof n === "number") || !readsOff || !outputsOff || !sections) return null;
-  const notion = x.notion == null ? null : notionTarget(x.notion);
-  if (x.notion != null && !notion) return null;
-  const rec = (v: unknown) => (v && typeof v === "object" && !Array.isArray(v) ? v as Record<string, unknown> : v == null ? {} : null);
-  const moreRaw = rec(x.more), choicesRaw = rec(x.choices);
-  if (!moreRaw || !choicesRaw || Object.keys(moreRaw).length > 10 || Object.keys(choicesRaw).length > 10) return null;
-  const more: SetupDraft["more"] = {};
-  for (const [k, v] of Object.entries(moreRaw)) {
-    const c = rec(v);
-    if (!c || typeof c.model !== "string" || !EFFORTS.includes(c.effort as Setup["effort"]) || (c.fallback != null && typeof c.fallback !== "string")) return null;
-    more[k] = { model: c.model, effort: c.effort as Setup["effort"], fallback: (c.fallback as string | null) || null };
-  }
-  const choices: SetupDraft["choices"] = {};
-  for (const [k, v] of Object.entries(choicesRaw)) { const l = list(v); if (!l) return null; choices[k] = l; }
-  return { model: x.model, effort: x.effort as Setup["effort"], fallback: (x.fallback as string | null) || null, instructions: x.instructions, more, numbers: numbers as Record<string, number>, choices, readsOff, outputsOff, sections, notion };
-}
-
-/**
- * A Notion target the draft picks, checked live: the integration must see it, and a database
- * must have every property the agent writes. Null when it is fine (or unchanged).
- */
-async function notionProblem(menu: AgentMenu, now: Setup, next: Setup): Promise<string | null> {
-  if (!next.notion || next.notion.id === now.notion?.id || !menu.notion) return null;
-  try {
-    const got = await notionPlace(next.notion.kind, next.notion.id);
-    const miss = got.kind === "database" ? missingProps(got.props, menu.notion.dbProps) : [];
-    return miss.length ? `“${got.title}” is missing ${miss.join(", ")}, so the row would be rejected.` : null;
-  } catch (e) { return `The Notion integration can’t open that ${next.notion.kind}: ${(e instanceof Error ? e.message : String(e)).slice(0, 120)}`; }
-}
-
-/** The agent's menu and active setup. The table must be readable: nothing is saved over a setup that can't be seen. */
-async function editable(agentId: string) {
-  const menu = MENUS[agentId];
-  if (!menu || !known(agentId)) throw new Error("This agent has no menu yet, so its setup can’t be edited here.");
-  return { menu, now: await loadSetup(menu) };
-}
-
-/**
- * Preview: the agent's real output for a draft, from real facts and memory, with nothing
- * written or sent. One model call, logged as a run with trigger "preview" so its cost counts
- * against today's budget. Allowed while the agent is off duty; needs DASHBOARD_CONTROLS=on.
- */
-export async function previewSetup(agentId: string, draft: unknown): Promise<ActionResult & { preview?: SetupPreview }> {
-  await requireSession();
-  const d = cleanDraft(draft);
-  if (!d) return { ok: false, text: "That draft isn’t complete." };
-  try {
-    const { menu, now } = await editable(agentId);
-    const preview = AGENTS[agentId].preview;
-    const next = fromDraft(menu, now, d);
-    if (next.problems.length) return { ok: false, text: `The draft asks for something the menu doesn’t offer: ${next.problems.join("; ")}.` };
-    // Rowan's and Quinn's real output costs a real run, so their preview is the free dry run with the draft:
-    // real reads, no model, nothing written, not logged (the same as the Dry run button)
-    if (!preview) {
-      const r = await AGENTS[agentId].job({ dryRun: true, setup: next });
-      return { ok: r.status === "ok", text: r.summary.replace(/setup v\d+/, "this draft").replace("built-in setup", "this draft") };
-    }
-    if (!controlsOn()) return { ok: false, text: `${CONTROLS_OFF} A preview makes one real model call.` };
-    let got: SetupPreview | null = null;
-    const res = await withRun(agentId, "preview", async () => {
-      const p = await preview(next);
-      got = p;
-      return { status: "ok", summary: `Preview of an unsaved setup (${next.model}, effort ${next.effort}). Nothing written or sent. Answered by ${p.servedBy}; a real run would send it to ${p.sendsTo}.`, tokensIn: p.tokensIn, tokensOut: p.tokensOut, costUsd: p.costUsd };
-    });
-    revalidatePath("/", "layout");
-    if (!got) return { ok: false, text: res.summary };
-    return { ok: true, text: res.summary, preview: got };
-  } catch (e) { return fail(e); }
-}
-
-/** Saves the draft as a new version and makes it active. Costlier choices need a confirm and DASHBOARD_CONTROLS=on. */
-export async function saveSetupVersion(agentId: string, draft: unknown, note: string, confirmed: boolean): Promise<ActionResult> {
-  await requireSession();
-  const d = cleanDraft(draft);
-  if (!d) return { ok: false, text: "That draft isn’t complete." };
-  const why = note.trim().slice(0, 300);
-  if (!why) return { ok: false, text: "Add a short note saying why, so the version list makes sense later." };
-  try {
-    const { menu, now } = await editable(agentId);
-    const next = fromDraft(menu, now, d);
-    if (next.problems.length) return { ok: false, text: `Not saved: ${next.problems.join("; ")}.` };
-    if (sameSetup(next, now)) return { ok: false, text: "Nothing changed from the active setup." };
-    const target = await notionProblem(menu, now, next);
-    if (target) return { ok: false, text: `Not saved. ${target}` };
-    const costlier = loosening(menu, now, next, outPrice);
-    if (costlier.length && !controlsOn()) return { ok: false, text: `${CONTROLS_OFF} This change costs more: ${costlier.join("; ")}.` };
-    if (costlier.length && !confirmed) return { ok: false, text: `Confirm first: ${costlier.join("; ")}.` };
-    const v = await saveVersion(menu, now, d, why, "zak (control room)");
-    revalidatePath("/", "layout");
-    return { ok: true, text: `Saved as v${v}. ${BY_ID[agentId].name}’s next run uses it.` };
-  } catch (e) { return fail(e); }
-}
-
-/** Makes an earlier version active again. Rolling back to a costlier version needs the same confirm as saving one. */
-export async function rollBackSetup(agentId: string, version: number, confirmed: boolean): Promise<ActionResult> {
-  await requireSession();
-  if (!Number.isInteger(version) || version < 1) return { ok: false, text: "Unknown version." };
-  try {
-    const { menu, now } = await editable(agentId);
-    const target = (await listVersions(menu)).find((v) => v.version === version);
-    if (!target) return { ok: false, text: `There is no v${version}.` };
-    const costlier = loosening(menu, now, target.setup, outPrice);
-    if (costlier.length && !controlsOn()) return { ok: false, text: `${CONTROLS_OFF} v${version} costs more: ${costlier.join("; ")}.` };
-    if (costlier.length && !confirmed) return { ok: false, text: `Confirm first: ${costlier.join("; ")}.` };
-    await rollBack(menu, now, version);
-    revalidatePath("/", "layout");
-    return { ok: true, text: `v${version} is active again. ${BY_ID[agentId].name}’s next run uses it.` };
-  } catch (e) { return fail(e); }
-}
-
-/**
- * Pages and databases the Notion integration can see, for the Writes box's target picker.
- * Read only. A database that lacks a property the agent writes is listed with what is missing
- * and can't be picked.
- */
-export async function findNotionTargets(agentId: string, query: string): Promise<ActionResult & { places?: { kind: "database" | "page"; id: string; title: string; url: string; missing: string[] }[] }> {
-  await requireSession();
-  const menu = MENUS[agentId];
-  if (!menu?.notion || !known(agentId)) return { ok: false, text: "This agent has no Notion output." };
-  if (!env.notionToken) return { ok: false, text: "NOTION_TOKEN isn’t set in Vercel, so there is nothing to search." };
-  try {
-    const found = await notionSearch(String(query ?? "").trim());
-    // Rowan and Quinn write a new page each run, so only pages can be picked for them
-    const places = found.filter((p) => !menu.notion!.pageOnly || p.kind === "page").map((p) => ({ kind: p.kind, id: p.id, title: p.title, url: p.url, missing: p.kind === "database" ? missingProps(p.props, menu.notion!.dbProps) : [] }));
-    return { ok: true, text: places.length ? `${places.length} found.` : "Nothing found. Share the page or database with the Notion integration first.", places };
-  } catch (e) { return fail(e); }
-}
-
 // ---- Crew flow (docs/agent-setup.md, slice 5): chains of agents on the Crew canvas
 
 /** A flow from the browser, checked against the palette before anything is saved or run. */
@@ -526,7 +380,7 @@ export async function previewChain(flow: unknown, key: string): Promise<ActionRe
   return { ok: true, text: `Previewed ${c.name}: ${steps.length} step${steps.length === 1 ? "" : "s"}. Nothing was written or sent.`, steps };
 }
 
-// ---- Caps, vendors and suppressed addresses (Guardrails box and Settings). Agents never call
+// ---- Caps, vendors and suppressed addresses (Settings). Agents never call
 // these: only a signed-in Zak. Tightening is always allowed; loosening needs a confirm and
 // DASHBOARD_CONTROLS=on, and never passes the limit in code (CAPS in core/gateway/policy.ts).
 
@@ -580,7 +434,7 @@ export async function suppressEmail(address: string, reason: string): Promise<Ac
 // ---- Agent builder (docs/agent-builder.md). An agent built in the app is a versioned spec that
 // picks from the tool list and models in code. Creating, saving and making a version active spend
 // nothing and wake nothing, so they need only the login, except a change that lets a run spend
-// more, which needs a confirm and DASHBOARD_CONTROLS=on (like the Setup tab). A built agent can't
+// more, which needs a confirm and DASHBOARD_CONTROLS=on (like any other loosening). A built agent can't
 // be put on duty or scheduled yet: explore runs are by hand only until its first playbook is
 // approved (slice 4). Preview is a real explore run, so it needs DASHBOARD_CONTROLS=on and counts
 // against the agent's daily budget; it may run while the agent is off duty because no tool writes
@@ -602,23 +456,20 @@ function checkedDraft(draft: unknown, agentId: string): { spec: AgentSpec } | { 
   return problems.length ? { error: `This draft asks for something code doesn’t offer: ${problems.join("; ")}.` } : { spec };
 }
 
-/** Creates a new agent, off duty, from a blank spec or a copy of another built agent's spec. */
-export async function createAgent(name: string, mandate: string, from: string): Promise<ActionResult & { id?: string }> {
+/**
+ * Creates a new agent, off duty, from the builder flow's draft (docs/builder-flow.md, slice 2). The
+ * draft is checked against code like any save; a new agent has no gateway actions, since the
+ * gateway names the agents that may ask for each one.
+ */
+export async function createBuilt(draft: unknown): Promise<ActionResult & { id?: string }> {
   await requireSession();
-  const n = String(name ?? "").trim().slice(0, 80);
-  if (!n) return { ok: false, text: "Give the agent a name." };
   try {
-    let base: Partial<AgentSpec> = { directive: "Say what this agent should do, in your words.", model: "claude-haiku-5-5", effort: "low", tools: [], notionPages: [] };
-    if (from && from !== "blank") {
-      const src = await builtAgent(from);
-      if (!src) return { ok: false, text: "That agent has no active spec to copy." };
-      // a copy gets a new id, and the gateway lets only named agents propose actions, so those stay behind
-      base = { ...src.spec, tools: src.spec.tools.filter((t) => TOOLS[t]?.kind !== "action") };
-    }
-    const { spec } = readSpec({ ...base, name: n, mandate: String(mandate ?? "").trim().slice(0, 200) || base.mandate || "", outputName: "result" });
+    const { spec, problems } = readSpec(draft);
+    if (problems.length) return { ok: false, text: `Not created. This draft asks for something code doesn’t offer: ${problems.join("; ")}.` };
+    if (spec.tools.some((t) => TOOLS[t]?.kind === "action")) return { ok: false, text: "Not created. A new agent can’t ask for actions: code names which agents may." };
     const id = await createBuiltAgent(spec, BY);
     revalidatePath("/", "layout");
-    return { ok: true, text: `${n} is saved as v1, off duty.`, id };
+    return { ok: true, text: `${spec.name} is saved as v1, off duty.`, id };
   } catch (e) { return fail(e); }
 }
 

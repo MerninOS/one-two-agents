@@ -51,7 +51,7 @@ const setupCol = (s: Setup | null) => (s?.version != null ? { setup_version: s.v
  * be read never stops the run: the job gets null and the summary says so.
  * Agents with a menu (agents/menus.ts) also get their active setup (core/setup.ts). A setup that
  * can't be read never stops the run either: the job gets the menu's defaults and the summary says so.
- * Trigger "preview" (a draft setup tried from the Setup tab) gets neither: the job brings its own
+ * Trigger "preview" (a try from the builder) gets neither: the job brings its own
  * draft and reads memory without changing it.
  */
 export async function withRun(agentId: string, trigger: string, job: (runId: string, memory: MemoryLoad | null, setup: Setup | null) => Promise<RunResult>, opts: { chain?: RunChain } = {}): Promise<RunResult & { runId: string }> {
