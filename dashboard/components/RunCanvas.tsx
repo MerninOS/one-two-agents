@@ -1,6 +1,7 @@
 // The "Live floor" workflow canvas from Run Canvas.dc.html, filled from one real run.
 // Nodes the backend can't fill yet (gateway decisions) say so instead of showing samples.
-import { ACCESS, HARD_RULES, INTEGRATIONS, type CrewMember } from "../crew";
+import { HARD_RULES, type CrewMember } from "../crew";
+import type { Reach } from "../connections";
 import type { Run } from "../data";
 import { dur, m4, num, when } from "../format";
 import { RUN_LOOK, isLive } from "../status";
@@ -19,13 +20,13 @@ const Line = ({ c, children, mut }: { c: string; children: React.ReactNode; mut?
   <span className="node-line" style={mut ? { color: "var(--mut)" } : undefined}><span className="dot" style={{ background: c, width: 6, height: 6 }} />{children}</span>
 );
 
-export function RunCanvas({ a, run, leads }: { a: CrewMember; run: Run | null; leads?: number | null }) {
+export function RunCanvas({ a, run, leads, reach }: { a: CrewMember; run: Run | null; leads?: number | null; reach: Reach[] }) {
   const live = !!run && isLive(run);
   const stage = !run ? 0 : live ? 3 : 6;
   const o = (i: number) => (stage >= i ? 1 : 0.38);
   const c = (i: number) => (stage > i ? "var(--acc)" : "var(--mut2)");
-  const reads = INTEGRATIONS.filter((i) => ACCESS[a.id]?.[i.id]?.[0] === "read");
-  const writes = INTEGRATIONS.filter((i) => ["write", "draft"].includes(ACCESS[a.id]?.[i.id]?.[0] ?? ""));
+  const reads = reach.filter((r) => r.has.includes("read")).map((r) => r.conn);
+  const writes = reach.filter((r) => r.has.some((h) => h !== "read"));
   const usesModel = !!run && run.tokens_in + run.tokens_out > 0;
   const look = run ? RUN_LOOK[run.status] : null;
   const resultBig = !run ? "—" : a.id === "wholesale_hunter" && leads != null ? String(leads) : look!.label;
@@ -94,7 +95,7 @@ export function RunCanvas({ a, run, leads }: { a: CrewMember; run: Run | null; l
 
         <div className="node" style={{ left: 544, top: 184, width: 220, height: 150, opacity: o(4) }}>
           <NodeHead icon="shield-check" title="Writes" />
-          {writes.slice(0, 3).map((i) => <Line key={i.id} c="var(--acc)">{i.name}{ACCESS[a.id]?.[i.id]?.[0] === "draft" ? " · draft" : ""}</Line>)}
+          {writes.slice(0, 3).map((w) => <Line key={w.conn.id} c="var(--acc)">{w.conn.name}{w.has.includes("do") ? " · asks first" : ""}</Line>)}
           <span style={{ flex: 1 }} />
           <span className="later" style={{ alignSelf: "flex-start" }}>GATEWAY LOG COMING LATER</span>
         </div>

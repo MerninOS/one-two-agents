@@ -2,7 +2,8 @@ import { cookies } from "next/headers";
 import { SEEN_COOKIE, parseSeen } from "@/dashboard/seen";
 import Link from "next/link";
 import { chicagoDate } from "@/core/time";
-import { BUILT, BY_ID, INTEGRATIONS, PLANNED } from "@/dashboard/crew";
+import { BUILT, BY_ID, PLANNED } from "@/dashboard/crew";
+import { CONNECTIONS, isSetUp, reachOf } from "@/dashboard/connections";
 import { getFloor, getMemoryMeters, getPipeline, leadsForRun } from "@/dashboard/data";
 import { dow, hm, longDay, m2, m4, num, shortHm, when } from "@/dashboard/format";
 import { PRI_COLOR, needs } from "@/dashboard/needs";
@@ -21,7 +22,8 @@ export default async function MissionControl() {
   const ok = todayRuns.filter((r) => r.status === "ok").length, sk = todayRuns.filter((r) => r.status === "skipped").length, fl = todayRuns.filter((r) => r.status === "failed").length;
   const spend = Object.values(f.spentToday).reduce((s, v) => s + v, 0);
   const budgetSum = BUILT.reduce((s, a) => s + (f.agents[a.id]?.daily_budget_usd ?? 0), 0);
-  const systems = INTEGRATIONS.filter((i) => f.health[i.id]).length;
+  const outside = CONNECTIONS.filter((c) => !c.builtIn);
+  const systems = outside.filter((c) => isSetUp(c, f.health)).length;
   const [pipeline, meters] = await Promise.all([getPipeline(), getMemoryMeters()]);
 
   const latest = f.runs.find((r) => r.status !== "skipped" && BY_ID[r.agent_id]?.built) ?? null;
@@ -51,7 +53,7 @@ export default async function MissionControl() {
             ["Spend today", m4(spend), `of ${m2(budgetSum)}`],
             ["Runs today", String(todayRuns.length), `${ok} OK · ${sk} skipped${fl ? ` · ${fl} failed` : ""}`],
             ["Pipeline", pipeline ? String(pipeline.total) : "—", "leads"],
-            ["Systems", `${systems}/${INTEGRATIONS.length}`, "connected"],
+            ["Connections", `${systems}/${outside.length}`, "set up"],
           ].map(([l, v, s]) => (
             <div key={l} className="chip"><span className="chip-l">{l}</span><span className="chip-v">{v}<span style={{ fontWeight: 400, fontSize: 12.5 }} className="muted"> {s}</span></span></div>
           ))}
@@ -70,7 +72,7 @@ export default async function MissionControl() {
           {latest && <Pill look={RUN_LOOK[latest.status]} />}
           {latest && <Link href={`/runs/${latest.id}`} className="btn outline" style={{ height: 38, fontSize: 13.5 }}>Replay run<Icon name="history" size={15} /></Link>}
         </div>
-        <RunCanvas a={floorAgent} run={latest} leads={leads} />
+        <RunCanvas a={floorAgent} run={latest} leads={leads} reach={reachOf(floorAgent.id, f.grants)} />
       </div>
 
       <div className="home-grid">

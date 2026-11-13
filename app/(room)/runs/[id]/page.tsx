@@ -13,6 +13,7 @@ import { RUN_LOOK } from "@/dashboard/status";
 import { DryRun, MarkSeen } from "@/dashboard/components/client";
 import { Icon } from "@/dashboard/components/Icon";
 import { RunCanvas } from "@/dashboard/components/RunCanvas";
+import { reachOf } from "@/dashboard/connections";
 import { Avatar, Summary } from "@/dashboard/components/ui";
 
 export default async function Replay({ params }: { params: Promise<{ id: string }> }) {
@@ -125,7 +126,7 @@ export default async function Replay({ params }: { params: Promise<{ id: string 
         </div>
       )}
 
-      {run.status !== "skipped" && <div className="card" style={{ padding: 16 }}><RunCanvas a={a} run={run} leads={leads} /></div>}
+      {run.status !== "skipped" && <div className="card" style={{ padding: 16 }}><RunCanvas a={a} run={run} leads={leads} reach={reachOf(a.id, f.grants)} /></div>}
 
       <div className="grid2">
         <div className="card" style={{ gap: 12 }}>
