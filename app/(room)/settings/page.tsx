@@ -1,11 +1,11 @@
 import { cookies } from "next/headers";
-import { addVendor, logout, pauseAll, suppressEmail } from "@/dashboard/actions";
+import { addVendor, logout, pauseAll, setCap, suppressEmail } from "@/dashboard/actions";
 import { BUILT } from "@/dashboard/crew";
 import { getFloor, getVendorsAndSuppressions } from "@/dashboard/data";
 import { capLines } from "@/dashboard/guardrails";
 import { controlsOn } from "@/dashboard/session";
 import { ActionButton, ThemeToggle } from "@/dashboard/components/client";
-import { SuppressForm, VendorForm } from "@/dashboard/components/settingsForms";
+import { CapForm, SuppressForm, VendorForm } from "@/dashboard/components/settingsForms";
 
 export default async function Settings() {
   const [f, caps, lists] = await Promise.all([getFloor(), capLines(), getVendorsAndSuppressions()]);
@@ -29,9 +29,15 @@ export default async function Settings() {
 
       <div className="card" style={{ padding: "16px 22px", gap: 0 }}>
         <span className="card-t">Money and email caps</span>
-        <span className="sub" style={{ paddingBottom: 6 }}>Every agent, enforced in code by the gateway. Change them in any agent’s Guardrails box (Setup tab, Edit): lower any time, raise with a confirm up to the limit in code.</span>
-        {caps.problem && <span className="sub">{caps.problem}</span>}
-        {caps.caps?.map((c, i) => <div key={c.key}>{line(<>{c.label}<span className="muted" style={{ fontSize: 12 }}>{c.used}</span></>, <span style={{ fontWeight: 600, whiteSpace: "nowrap" }}>{c.unit === "usd" ? `$${c.value.toLocaleString("en-US")}` : c.unit === "minutes" ? `${c.value} min` : c.value}</span>, i === 0)}</div>)}
+        <span className="sub" style={{ paddingBottom: 6 }}>Every agent, enforced in code by the gateway. Lowering a cap applies right away. Raising needs a confirm{controlsOn() ? "" : " and DASHBOARD_CONTROLS=on"}, and stops at the limit in code. Trust levels aren’t editable here.</span>
+        {caps.problem && <span className="sub">{/policy_log|relation/.test(caps.problem) ? "The caps migration (20261112230000_caps_and_vendors.sql) isn’t applied yet." : caps.problem}</span>}
+        {caps.caps?.map((c) => <CapForm key={`${c.key}:${c.value}`} c={c} controls={controlsOn()} save={setCap} />)}
+        {caps.log.length > 0 && (
+          <details style={{ paddingTop: 10 }}>
+            <summary className="sub">Recent changes</summary>
+            {caps.log.map((l, i) => <div key={i} className="sub" style={{ padding: "4px 0" }}>{l.key}: {l.from ?? "default"} to {l.to} · {l.by} · {new Date(l.at).toLocaleString("en-US", { timeZone: "America/Chicago", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}</div>)}
+          </details>
+        )}
       </div>
 
       <div className="card" style={{ padding: "16px 22px", gap: 10 }}>

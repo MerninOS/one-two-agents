@@ -1,5 +1,7 @@
 # Agent builder
 
+> **Nov 13:** the builder screen's eight sections became the builder flow, one question per card (docs/builder-flow.md, slice 2). The spec, versions, playbooks and runner below are unchanged.
+
 Plan (approved by Zak 2026-11-13): https://claude.ai/artifact/VNbJQM4SMTWDbKH9CfjHMh.
 Mockup: https://claude.ai/artifact/FwFFc3nmJK7QuRvag7LAW2.
 Epic on the Build Board: "EPIC: Agent builder (build agents from scratch in the app)", slices Order 41-47.

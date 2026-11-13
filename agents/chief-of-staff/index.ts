@@ -9,7 +9,7 @@ import { db } from "@/core/db";
 import { loadMemory, loadWords, type MemoryLoad } from "@/core/memory";
 import type { RunResult } from "@/core/runs";
 import type { Handoff } from "@/core/chain";
-import { liveSections, outputOn, setupOrDefaults, setupWords, type NotionTarget, type Setup, type SetupPreview } from "@/core/setup";
+import { liveSections, outputOn, setupOrDefaults, setupWords, type NotionTarget, type Setup } from "@/core/setup";
 import { env } from "@/core/env";
 import { chicagoDate, dayTitle } from "@/core/time";
 import { Anthropic, claude, costUsd, inputTokens, isModel } from "@/integrations/anthropic";
@@ -58,7 +58,7 @@ async function facts(setup: Setup, handoff: Handoff | null = null) {
   const shop = on("green") ? Promise.all([getInventoryLots(), fetchStockCoffees(), getRoastLoss()]) : null;
   const [{ data: kpis }, { data: runs }, { data: pending }, { count: newDrafts }, orders, green] = await Promise.all([
     on("kpis") ? db().from("kpi_snapshots").select("*").order("date", { ascending: false }).limit(kpiDays) : none({ data: null }),
-    // a Preview from the Setup tab is not a run the brief reports on
+    // a Preview is not a run the brief reports on
     on("runs") ? db().from("agent_runs").select("id, agent_id, status, summary, error, started_at").gte("started_at", dayAgo).neq("trigger", "preview").order("started_at") : none({ data: null }),
     // the approvals table arrives with the gateway migration; without it this is just empty
     on("approvals") ? db().from("approvals").select("created_at").eq("status", "pending").order("created_at").limit(500) : none({ data: null }),
@@ -280,50 +280,6 @@ function destinations(setup: Setup): { email: boolean; notion: NotionTarget | nu
 /** Every model a setup can send work to must have a price, so cost is computed in code. Checked before anything is read or sent. */
 function priced(setup: Setup) {
   for (const m of [setup.model, setup.fallback]) if (m && !isModel(m)) throw new Error(`No price for ${m} in integrations/models.ts, so its cost can't be computed`);
-}
-
-/** A Notion property as plain words, for the Preview. */
-const propWords = (v: Props[string]): string => {
-  const x = v as { title?: { text: { content: string } }[]; rich_text?: { text: { content: string } }[]; number?: number | null; date?: { start: string } | null; checkbox?: boolean };
-  if (x.title) return x.title.map((t) => t.text.content).join("");
-  if (x.rich_text) return x.rich_text.map((t) => t.text.content).join("");
-  if ("number" in x) return x.number == null ? "blank" : String(x.number);
-  if ("date" in x) return x.date?.start ?? "blank";
-  if ("checkbox" in x) return x.checkbox ? "ticked" : "not ticked";
-  return "";
-};
-
-/**
- * Preview (Setup tab): today's brief written with a draft setup, from real facts and real
- * memory, with nothing written or sent. No Notion row, no email, no memory written or counted
- * down. The one model call is logged as its own run (trigger "preview") by the caller, so its
- * cost counts against today's budget.
- */
-export async function previewBrief(setup: Setup): Promise<SetupPreview & { status: "ok" }> {
-  priced(setup);
-  const f = await facts(setup);
-  const sections = liveSections(MENU, setup), to = destinations(setup);
-  let memory: MemoryLoad | null = null, memoryNote = "";
-  try { memory = await loadMemory("chief_of_staff"); }
-  catch (e) { memoryNote = ` Memory can't be read: ${(e instanceof Error ? e.message : String(e)).slice(0, 100)}.`; }
-  const { judgment, tokens, servedBy, note } = await think(f, memory, setup);
-  const tokensIn = tokens?.in ?? 0, tokensOut = tokens?.out ?? 0;
-  const m = briefEmail(briefView(f, judgment, sections));
-  const where = [to.email ? "email" : outputOn(setup, "email") ? "email (not set up)" : "", to.notion ? `Notion ${to.notion.kind} “${to.notion.title}”` : outputOn(setup, "notion") ? "Notion (no target)" : ""].filter(Boolean).join(" and ");
-  return {
-    status: "ok",
-    servedBy: servedBy ?? "rules",
-    watch: judgment.watch,
-    focus: judgment.focus,
-    remember: tokens ? judgment.remember ?? [] : [],
-    email: !outputOn(setup, "email") ? null : hasEmail() ? { subject: m.subject, html: m.html } : { subject: `${m.subject} (email isn’t set up, so this is how it would look)`, html: m.html },
-    row: to.notion?.kind === "database" ? Object.entries(briefRow(f, judgment, false)).map(([k, v]) => [k, propWords(v)]) : [],
-    sendsTo: where || "nowhere",
-    sections: sections.map((id) => MENU.sections.find((x) => x.id === id)?.label ?? id),
-    tokensIn, tokensOut,
-    costUsd: servedBy ? costUsd(servedBy, tokensIn, tokensOut) : 0,
-    note: `${memory ? loadWords(memory).replace(/^m/, "M") + "." : ""}${memoryNote}${note}`.trim(),
-  };
 }
 
 export async function runBrief(opts: { dryRun?: boolean; memory?: MemoryLoad | null; setup?: Setup | null; handoff?: Handoff | null } = {}): Promise<RunResult> {

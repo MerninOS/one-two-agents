@@ -1,10 +1,10 @@
 import "server-only";
-// Data for the agent builder (/build, docs/agent-builder.md slice 2): the agents built in the app,
-// and for one agent everything its builder screen shows: the active spec and its versions, the
-// tool list it can pick from, the Claude models, its standards from the memory store, and its
-// latest runs step by step.
+// Data for the agent builder (/build): the agents built in the app, and for one agent everything
+// its screens show: the active spec and its versions, the tool list the flow picks from (each tool
+// with its connection, docs/builder-flow.md), the Claude models, its standards from the memory
+// store, and its latest runs step by step.
 import { db } from "@/core/db";
-import { BUDGET_CEILING, EFFORTS, RUN_LIMITS, listSpecVersions, loadSpec, type AgentSpec, type SpecVersion } from "@/core/agent-spec";
+import { BUDGET_CEILING, EFFORTS, RUN_LIMITS, listSpecVersions, loadSpec, readSpec, type AgentSpec, type SpecVersion } from "@/core/agent-spec";
 import { SAFETY } from "@/core/runner";
 import { TOOL_LIST, TOOLS } from "@/core/tools/catalog";
 import { MODEL_LIST } from "@/integrations/models";
@@ -13,13 +13,17 @@ import { when } from "@/dashboard/format";
 import { CREW } from "@/dashboard/crew";
 import { REBUILT, onRunner } from "@/core/built";
 import { activePlaybook, listPlaybooks, pendingPlaybook, playbookHold, stepLabel } from "@/core/playbook";
+import { CONNECTIONS, connOf, isSetUp, type ConnId } from "@/dashboard/connections";
+import { health } from "@/dashboard/data";
 
 export interface BuildStep {
   idx: number; kind: "model" | "tool" | "stop"; tool: string | null; toolLabel: string | null; input: unknown; output: string | null;
   ok: boolean; numbers: Record<string, number> | null; tokens_in: number; tokens_out: number; cost_usd: number; ms: number;
 }
 export interface BuildRun { id: string; trigger: string; mode: string | null; started_at: string; ended_at: string | null; status: string; summary: string | null; error: string | null; cost_usd: number; steps: BuildStep[] }
-export interface BuildTool { id: string; label: string; detail: string; kind: string; group: string; trusted: boolean; connected: boolean; needs: string[]; grantable: boolean; agents: string[] | null }
+export interface BuildTool { id: string; label: string; detail: string; kind: string; group: string; conn: ConnId; trusted: boolean; connected: boolean; needs: string[]; grantable: boolean; agents: string[] | null }
+/** A connection as the flow shows it: plain data, set up or not (no values of keys). */
+export interface FlowConn { id: ConnId; name: string; sub: string; icon: string; builtIn: boolean; about: string; setUp: boolean }
 export interface BuildModel { id: string; label: string; in: number; out: number }
 export interface Standard { id: string; grp: "standing_order" | "crew"; text: string; notionPageId: string | null }
 export interface BuiltRow { id: string; name: string; mandate: string; enabled: boolean; budget: number; version: number | null; problems: number; lastRun: { at: string; status: string } | null }
@@ -33,10 +37,6 @@ const SETTING: Record<string, unknown> = {
   GMAIL_CLIENT_ID: env.gmailClientId, GMAIL_CLIENT_SECRET: env.gmailClientSecret, GMAIL_REFRESH_TOKEN: env.gmailRefreshToken,
 };
 const GRANTABLE = new Set(["read", "calculate", "report", "action"]);
-
-export const GROUP_LABEL: Record<string, string> = {
-  shopify: "Shopify", calculate: "Calculate (plain code, no model)", mercury: "Mercury", supabase: "Control Room data", agents: "Other agents’ outputs", notion: "Notion", email: "Email to Zak", web: "Web", gmail: "Gmail",
-};
 
 /** Null when the runner migration isn't applied yet. */
 export async function listBuilt(): Promise<BuiltRow[] | null> {
@@ -58,17 +58,42 @@ export async function listBuilt(): Promise<BuiltRow[] | null> {
 
 /** The pick-lists the builder offers, all from code. */
 export function builderMenu() {
+  const h = health();
   return {
-    tools: TOOL_LIST.map((t): BuildTool => ({ id: t.id, label: t.label, detail: t.detail, kind: t.kind, group: t.group, trusted: t.trusted, needs: [...t.needs], connected: t.needs.every((k) => !!SETTING[k]), grantable: GRANTABLE.has(t.kind), agents: t.agents ? [...t.agents] : null })),
+    tools: TOOL_LIST.map((t): BuildTool => ({ id: t.id, label: t.label, detail: t.detail, kind: t.kind, group: t.group, conn: connOf(t), trusted: t.trusted, needs: [...t.needs], connected: t.needs.every((k) => !!SETTING[k]), grantable: GRANTABLE.has(t.kind), agents: t.agents ? [...t.agents] : null })),
     agentNames: Object.fromEntries(CREW.map((a) => [a.id, `${a.name} (${a.id})`])) as Record<string, string>,
     models: MODEL_LIST.filter((m) => m.route === "anthropic").map((m): BuildModel => ({ id: m.id, label: m.label, in: m.in, out: m.out })),
     efforts: [...EFFORTS],
     limits: RUN_LIMITS,
     budgetCeiling: BUDGET_CEILING,
     safety: SAFETY,
+    conns: CONNECTIONS.map((c): FlowConn => ({ id: c.id, name: c.name, sub: c.sub, icon: c.icon, builtIn: c.builtIn, about: c.about, setUp: isSetUp(c, h) })),
   };
 }
 export type BuilderMenu = ReturnType<typeof builderMenu>;
+
+/** What a new agent can start from: every built agent's active spec, minus actions (the gateway names its agents). */
+export async function listTemplates(): Promise<{ id: string; name: string; spec: AgentSpec }[]> {
+  const { data, error } = await db().from("agent_defs").select("agent_id, spec").eq("active", true);
+  if (error) return [];
+  return (data ?? []).map((d) => {
+    const { spec } = readSpec(d.spec, d.agent_id as string);
+    return { id: d.agent_id as string, name: spec.name, spec: { ...spec, tools: spec.tools.filter((t) => TOOLS[t]?.kind !== "action") } };
+  }).sort((x, y) => x.name.localeCompare(y.name));
+}
+
+/** Agents a new one may read from: every built agent's output name, and whether it has a finished one. */
+export async function listOthers(): Promise<BuilderData["others"]> {
+  const [defs, outs] = await Promise.all([
+    db().from("agent_defs").select("agent_id, spec").eq("active", true),
+    db().from("agent_outputs").select("agent_id, finished").eq("finished", true).limit(500),
+  ]);
+  const has = new Set((outs.error ? [] : outs.data ?? []).map((o) => o.agent_id as string));
+  return (defs.data ?? []).map((d) => {
+    const sp = (d.spec ?? {}) as Partial<AgentSpec>;
+    return { id: d.agent_id as string, name: sp.name || d.agent_id, outputName: sp.outputName || "result", hasOutput: has.has(d.agent_id as string) };
+  }).sort((x, y) => x.name.localeCompare(y.name));
+}
 
 async function standards(agentId: string): Promise<Standard[]> {
   const { data, error } = await db().from("agent_memory").select("id, grp, text, notion_page_id, agent_id").or(`agent_id.eq.${agentId},agent_id.is.null`).eq("state", "kept").in("grp", ["standing_order", "crew"]).order("created_at", { ascending: true }).limit(100);

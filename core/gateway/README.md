@@ -70,7 +70,7 @@ The fences the payment and email action types will have to pass. Neither action 
 
 - `CAPS` in `policy.ts`: per purchase ($500), per calendar month ($1,500), emails per day (20),
   undo window (30 minutes). Zak's values are rows in `policies`; each has a limit in code that
-  `effectiveCap` never lets a row pass. Zak changes them in an agent's Guardrails box; agents
+  `effectiveCap` never lets a row pass. Zak changes them on Settings; agents
   never write `policies`.
 - `checkPurchase`: payee must be in `vendors` with a Mercury recipient; amount within the
   per-purchase cap; this month plus the amount within the monthly cap (cents, in code). A first

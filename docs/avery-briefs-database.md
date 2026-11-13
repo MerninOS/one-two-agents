@@ -41,7 +41,7 @@ A number that isn't known is left blank, never written as zero.
 
 | Settings | Result |
 | --- | --- |
-| A database picked on the Setup tab (Writes) | One row per brief in that database (docs/agent-setup.md, slice 4) |
+| A database picked on the Setup tab (Writes, gone since builder flow slice 2; the last pick stays) | One row per brief in that database (docs/agent-setup.md, slice 4) |
 | A page picked on the Setup tab | One page per brief under that page |
 | Nothing picked, `NOTION_BRIEFS_DB_ID` set | One row per brief in the database |
 | Nothing picked, it blank | One page per brief under `NOTION_BRIEF_PARENT_ID`, as before |

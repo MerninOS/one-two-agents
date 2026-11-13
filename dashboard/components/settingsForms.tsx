@@ -1,10 +1,14 @@
 "use client";
-// Settings forms for the gateway's lists: add a vendor (DASHBOARD_CONTROLS=on) and stop email to
-// an address (always allowed). The server checks everything again.
+// Settings forms for the gateway: the crew-wide money and email caps (lower any time, raise with a
+// confirm and DASHBOARD_CONTROLS=on, never past the limit in code), add a vendor
+// (DASHBOARD_CONTROLS=on) and stop email to an address (always allowed). The server checks
+// everything again.
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import type { ActionResult } from "@/dashboard/actions";
-import { Toast } from "./client";
+import type { CapDef } from "@/core/gateway/policy";
+import type { CapLine } from "@/dashboard/guardrails";
+import { Modal, Toast, type Confirm } from "./client";
 
 function useAct() {
   const [toast, setToast] = useState<ActionResult | null>(null);
@@ -45,6 +49,42 @@ export function SuppressForm({ suppress }: { suppress: (email: string, reason: s
       <input className="input" style={{ flex: 2, minWidth: 200 }} placeholder="email@example.com" value={email} onChange={(e) => setEmail(e.target.value)} />
       <input className="input" style={{ flex: 1, minWidth: 140 }} placeholder="Why (optional)" value={reason} maxLength={200} onChange={(e) => setReason(e.target.value)} />
       <button className="btn ghost sm" disabled={busy || !email.trim()} onClick={() => run(() => suppress(email, reason), () => { setEmail(""); setReason(""); })}>Stop emails</button>
+      {toast}
+    </div>
+  );
+}
+
+const fmtCap = (c: { unit: CapDef["unit"] }, v: number) => (c.unit === "usd" ? `$${v.toLocaleString("en-US", { maximumFractionDigits: 2 })}` : c.unit === "minutes" ? `${v} min` : `${v}`);
+
+/** One crew-wide cap: what it is, what is used, and a field to change it within the limit in code. */
+export function CapForm({ c, controls, save }: { c: CapLine; controls: boolean; save: (key: string, v: number, confirmed: boolean) => Promise<ActionResult> }) {
+  const [v, setV] = useState(String(c.value));
+  const [confirm, setConfirm] = useState<Confirm | null>(null);
+  const { toast, busy, run } = useAct();
+  const n = Number(v);
+  const changed = v.trim() !== "" && Number.isFinite(n) && n !== c.value;
+  const looser = changed && (c.looser === "up" ? n > c.value : n < c.value);
+  const past = changed && (c.looser === "up" ? n > c.limit : n < c.limit);
+  const bounds = c.looser === "up" ? `Ceiling in code: ${fmtCap(c, c.limit)}` : `Floor in code: ${fmtCap(c, c.limit)}, up to ${fmtCap(c, c.safest)}`;
+  const go = (confirmed: boolean) => run(() => save(c.key, n, confirmed));
+  return (
+    <div className="guard-cap">
+      <div style={{ display: "flex", flexDirection: "column", gap: 3, minWidth: 0, flex: 1 }}>
+        <span className="row wrap" style={{ gap: 8 }}><span style={{ fontSize: 14, fontWeight: 600 }}>{c.label}</span>{c.missing && <span className="home-chip" style={{ background: "var(--yel-soft)", color: "var(--yel-ink)" }}>Using the code default</span>}</span>
+        <span className="sub">{c.about}</span>
+        <span className="sub">{c.used}. {bounds}.</span>
+      </div>
+      <div className="row" style={{ gap: 6, flex: "none" }}>
+        {c.unit === "usd" && <span className="muted">$</span>}
+        <input className="input" type="number" min={0} step={c.unit === "usd" ? "0.01" : "1"} style={{ width: 96 }} value={v} aria-label={c.label} onChange={(e) => setV(e.target.value)} />
+        <button className="btn dark sm" disabled={busy || !changed || past || (looser && !controls)}
+          title={past ? bounds : looser && !controls ? "Raising needs DASHBOARD_CONTROLS=on" : looser ? "Needs a confirm" : "Lowering applies right away"}
+          onClick={() => (looser ? setConfirm({ title: `Loosen ${c.label.toLowerCase()}?`, body: `${c.about} Every agent gets the new limit from the next check. ${bounds}.`, lines: [{ k: "Now", v: fmtCap(c, c.value) }, { k: "New", v: fmtCap(c, n) }], confirmLabel: "Save", kind: "dark" }) : go(false))}>
+          {busy ? "Saving…" : "Save"}
+        </button>
+      </div>
+      {past && <span className="sub" style={{ color: "var(--red-ink)", flexBasis: "100%" }}>{bounds}. A pull request can change it, not this screen.</span>}
+      {confirm && <Modal c={confirm} busy={busy} onCancel={() => setConfirm(null)} onGo={() => { setConfirm(null); go(true); }} />}
       {toast}
     </div>
   );

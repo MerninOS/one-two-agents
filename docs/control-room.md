@@ -8,7 +8,7 @@ A "mission control" for the agents, light and dark themes, Plus Jakarta Sans, wh
 
 - **Top bar:** "12" logo, crew rail (one round avatar per agent; 3 built, a divider, 8 planned with dashed rings), theme toggle, bell, date pill, Zak's avatar.
 - **Sidebar:** Floor (Mission control, Run replay, Run log), Crew (Crew profiles, Memory), Trust (Approvals, Connections), Settings at the bottom. (Builder flow slice 5 trims this to Today, Approvals, Crew, Runs, Connections, Settings.)
-- **Screens:** Mission control (greeting, stat chips, "Live floor" workflow canvas, Needs you, Shift board, Spend by agent, Memory per agent, Joining the crew), Agent profile with tabs (Profile, Setup, Memory, Runs and replays, Shift, Settings), Run replay (dark header with scrubber, money breakdown, step timeline, gateway inspector), Run log (filters, search, totals), Connections (one page per integration: status, what agents can read, do and hand you there, and who has it), Approvals, Settings. A confirm modal and a toast are shared.
+- **Screens:** Mission control (greeting, stat chips, "Live floor" workflow canvas, Needs you, Shift board, Spend by agent, Memory per agent, Joining the crew), Agent profile with tabs (Profile, Memory, Runs and replays, Shift, Settings) and an Edit in the builder link, Run replay (dark header with scrubber, money breakdown, step timeline, gateway inspector), Run log (filters, search, totals), Connections (one page per integration: status, what agents can read, do and hand you there, and who has it), the agent builder (`/build`, the step-by-step flow in docs/builder-flow.md), Approvals, Settings (including the money and email caps). A confirm modal and a toast are shared.
 - Agents are personas: Avery (Chief of Staff), Morgan (CFO), Rowan (Wholesale Hunter), Quinn (Bookkeeper, built 2026-11-09, off until launch); planned: Sage, Blair, Sol, Remy, Jules, Ellis (Conversion Optimizer), Kit.
 
 ## 2. What exists in the backend today, and what doesn't
@@ -39,7 +39,7 @@ No sample data ships. Where the design used sample numbers, the build shows the 
 - Next.js 16 App Router pages next to the existing API routes. Server components read Supabase with the existing service-role client (`core/db.ts`); nothing reaches the browser except rendered data. No new tables in phase 1.
 - `dashboard/` holds the code: `crew.ts` (personas, mandates, hard rules; Zak renames agents here), `connections.ts` (integrations, their tools as Can read / Can do / Hands you, who has what), `data.ts` (server-only queries), `auth.ts` (session), `format.ts` (Central Time, money), `actions.ts` (server actions), `components/`.
 - Styling: one `app/globals.css` with the design's CSS variables and a handful of classes, light and dark (`data-theme` on `<html>`, remembered in a cookie). Icons from `lucide-react`. Font via `next/font` (Plus Jakarta Sans).
-- Routes: `/` mission control, `/agents/[id]?tab=…`, `/runs` (filters in the query string), `/runs/[id]` replay, `/connections` (`/access` and `/integrations` redirect there), `/approvals`, `/settings`, `/login`.
+- Routes: `/` mission control, `/agents/[id]?tab=…`, `/runs` (filters in the query string), `/runs/[id]` replay, `/connections` (`/access` and `/integrations` redirect there), `/build`, `/build/new`, `/build/[id]` (`?edit` opens the flow), `/approvals`, `/settings`, `/login`.
 
 ### Phones
 

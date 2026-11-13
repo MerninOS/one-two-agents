@@ -21,7 +21,7 @@ Flow feel: a card per step that slides in, a 6-segment progress bar that fills a
 |---|---|---|
 | 1 | Connections page + Switch fix | Access page, Integrations page, agent Access tab, the hand-written `ACCESS` map |
 | 2 | The flow, steps 1-4 | Builder page's eight sections, the Setup tab and its four editors |
-| 3 | The agent map | AgentCanvas, RunCanvas, `dashboard/canvas.ts` |
+| 3 | The agent map | RunCanvas (AgentCanvas and `dashboard/canvas.ts` went with the Setup tab in slice 2) |
 | 4 | Try it and Go live | Preview, Compare, Deliver checkbox, Switch, EnginePanel, /lab |
 | 5 | Menu and tabs | Run log + replay become Runs; crew canvas becomes Crew > Schedule; Memory and Shift leave the menu and tabs |
 | 6 | Retire the old agents | Each agent's own run path and menu, the setup store, `on_runner` (after Zak takes all four live) |
@@ -43,5 +43,27 @@ Flow feel: a card per step that slides in, a 6-segment progress bar that fills a
 **Note.** Morgan, Avery, Rowan and Quinn still run their own code until Zak takes each live (slice 4). Their saved setups were written to match that code, so what Connections shows for them is what they reach either way. Planned agents have no saved setup yet, so they show nothing until they are built.
 
 **Fold-in fix: Switch with failed steps.** `dryRunPlaybook` returned status ok even when playbook steps failed, and Switch only checked the status, so an agent could be switched to the runner with broken steps. It now also returns how many steps failed and how many there were, and Switch refuses unless there is at least one step and none failed, naming the failed ones. Slice 4 replaces Switch with Go live, which keeps the same rule.
+
+**Checks.** `npm run check`, `npm run build`. No migration.
+
+## Slice 2: The flow, steps 1-4
+
+**Why.** The builder was one long page of eight sections, and the four older agents had a second editor (the Setup tab: a canvas with Reads, Thinking, Writes and Guardrails editors) over a different store. Two ways to change an agent, neither one guided.
+
+**What it is.**
+
+- `/build/new` and `/build/[id]?edit` open the flow (`dashboard/components/Flow.tsx`). One card per step slides in (back slides the other way), a 6-segment bar fills as you answer (steps 5 and 6 are counted and come in slice 4), and a "so far" rail grows a line and a few chips per answer; tap a step to go back. Enter continues (Ctrl or Cmd+Enter inside a text box), Esc leaves, and "reduce motion" turns the slides into fades.
+- The steps come from `STEPS` in `dashboard/flowSteps.ts` (pure helpers shared with the page: summaries, presets, cost estimate, problems, what a save loosens). A step can be added later without reworking the shell, which is how departments arrive (a Team step: department and who it reports to).
+  1. **The job:** name, its job in your words, what a good result looks like, one line for the agent list. A new agent can start from any built agent's answers (actions stay behind: the gateway names its agents). Standing orders sit under "Rules it always follows" and save straight away, as before.
+  2. **Connections:** a tile per connection that has something to read or do. Opening one shows Can read (tick to grant) and Can do (always an approval card; a tool the gateway doesn't allow for this agent is shown locked with the reason). Notion pages and which agents it reads from are picked in their connection. "See what it finds today" is the free tool check on the draft.
+  3. **Hands you:** each report tool as a card (email to Zak, Notion page with its page picker, Briefs row when that report exists), plus "Save it for your other agents", always on, with the output name. This saved output is what a head will read once departments exist.
+  4. **Brain and budget:** Quick, Balanced, Deep (the cheapest, middle and priciest Claude model with low, medium, high effort), each with its estimate; the cost cap per run; the daily budget (saved straight away); step limit, exact model and effort under Advanced. Budgets stay per agent so they can later sit under a department budget.
+- Save is the last step. An existing agent saves the next version (the note is optional: it defaults to the steps that changed), with the same confirm and Controls rule as before when it loosens anything. A new agent is created off duty as v1 (`createBuilt` in `dashboard/actions.ts`, checked by `readSpec` like any save).
+- The draft is kept on this device (localStorage) until it is saved or discarded; coming back offers "Pick it up" or "Discard it". Nothing reaches the agent until Save.
+- `/build/[id]` without `?edit` shows the agent so far (the same rail, each step links into the flow), its latest result, then what slice 4 replaces: Try it for now (tool check, Preview, Deliver), Compare and Switch, the playbook, versions and latest runs.
+
+**What it replaces.** The builder page's eight sections and New agent form (`Builder`, `NewAgentForm`, `createAgent`). The agent profile's Setup tab and everything only it used: `AgentCanvas.tsx`, `dashboard/canvas.ts`, `setupEditor.tsx`, `ThinkingEditor.tsx`, `ReadsWritesEditor.tsx`, `GuardrailsEditor.tsx`, the setup editor actions (`previewSetup`, `saveSetupVersion`, `rollBackSetup`, `findNotionTargets`), `getSetup`, `getSetupEditor`, `runSetupVersion`, `getMemoryMeter`, `dashboard/diff.ts`, the setup store's edit functions in `core/setup.ts` and Avery's Setup preview (`previewBrief`). The profile gets "Edit in the builder" instead. The money and email caps, which were only editable in the Guardrails box, are now edited on Settings (`CapForm`, same rules: lower any time, raise with a confirm and Controls on, never past the limit in code). Dead CSS went with them.
+
+**Note.** Morgan, Avery, Rowan and Quinn keep running their own code with their last saved setup (`agent_setup`) until each goes live on the runner; their runner spec is what the flow edits. The setup store itself is retired in slice 6.
 
 **Checks.** `npm run check`, `npm run build`. No migration.

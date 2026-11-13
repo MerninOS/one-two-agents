@@ -1,5 +1,7 @@
 # Agent setup
 
+> **Nov 13, builder flow slice 2:** the Setup tab, its canvas and its four editors are gone (docs/builder-flow.md). Each of the four agents keeps its last saved setup until it goes live on the runner; its saved spec is edited in the builder flow, and the money and email caps on Settings. What follows is kept as history.
+
 Design (approved by Zak 2026-11-12): https://claude.ai/artifact/WvLXFtHnHbd2J94j6vQhmb.
 Epic on the Build Board: "EPIC: Customizable agents (Agent Setup + canvas editor)".
 
