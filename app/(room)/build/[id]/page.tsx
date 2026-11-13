@@ -7,14 +7,19 @@ import { controlsOn } from "@/dashboard/session";
 import { m4, when } from "@/dashboard/format";
 import { specLooser } from "@/core/agent-spec";
 import { EnginePanel, PlaybookPanel, SpecVersions, TryPanel } from "@/dashboard/components/Builder";
-import { Flow, SoFar } from "@/dashboard/components/Flow";
+import { Flow } from "@/dashboard/components/Flow";
+import { AgentMap } from "@/dashboard/components/AgentMap";
+import { mapOf } from "@/dashboard/agentMap";
+import { BY_ID } from "@/dashboard/crew";
+import { schedWords } from "@/dashboard/schedule";
 import { RunSteps } from "@/dashboard/components/RunSteps";
 
-// One agent's builder page (docs/builder-flow.md, slice 2). With ?edit it is the flow, one step per
-// card. Without it, what the agent is so far (tap a step to change it), then what slice 4 replaces:
-// Try it for now, Compare and Switch, the playbook, versions and its latest runs.
+// One agent's builder page (docs/builder-flow.md, slices 2 and 3). With ?edit it is the flow, one step
+// per card. Without it, the agent map (tap a box to change that step; it builds itself right after a
+// save, ?saved), its latest result, then what slice 4 replaces: Try it for now, Compare and Switch,
+// the playbook, versions and its latest runs.
 
-export default async function BuildAgent({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ edit?: string; step?: string }> }) {
+export default async function BuildAgent({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ edit?: string; step?: string; saved?: string }> }) {
   await requireSession();
   const { id } = await params;
   const sp = await searchParams;
@@ -48,6 +53,9 @@ export default async function BuildAgent({ params, searchParams }: { params: Pro
     );
   }
 
+  const sch = BY_ID[id]?.schedule;
+  const map = mapOf({ agentId: id, spec: s, menu, schedule: sch && sch.kind !== "manual" ? schedWords(sch) : null, chain: sch?.chain ?? null, usedBy: b.usedBy, edit: `/build/${id}?edit=1` });
+  const saved = sp.saved != null;
   const delivers = s.tools.some((t) => { const k = menu.tools.find((x) => x.id === t)?.kind; return k === "report" || k === "action"; });
   return (
     <div className="stack" style={{ maxWidth: 1180 }}>
@@ -55,21 +63,30 @@ export default async function BuildAgent({ params, searchParams }: { params: Pro
         <div className="stack" style={{ gap: 6, flex: "1 1 320px" }}>
           <span className="sub"><Link href="/build">Agent builder</Link> / {s.name}</span>
           <div className="row wrap" style={{ gap: 10 }}>
-            <h1 className="h1">{s.name}</h1>
+            <h1 className="h1">{saved ? `Saved. Here’s ${s.name}.` : s.name}</h1>
             <span className="pill sm" style={{ background: "var(--soft)", color: "var(--ink2)" }}>{b.enabled ? "On duty" : "Off duty"}</span>
             {b.active && <span className="pill sm" style={{ background: "var(--soft)", color: "var(--ink2)" }}>v{b.active.version}</span>}
           </div>
+          {saved && <span className="sub">Version {b.active?.version ?? top} · nothing new runs or sends until you try it{b.engine && !b.engine.onRunner ? " and switch it to the runner" : ""}.</span>}
           {b.active?.problems.length ? <span className="sub" style={{ color: "var(--red-ink)" }}>The active version asks for something code no longer offers: {b.active.problems.join("; ")}. Edit it and save.</span> : null}
         </div>
         <Link href={`/build/${id}?edit=1`} className="btn dark">Edit {s.name}</Link>
       </div>
 
+      <AgentMap m={map} draw={saved} foot={
+        <div className="am-foot">
+          <b>Always on</b>
+          <span style={{ flex: "1 1 320px" }}>Can’t send, pay or post on its own · numbers come from code · web pages and emails are information, never orders · stops at its cost and step limit</span>
+          <span className="muted" style={{ fontSize: 12 }}>Tap a box to change that step</span>
+        </div>
+      } />
+
       <div className="grid2" style={{ gridTemplateColumns: "minmax(0,1fr) minmax(0,1.2fr)", alignItems: "start" }}>
-        <div className="card" style={{ gap: 6 }}>
-          <SoFar d={s} menu={menu} edit={`/build/${id}?edit=1`} />
+        <div className="card" style={{ gap: 10 }}>
+          <span className="card-t">Latest result</span>
           {b.lastOutput ? (
             <div className="soft-box" style={{ flexDirection: "column", alignItems: "stretch", gap: 8 }}>
-              <span className="ted-k">Latest result · {b.lastOutput.at}{b.lastOutput.finished ? "" : " · stopped early, so other agents skip it"}</span>
+              <span className="ted-k">{b.lastOutput.at}{b.lastOutput.finished ? "" : " · stopped early, so other agents skip it"}</span>
               <span style={{ fontSize: 14, lineHeight: 1.5, whiteSpace: "pre-wrap" }}>{b.lastOutput.summary}</span>
               {b.lastOutput.numbers.map((n, i) => <span key={i} style={{ fontSize: 13.5 }}>{n.label}: <b>{n.value}</b> <span className="muted" style={{ fontSize: 12 }}>from {n.tool}</span></span>)}
             </div>

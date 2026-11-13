@@ -8,7 +8,7 @@ A "mission control" for the agents, light and dark themes, Plus Jakarta Sans, wh
 
 - **Top bar:** "12" logo, crew rail (one round avatar per agent; 3 built, a divider, 8 planned with dashed rings), theme toggle, bell, date pill, Zak's avatar.
 - **Sidebar:** Floor (Mission control, Run replay, Run log), Crew (Crew profiles, Memory), Trust (Approvals, Connections), Settings at the bottom. (Builder flow slice 5 trims this to Today, Approvals, Crew, Runs, Connections, Settings.)
-- **Screens:** Mission control (greeting, stat chips, "Live floor" workflow canvas, Needs you, Shift board, Spend by agent, Memory per agent, Joining the crew), Agent profile with tabs (Profile, Memory, Runs and replays, Shift, Settings) and an Edit in the builder link, Run replay (dark header with scrubber, money breakdown, step timeline, gateway inspector), Run log (filters, search, totals), Connections (one page per integration: status, what agents can read, do and hand you there, and who has it), the agent builder (`/build`, the step-by-step flow in docs/builder-flow.md), Approvals, Settings (including the money and email caps). A confirm modal and a toast are shared.
+- **Screens:** Mission control (greeting, stat chips, "Live floor" agent map of the latest run (docs/builder-flow.md, slice 3), Needs you, Shift board, Spend by agent, Memory per agent, Joining the crew), Agent profile with tabs (Profile, Memory, Runs and replays, Shift, Settings) and an Edit in the builder link, Run replay (dark header with scrubber, money breakdown, the agent map with the run laid over it, step timeline, gateway inspector), Run log (filters, search, totals), Connections (one page per integration: status, what agents can read, do and hand you there, and who has it), the agent builder (`/build`, the step-by-step flow in docs/builder-flow.md), Approvals, Settings (including the money and email caps). A confirm modal and a toast are shared.
 - Agents are personas: Avery (Chief of Staff), Morgan (CFO), Rowan (Wholesale Hunter), Quinn (Bookkeeper, built 2026-11-09, off until launch); planned: Sage, Blair, Sol, Remy, Jules, Ellis (Conversion Optimizer), Kit.
 
 ## 2. What exists in the backend today, and what doesn't
@@ -43,7 +43,7 @@ No sample data ships. Where the design used sample numbers, the build shows the 
 
 ### Phones
 
-At 860px and narrower (`app/globals.css`, last block): one sticky top bar with the bell and a menu button (`MobileMenu` in `dashboard/components/client.tsx`) that opens the full navigation as a sheet; the crew rail turns into labeled agent chips that stay visible on every screen (switching agent keeps the current tab, on desktop too); outer frames drop away; the run log stacks each run; the Live floor stacks its nodes; two-column sections become one; Connections stacks its tiles and the opened connection. Desktop is unchanged. Phone screenshots: project files `agents-repo/control-room-screens/mobile/`.
+At 860px and narrower (`app/globals.css`, last block): one sticky top bar with the bell and a menu button (`MobileMenu` in `dashboard/components/client.tsx`) that opens the full navigation as a sheet; the crew rail turns into labeled agent chips that stay visible on every screen (switching agent keeps the current tab, on desktop too); outer frames drop away; the run log stacks each run; the agent map stacks its columns; two-column sections become one; Connections stacks its tiles and the opened connection. Desktop is unchanged. Phone screenshots: project files `agents-repo/control-room-screens/mobile/`.
 
 ## 4. Safety rules for the UI
 
@@ -58,7 +58,7 @@ At 860px and narrower (`app/globals.css`, last block): one sticky top bar with t
 ## 5. Phase 2 (needs backend, not in this PR)
 
 1. `agent_memory` table (agent_id, group, text, source_tag, keep, expires_after, state proposed/kept) → Memory tab, Teach, Journal, lessons Keep/Edit/Discard.
-2. Run transcripts in Supabase Storage keyed by run id (tech spec, Observability) → replay steps, scrubber, money breakdown per step, Run Canvas nodes per run.
+2. Run transcripts in Supabase Storage keyed by run id (tech spec, Observability) → replay steps, scrubber, money breakdown per step (the agent map already lights each tool from `run_steps` for runs on the runner).
 3. Gateway decision log → gateway inspector, refused counts, Quarantine.
 4. `approvals` table + Notion sync → Approvals screen and "Needs you" items.
 5. Vercel API token (read only) → show whether each Vercel schedule is enabled.

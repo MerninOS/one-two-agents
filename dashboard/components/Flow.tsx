@@ -94,13 +94,13 @@ export function Flow(p: FlowProps) {
       startT(async () => {
         const r = await p.create!(d).catch((e) => ({ ok: false, text: e instanceof Error ? e.message : "Something went wrong." }) as ActionResult & { id?: string });
         setToast(r);
-        if (r.ok && r.id) { forgetDraft(); router.push(`/build/${r.id}`); }
+        if (r.ok && r.id) { forgetDraft(); router.push(`/build/${r.id}?saved=1`); }
       });
       return;
     }
     const steps = changedSteps(p.saved, d, p.menu).map((k) => STEPS[stepIndex(k)].title.toLowerCase());
     const why = note.trim() || (steps.length ? `Changed ${steps.join(", ")}` : "Edited in the builder");
-    act(() => p.save!(d, why, confirmed), (r) => { if (r.ok) { forgetDraft(); router.push(back); } });
+    act(() => p.save!(d, why, confirmed), (r) => { if (r.ok) { forgetDraft(); router.push(`${back}?saved=1`); } });
   };
   const onSave = () => {
     if (problems.length) { go(stepIndex(problems[0].step)); setToast({ ok: false, text: `Fix first: ${problems.map((x) => x.text).join("; ")}.` }); return; }
@@ -471,12 +471,12 @@ function BrainStep({ d, change, p }: StepProps) {
   );
 }
 
-/** The "so far" rail: each answered step with what it holds. Tap one to jump to it. Read-only when `onJump` is missing. */
-export function SoFar({ d, menu, cur, onJump, edit }: { d: AgentSpec; menu: BuilderMenu; cur?: number; onJump?: (i: number) => void; edit?: string }) {
+/** The "so far" rail: each answered step with what it holds. Tap one to jump to it. On save it grows into the agent map. */
+function SoFar({ d, menu, cur, onJump }: { d: AgentSpec; menu: BuilderMenu; cur: number; onJump: (i: number) => void }) {
   const sum = summarize(d, menu);
-  const done = cur ?? STEPS.length;
+  const done = cur;
   return (
-    <aside className={`bf-rail${cur == null ? " still" : ""}`} aria-label={`${d.name || "Agent"} so far`}>
+    <aside className="bf-rail" aria-label={`${d.name || "Agent"} so far`}>
       <span className="bf-k" style={{ marginBottom: 12 }}>{d.name.trim() || "It"} so far</span>
       {STEPS.map((s, i) => {
         const state = i < done ? "done" : i === done ? "now" : "later";
@@ -490,12 +490,10 @@ export function SoFar({ d, menu, cur, onJump, edit }: { d: AgentSpec; menu: Buil
             </span>
           </>
         );
-        return onJump ? <button key={s.key} type="button" className={`bf-rail-row ${state}`} onClick={() => onJump(i)}>{inner}</button>
-          : edit ? <Link key={s.key} href={`${edit}&step=${s.key}`} className={`bf-rail-row ${state}`}>{inner}</Link>
-          : <div key={s.key} className={`bf-rail-row ${state}`}>{inner}</div>;
+        return <button key={s.key} type="button" className={`bf-rail-row ${state}`} onClick={() => onJump(i)}>{inner}</button>;
       })}
       <div className="bf-rail-row later"><span className="bf-node"><span className="bf-dot later">{STEPS.length + 1}</span></span><span className="bf-rail-t"><b>{AFTER_STEPS.join(", then ")}</b></span></div>
-      {cur != null && <span className="sub" style={{ marginTop: 14 }}>Each answer adds a piece here. Tap one to go back to it.</span>}
+      <span className="sub" style={{ marginTop: 14 }}>Each answer adds a piece here. Tap one to go back to it.</span>
     </aside>
   );
 }

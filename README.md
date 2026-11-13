@@ -57,7 +57,7 @@ matrix and integrations, built from the Claude Design file "Agent Control Room".
 - Approvals (`/approvals`): Quinn's proposed Mercury changes, one card per charge, plus the gateway log.
   Approving writes to Mercury only when `MERCURY_WRITE_TOKEN` is set, `DASHBOARD_CONTROLS=on` and
   Quinn is on duty; otherwise the approval is kept and applied later. See `core/gateway/README.md`.
-- Setup (`?tab=setup` on a profile): the agent canvas. Replay shows the latest run; Edit shows every value behind each box (Trigger, Reads, Memory, Thinking, Guardrails, Writes) and where it lives. Avery's model, effort, instructions and low-green warning come from its setup (`agent_setup`), picked from its menu in code. Read-only for now. Spec: `docs/agent-setup.md`.
+- Agent map: what an agent reads, how it thinks, what it hands you and who uses its result, drawn from its saved spec; on its builder page (tap a box to change that step), on Today and on each run replay with the run laid over it. See `docs/builder-flow.md`, slice 3.
 - Agent builder (`/build`): build or edit an agent one question at a time (the job, Connections, what it hands you, brain and budget), see `docs/builder-flow.md`. Each agent is a saved spec that runs on one shared engine; new agents start off duty.
 - Memory (`?tab=memory` on a profile): what each agent carries into its runs, with Teach, Edit and Forget. Avery, Rowan and Quinn load memory; the CFO snapshot uses no model. Spec: `docs/agent-memory.md`.
 
