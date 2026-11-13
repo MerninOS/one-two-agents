@@ -14,6 +14,13 @@ Sending, payments and posting are allowed by the tech spec only as gateway actio
 with approval levels and caps (see CLAUDE.md). None of them is built yet, so no agent has
 one of those integrations.
 
+## Proposals from agents built in the app (docs/agent-builder.md, slice 5)
+
+The runner (`core/runner.ts`) stages a proposal when the model calls an action tool, and after a
+run that finishes calls `propose` here, with the run id. The gateway's checks are the same as for
+Quinn's proposals: `refuseProposal` (allow-list of agents and fields), then the live re-check in
+`applyOne` before any write. The runner never imports a write integration.
+
 ## The one write tool so far: `mercury.annotate_transaction`
 
 Receipt attachment, category and memo on a Mercury transaction that already exists. Only

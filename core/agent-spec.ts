@@ -16,8 +16,8 @@ export const RUN_LIMITS = {
   maxCostUsd: { default: 0.5, min: 0.01, max: 2 },
 } as const;
 
-/** Slice 1 grants Read and Calculate tools only; Report and Action tools arrive with slice 5. */
-const GRANTABLE_KINDS = new Set(["read", "calculate"]);
+/** Every kind can be granted since slice 5; actions still pass the gateway's own allow-list. */
+const GRANTABLE_KINDS = new Set(["read", "calculate", "report", "action"]);
 
 export interface AgentSpec {
   name: string;
@@ -34,6 +34,8 @@ export interface AgentSpec {
   outputName: string;
   /** Agents whose latest output agent_output may read, picked in the builder. */
   readsFrom: { agentId: string; label: string }[];
+  /** The Notion page report_notion_page writes under (slice 5), picked in the builder. */
+  reportPage: { id: string; label: string } | null;
 }
 
 export const MAX_DIRECTIVE = 4000;
@@ -50,7 +52,7 @@ const AGENT_ID = /^[a-z0-9_]{1,60}$/;
  * doesn't offer is left out and named in `problems`; limits above the ceiling are refused, not
  * clamped, so a run never uses a value Zak didn't pick.
  */
-export function readSpec(raw: unknown): { spec: AgentSpec; problems: string[] } {
+export function readSpec(raw: unknown, agentId?: string): { spec: AgentSpec; problems: string[] } {
   const r = (raw && typeof raw === "object" ? raw : {}) as Record<string, unknown>;
   const problems: string[] = [];
   const name = str(r.name, 80) || "Untitled agent";
@@ -64,6 +66,7 @@ export function readSpec(raw: unknown): { spec: AgentSpec; problems: string[] } 
     const t = typeof id === "string" ? TOOLS[id] : undefined;
     if (!t) { problems.push(`tool "${String(id).slice(0, 40)}" is not on the tool list`); continue; }
     if (!GRANTABLE_KINDS.has(t.kind)) { problems.push(`${t.label} is a ${t.kind} tool, not available yet`); continue; }
+    if (t.kind === "action" && agentId && !t.agents?.includes(agentId)) { problems.push(`${t.label}: the gateway lets only ${t.agents?.join(" and ") ?? "no agent"} use it`); continue; }
     if (!tools.includes(t.id)) tools.push(t.id);
   }
   const notionPages = (Array.isArray(r.notionPages) ? r.notionPages : []).flatMap((p) => {
@@ -80,6 +83,14 @@ export function readSpec(raw: unknown): { spec: AgentSpec; problems: string[] } 
     return [{ agentId, label: str(x.label, 80) || agentId }];
   }).filter((x, i, a) => a.findIndex((y) => y.agentId === x.agentId) === i).slice(0, 10);
   if (tools.includes("agent_output") && !readsFrom.length) problems.push("Read another agent's output is granted but no agent is picked");
+  const rp = (r.reportPage ?? null) as Record<string, unknown> | null;
+  let reportPage: AgentSpec["reportPage"] = null;
+  if (rp) {
+    const id = str(rp.id, 40).replace(/-/g, "");
+    if (NOTION_ID.test(id)) reportPage = { id, label: str(rp.label, 80) || "Notion page" };
+    else problems.push("the Notion page to write under is not valid");
+  }
+  if (tools.includes("report_notion_page") && !reportPage) problems.push("Write a Notion page is ticked but no page to write under is picked");
   const lim = (r.limits ?? {}) as Record<string, unknown>;
   const limit = (k: keyof typeof RUN_LIMITS) => {
     const c = RUN_LIMITS[k], v = lim[k] === undefined ? c.default : Number(lim[k]);
@@ -87,7 +98,7 @@ export function readSpec(raw: unknown): { spec: AgentSpec; problems: string[] } 
     return k === "maxSteps" ? Math.floor(v) : v;
   };
   return {
-    spec: { name, mandate: str(r.mandate, 200), directive, goodResult: str(r.goodResult, 1000), model, effort, tools, notionPages, limits: { maxSteps: limit("maxSteps"), maxCostUsd: limit("maxCostUsd") }, outputName: str(r.outputName, 60) || "result", readsFrom },
+    spec: { name, mandate: str(r.mandate, 200), directive, goodResult: str(r.goodResult, 1000), model, effort, tools, notionPages, limits: { maxSteps: limit("maxSteps"), maxCostUsd: limit("maxCostUsd") }, outputName: str(r.outputName, 60) || "result", readsFrom, reportPage },
     problems,
   };
 }
@@ -99,7 +110,7 @@ export async function loadSpec(agentId: string): Promise<SpecVersion | null> {
   const { data, error } = await db().from("agent_defs").select("agent_id, version, spec, note, created_at").eq("agent_id", agentId).eq("active", true).maybeSingle();
   if (error) throw new Error(`Agent specs: ${error.message}`);
   if (!data) return null;
-  const { spec, problems } = readSpec(data.spec);
+  const { spec, problems } = readSpec(data.spec, agentId);
   return { agentId, version: data.version, spec, problems, note: data.note, createdAt: data.created_at };
 }
 
@@ -114,13 +125,21 @@ export const BUDGET_CEILING = 50;
 export async function listSpecVersions(agentId: string): Promise<(SpecVersion & { active: boolean; createdBy: string })[]> {
   const { data, error } = await db().from("agent_defs").select("version, spec, note, created_by, created_at, active").eq("agent_id", agentId).order("version", { ascending: false }).limit(50);
   if (error) throw new Error(`Agent specs: ${error.message}`);
-  return (data ?? []).map((d) => ({ agentId, version: d.version, ...readSpec(d.spec), note: d.note, createdAt: d.created_at, active: d.active, createdBy: d.created_by }));
+  return (data ?? []).map((d) => ({ agentId, version: d.version, ...readSpec(d.spec, agentId), note: d.note, createdAt: d.created_at, active: d.active, createdBy: d.created_by }));
 }
 
-/** Plain-words list of what lets `next` spend more per run than `now`. Empty when it can't. */
+/**
+ * Plain-words list of what lets `next` do more than `now`: spend more per run, or (slice 5) reach
+ * further with a report or action tool it didn't have. Empty when it can't.
+ */
 export function specLooser(now: AgentSpec | null, next: AgentSpec): string[] {
   if (!now) return [];
   const out: string[] = [];
+  for (const id of next.tools) {
+    const t = TOOLS[id];
+    if (t && (t.kind === "report" || t.kind === "action") && !now.tools.includes(id)) out.push(`adds ${t.kind === "action" ? "the action" : "the report"} “${t.label}”`);
+  }
+  if (next.tools.includes("report_notion_page") && now.tools.includes("report_notion_page") && next.reportPage?.id !== now.reportPage?.id) out.push(`writes to a different Notion page (${next.reportPage?.label ?? "none"})`);
   if (next.limits.maxCostUsd > now.limits.maxCostUsd) out.push(`cost per run goes from $${now.limits.maxCostUsd.toFixed(2)} to $${next.limits.maxCostUsd.toFixed(2)}`);
   if (next.limits.maxSteps > now.limits.maxSteps) out.push(`steps per run go from ${now.limits.maxSteps} to ${next.limits.maxSteps}`);
   return out;

@@ -6,8 +6,8 @@ import "server-only";
 //
 // Updates (Zak, Nov 13): once a playbook is approved, a new one drafted from a deliberate
 // Re-explore applies automatically, with what changed shown. A run that falls back or doesn't
-// finish puts the agent on hold: its next playbook waits for approval again. A rejected action
-// (slice 5) will do the same.
+// finish puts the agent on hold: its next playbook waits for approval again. So does an action
+// Zak rejects (slice 5, holdAfterRejection).
 import { db } from "@/core/db";
 import { TOOLS } from "@/core/tools/catalog";
 import type { PlaybookStep, RunMode, Step } from "@/core/runner";
@@ -18,11 +18,17 @@ export interface Playbook {
   fromRun: string | null; changes: string | null; auto: boolean; createdAt: string; decidedAt: string | null;
 }
 
-/** The steps an explore run found: every tool call that worked, in order, without repeats. */
+/**
+ * The steps an explore run found: every read or calculate call that worked, in order, without
+ * repeats. Proposals and reports are never playbook steps: in a playbook run the model still
+ * decides which proposals to stage, and code delivers reports after every finished run.
+ */
 export function draftSteps(steps: Step[]): PlaybookStep[] {
   const out: PlaybookStep[] = [];
   for (const s of steps) {
     if (s.kind !== "tool" || !s.ok || !s.tool) continue;
+    const kind = TOOLS[s.tool]?.kind;
+    if (kind !== "read" && kind !== "calculate") continue;
     const input = (s.input && typeof s.input === "object" ? s.input : {}) as Record<string, string | number>;
     const key = stepKey({ tool: s.tool, input });
     if (!out.some((x) => stepKey(x) === key)) out.push({ tool: s.tool, input });
@@ -78,6 +84,17 @@ export async function playbookHold(agentId: string): Promise<Hold | null> {
 async function setHold(agentId: string, reason: string) {
   const { error } = await db().from("agent_playbook_holds").upsert({ agent_id: agentId, reason: reason.slice(0, 300), at: new Date().toISOString() });
   if (error) throw new Error(error.message);
+}
+
+/**
+ * Zak rejected an action a built agent proposed: its next playbook waits for his approval
+ * (Zak, Nov 13). Agents with no playbook yet are left alone. Returns true when a hold was set.
+ */
+export async function holdAfterRejection(agentId: string, title: string): Promise<boolean> {
+  const { data, error } = await db().from("agent_playbooks").select("id").eq("agent_id", agentId).eq("status", "approved").limit(1);
+  if (error || !data?.length) return false;
+  await setHold(agentId, `Zak rejected a proposal: ${title}`.slice(0, 300));
+  return true;
 }
 
 async function clearHold(agentId: string) {
