@@ -13,7 +13,7 @@ import { runHunter } from "./wholesale-hunter";
 import { onRunner, runBuilt } from "@/core/built";
 
 /**
- * Agents rebuilt on the runner (docs/agent-builder.md, slice 6) keep their own code until Zak
+ * Agents rebuilt on the runner (docs/agent-builder.md, slices 6 and 7) keep their own code until Zak
  * presses Switch on the builder screen (agents.on_runner). Then every run, scheduled, chain or
  * by hand, follows the approved playbook on the runner instead.
  */
@@ -44,16 +44,18 @@ export const AGENTS: Record<string, AgentDef> = {
   cfo: { job: switchable("cfo", ({ dryRun }) => runCfoSnapshot({ dryRun })) },
   chief_of_staff: { job: switchable("chief_of_staff", ({ dryRun, memory, setup, handoff }) => runBrief({ dryRun, memory, setup, handoff })), preview: previewBrief },
   // ~$1 of Claude credit a run, so it has no schedule and never runs on its own.
-  wholesale_hunter: { job: ({ runId, dryRun, memory, setup }) => runHunter(runId, { dryRun, memory, setup }), manualOnly: true },
+  wholesale_hunter: { job: switchable("wholesale_hunter", ({ runId, dryRun, memory, setup }) => runHunter(runId, { dryRun, memory, setup })), manualOnly: true },
   // Manual only until launch (planned daily 6:00 AM CT, after the CFO snapshot). Reads Mercury,
   // proposes Mercury changes but never makes them; a few cents of Haiku a run.
-  bookkeeper: { job: ({ runId, dryRun, memory, setup }) => runBookkeeper(runId, { dryRun, memory, setup }), manualOnly: true },
+  bookkeeper: { job: switchable("bookkeeper", ({ runId, dryRun, memory, setup }) => runBookkeeper(runId, { dryRun, memory, setup })), manualOnly: true },
 };
 
 /** The agents' own code, for the builder screen's side-by-side compare with the runner (dry runs only). */
 export const OWN_JOBS: Record<string, (o: JobOpts) => Promise<RunResult>> = {
   cfo: ({ dryRun }) => runCfoSnapshot({ dryRun }),
   chief_of_staff: ({ dryRun, memory, setup, handoff }) => runBrief({ dryRun, memory, setup, handoff }),
+  wholesale_hunter: ({ dryRun }) => runHunter(undefined, { dryRun }),
+  bookkeeper: ({ dryRun }) => runBookkeeper(undefined, { dryRun }),
 };
 
 /** Old route names from the storefront repo, still accepted. */

@@ -85,7 +85,7 @@ export interface BuilderProps {
   /** The approved playbook a Preview follows, if any, and whether the agent is on hold. */
   playbook: { version: number; steps: number } | null;
   pendingPlaybook: number | null;
-  /** Morgan and Avery: whether runs use their own code or the runner. */
+  /** Morgan, Avery, Rowan and Quinn: whether runs use their own code or the runner. */
   engine?: { onRunner: boolean } | null;
   save: Act<[unknown, string, boolean]>;
   addStandard: Act<[string, string]>;
@@ -455,7 +455,7 @@ export function SpecVersions({ versions, activate, controls }: { versions: { ver
 }
 
 /** Playbooks: the approved one, a draft waiting for approval (Zak can drop steps), and the history. */
-/** Morgan and Avery (slice 6): compare their own code with the runner, then switch which one runs. */
+/** Morgan, Avery, Rowan and Quinn (slices 6 and 7): compare their own code with the runner, then switch which one runs. */
 export function EnginePanel({ name, onRunner, controls, compare, switchTo }: { name: string; onRunner: boolean; controls: boolean; compare: Act; switchTo: Act<[boolean, boolean]> }) {
   const { toast, setToast, busy, run } = useAct();
   const [cmp, setCmp] = useState<ActionResult | null>(null);

@@ -228,7 +228,11 @@ async function closeMonth(today: string, p: BookPolicies) {
 
 // ---- The run
 
-export async function runBookkeeper(runId?: string, opts: { dryRun?: boolean; memory?: MemoryLoad | null; setup?: Setup | null } = {}): Promise<RunResult> {
+/**
+ * skipCategories: on the runner (slice 7) the model proposes categories itself, through the
+ * gateway action, so this code only syncs charges, matches receipts and queues receipt proposals.
+ */
+export async function runBookkeeper(runId?: string, opts: { dryRun?: boolean; memory?: MemoryLoad | null; setup?: Setup | null; skipCategories?: boolean } = {}): Promise<RunResult> {
   if (!hasMercury()) throw new Error("MERCURY_API_TOKEN must be set (business org, read-only)");
   // a real run gets its setup from withRun; a dry run reads it here. A setup that can't be read falls back to the menu.
   let setup = opts.setup ?? null, setupNote = "";
@@ -315,7 +319,7 @@ export async function runBookkeeper(runId?: string, opts: { dryRun?: boolean; me
   }
 
   // 3. Category suggestions for charges with no category in Mercury and no suggestion yet.
-  const needCat = [...all.values()].filter((d) => !d.category_id && !d.proposal_category_id && d.status !== "not_needed" && d.status !== "personal").slice(0, 40);
+  const needCat = opts.skipCategories ? [] : [...all.values()].filter((d) => !d.category_id && !d.proposal_category_id && d.status !== "not_needed" && d.status !== "personal").slice(0, 40);
   const picks = await suggestCategories(needCat, cats, u, opts.memory ?? null, pickStep);
   for (const d of needCat) {
     const c = picks.get(d.mercury_txn_id);
@@ -368,7 +372,7 @@ export async function runBookkeeper(runId?: string, opts: { dryRun?: boolean; me
       `${charges.length} charges since ${start}, ${fresh.length} new`,
       `${newlyMatched.length} receipts found${gmailReady ? ` (${toSearch.length} searched)` : gmailOn ? " (Gmail receipt search not set up)" : " (Gmail receipt search off in the setup)"}`,
       `${waiting.length} need a photo`,
-      `${picks.size} category suggestions`,
+      opts.skipCategories ? "categories left to the model" : `${picks.size} category suggestions`,
       `${gate.queued} sent for approval${gate.refused ? ` (${gate.refused} refused by the gateway)` : ""}`,
       `coverage ${covered == null ? "n/a" : `${covered}%`}`,
       ...(close ? [close.summary] : []),

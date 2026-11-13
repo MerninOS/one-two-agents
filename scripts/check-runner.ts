@@ -207,6 +207,36 @@ async function main() {
   assert.deepEqual(parseJudgment("Focus: Reorder Ethiopia Guji. It runs out first.\n- Guji has 9 days left.\n- 2 orders on QC hold.\nsomething else"), { focus: { action: "Reorder Ethiopia Guji", reason: "It runs out first." }, watch: ["Guji has 9 days left.", "2 orders on QC hold."] });
   assert.equal(parseJudgment("No focus here"), null);
 
+  // slice 7: multiline text keeps line breaks but no links; url and email shapes
+  const body = [{ name: "body", type: "text", maxLength: 200, multiline: true, description: "" }] as const;
+  assert.deepEqual(checkInput(body, { body: "Hi,\r\n\n\n\nZak" }), { input: { body: "Hi,\n\nZak" } });
+  assert.ok("problem" in checkInput(body, { body: "see www.x.com" }));
+  assert.ok("problem" in checkInput([{ name: "s", type: "text", maxLength: 50, description: "" }], { s: "a\u0007b" }));
+  assert.deepEqual(checkInput([{ name: "w", type: "url", description: "" }], { w: "fleet.coffee/about" }), { input: { w: "https://fleet.coffee/about" } });
+  assert.ok("problem" in checkInput([{ name: "w", type: "url", description: "" }], { w: "javascript:alert(1)" }));
+  assert.ok("problem" in checkInput([{ name: "e", type: "email", description: "" }], { e: "not an email" }));
+
+  // slice 7: web search is a server tool, counted per run, never drafted into a playbook; leads are held, then delivered as rows
+  const rowan = readSpec({ name: "Rowan", directive: "x", model: "claude-opus-5-5", tools: ["web_search", "report_leads"], limits: { maxSteps: 6, maxCostUsd: 1 } }, "wholesale_hunter").spec;
+  const delivered: unknown[] = [];
+  const lTools: Record<string, ToolDef> = { ...TOOLS, report_leads: { ...TOOLS.report_leads, deliver: async (o) => { delivered.push(...o.rows); return "saved"; } } };
+  const leadIn = { business: "Fleet Coffee", city: "Austin", type: "cafe", website: "https://www.fleet.coffee", fit_score: 4, fit_reason: "Busy cafe.", subject: "Coffee", body: "Hi\n\nZak" };
+  const r12 = await runExplore(rowan, { agentId: "wholesale_hunter", tools: lTools, deliver: true, client: fake((t, b) => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    if (t === 0) { assert.ok((b.tools as any[]).some((x) => x.type === "web_search_20260209" && x.name === "web_search")); return { ...reply([{ type: "server_tool_use", id: "s1", name: "web_search", input: { query: "austin cafes" } } as unknown as Block], "pause_turn") }; }
+    if (t === 1) return reply([{ type: "tool_use", id: "l1", name: "report_leads", input: leadIn }, { type: "tool_use", id: "l2", name: "report_leads", input: { ...leadIn, website: "fleet.coffee" } }]);
+    return reply([{ type: "tool_use", id: "f", name: "finish", input: { result: "1 lead" } }]);
+  }) });
+  assert.equal(r12.finished, true);
+  assert.equal(delivered.length, 1);
+  assert.equal((delivered[0] as { domain: string }).domain, "fleet.coffee");
+  assert.equal(r12.steps.filter((s) => s.tool === "report_leads" && !s.ok).length, 1);
+  assert.deepEqual(draftSteps(r12.steps), []);
+  // a run that doesn't finish delivers none of its rows
+  delivered.length = 0;
+  await runExplore(rowan, { agentId: "wholesale_hunter", tools: lTools, deliver: true, client: fake(() => reply([{ type: "tool_use", id: `l${n}`, name: "report_leads", input: leadIn }])) });
+  assert.equal(delivered.length, 0);
+
   console.log("check-runner: all passed");
 }
 

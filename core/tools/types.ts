@@ -25,8 +25,15 @@ export type Param =
    * merchant name can't choose a recipient, product or category.
    */
   | { name: string; type: "pick"; kind: string; optional?: boolean; description: string }
-  /** Action tools only. Short plain text, checked in code: no links, no control characters. */
-  | { name: string; type: "text"; maxLength: number; optional?: boolean; description: string };
+  /**
+   * Action tools and lead rows. Plain text, checked in code: no links, no control characters.
+   * multiline keeps line breaks (an email body); everything else is one line.
+   */
+  | { name: string; type: "text"; maxLength: number; optional?: boolean; multiline?: boolean; description: string }
+  /** Lead rows only: one http(s) address, as the model read it on the web. Stored, never fetched by code. */
+  | { name: string; type: "url"; optional?: boolean; description: string }
+  /** Lead rows only: an email address shape. A recipient is never this: drafts take it from the leads list. */
+  | { name: string; type: "email"; optional?: boolean; description: string };
 
 /** A row a tool returned that an action may name: what kind of thing it is, its real id, and a label for the approval card. */
 export interface Pick { kind: string; id: string; label: string }
@@ -40,6 +47,10 @@ export interface ToolCtx {
   outputSources: { agentId: string; label: string }[];
   /** The Notion page a Notion report writes under, picked in the builder. */
   reportPage?: { id: string; label: string } | null;
+  /** withRun's row, for reports that save rows against the run. */
+  runId?: string | null;
+  /** The tools the spec grants, so a report can tell whether a matching action is granted too. */
+  granted?: readonly string[];
 }
 
 export interface ToolResult {
@@ -52,7 +63,14 @@ export interface ToolResult {
 }
 
 /** What a report delivers: the finished run's result, never anything else the model wrote. */
-export interface ReportInput { agentName: string; outputName: string; summary: string; numbers: { label: string; value: number }[]; date: string }
+export interface ReportInput {
+  agentName: string; outputName: string; summary: string; numbers: { label: string; value: number }[]; date: string;
+  /** Rows the model handed a report that collects them (the leads list), each checked in code. Empty for other reports. */
+  rows: Record<string, string | number>[];
+}
+
+/** What a report's delivery hands back: a short note, plus any model cost its code spent (Quinn's receipt reading). */
+export type Delivered = string | { note: string; costUsd?: number; tokensIn?: number; tokensOut?: number };
 
 /** What an action tool hands the runner once its inputs are checked and its picks resolved. */
 export interface Staged {
@@ -88,7 +106,19 @@ export interface ToolDef {
   /** Read and calculate tools. */
   run?: (input: Record<string, string | number>, ctx: ToolCtx) => Promise<ToolResult>;
   /** Report tools: code calls it after a finished run. Returns a short note (a link, an id). */
-  deliver?: (out: ReportInput, ctx: ToolCtx) => Promise<string>;
+  deliver?: (out: ReportInput, ctx: ToolCtx) => Promise<Delivered>;
+  /**
+   * Report tools with params (the leads list): the model hands one row per call, code checks it
+   * here and holds it, and deliver saves the rows only after a run that finishes. Returns the row
+   * to hold, or why not. Nothing is written during the run.
+   */
+  collect?: (input: Record<string, string | number>, held: readonly Record<string, string | number>[]) => { row: Record<string, string | number> } | { problem: string };
+  /**
+   * Read tools that run on Claude's side (Anthropic's web search and web fetch): the runner hands
+   * them to the API as server tools, so code never calls them and a playbook can't hold them.
+   * What they return is the web, so they are never trusted.
+   */
+  server?: { type: "web_search_20260209" | "web_fetch_20260209"; maxUses: number };
   /**
    * Report tools that save numbers code works out again itself and never use the model's words
    * (Morgan's snapshot). In a playbook run they are delivered as soon as every playbook step has
@@ -120,11 +150,24 @@ export function checkInput(params: readonly Param[], raw: unknown): { input: Rec
     } else if (p.type === "text") {
       if (v === undefined || v === null || v === "") { if (p.optional) continue; return { problem: `${p.name} is required` }; }
       if (typeof v !== "string") return { problem: `${p.name} must be text` };
-      const t = v.replace(/\s+/g, " ").trim();
+      const t = p.multiline
+        ? v.replace(/\r\n?/g, "\n").replace(/[ \t]+/g, " ").replace(/\n{3,}/g, "\n\n").trim()
+        : v.replace(/\s+/g, " ").trim();
       if (!t) { if (p.optional) continue; return { problem: `${p.name} is required` }; }
       if (t.length > p.maxLength) return { problem: `${p.name} is longer than ${p.maxLength} characters` };
-      if (/[\u0000-\u001f]|https?:\/\/|www\./i.test(t)) return { problem: `${p.name} may not hold links or control characters` };
+      if (/[\u0000-\u0009\u000b-\u001f\u007f]/.test(t) || (!p.multiline && t.includes("\n"))) return { problem: `${p.name} may not hold control characters` };
+      if (LINK.test(t)) return { problem: `${p.name} may not hold links` };
       input[p.name] = t;
+    } else if (p.type === "url") {
+      if (v === undefined || v === null || v === "") { if (p.optional) continue; return { problem: `${p.name} is required` }; }
+      const u = urlOk(v);
+      if (!u) return { problem: `${p.name} must be one http or https address` };
+      input[p.name] = u;
+    } else if (p.type === "email") {
+      if (v === undefined || v === null || v === "") { if (p.optional) continue; return { problem: `${p.name} is required` }; }
+      const e = typeof v === "string" ? v.trim().toLowerCase() : "";
+      if (!EMAIL.test(e) || e.length > 200) return { problem: `${p.name} must be one email address` };
+      input[p.name] = e;
     } else if (p.type === "pick") {
       // checked for shape here; the runner resolves it against the picks of that step
       if (v === undefined || v === null) { if (p.optional) continue; return { problem: `${p.name} is required: name a row from a tool result by its step and pick` }; }
@@ -144,6 +187,21 @@ export function checkInput(params: readonly Param[], raw: unknown): { input: Rec
   return { input };
 }
 
+const LINK = /https?:\/\/|www\./i;
+export const EMAIL = /^[^\s@<>()",;:]+@[^\s@<>()",;:]+\.[a-z]{2,}$/i;
+
+/** The address cleaned up, or null: http(s) only, no credentials, no spaces, at most 300 characters. */
+export function urlOk(v: unknown): string | null {
+  if (typeof v !== "string") return null;
+  const s = v.trim();
+  if (s.length > 300 || /\s/.test(s)) return null;
+  try {
+    const u = new URL(/^https?:\/\//i.test(s) ? s : `https://${s}`);
+    if (!/^https?:$/.test(u.protocol) || u.username || u.password || !u.hostname.includes(".")) return null;
+    return u.toString();
+  } catch { return null; }
+}
+
 /** JSON Schema for the Claude API, from the params. */
 export function inputSchema(params: readonly Param[]) {
   const properties: Record<string, unknown> = {};
@@ -151,11 +209,15 @@ export function inputSchema(params: readonly Param[]) {
     properties[p.name] = p.type === "int"
       ? { type: "integer", minimum: p.min, maximum: p.max, description: `${p.description} Default ${p.default}.` }
       : p.type === "text"
-        ? { type: "string", maxLength: p.maxLength, description: `${p.description} Plain text, no links.` }
+        ? { type: "string", maxLength: p.maxLength, description: `${p.description} Plain text, no links.${p.multiline ? " Line breaks are kept." : ""}` }
+        : p.type === "url"
+          ? { type: "string", maxLength: 300, description: `${p.description} One http or https address.` }
+          : p.type === "email"
+            ? { type: "string", maxLength: 200, description: `${p.description} One email address.` }
         : p.type === "pick"
           ? { type: "object", properties: { step: { type: "integer" }, pick: { type: "string" } }, required: ["step", "pick"], additionalProperties: false, description: `${p.description} Name a row by the step number and pick code shown with a tool result in this run.` }
           : { type: "string", enum: [...p.options], description: p.description };
   }
-  const required = params.filter((p) => (p.type === "enum" && p.default === undefined) || ((p.type === "pick" || p.type === "text") && !p.optional)).map((p) => p.name);
+  const required = params.filter((p) => (p.type === "enum" && p.default === undefined) || ((p.type === "pick" || p.type === "text" || p.type === "url" || p.type === "email") && !p.optional)).map((p) => p.name);
   return { type: "object" as const, properties, required, additionalProperties: false };
 }

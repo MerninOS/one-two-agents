@@ -6,14 +6,14 @@ import { m2, md, when } from "@/dashboard/format";
 import { controlsOn } from "@/dashboard/session";
 import { ActionButton, RejectButton } from "@/dashboard/components/client";
 import { Avatar, Empty } from "@/dashboard/components/ui";
-import { writeBlocker } from "@/core/gateway";
+import { DRAFT_EMAIL, writeBlocker } from "@/core/gateway";
 
 // Applying a batch calls Mercury once or twice per change.
 export const maxDuration = 300;
 
 const ACTION_LOOK: Record<string, [string, string]> = {
   proposed: ["Waiting on you", "var(--yel)"], approved: ["Approved, not applied", "var(--acc)"], executing: ["Applying", "var(--acc)"],
-  applied: ["Applied to Mercury", "var(--mint)"], partial: ["Partly applied", "var(--mint)"], failed: ["Failed", "var(--red)"],
+  applied: ["Applied", "var(--mint)"], partial: ["Partly applied", "var(--mint)"], failed: ["Failed", "var(--red)"],
   rejected: ["Rejected", "var(--mut2)"], expired: ["Expired (stale)", "var(--mut2)"], refused: ["Refused by the gateway", "var(--red)"],
 };
 const Tag = ({ s }: { s: string }) => {
@@ -21,10 +21,22 @@ const Tag = ({ s }: { s: string }) => {
   return <span className="row" style={{ gap: 6, fontSize: 12.5, whiteSpace: "nowrap" }}><span style={{ width: 7, height: 7, borderRadius: 999, background: c }} />{l}</span>;
 };
 
+/** A Gmail draft (Rowan): who it goes to, from the leads list, and the exact words. Approving puts it in Gmail; Zak still sends it there. */
+function Draft({ i }: { i: ApprovalItem }) {
+  const p = i.preview;
+  return (
+    <div style={{ borderRadius: 16, background: "var(--soft)", padding: "6px 16px" }}>
+      {([["To", p.to ?? "?"], ["Subject", p.subject ?? "?"]] as [string, string][]).map(([k, v], n) => <div key={k} className={"row" + (n ? " rule" : "")} style={{ justifyContent: "space-between", gap: 16, padding: "9px 0", fontSize: 13 }}><span className="muted">{k}</span><span style={{ fontWeight: 500, textAlign: "right", minWidth: 0, overflowWrap: "anywhere" }}>{v}</span></div>)}
+      <div className="rule" style={{ padding: "10px 0", fontSize: 13, lineHeight: 1.55, whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>{p.body ?? ""}</div>
+    </div>
+  );
+}
+
 function Change({ i }: { i: ApprovalItem }) {
   const p = i.preview;
+  if (i.tool === DRAFT_EMAIL) return <Draft i={i} />;
   const lines: [string, React.ReactNode][] = [
-    ["Charge", `${p.merchant ?? "?"} · ${p.amount_usd != null ? m2(p.amount_usd) : "?"} · ${p.date ? md(`${p.date}T12:00:00Z`) : "?"}`],
+    p.charge && !p.merchant ? ["Charge", p.charge] : ["Charge", `${p.merchant ?? "?"} · ${p.amount_usd != null ? m2(p.amount_usd) : "?"} · ${p.date ? md(`${p.date}T12:00:00Z`) : "?"}`],
     ...(p.receipt_path ? [["Attach receipt", i.receipt_url ? <a key="r" href={i.receipt_url} target="_blank" rel="noopener noreferrer">{p.receipt_path.split("/").pop()} (open)</a> : p.receipt_path.split("/").pop()] as [string, React.ReactNode]] : []),
     ...(p.category ? [["Set category", p.category] as [string, React.ReactNode]] : []),
     ...(p.note ? [["Set memo", p.note] as [string, React.ReactNode]] : []),
@@ -78,7 +90,7 @@ export default async function Approvals() {
             return (
               <div key={i.id} className="card" style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: 22, padding: 22 }}>
                 <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-                  <div className="row">{a && <Avatar a={a} size={32} />}<span style={{ fontSize: 13.5, fontWeight: 600, flex: 1 }}>{a?.name ?? i.agent_id} · Mercury change</span><span className="muted" style={{ fontSize: 12 }}>{when(i.created_at)}</span></div>
+                  <div className="row">{a && <Avatar a={a} size={32} />}<span style={{ fontSize: 13.5, fontWeight: 600, flex: 1 }}>{a?.name ?? i.agent_id} · {i.tool === DRAFT_EMAIL ? "Gmail draft" : "Mercury change"}</span><span className="muted" style={{ fontSize: 12 }}>{when(i.created_at)}</span></div>
                   <span style={{ fontSize: 17, fontWeight: 600 }}>{i.title}</span>
                   {i.reasoning && <span style={{ fontSize: 13, lineHeight: 1.5 }} className="ink2">{i.reasoning}</span>}
                   <div className="row" style={{ gap: 8, marginTop: 6 }}>
@@ -94,15 +106,15 @@ export default async function Approvals() {
           {view.waiting.length > 0 && (
             <div className="card" style={{ gap: 10 }}>
               <div className="card-h">
-                <span className="card-t">Approved, not in Mercury yet ({view.waiting.length})</span>
-                <ActionButton className="btn dark sm" disabled={!!blocker} title={blocker ?? undefined} action={applyWaiting}
-                  confirm={{ title: "Apply approved changes?", body: "Each one is re-checked against Mercury first. Runs as Quinn, so it’s skipped while Quinn is off duty.", confirmLabel: "Apply now" }}>Apply now</ActionButton>
+                <span className="card-t">Approved, not applied yet ({view.waiting.length})</span>
+                <ActionButton className="btn dark sm" disabled={!controls} title={!controls ? "DASHBOARD_CONTROLS is off" : undefined} action={applyWaiting}
+                  confirm={{ title: "Apply approved changes?", body: "Each one is checked again first: a Mercury change against Mercury, a Gmail draft against the leads list. Each runs as its agent, so it’s skipped while that agent is off duty.", confirmLabel: "Apply now" }}>Apply now</ActionButton>
               </div>
               {view.waiting.map((i) => (
                 <div key={i.id} className="row rule wrap" style={{ gap: 12, padding: "10px 0", fontSize: 13 }}>
                   <span style={{ flex: 1, minWidth: 200 }}>{i.title}{i.action_reason && <span className="muted"> · {i.action_reason}</span>}</span>
                   <Tag s={i.action_status} />
-                  {i.action_status === "failed" && <ActionButton className="btn ghost xs" disabled={!!blocker} action={retryAction.bind(null, i.action_id)}>Retry</ActionButton>}
+                  {i.action_status === "failed" && <ActionButton className="btn ghost xs" disabled={!controls} action={retryAction.bind(null, i.action_id)}>Retry</ActionButton>}
                 </div>
               ))}
             </div>

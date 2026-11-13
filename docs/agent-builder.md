@@ -200,6 +200,46 @@ from the tools the spec grants, code runs them, hard limits stop it.
   run fails instead of falling back to the fixed rules (Morgan's numbers are still saved). Rowan's
   new drafts are still in the email (the report reads them), but the model doesn't see them.
 
+## Slice 7: Rowan and Quinn on the runner (built, switch off)
+
+- **Migration** `20261114090000_runner_rowan_quinn.sql`: spec v1 for `wholesale_hunter` (Rowan)
+  and `bookkeeper` (Quinn), each with an approved starting playbook, behind the same
+  `agents.on_runner` switch as Morgan and Avery (off). Compare and Switch on the builder screen
+  now cover all four.
+  - Rowan: Wholesale offer and Leads list (playbook), then the model searches and reads the web
+    (Opus 5.5, medium, 12 steps, $1.25 cap) and hands each lead to Add leads to the leads list.
+    The SOP from his own code is the directive, with the offer and email rules.
+  - Quinn: Charges (30 days) and Expense categories (playbook), then Sync the books and match
+    receipts runs his own code (code-only: receipts, statuses, receipt cards, Notion page; its
+    Haiku receipt reading counts toward the run's cost), then the model (Haiku 5.5, low, $0.30)
+    proposes categories through the gateway, at most 10, blank rather than a guess.
+- **Web tools** `web_search` and `web_fetch`: Claude's own server tools, handed to the API as
+  such. At most 10 of each a run (they drop out of the tool list when used up), never trusted,
+  never in a playbook (`draftSteps` leaves them out; a playbook step naming one fails). Each
+  shows as a step in Replay. Search costs are billed with the model turn.
+- **Reports that collect rows** (`collect`): the model hands one checked row per call (at most
+  10 a run, `MAX_ROWS`); code holds them and the report saves them only after a run that
+  finishes. New param types for rows: `url`, `email`, and multiline `text` (still no links).
+- **Leads list** `report_leads`: dedupes by domain (against the run and the table), saves new
+  leads (stage new, with the first email), writes a Notion page under the report page or
+  `NOTION_LEADS_PARENT_ID`, and, when `gmail_draft_lead` is granted and Gmail is connected,
+  proposes each first email as a draft card.
+- **Gmail draft action** `gmail_draft_lead` and gateway tool `gmail.create_draft`: see
+  `core/gateway/README.md`. The recipient always comes from the leads list row, never from the
+  model. Approvals show To, Subject and the exact body.
+- **Report costs**: a report can hand back the model cost its own code spent (`Delivered`).
+- **Charges** now shows `category` (Mercury's own category) apart from `merchantType`, and
+  `categoryProposed` for charges that already have a category proposal.
+- Known differences from the old code: on the runner neither keeps working memory
+  (`remember`); standing orders and lessons still load. A category the model proposes for a
+  charge that also got a receipt card in the same run shows as already waiting and is
+  proposed again next run. Quinn's month-close count of suggestions waiting reads
+  `expense_docs`, so it leaves out the model's proposals.
+- **Retiring the old code** (next, once all four are switched and Zak is happy): remove
+  `agents/*/menu.ts`, `agents/menus.ts`, `core/setup.ts`, the Setup tab, `OWN_JOBS` and the
+  old run functions, keep the code the report tools call, and let only `core/gateway` import
+  `createDraft` (lint).
+
 ## Slices
 
 1. Tool list and runner (built).
@@ -208,5 +248,6 @@ from the tools the spec grants, code runs them, hard limits stop it.
 4. Playbooks: explore, approve, follow, fall back, auto-update, drop back, Re-explore (built).
 5. Report and Action tools, actions only through `core/gateway` (built; Gmail draft and leads list move to slice 7).
 6. Morgan (with the burn rate step) and Avery on the runner (built; each switched by hand on the builder screen).
-7. Rowan and Quinn on the runner (with the Gmail draft action and the leads list report); retire
-   the old agent code, menus and Setup tab.
+7. Rowan and Quinn on the runner, with the Gmail draft action and the leads list report (built;
+   switched by hand). Then retire the old agent code, menus and Setup tab, once all four are
+   switched.
