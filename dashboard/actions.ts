@@ -19,7 +19,7 @@ import { priceOf } from "@/integrations/anthropic";
 import { approvalDecided, startStep } from "@/core/chain";
 import { activateFlow, flowLooser, flowProblems, listFlowVersions, loadFlow, saveFlowVersion, type Flow } from "@/core/flow";
 import { ANNOTATE } from "@/core/gateway";
-import { loadSpec } from "@/core/agent-spec";
+import { BUDGET_CEILING, activateSpecVersion, createBuiltAgent, listSpecVersions, loadSpec, readSpec, saveSpecVersion, specLooser, type AgentSpec } from "@/core/agent-spec";
 import { dryRunTools, runExplore } from "@/core/runner";
 import { loadMemory } from "@/core/memory";
 import { BUILT, BY_ID } from "./crew";
@@ -569,38 +569,148 @@ export async function suppressEmail(address: string, reason: string): Promise<Ac
   return { ok: true, text: `No agent will email ${email}.` };
 }
 
-// ---- Agent builder, slice 1: the runner's test page (/lab). A built agent's spec runs only here
-// until the builder screen (slice 2). Preview is a real explore run with a real model, so it needs
-// DASHBOARD_CONTROLS=on and counts against the agent's daily budget; it may run while the agent is
-// off duty because no tool in this slice writes anything. The tool check is free.
+// ---- Agent builder (docs/agent-builder.md). An agent built in the app is a versioned spec that
+// picks from the tool list and models in code. Creating, saving and making a version active spend
+// nothing and wake nothing, so they need only the login, except a change that lets a run spend
+// more, which needs a confirm and DASHBOARD_CONTROLS=on (like the Setup tab). A built agent can't
+// be put on duty or scheduled yet: explore runs are by hand only until its first playbook is
+// approved (slice 4). Preview is a real explore run, so it needs DASHBOARD_CONTROLS=on and counts
+// against the agent's daily budget; it may run while the agent is off duty because no tool writes
+// anything yet. The tool check is free.
 
-/** Runs every granted tool once with default inputs. No model, nothing written, not logged. */
-export async function dryRunBuilt(agentId: string): Promise<ActionResult> {
+
+/** The active spec of an agent built in the app. Throws when the agent wasn't built here. */
+async function builtAgent(agentId: string) {
+  if (typeof agentId !== "string" || !/^[a-z0-9_]{1,60}$/.test(agentId)) throw new Error("Unknown agent.");
+  const { data, error } = await db().from("agent_defs").select("version").eq("agent_id", agentId).limit(1);
+  if (error) throw new Error(error.message);
+  if (!data?.length) throw new Error("That agent wasn’t built in the app, so the builder can’t change it.");
+  return loadSpec(agentId);
+}
+
+/** A draft from the builder, checked against code. Problems refuse it; nothing is clamped. */
+function checkedDraft(draft: unknown): { spec: AgentSpec } | { error: string } {
+  const { spec, problems } = readSpec(draft);
+  return problems.length ? { error: `This draft asks for something code doesn’t offer: ${problems.join("; ")}.` } : { spec };
+}
+
+/** Creates a new agent, off duty, from a blank spec or a copy of another built agent's spec. */
+export async function createAgent(name: string, mandate: string, from: string): Promise<ActionResult & { id?: string }> {
   await requireSession();
+  const n = String(name ?? "").trim().slice(0, 80);
+  if (!n) return { ok: false, text: "Give the agent a name." };
   try {
-    const got = await loadSpec(agentId);
-    if (!got) return { ok: false, text: "That agent has no saved spec." };
-    const rows = await dryRunTools(got.spec, agentId);
-    const bad = rows.filter((r) => !r.ok);
-    return { ok: !bad.length, text: rows.map((r) => `${r.ok ? "OK" : "FAILED"} ${r.label}: ${r.note}`).join(" · ") || "No tools granted." };
+    let base: Partial<AgentSpec> = { directive: "Say what this agent should do, in your words.", model: "claude-haiku-5-5", effort: "low", tools: [], notionPages: [] };
+    if (from && from !== "blank") {
+      const src = await builtAgent(from);
+      if (!src) return { ok: false, text: "That agent has no active spec to copy." };
+      base = src.spec;
+    }
+    const { spec } = readSpec({ ...base, name: n, mandate: String(mandate ?? "").trim().slice(0, 200) || base.mandate || "", outputName: "result" });
+    const id = await createBuiltAgent(spec, BY);
+    revalidatePath("/", "layout");
+    return { ok: true, text: `${n} is saved as v1, off duty.`, id };
   } catch (e) { return fail(e); }
 }
 
-/** One explore run of the saved spec, logged with trigger "preview" and its steps saved for the test page. */
-export async function previewBuilt(agentId: string): Promise<ActionResult> {
+/** Saves the draft as the next version and makes it active. */
+export async function saveSpec(agentId: string, draft: unknown, note: string, confirmed: boolean): Promise<ActionResult> {
+  await requireSession();
+  const why = String(note ?? "").trim().slice(0, 300);
+  if (!why) return { ok: false, text: "Add a short note saying what changed, so the version list makes sense later." };
+  try {
+    const now = await builtAgent(agentId);
+    const got = checkedDraft(draft);
+    if ("error" in got) return { ok: false, text: `Not saved. ${got.error}` };
+    if (now && JSON.stringify(now.spec) === JSON.stringify(got.spec)) return { ok: false, text: "Nothing changed from the active version." };
+    const looser = specLooser(now?.spec ?? null, got.spec);
+    if (looser.length && !controlsOn()) return { ok: false, text: `${CONTROLS_OFF} This change lets a run spend more: ${looser.join("; ")}.` };
+    if (looser.length && !confirmed) return { ok: false, text: `Confirm first: ${looser.join("; ")}.` };
+    const v = await saveSpecVersion(agentId, got.spec, why, BY);
+    revalidatePath("/", "layout");
+    return { ok: true, text: `Saved as v${v}. The next run uses it.` };
+  } catch (e) { return fail(e); }
+}
+
+/** Makes an earlier version active again, with the same confirm as saving it. */
+export async function activateSpec(agentId: string, version: number, confirmed: boolean): Promise<ActionResult> {
+  await requireSession();
+  if (!Number.isInteger(version) || version < 1) return { ok: false, text: "Unknown version." };
+  try {
+    const now = await builtAgent(agentId);
+    const target = (await listSpecVersions(agentId)).find((v) => v.version === version);
+    if (!target) return { ok: false, text: `There is no v${version}.` };
+    if (target.problems.length) return { ok: false, text: `v${version} asks for something code no longer offers: ${target.problems.join("; ")}.` };
+    const looser = specLooser(now?.spec ?? null, target.spec);
+    if (looser.length && !controlsOn()) return { ok: false, text: `${CONTROLS_OFF} v${version} lets a run spend more: ${looser.join("; ")}.` };
+    if (looser.length && !confirmed) return { ok: false, text: `Confirm first: ${looser.join("; ")}.` };
+    await activateSpecVersion(agentId, version);
+    revalidatePath("/", "layout");
+    return { ok: true, text: `v${version} is active again. The next run uses it.` };
+  } catch (e) { return fail(e); }
+}
+
+/** A built agent's daily budget. Lowering is always allowed; raising needs DASHBOARD_CONTROLS=on. */
+export async function setBuiltBudget(agentId: string, value: number): Promise<ActionResult> {
+  await requireSession();
+  if (!(Number.isFinite(value) && value >= 0 && value <= BUDGET_CEILING)) return { ok: false, text: `Pick a budget between $0 and $${BUDGET_CEILING} a day. $${BUDGET_CEILING} is the ceiling in code.` };
+  try {
+    await builtAgent(agentId);
+    const { data: cur, error: e1 } = await db().from("agents").select("daily_budget_usd").eq("id", agentId).single();
+    if (e1) return fail(e1.message);
+    if (value > Number(cur.daily_budget_usd) && !controlsOn()) return { ok: false, text: CONTROLS_OFF };
+    const v = Math.round(value * 100) / 100;
+    const { error } = await db().from("agents").update({ daily_budget_usd: v }).eq("id", agentId);
+    if (error) return fail(error.message);
+    revalidatePath("/", "layout");
+    return { ok: true, text: `Budget saved: $${v.toFixed(2)} a day.` };
+  } catch (e) { return fail(e); }
+}
+
+/** Adds a standing order for a built agent: the same memory store as the Memory tab. */
+export async function addStandard(agentId: string, text: string, notionLink = ""): Promise<ActionResult> {
+  await requireSession();
+  try {
+    await builtAgent(agentId);
+    const link = String(notionLink ?? "").slice(0, 500);
+    await teachMemory({ agentId, text: String(text ?? ""), keepAs: "standing_order", forget: "always", notionLink: link });
+    revalidatePath("/", "layout");
+    return { ok: true, text: `Saved. It’s loaded on every run from the next one${link ? ", with the linked page read fresh each time" : ""}.` };
+  } catch (e) { return fail(e); }
+}
+
+/** Runs every tool the draft (or the saved spec) grants once with default inputs. No model, nothing written, not logged. */
+export async function dryRunBuilt(agentId: string, draft?: unknown): Promise<ActionResult> {
+  await requireSession();
+  try {
+    const now = await builtAgent(agentId);
+    let spec = now?.spec;
+    if (draft !== undefined) { const g = checkedDraft(draft); if ("error" in g) return { ok: false, text: g.error }; spec = g.spec; }
+    if (!spec) return { ok: false, text: "That agent has no saved spec." };
+    const rows = await dryRunTools(spec, agentId);
+    const bad = rows.filter((r) => !r.ok);
+    return { ok: !bad.length, text: rows.map((r) => `${r.ok ? "OK" : "FAILED"} ${r.label}: ${r.note}`).join(" · ") || "No tools ticked." };
+  } catch (e) { return fail(e); }
+}
+
+/** One explore run of the draft (or the saved spec), logged with trigger "preview" and its steps saved for replay. */
+export async function previewBuilt(agentId: string, draft?: unknown): Promise<ActionResult> {
   await requireSession();
   if (!controlsOn()) return { ok: false, text: `${CONTROLS_OFF} A preview makes real model calls.` };
   try {
-    const got = await loadSpec(agentId);
-    if (!got) return { ok: false, text: "That agent has no saved spec." };
-    if (got.problems.length) return { ok: false, text: `The spec asks for something code doesn’t offer: ${got.problems.join("; ")}.` };
+    const now = await builtAgent(agentId);
+    let spec = now?.spec;
+    if (draft !== undefined) { const g = checkedDraft(draft); if ("error" in g) return { ok: false, text: g.error }; spec = g.spec; }
+    else if (now?.problems.length) return { ok: false, text: `The spec asks for something code doesn’t offer: ${now.problems.join("; ")}.` };
+    if (!spec) return { ok: false, text: "That agent has no saved spec." };
+    const run = spec;
     let block = "";
-    try { block = (await loadMemory(agentId)).block; } catch { /* a test run without memory is fine */ }
+    try { block = (await loadMemory(agentId)).block; } catch { /* a preview without memory is fine */ }
     const res = await withRun(agentId, "preview", async (runId) => {
-      const r = await runExplore(got.spec, { agentId, runId, memoryBlock: block });
+      const r = await runExplore(run, { agentId, runId, memoryBlock: block });
       return { status: r.status, summary: r.summary, tokensIn: r.tokensIn, tokensOut: r.tokensOut, costUsd: r.costUsd, metrics: r.metrics };
     });
-    revalidatePath("/lab");
+    revalidatePath("/", "layout");
     return { ok: res.status === "ok", text: `${res.summary.slice(0, 300)}${res.summary.length > 300 ? "…" : ""} ($${(res.costUsd ?? 0).toFixed(4)})` };
-  } catch (e) { revalidatePath("/lab"); return fail(e); }
+  } catch (e) { revalidatePath("/", "layout"); return fail(e); }
 }
