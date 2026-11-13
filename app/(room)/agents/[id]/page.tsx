@@ -303,8 +303,8 @@ function Journal({ a, f, mem }: { a: CrewMember; f: Floor; mem: Awaited<ReturnTy
   );
 }
 
-const GROUP_COLOR: Record<string, string> = { crew: "var(--mut2)", standing_order: "var(--acc)", pages: "var(--acc-soft)", lesson: "var(--yel)", note: "var(--pink)", working: "var(--peach)" };
-const GROUP_NAME: Record<string, string> = { crew: "Crew", standing_order: "Standing orders", lesson: "Lessons", note: "Your notes", working: "Working memory", pages: "Notion pages" };
+const GROUP_COLOR: Record<string, string> = { crew: "var(--mut2)", department: "var(--ink2)", standing_order: "var(--acc)", pages: "var(--acc-soft)", lesson: "var(--yel)", note: "var(--pink)", working: "var(--peach)" };
+const GROUP_NAME: Record<string, string> = { crew: "Crew", department: "Department rules", standing_order: "Standing orders", lesson: "Lessons", note: "Your notes", working: "Working memory", pages: "Notion pages" };
 
 function keepWords(r: MemoryRow) {
   if (r.grp === "working") return `Left by the agent · ${when(r.created_at)}`;
@@ -329,11 +329,11 @@ function Memory({ a, f, domains, mem }: { a: CrewMember; f: Floor; domains?: str
   if (!a.built) return <div className="card" style={{ padding: 56, textAlign: "center", fontSize: 16 }}><span className="ink2">{a.name} hasn’t joined yet. Memory starts on day one.</span></div>;
   const tab = mem?.tab ?? null;
   const reads = reachOf(a.id, f.grants).filter((r) => r.has.includes("read"));
-  const mine = (g: string) => (tab?.rows ?? []).filter((r) => r.grp === g && r.state === "kept" && (g === "crew" ? r.agent_id === null : r.agent_id === a.id));
+  const mine = (g: string) => (tab?.rows ?? []).filter((r) => r.grp === g && r.state === "kept" && (g === "crew" ? r.agent_id === null : g === "department" ? r.department_id === tab?.dept?.id : r.agent_id === a.id));
   const editable = !!tab;
   const proposed = (tab?.rows ?? []).filter((r) => r.grp === "lesson" && r.state === "proposed" && r.agent_id === a.id);
   const lines = (g: string, opts: { edit?: boolean } = { edit: true }) => mine(g).map((r) => (
-    <MemoryLine key={r.id} line={toLine(r, tab?.pages)} color={GROUP_COLOR[g]} edit={editable && opts.edit ? editMemoryLine.bind(null, r.id) : undefined} forget={editable ? forgetMemoryLine.bind(null, r.id) : undefined} />
+    <MemoryLine key={r.id} line={toLine(r, tab?.pages)} color={GROUP_COLOR[g]} edit={editable && opts.edit ? editMemoryLine.bind(null, r.id) : undefined} forget={editable && opts.edit ? forgetMemoryLine.bind(null, r.id) : undefined} />
   ));
   const load = tab?.load ?? null;
   const groups: { n: number; title: string; color: string; meta: string; body: React.ReactNode }[] = [
@@ -416,6 +416,13 @@ function Memory({ a, f, domains, mem }: { a: CrewMember; f: Floor; domains?: str
           <span className="muted" style={{ fontSize: 12 }}>Voice and brand facts you teach the whole crew, then the hard rules, which live in code.</span>
           <div>{lines("crew")}</div>
           {!mine("crew").length && <span className="muted" style={{ fontSize: 13, padding: "4px 0 8px" }}>No crew notes yet. Use Teach and pick “Shared crew memory”.</span>}
+          {tab?.dept && (
+            <>
+              <div className="card-h" style={{ paddingTop: 10 }}><span className="card-t">{tab.dept.name} department rules</span><span className="tag">EVERY AGENT IN {tab.dept.name.toUpperCase()}</span></div>
+              <div>{lines("department", { edit: false })}</div>
+              <span className="muted" style={{ fontSize: 12 }}>{mine("department").length ? "Added and edited on Crew > Org chart (Edit chart, then Edit on the department)." : "None yet. Add them on Crew > Org chart (Edit chart, then Edit on the department)."}</span>
+            </>
+          )}
           <LockList rules={HARD_RULES} />
         </div>
         <div className="stack">
@@ -423,7 +430,7 @@ function Memory({ a, f, domains, mem }: { a: CrewMember; f: Floor; domains?: str
             <div className="card-h"><span className="card-t">Timeline</span><span className="muted" style={{ fontSize: 12 }}>Newest first</span></div>
             {(tab?.events ?? []).slice(0, 15).map((e) => (
               <div key={e.id} className="rule" style={{ display: "flex", flexDirection: "column", gap: 3, padding: "10px 0" }}>
-                <span className="row" style={{ gap: 8, fontSize: 13, fontWeight: 600 }}>{EVENT_WORDS[e.kind] ?? e.kind}{e.agent_id === null && <span className="tag">CREW</span>}<span style={{ flex: 1 }} /><span className="muted" style={{ fontSize: 11.5, fontWeight: 400 }}>{when(e.at)}</span></span>
+                <span className="row" style={{ gap: 8, fontSize: 13, fontWeight: 600 }}>{EVENT_WORDS[e.kind] ?? e.kind}{e.agent_id === null && <span className="tag">{e.department_id ? "DEPARTMENT" : "CREW"}</span>}<span style={{ flex: 1 }} /><span className="muted" style={{ fontSize: 11.5, fontWeight: 400 }}>{when(e.at)}</span></span>
                 {e.before && e.kind !== "added" && <span style={{ fontSize: 12.5, lineHeight: 1.45, textDecoration: e.kind === "edited" || e.kind === "rewritten" ? "line-through" : undefined, whiteSpace: "pre-line" }} className="muted">{e.before}</span>}
                 {e.after && <span style={{ fontSize: 12.5, lineHeight: 1.45, whiteSpace: "pre-line" }} className="ink2">{e.after}</span>}
                 <span className="muted" style={{ fontSize: 11 }}>{e.by}</span>

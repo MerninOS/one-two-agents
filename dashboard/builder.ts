@@ -4,6 +4,7 @@ import "server-only";
 // with its connection, docs/builder-flow.md), the Claude models, its standards from the memory
 // store, and its latest runs step by step.
 import { db } from "@/core/db";
+import { agentDepartment } from "@/core/org";
 import { BUDGET_CEILING, EFFORTS, RUN_LIMITS, draftOf, listSpecVersions, loadSpec, readSpec, type AgentSpec, type SpecVersion } from "@/core/agent-spec";
 import { SAFETY } from "@/core/runner";
 import { TOOL_LIST, TOOLS } from "@/core/tools/catalog";
@@ -24,7 +25,7 @@ export interface BuildTool { id: string; label: string; detail: string; kind: st
 /** A connection as the flow shows it: plain data, set up or not (no values of keys). */
 export interface FlowConn { id: ConnId; name: string; sub: string; icon: string; builtIn: boolean; about: string; setUp: boolean }
 export interface BuildModel { id: string; label: string; in: number; out: number }
-export interface Standard { id: string; grp: "standing_order" | "crew"; text: string; notionPageId: string | null }
+export interface Standard { id: string; grp: "standing_order" | "crew" | "department"; text: string; notionPageId: string | null }
 export interface BuiltRow { id: string; name: string; mandate: string; enabled: boolean; budget: number; version: number | null; problems: number; lastRun: { at: string; status: string } | null }
 
 // a tool is Connected when every setting it needs is present (values are never shown)
@@ -148,7 +149,9 @@ export async function lastTry(agentId: string, version: number): Promise<TryView
 }
 
 async function standards(agentId: string): Promise<Standard[]> {
-  const { data, error } = await db().from("agent_memory").select("id, grp, text, notion_page_id, agent_id").or(`agent_id.eq.${agentId},agent_id.is.null`).eq("state", "kept").in("grp", ["standing_order", "crew"]).order("created_at", { ascending: true }).limit(100);
+  // its own standing orders, crew rules, and its department's rules (docs/org-chart.md, slice 2)
+  const dept = (await agentDepartment(agentId).catch(() => null))?.dept.id;
+  const { data, error } = await db().from("agent_memory").select("id, grp, text, notion_page_id, agent_id").or(`agent_id.eq.${agentId},grp.eq.crew${dept ? `,department_id.eq.${dept}` : ""}`).eq("state", "kept").in("grp", ["standing_order", "crew", "department"]).order("created_at", { ascending: true }).limit(100);
   if (error) return [];
   return (data ?? []).map((r) => ({ id: r.id, grp: r.grp, text: r.text, notionPageId: r.notion_page_id }));
 }

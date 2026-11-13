@@ -2,7 +2,10 @@ import "server-only";
 // The org chart as Crew draws it (docs/org-chart.md): each seat with who sits there, that agent's
 // state and last run, and the agents that aren't on the chart yet. Plain data for
 // components/OrgChart.tsx.
-import { companySeat, headOf, childrenOf, orgProblems, seatOf, seatPath, type Org, type Seat } from "@/core/org";
+import { loadCaps } from "@/core/gateway";
+import { CAPS } from "@/core/gateway/policy";
+import { departmentRules } from "@/core/memory";
+import { companySeat, deptSpent, headOf, childrenOf, monthSpendByAgent, orgProblems, seatOf, seatPath, type Org, type Seat } from "@/core/org";
 import type { BuiltRow } from "./builder";
 import { BY_ID, CREW } from "./crew";
 import type { Floor } from "./data";
@@ -29,7 +32,17 @@ export interface SeatView {
   /** Seats under this one, in order. */
   kids: SeatView[];
 }
-export interface DeptView { id: string; name: string; head: SeatView; seats: number; filled: number; planned: number; open: number }
+export interface DeptView {
+  id: string; name: string; head: SeatView; seats: number; filled: number; planned: number; open: number;
+  /** Monthly AI budget (null: none) and what its agents spent this Chicago month, added up in code. */
+  budget: number | null; spent: number;
+  /** Its email cap (null: the company cap) and the company cap it sits under. */
+  emails: number | null; companyEmails: number;
+  /** Department rules, loaded by every agent seated in it. */
+  rules: { id: string; text: string }[];
+}
+/** What the department cards need besides the chart: spend this month per agent, department rules, the company email cap. */
+export interface DeptExtras { spend: Record<string, number>; rules: { id: string; departmentId: string; text: string }[]; companyEmails: number }
 export interface OrgView {
   company: SeatView | null;
   departments: DeptView[];
@@ -57,7 +70,7 @@ function agentsOf(f: Floor, built: BuiltRow[]): SeatAgent[] {
   return [...crew, ...own];
 }
 
-export function orgView(f: Floor, org: Org, built: BuiltRow[]): OrgView {
+export function orgView(f: Floor, org: Org, built: BuiltRow[], x: DeptExtras): OrgView {
   const all = agentsOf(f, built);
   const byId = new Map(all.map((a) => [a.id, a]));
   const view = (s: Seat, depth: number): SeatView => ({
@@ -71,7 +84,11 @@ export function orgView(f: Floor, org: Org, built: BuiltRow[]): OrgView {
     if (!h) return [];
     const head = view(h, 1);
     const seats = count(head);
-    return [{ id: d.id, name: d.name, head, seats: seats.length, filled: seats.filter((s) => s.holder !== "open" && !s.agent?.planned).length, planned: seats.filter((s) => s.agent?.planned).length, open: seats.filter((s) => s.holder === "open").length }];
+    return [{
+      id: d.id, name: d.name, head, seats: seats.length, filled: seats.filter((s) => s.holder !== "open" && !s.agent?.planned).length, planned: seats.filter((s) => s.agent?.planned).length, open: seats.filter((s) => s.holder === "open").length,
+      budget: d.monthlyBudgetUsd, spent: deptSpent(org, d.id, x.spend), emails: d.maxEmailsPerDay, companyEmails: x.companyEmails,
+      rules: x.rules.filter((r) => r.departmentId === d.id).map((r) => ({ id: r.id, text: r.text })),
+    }];
   });
   const top = companySeat(org);
   return {
@@ -89,4 +106,19 @@ export function seatChoices(org: Org, agentId: string | null): { id: string; lab
     .filter((s) => s.departmentId != null || s.holder === "open" || s.agentId === agentId)
     .map((s) => ({ id: s.id, label: seatPath(org, s), free: s.holder === "open" || (s.holder === "agent" && s.agentId === agentId) }))
     .sort((a, b) => a.label.localeCompare(b.label));
+}
+
+/** Spend this month, department rules and the company email cap for the department cards. Each part reads as empty when it can't be loaded. */
+export async function deptExtras(org: Org): Promise<DeptExtras> {
+  const ids = [...new Set(org.seats.filter((s) => s.holder === "agent" && s.agentId && s.departmentId).map((s) => s.agentId as string))];
+  const [spend, rules, caps] = await Promise.all([
+    monthSpendByAgent(ids).catch(() => ({} as Record<string, number>)),
+    departmentRules(org.departments.map((d) => d.id)),
+    loadCaps().catch(() => null),
+  ]);
+  return {
+    spend,
+    rules: rules.map((r) => ({ id: r.id, departmentId: r.department_id as string, text: r.text })),
+    companyEmails: caps?.max_emails_per_day.value ?? CAPS.max_emails_per_day.start,
+  };
 }

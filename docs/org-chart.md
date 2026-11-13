@@ -16,7 +16,7 @@ Zak, Nov 13: agents organised like a company, with departments, heads, leads and
 | # | Slice | Replaces (deleted in the same PR) |
 |---|---|---|
 | 1 | The org chart: departments and seats on Crew | The Crew Agents card grid |
-| 2 | Department budgets and rules | |
+| 2 | Department budgets and rules (monthly AI budget checked in `withRun`, email cap under the company cap, department rules in memory) | |
 | 3 | Leads watch, heads report up (Team connection, team and department reports, Avery reads heads, "Reports to" on the agent map) | Avery reading every agent's runs one by one |
 | 4 | Lead checks drafts, approvals by department | |
 
@@ -36,3 +36,26 @@ Zak, Nov 13: agents organised like a company, with departments, heads, leads and
 **Not in this slice.** Department budgets and rules (slice 2), a "Reports to" box on the agent map and the Team connection (slice 3).
 
 **Checks.** `npm run check`, `npm run check:org`, `npm run build`. Migration `20261115090000_org_chart.sql`: apply once merged. Until then Crew shows a note that it isn't applied, and step 1 and Overview leave the org chart out.
+
+## Slice 2: Department budgets and rules
+
+**What Zak sees.** Each department card on Crew > Org chart shows what its agents spent on AI this Chicago month, against its monthly budget when it has one ("$6.42 of $15.00 this month", a bar that turns yellow at 80% and red with RUNS PAUSED at the budget), and how many department rules it has (tap to read them). Edit chart, then Edit on a department, sets:
+
+- **Monthly AI budget.** Shared by every agent seated in the department, on top of each agent's own daily budget. Blank means no department budget. Up to $500 (`DEPT_BUDGET_CEILING` in `core/org-rules.ts`, held by the migration too).
+- **Emails a day.** For the department's agents together, never above the company cap (`policies.max_emails_per_day`). Blank means the company cap. No agent can send email yet; this is the fence the email action type will pass.
+- **Department rules.** Lines every agent seated in the department loads from its next run, next to its standing orders. Add, edit, forget.
+
+Lowering or setting a limit applies straight away. Raising or removing one needs `DASHBOARD_CONTROLS=on` and a confirm, like the company caps.
+
+**How it's checked.**
+
+- `withRun` (`core/runs.ts`): after on duty and the daily budget, the department budget. Spend is this month's `agent_runs.cost_usd` for the agents seated in the department now, added up in cents in code. At or over the budget the run is skipped at $0 with the reason in its summary. The first skip of the month emails Zak once (`departments.budget_alerted` holds the month; a new budget clears it). Spend that can't be read skips the run. An agent off the chart, or in the company seat, has no department budget.
+- `checkEmail` (`core/gateway/policy.ts`) takes the department's sent-today count and cap; the department cap is never above the company cap (`deptEmailCap`).
+- Department rules are `agent_memory` rows with `grp = 'department'` and a `department_id` (no agent). `loadMemory` loads the agent's own lines, crew lines and its department's rules; department rules are never trimmed for size, like crew memory and standing orders. They are notes like every memory line: they can add a do or don't, never raise a cap, add a recipient or grant access. Removing a department marks its rules forgotten (nothing in `agent_memory` is deleted).
+- An agent's Memory tab shows its department's rules (read-only there), its timeline shows their changes, and builder step 1's "Rules it always follows" lists them.
+
+**Data.** Migration `20261116090000_department_budgets.sql`: `departments.monthly_budget_usd`, `max_emails_per_day`, `budget_alerted`; `agent_memory.department_id` and the `department` group (the owner check now says crew rows have no agent or department, department rows a department and no agent, the rest an agent); `memory_events.department_id`.
+
+**Not in this slice.** Memory is still loaded only for agents in `MEMORY_AGENTS` (Avery, Rowan, Quinn), so a department rule reaches the other agents' runs once Build Board Order 57 gives app-built agents memory. Leads and heads reporting up is slice 3.
+
+**Checks.** `npm run check`, `npm run check:org`, `npm run check:policy`, `npm run build`. Apply the migration once merged. Until then the Crew page can't read the new columns and shows the "not applied" note, and runs skip the department check (no department is found).

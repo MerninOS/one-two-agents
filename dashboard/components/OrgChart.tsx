@@ -2,14 +2,18 @@
 // Crew > Org chart (docs/org-chart.md, slice 1): you on top, Avery's company seat, then each
 // department with its head and the seats under it. A seat links to the agent sitting there, or for
 // an open seat to New agent with the seat filled in. Edit chart opens each seat and department to
-// rename it, add seats under it, pick who sits there or remove it. The server checks every change.
+// rename it, add seats under it, pick who sits there or remove it. Slice 2: each department card
+// shows its monthly AI budget, and its Edit sheet sets the budget, the email cap and the rules
+// every agent in it follows. The server checks every change.
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
+import { DEPT_BUDGET_CEILING, deptBudgetChange, deptEmailChange } from "@/core/org-rules";
 import type { ActionResult } from "../actions";
 import type { DeptView, OrgView, SeatAgent, SeatView } from "../org";
-import { Toast } from "./client";
+import { Modal, Toast, type Confirm } from "./client";
 import { Icon } from "./Icon";
+import { MemoryLine } from "./memory";
 
 type Act<T extends unknown[]> = (...a: T) => Promise<ActionResult>;
 export interface OrgActions {
@@ -20,11 +24,17 @@ export interface OrgActions {
   editSeat: Act<[string, string, string]>;
   removeSeat: Act<[string]>;
   setHolder: Act<[string, string]>;
+  /** Department id, the new limit ("" for none), confirmed. */
+  setBudget: Act<[string, string, boolean]>;
+  setEmails: Act<[string, string, boolean]>;
+  addRule: Act<[string, string]>;
+  editRule: Act<[string, string]>;
+  forgetRule: Act<[string]>;
 }
 
 type Open = { kind: "seat"; seat: SeatView; head: boolean; company: boolean } | { kind: "dept"; dept: DeptView } | null;
 
-export function OrgChart({ v, actions }: { v: OrgView; actions: OrgActions }) {
+export function OrgChart({ v, actions, controls }: { v: OrgView; actions: OrgActions; controls: boolean }) {
   const router = useRouter();
   const [editing, setEditing] = useState(false);
   const [open, setOpen] = useState<Open>(null);
@@ -66,6 +76,13 @@ export function OrgChart({ v, actions }: { v: OrgView; actions: OrgActions }) {
               <span className="muted" style={{ fontSize: 12 }}>{d.seats} seat{d.seats === 1 ? "" : "s"}{d.planned ? ` · ${d.planned} planned` : ""}{d.open ? ` · ${d.open} open` : ""}</span>
               {editing && <button type="button" className="btn ghost xs" style={{ marginLeft: "auto" }} onClick={() => setOpen({ kind: "dept", dept: d })}>Edit</button>}
             </div>
+            <DeptLimits d={d} />
+            {d.rules.length > 0 && (
+              <details className="org-rules">
+                <summary>{d.rules.length} department rule{d.rules.length === 1 ? "" : "s"}</summary>
+                <ul>{d.rules.map((r) => <li key={r.id}>{r.text}</li>)}</ul>
+              </details>
+            )}
             <Tree s={d.head} editing={editing} onPick={pick} head cols={wideDept(d)} />
           </section>
         ))}
@@ -90,7 +107,7 @@ export function OrgChart({ v, actions }: { v: OrgView; actions: OrgActions }) {
       )}
 
       {open?.kind === "seat" && <SeatEditor o={open} v={v} busy={busy} run={run} actions={actions} close={() => setOpen(null)} />}
-      {open?.kind === "dept" && <DeptEditor d={open.dept} busy={busy} run={run} actions={actions} close={() => setOpen(null)} />}
+      {open?.kind === "dept" && <DeptEditor d={v.departments.find((x) => x.id === open.dept.id) ?? open.dept} controls={controls} busy={busy} run={run} actions={actions} close={() => setOpen(null)} />}
       <Toast t={toast} onDone={() => setToast(null)} />
     </div>
   );
@@ -204,15 +221,86 @@ function SeatEditor({ o, v, busy, run, actions, close }: { o: Extract<Open, { ki
   );
 }
 
-function DeptEditor({ d, busy, run, actions, close }: { d: DeptView; busy: boolean; run: Runner; actions: OrgActions; close: () => void }) {
+const usd = (n: number) => `$${n.toFixed(2)}`;
+
+/** The budget meter on a department card: spent this month against its budget, or just spent when it has none. */
+function DeptLimits({ d }: { d: DeptView }) {
+  if (d.budget == null) return <span className="muted" style={{ fontSize: 12 }}>{usd(d.spent)} of AI this month · no department budget</span>;
+  const pct = d.budget > 0 ? Math.min(100, (d.spent / d.budget) * 100) : 100;
+  const out = Math.round(d.spent * 100) >= Math.round(d.budget * 100);
+  return (
+    <div className="stack" style={{ gap: 5 }}>
+      <div className="row" style={{ gap: 8, fontSize: 12 }}>
+        <span className={out ? "" : "ink2"} style={out ? { color: "var(--red-ink)", fontWeight: 600 } : undefined}>{usd(d.spent)} of {usd(d.budget)} this month</span>
+        {out && <span className="tag" style={{ color: "var(--red-ink)" }}>RUNS PAUSED</span>}
+      </div>
+      <div className="bar" style={{ height: 6, borderRadius: 999 }} role="img" aria-label={`${Math.round(pct)}% of the monthly budget used`}><span style={{ width: `${pct}%`, background: out ? "var(--red)" : pct >= 80 ? "var(--yel)" : "var(--mint)" }} /></div>
+    </div>
+  );
+}
+
+/** A number box saved on its own: blank means no department limit. Loosening asks for a confirm, and needs Controls on. */
+function LimitForm({ label, help, now, unit, check, save, busy, run, controls, confirmFor }: {
+  label: string; help: string; now: number | null; unit: "usd" | "count";
+  check: (next: number | null) => { refuse: string } | { looser: boolean };
+  save: (v: string, confirmed: boolean) => Promise<ActionResult>; busy: boolean; run: Runner; controls: boolean;
+  confirmFor: (next: number | null) => Confirm;
+}) {
+  const [val, setVal] = useState(now == null ? "" : String(now));
+  const [confirm, setConfirm] = useState<Confirm | null>(null);
+  const next = val.trim() === "" ? null : Number(val);
+  const ch = check(next);
+  const looser = "looser" in ch && ch.looser;
+  return (
+    <div className="org-form">
+      <label className="bf-field">
+        <span className="bf-k">{label}</span>
+        <span className="row" style={{ gap: 8 }}>
+          {unit === "usd" && <span className="ink2">$</span>}
+          <input className="input" style={{ flex: 1, minWidth: 0 }} inputMode={unit === "usd" ? "decimal" : "numeric"} value={val} onChange={(e) => setVal(e.target.value)} placeholder="Blank for none" />
+        </span>
+        <span className="sub">{"refuse" in ch && val !== (now == null ? "" : String(now)) ? ch.refuse : help}</span>
+      </label>
+      <button type="button" className="btn outline sm" disabled={busy || "refuse" in ch || (looser && !controls)} title={looser && !controls ? "Raising needs DASHBOARD_CONTROLS=on" : undefined}
+        onClick={() => (looser ? setConfirm(confirmFor(next)) : run(() => save(val, false)))}>
+        {looser && !controls ? "Raising needs Controls on" : "Save"}
+      </button>
+      {confirm && <Modal c={confirm} busy={busy} onCancel={() => setConfirm(null)} onGo={() => { setConfirm(null); run(() => save(val, true)); }} />}
+    </div>
+  );
+}
+
+function DeptEditor({ d, controls, busy, run, actions, close }: { d: DeptView; controls: boolean; busy: boolean; run: Runner; actions: OrgActions; close: () => void }) {
   const [name, setName] = useState(d.name);
+  const [rule, setRule] = useState("");
   const empty = d.open === d.seats;
+  const fmtB = (n: number | null) => (n == null ? "No budget" : `${usd(n)} a month`);
+  const fmtE = (n: number | null) => (n == null ? `Company cap (${d.companyEmails})` : `${n} a day`);
   return (
     <Sheet title={d.name} close={close}>
       <div className="bf-stack" style={{ gap: 14 }}>
         <div className="org-form">
           <label className="bf-field"><span className="bf-k">Department name</span><input className="input" value={name} maxLength={60} onChange={(e) => setName(e.target.value)} /></label>
           <button type="button" className="btn outline sm" disabled={busy || !name.trim() || name === d.name} onClick={() => run(() => actions.renameDept(d.id, name), close)}>Rename</button>
+        </div>
+        <LimitForm
+          label="Monthly AI budget" unit="usd" now={d.budget} busy={busy} run={run} controls={controls}
+          help={`Shared by every agent in ${d.name}, on top of each one’s daily budget. At the budget their runs are skipped at $0 and you get one email. ${usd(d.spent)} spent this month. Up to $${DEPT_BUDGET_CEILING}.`}
+          check={(n) => deptBudgetChange(d.budget, n)} save={(v, c) => actions.setBudget(d.id, v, c)}
+          confirmFor={(n) => ({ title: `Raise ${d.name}’s budget?`, body: `Its agents can spend more on AI this month. Each agent’s daily budget still applies.`, lines: [{ k: "Now", v: fmtB(d.budget) }, { k: "New", v: fmtB(n) }], confirmLabel: "Save", kind: "dark" })}
+        />
+        <LimitForm
+          label="Emails a day" unit="count" now={d.emails} busy={busy} run={run} controls={controls}
+          help={`Outbound emails from the agents in ${d.name}, all together. Never more than the company cap of ${d.companyEmails}. No agent can send email yet; this is the limit it will have.`}
+          check={(n) => deptEmailChange(d.emails, n, d.companyEmails)} save={(v, c) => actions.setEmails(d.id, v, c)}
+          confirmFor={(n) => ({ title: `Let ${d.name} send more?`, body: `Its agents can send more emails a day, still never past the company cap.`, lines: [{ k: "Now", v: fmtE(d.emails) }, { k: "New", v: fmtE(n) }], confirmLabel: "Save", kind: "dark" })}
+        />
+        <div className="org-form">
+          <span className="bf-k">Department rules</span>
+          <span className="sub">Every agent in {d.name} loads these from its next run, next to its own standing orders. A rule can add a do or don’t, never raise a cap or grant access.</span>
+          {d.rules.map((r) => <MemoryLine key={r.id} line={{ id: r.id, text: r.text, meta: `Every agent in ${d.name}` }} color="var(--acc)" edit={(t) => actions.editRule(r.id, t)} forget={() => actions.forgetRule(r.id)} />)}
+          <textarea className="input" rows={2} maxLength={280} value={rule} onChange={(e) => setRule(e.target.value)} placeholder="A new rule, like: Never promise a delivery date." aria-label="New department rule" />
+          <button type="button" className="btn outline sm" disabled={busy || !rule.trim()} onClick={() => run(() => actions.addRule(d.id, rule), (r) => { if (r.ok) setRule(""); })}>Add rule</button>
         </div>
         <button type="button" className="btn ghost sm" style={{ alignSelf: "flex-start", color: "var(--red-ink)" }} disabled={busy || !empty} onClick={() => run(() => actions.removeDept(d.id), close)}><Icon name="trash-2" size={14} />Remove {d.name}</button>
         {!empty && <span className="sub">Only a department where every seat is open can be removed. Move its agents and your seats out first.</span>}

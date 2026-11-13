@@ -2,8 +2,9 @@ import Link from "next/link";
 import { previewChain, rollBackFlow, runChainNow, saveCrewFlow } from "@/dashboard/actions";
 import { listBuilt } from "@/dashboard/builder";
 import { getCrewCanvas, getFloor } from "@/dashboard/data";
-import { orgView } from "@/dashboard/org";
-import { orgAddDepartment, orgAddSeat, orgEditSeat, orgRemoveDepartment, orgRemoveSeat, orgRenameDepartment, orgSetHolder } from "@/dashboard/orgActions";
+import { deptExtras, orgView } from "@/dashboard/org";
+import { orgAddDepartment, orgAddDeptRule, orgAddSeat, orgEditDeptRule, orgEditSeat, orgForgetDeptRule, orgRemoveDepartment, orgRemoveSeat, orgRenameDepartment, orgSetDeptBudget, orgSetDeptEmails, orgSetHolder } from "@/dashboard/orgActions";
+import { controlsOn } from "@/dashboard/session";
 import { loadOrg } from "@/core/org";
 import { CrewCanvas } from "@/dashboard/components/CrewCanvas";
 import { Icon } from "@/dashboard/components/Icon";
@@ -39,11 +40,15 @@ export default async function Crew({ searchParams }: { searchParams: Promise<{ v
 
 async function Chart({ f }: { f: Awaited<ReturnType<typeof getFloor>> }) {
   const [org, built] = await Promise.all([loadOrg(), listBuilt()]);
-  if (!org) return <div className="card"><span className="sub">The org chart migration (20261115090000_org_chart.sql) isn’t applied yet.</span></div>;
+  if (!org) return <div className="card"><span className="sub">The org chart tables aren’t up to date: apply the org chart migrations (20261115090000_org_chart.sql, 20261116090000_department_budgets.sql).</span></div>;
   return (
     <OrgChart
-      v={orgView(f, org, built ?? [])}
-      actions={{ addDept: orgAddDepartment, renameDept: orgRenameDepartment, removeDept: orgRemoveDepartment, addSeat: orgAddSeat, editSeat: orgEditSeat, removeSeat: orgRemoveSeat, setHolder: orgSetHolder }}
+      v={orgView(f, org, built ?? [], await deptExtras(org))}
+      controls={controlsOn()}
+      actions={{
+        addDept: orgAddDepartment, renameDept: orgRenameDepartment, removeDept: orgRemoveDepartment, addSeat: orgAddSeat, editSeat: orgEditSeat, removeSeat: orgRemoveSeat, setHolder: orgSetHolder,
+        setBudget: orgSetDeptBudget, setEmails: orgSetDeptEmails, addRule: orgAddDeptRule, editRule: orgEditDeptRule, forgetRule: orgForgetDeptRule,
+      }}
     />
   );
 }

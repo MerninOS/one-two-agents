@@ -262,7 +262,7 @@ function JobStep({ d, change, p, from, setFrom, act, busy, seat, setSeat }: Step
           <div className="bf-stack" style={{ gap: 0, paddingTop: 8 }}>
             {p.standards.map((s) => (
               <div key={s.id} className="row wrap rule" style={{ gap: 10, padding: "10px 0", fontSize: 14 }}>
-                <span className="tag">{s.grp === "crew" ? "CREW RULE" : "STANDING ORDER"}</span>
+                <span className="tag">{s.grp === "crew" ? "CREW RULE" : s.grp === "department" ? "DEPARTMENT RULE" : "STANDING ORDER"}</span>
                 <span style={{ flex: "1 1 260px", minWidth: 0, lineHeight: 1.5 }}>{s.text}{s.notionPageId && <span className="muted" style={{ fontSize: 12 }}> · reads a linked Notion page</span>}</span>
                 {s.grp === "standing_order" && <button type="button" className="btn ghost xs" disabled={busy} onClick={() => act(() => p.forget!(s.id))}>Forget</button>}
               </div>
@@ -272,7 +272,7 @@ function JobStep({ d, change, p, from, setFrom, act, busy, seat, setSeat }: Step
               <input className="input" style={{ flex: "1 1 160px" }} placeholder="Notion link (optional)" value={link} onChange={(e) => setLink(e.target.value)} />
               <button type="button" className="btn outline sm" disabled={busy || !std.trim()} onClick={() => act(() => p.addStandard!(std, link), (r) => { if (r.ok) { setStd(""); setLink(""); } })}>Add</button>
             </div>
-            <span className="sub" style={{ paddingTop: 6 }}>Saved straight away, not as part of a version. Crew rules apply to every agent and are edited on the Memory tab.</span>
+            <span className="sub" style={{ paddingTop: 6 }}>Saved straight away, not as part of a version. Crew rules apply to every agent and are edited on the Memory tab; department rules are edited on Crew, Org chart.</span>
           </div>
         </details>
       )}

@@ -528,3 +528,6 @@ button.org-seat { cursor: pointer; }
 .org-form .btn { align-self: flex-start; }
 .org-dept.wide { grid-column: 1 / -1; }
 .org-kids.cols { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 240px), 1fr)); gap: 12px; padding-left: 0; margin-left: 0; border-left: 0; padding-top: 4px; }
+.org-rules { font-size: 12.5px; }
+.org-rules summary { cursor: pointer; color: var(--ink2); }
+.org-rules ul { margin: 6px 0 0; padding-left: 18px; display: flex; flex-direction: column; gap: 4px; line-height: 1.45; }
