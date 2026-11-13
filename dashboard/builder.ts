@@ -30,6 +30,7 @@ const SETTING: Record<string, unknown> = {
   MERCURY_API_TOKEN: env.mercuryToken, NOTION_TOKEN: env.notionToken,
   SUPABASE_URL: env.supabaseUrl, SUPABASE_SERVICE_ROLE_KEY: env.supabaseServiceKey,
   RESEND_API_KEY: env.resendKey, BRIEF_FROM: env.briefFrom, BRIEF_TO: env.briefTo,
+  GMAIL_CLIENT_ID: env.gmailClientId, GMAIL_CLIENT_SECRET: env.gmailClientSecret, GMAIL_REFRESH_TOKEN: env.gmailRefreshToken,
 };
 const GRANTABLE = new Set(["read", "calculate", "report", "action"]);
 
@@ -93,7 +94,7 @@ export interface BuilderData {
   others: { id: string; name: string; outputName: string; hasOutput: boolean }[];
   lastOutput: { name: string; summary: string; numbers: { label: string; value: number; tool: string }[]; at: string; finished: boolean } | null;
   playbooks: PlaybookView | null;
-  /** Morgan and Avery (slice 6): whether runs use their own code or the runner. Null for agents built here. */
+  /** Morgan, Avery, Rowan and Quinn (slices 6 and 7): whether runs use their own code or the runner. Null for agents built here. */
   engine: { onRunner: boolean } | null;
 }
 

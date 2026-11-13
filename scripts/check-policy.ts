@@ -1,5 +1,5 @@
 // Exercises the gateway caps (core/gateway/policy.ts) with a table of cases. Run: npm run check:policy
-import { capChange, checkEmail, checkPurchase, effectiveCap } from "../core/gateway/policy";
+import { DRAFT_EMAIL, TOOLS, capChange, checkEmail, checkPurchase, effectiveCap, refuseDraftTo, refuseProposal } from "../core/gateway/policy";
 let fails = 0; const t = (n: string, c: boolean) => { if (!c) { fails++; console.log("FAIL", n); } else console.log("ok  ", n); };
 const vendors = [{ id: "v1", name: "Royal", mercury_recipient_id: "r1" }, { id: "v2", name: "NoRecip", mercury_recipient_id: null }];
 const base = { vendors, monthSpentUsd: 0, paidVendorIds: new Set<string>(), maxPurchaseUsd: 500, maxMonthlyUsd: 1500 };
@@ -35,5 +35,19 @@ t("undo longer ok, not looser", (() => { const c = capChange("undo_window_minute
 t("undo back shorter looser", (() => { const c = capChange("undo_window_minutes", 60, 30); return "looser" in c && c.looser; })());
 t("unknown key refused", "refuse" in capChange("max_refund_usd", 0, 5));
 t("same value refused", "refuse" in capChange("max_emails_per_day", 20, 20));
+// Gmail drafts (slice 7): only Rowan, a lead id, subject and body only, no links; the recipient comes from the leads list
+const lead = "0b5f7a52-1c1e-4d1a-9a59-3f1f0a8c2d11";
+const draft = { subject: "Coffee for Fleet", body: "Hi Ana,\n\nWould a free tasting help?\n\nZak\nOne Two Coffee Lab" };
+t("draft ok for Rowan", refuseProposal("wholesale_hunter", DRAFT_EMAIL, lead, draft) === null);
+t("draft refused for Quinn", refuseProposal("bookkeeper", DRAFT_EMAIL, lead, draft) !== null);
+t("draft refused with a recipient field", refuseProposal("wholesale_hunter", DRAFT_EMAIL, lead, { ...draft, to: "x@y.com" }) !== null);
+t("draft refused with a link", refuseProposal("wholesale_hunter", DRAFT_EMAIL, lead, { ...draft, body: "see https://evil.example" }) !== null);
+t("draft refused on a non-lead target", refuseProposal("wholesale_hunter", DRAFT_EMAIL, "ana@fleet.coffee", draft) !== null);
+t("draft refused with a two-line subject", refuseProposal("wholesale_hunter", DRAFT_EMAIL, lead, { ...draft, subject: "a\nb" }) !== null);
+t("first emails never promoted", TOOLS[DRAFT_EMAIL].tier === "Draft" && TOOLS[DRAFT_EMAIL].promotable === false);
+t("lead with address ok", refuseDraftTo({ email: "Ana@Fleet.coffee", stage: "new" }, new Set()) === null);
+t("lead without address refused", refuseDraftTo({ email: null, stage: "new" }, new Set()) !== null);
+t("suppressed lead refused", refuseDraftTo({ email: "ana@fleet.coffee", stage: "new" }, new Set(["ana@fleet.coffee"])) !== null);
+t("lost lead refused", refuseDraftTo({ email: "ana@fleet.coffee", stage: "lost" }, new Set()) !== null);
 console.log(fails ? `${fails} FAILED` : "all passed");
 if (fails) process.exit(1);

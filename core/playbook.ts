@@ -28,7 +28,8 @@ export function draftSteps(steps: Step[]): PlaybookStep[] {
   for (const s of steps) {
     if (s.kind !== "tool" || !s.ok || !s.tool) continue;
     const kind = TOOLS[s.tool]?.kind;
-    if (kind !== "read" && kind !== "calculate") continue;
+    // web search and fetch run on Claude's side, so code can't repeat them: they stay the model's to do
+    if ((kind !== "read" && kind !== "calculate") || TOOLS[s.tool]?.server) continue;
     const input = (s.input && typeof s.input === "object" ? s.input : {}) as Record<string, string | number>;
     const key = stepKey({ tool: s.tool, input });
     if (!out.some((x) => stepKey(x) === key)) out.push({ tool: s.tool, input });

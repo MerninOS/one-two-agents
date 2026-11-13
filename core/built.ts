@@ -1,7 +1,7 @@
 import "server-only";
 // Runs an agent on the runner outside the builder screen (docs/agent-builder.md, slice 6): on a
-// schedule, in a chain, or by hand through /api/agents/<id>. Morgan and Avery use it once Zak
-// switches them over (agents.on_runner); until then their own code runs.
+// schedule, in a chain, or by hand through /api/agents/<id>. Morgan, Avery (slice 6), Rowan and
+// Quinn (slice 7) use it once Zak switches each over (agents.on_runner); until then their own code runs.
 //
 // - Only an approved playbook runs this way. Explore runs stay by hand, from the builder screen.
 // - A real run delivers: its reports go out and its proposals become approval cards.
@@ -17,7 +17,7 @@ import type { RunResult } from "@/core/runs";
 import type { Handoff } from "@/core/chain";
 
 /** Agents rebuilt on the runner that can be switched between their own code and the runner. */
-export const REBUILT = new Set(["cfo", "chief_of_staff"]);
+export const REBUILT = new Set(["cfo", "chief_of_staff", "wholesale_hunter", "bookkeeper"]);
 
 /** True when Zak switched this agent to the runner. False when the column isn't there yet. */
 export async function onRunner(agentId: string): Promise<boolean> {

@@ -21,7 +21,25 @@ run that finishes calls `propose` here, with the run id. The gateway's checks ar
 Quinn's proposals: `refuseProposal` (allow-list of agents and fields), then the live re-check in
 `applyOne` before any write. The runner never imports a write integration.
 
-## The one write tool so far: `mercury.annotate_transaction`
+## `gmail.create_draft` (slice 7)
+
+A plain-text draft in One Two's Gmail, to a lead on the leads list (`wholesale_leads`). Only
+`wholesale_hunter`. Draft tier, and `promotable: false`: a first email to someone stays
+approval-only for good. Zak still sends each draft himself from Gmail.
+
+- The proposal holds only `subject` and `body` (no links, no control characters; the body keeps
+  line breaks). The target is the lead's id. There is no recipient field: the gateway reads the
+  address from the lead's row, at proposal time and again when it makes the draft.
+- Refused when the lead has no address, the address is in `email_suppressions`, or the lead is
+  marked lost or skip (`refuseDraftTo`).
+- Proposed by Rowan's leads list report (`report_leads`, for each new lead with an address,
+  when the spec also grants `gmail_draft_lead` and Gmail is connected) or by the model through
+  `gmail_draft_lead`, naming a lead from a Leads list result.
+- Applying needs `GMAIL_CLIENT_ID`, `GMAIL_CLIENT_SECRET`, `GMAIL_REFRESH_TOKEN` (compose
+  scope), `DASHBOARD_CONTROLS=on` and Rowan on duty; at most
+  `policies.max_gmail_drafts_per_run` (10) per apply. The lead moves from new to drafted.
+
+## `mercury.annotate_transaction`
 
 Receipt attachment, category and memo on a Mercury transaction that already exists. Only
 `bookkeeper` and `cfo`. Draft tier: every action waits for Zak.

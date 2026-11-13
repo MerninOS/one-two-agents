@@ -9,7 +9,7 @@ import { AGENTS, OWN_JOBS } from "@/agents/registry";
 import { db } from "@/core/db";
 import { withRun } from "@/core/runs";
 import { discardLesson, editMemory, forgetMemory, keepLesson, proposeLesson, teach as teachMemory, type Keep } from "@/core/memory";
-import { applyApproved, decide, loadCaps, queueBookkeeperProposals, retry, writeBlocker } from "@/core/gateway";
+import { applyApproved, decide, loadCaps, queueBookkeeperProposals, retry } from "@/core/gateway";
 import { CAPS, capChange, fmtCap, type CapKey } from "@/core/gateway/policy";
 import { MENUS } from "@/agents/menus";
 import { EFFORTS, MAX_INSTRUCTIONS, fromDraft, listVersions, loadSetup, loosening, notionTarget, rollBack, sameSetup, saveVersion, type AgentMenu, type Setup, type SetupDraft, type SetupPreview } from "@/core/setup";
@@ -126,8 +126,8 @@ export async function setBudget(agentId: string, value: number): Promise<ActionR
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const BY = "zak (control room)";
 
-/** Why approved changes can't go to Mercury from here right now, or null. */
-const applyBlocker = () => (!controlsOn() ? "Approved, not applied yet: DASHBOARD_CONTROLS is off." : writeBlocker());
+/** Why approved actions can't be applied from here at all right now, or null. Each kind's own blocker (Mercury token, Gmail) is the gateway's to say. */
+const applyBlocker = () => (!controlsOn() ? "Approved, not applied yet: DASHBOARD_CONTROLS is off." : null);
 
 /** This deployment's own address, for a chain step's request to /api/agents. */
 async function selfOrigin() {
@@ -753,7 +753,7 @@ export async function approveBuiltPlaybook(agentId: string, playbookId: number, 
  */
 export async function compareEngines(agentId: string): Promise<ActionResult> {
   await requireSession();
-  if (!REBUILT.has(agentId) || !OWN_JOBS[agentId]) return { ok: false, text: "Only Morgan and Avery have their own code to compare with." };
+  if (!REBUILT.has(agentId) || !OWN_JOBS[agentId]) return { ok: false, text: "Only Morgan, Avery, Rowan and Quinn have their own code to compare with." };
   try {
     const [own, built] = await Promise.allSettled([OWN_JOBS[agentId]({ dryRun: true }), dryRunPlaybook(agentId)]);
     const ownText = own.status === "fulfilled" ? own.value.summary : `failed: ${own.reason instanceof Error ? own.reason.message : String(own.reason)}`;
@@ -765,7 +765,7 @@ export async function compareEngines(agentId: string): Promise<ActionResult> {
 /** Switches which one runs on schedules, chains and by hand. To the runner needs Controls on and a confirm; back is always allowed. */
 export async function switchEngine(agentId: string, toRunner: boolean, confirmed: boolean): Promise<ActionResult> {
   await requireSession();
-  if (!REBUILT.has(agentId)) return { ok: false, text: "Only Morgan and Avery can be switched." };
+  if (!REBUILT.has(agentId)) return { ok: false, text: "Only Morgan, Avery, Rowan and Quinn can be switched." };
   try {
     if (toRunner) {
       if (!controlsOn()) return { ok: false, text: `${CONTROLS_OFF} Switching changes what runs on the schedule.` };

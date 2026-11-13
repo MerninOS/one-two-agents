@@ -6,6 +6,12 @@
 export type Tier = "Report" | "Draft" | "Act";
 
 export const ANNOTATE = "mercury.annotate_transaction";
+/**
+ * A plain-text draft in One Two's Gmail, to a lead on the leads list (slice 7). Zak still sends
+ * it himself from Gmail. The recipient is never in the proposal: the gateway reads it from the
+ * lead's row when it makes the draft. A first email to someone is always Draft and never promoted.
+ */
+export const DRAFT_EMAIL = "gmail.create_draft";
 
 /** Every write tool the gateway knows. A tool not listed here is refused. */
 export const TOOLS = {
@@ -14,6 +20,14 @@ export const TOOLS = {
     // Draft: every action waits for Zak. Promotion to Act is a later, data-backed decision.
     tier: "Draft" as Tier,
     fields: ["attach", "receipt_path", "category_id", "category", "note"],
+    promotable: true,
+  },
+  [DRAFT_EMAIL]: {
+    agents: ["wholesale_hunter"],
+    tier: "Draft" as Tier,
+    fields: ["subject", "body"],
+    // first contact with a person who has never heard from One Two: Draft for good (CLAUDE.md)
+    promotable: false,
   },
 } as const;
 export type ToolName = keyof typeof TOOLS;
@@ -37,11 +51,40 @@ export const receiptPathOk = (target: string, path: string) => {
   return !!m && m[2] === target && m[3] in RECEIPT_TYPES;
 };
 
+export interface DraftArgs { subject: string; body: string }
+export const DRAFT_LIMITS = { subject: 150, body: 1500 };
+
+/** Why a Gmail draft's text is refused: one-line subject, plain body, no links, no control characters. */
+export function refuseDraft(args: Record<string, unknown>): string | null {
+  const extra = Object.keys(args).filter((k) => !(TOOLS[DRAFT_EMAIL].fields as readonly string[]).includes(k));
+  if (extra.length) return `Fields not on the allow-list: ${extra.join(", ")}. A draft holds only a subject and a body; the recipient comes from the leads list.`;
+  const { subject, body } = args as Partial<DraftArgs>;
+  if (typeof subject !== "string" || !subject.trim()) return "The draft needs a subject.";
+  if (subject.length > DRAFT_LIMITS.subject) return `The subject is longer than ${DRAFT_LIMITS.subject} characters.`;
+  if (/[\u0000-\u001f\u007f]/.test(subject)) return "The subject must be one line of plain text.";
+  if (typeof body !== "string" || !body.trim()) return "The draft needs a body.";
+  if (body.length > DRAFT_LIMITS.body) return `The body is longer than ${DRAFT_LIMITS.body} characters.`;
+  if (/[\u0000-\u0009\u000b-\u001f\u007f]/.test(body)) return "The body may not hold control characters.";
+  if (/https?:\/\/|www\./i.test(subject + body)) return "A draft may not hold links: a web page could have put them there.";
+  return null;
+}
+
+/** Whether One Two may draft an email to this lead: an address on the row, not suppressed, not a lead Zak closed. */
+export function refuseDraftTo(lead: { email: string | null; stage: string } | null, suppressed: Set<string>): string | null {
+  if (!lead) return "That lead isn't on the leads list.";
+  const to = (lead.email ?? "").trim().toLowerCase();
+  if (!/^[^\s@<>()",;:]+@[^\s@<>()",;:]+\.[a-z]{2,}$/i.test(to)) return "That lead has no email address on the leads list.";
+  if (suppressed.has(to)) return `${to} asked not to be emailed.`;
+  if (lead.stage === "lost" || lead.stage === "skip") return `That lead is marked ${lead.stage}.`;
+  return null;
+}
+
 /** Why a proposed action is refused, or null when the gateway may queue it for approval. */
 export function refuseProposal(agentId: string, tool: string, target: string, args: Record<string, unknown>, memoMax = 200): string | null {
   const def = TOOLS[tool as ToolName];
   if (!def) return `Unknown write tool "${tool}".`;
   if (!(def.agents as readonly string[]).includes(agentId)) return `${agentId} may not use ${tool}.`;
+  if (tool === DRAFT_EMAIL) return UUID.test(target) ? refuseDraft(args) : "The target is not a lead on the leads list.";
   if (!UUID.test(target)) return "The target is not a Mercury transaction id.";
   const extra = Object.keys(args).filter((k) => !(def.fields as readonly string[]).includes(k));
   if (extra.length) return `Fields not on the allow-list: ${extra.join(", ")}. Only receipt, category and memo can be written.`;

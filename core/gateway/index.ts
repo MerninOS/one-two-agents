@@ -2,24 +2,25 @@ import "server-only";
 // The tool gateway. Agents never call a write integration themselves: they propose an
 // action here, the gateway checks it against the allow-list (policy.ts) and either
 // refuses it or queues it for Zak. Approved actions are executed here and nowhere else,
-// after a fresh check against Mercury's live state, inside withRun so every apply is in
-// agent_runs and respects agents.enabled. Every action, refused or applied, is a row in
-// agent_actions.
+// after a fresh check against Mercury's live state (or, for a Gmail draft, the lead's row),
+// inside withRun so every apply is in agent_runs and respects agents.enabled. Every action,
+// refused or applied, is a row in agent_actions.
 import { db } from "@/core/db";
 import { withRun } from "@/core/runs";
 import { hasMercury, mercuryCategories, mercuryTransaction } from "@/integrations/mercury";
 import { attachReceipt, hasMercuryWrite, patchTransaction } from "@/integrations/mercury-write";
 import { chicagoDate, offsetOn } from "@/core/time";
-import { ANNOTATE, CAP_KEYS, MAX_RECEIPT_BYTES, RECEIPT_TYPES, TOOLS, effectiveCap, planIsEmpty, planWrite, receiptPathOk, refuseProposal, type AnnotateArgs, type CapKey, type ToolName } from "./policy";
+import { createDraft, hasGmail } from "@/integrations/gmail";
+import { ANNOTATE, CAP_KEYS, DRAFT_EMAIL, MAX_RECEIPT_BYTES, RECEIPT_TYPES, TOOLS, effectiveCap, planIsEmpty, planWrite, receiptPathOk, refuseDraftTo, refuseProposal, type AnnotateArgs, type CapKey, type DraftArgs, type ToolName } from "./policy";
 
-export { ANNOTATE } from "./policy";
+export { ANNOTATE, DRAFT_EMAIL } from "./policy";
 
 export interface Proposal {
   agentId: string;
   runId?: string | null;
   tool: ToolName;
   target: string;
-  args: AnnotateArgs;
+  args: AnnotateArgs | DraftArgs;
   actionType: string;
   title: string;
   reasoning?: string;
@@ -35,7 +36,7 @@ async function numPolicy(key: string, d: number) {
 /** Queue an action for approval, or record it as refused. Returns what happened. */
 export async function propose(p: Proposal): Promise<{ status: "queued" | "refused" | "duplicate"; reason?: string; actionId?: string }> {
   const memoMax = await numPolicy("mercury_memo_max_chars", 200);
-  const refused = refuseProposal(p.agentId, p.tool, p.target, p.args as Record<string, unknown>, memoMax);
+  const refused = refuseProposal(p.agentId, p.tool, p.target, p.args as Record<string, unknown>, memoMax) ?? (p.tool === DRAFT_EMAIL ? await refuseLead(p.target) : null);
   const base = { agent_id: p.agentId, run_id: p.runId ?? null, tool: p.tool, action_type: p.actionType, target: p.target, args_json: p.args };
   if (refused) {
     await db().from("agent_actions").insert({ ...base, status: "refused", reason: refused });
@@ -50,6 +51,23 @@ export async function propose(p: Proposal): Promise<{ status: "queued" | "refuse
     if (e2) { await db().from("agent_actions").delete().eq("id", action.id); throw new Error(`Gateway: could not queue the approval: ${e2.message}`); }
   }
   return { status: "queued", actionId: action.id };
+}
+
+// ---- Gmail drafts: the recipient always comes from the leads list
+
+interface LeadRow { id: string; business: string; email: string | null; stage: string }
+
+async function leadAndSuppressed(leadId: string) {
+  const { data: lead } = await db().from("wholesale_leads").select("id, business, email, stage").eq("id", leadId).maybeSingle();
+  const to = ((lead as LeadRow | null)?.email ?? "").trim().toLowerCase();
+  const { data: sup } = to ? await db().from("email_suppressions").select("email").eq("email", to) : { data: [] };
+  return { lead: lead as LeadRow | null, suppressed: new Set((sup ?? []).map((r) => r.email as string)) };
+}
+
+/** Why a draft to this lead can't be proposed right now, read fresh from the leads list and suppressions. */
+async function refuseLead(leadId: string) {
+  const { lead, suppressed } = await leadAndSuppressed(leadId);
+  return refuseDraftTo(lead, suppressed);
 }
 
 // ---- The Bookkeeper's proposals (expense_docs.proposal_*) become actions
@@ -201,23 +219,79 @@ async function applyOne(a: ActionRow, runId: string, cats: () => Promise<Set<str
 }
 
 /**
- * Applies approved actions (all of them, or the ids given), at most max_mercury_writes_per_run
- * per agent, each inside a withRun for its agent (trigger "approval", $0). A disabled agent's
- * run is skipped and its actions stay approved.
+ * Applies approved actions (all of them, or the ids given): Mercury changes and Gmail drafts, each
+ * kind only when its integration is set up, each inside a withRun for its agent (trigger
+ * "approval", $0). A disabled agent's run is skipped and its actions stay approved.
  */
 export async function applyApproved(ids?: string[]) {
-  const blocked = writeBlocker();
-  if (blocked) return { ok: false, text: blocked };
   await expireStale();
-  // an apply that died mid-way: mark it failed; a retry re-checks Mercury first, so nothing is written twice
-  await db().from("agent_actions").update({ status: "failed", reason: "Interrupted while applying. Retry re-checks Mercury first." })
+  // an apply that died mid-way: mark it failed; a retry checks again first, so nothing is written twice
+  await db().from("agent_actions").update({ status: "failed", reason: "Interrupted while applying. Retry checks again first." })
     .eq("status", "executing").lt("claimed_at", new Date(Date.now() - 10 * 6e4).toISOString());
-  let q = db().from("agent_actions").select("id, agent_id, target, args_json, status").eq("status", "approved").eq("tool", ANNOTATE).order("decided_at", { ascending: true });
+  const done = (await Promise.all([applyMercury(ids), applyDrafts(ids)])).filter((r): r is { ok: boolean; text: string } => !!r);
+  if (!done.length) return { ok: true, text: "Nothing approved is waiting." };
+  return { ok: done.every((r) => r.ok), text: done.map((r) => r.text).join(" ") };
+}
+
+async function approvedOf(tool: string, ids?: string[]) {
+  let q = db().from("agent_actions").select("id, agent_id, target, args_json, status").eq("status", "approved").eq("tool", tool).order("decided_at", { ascending: true });
   if (ids?.length) q = q.in("id", ids);
   const { data, error } = await q.limit(200);
-  if (error) return { ok: false, text: error.message };
-  const rows = (data ?? []) as ActionRow[];
-  if (!rows.length) return { ok: true, text: "Nothing approved is waiting." };
+  if (error) throw new Error(error.message);
+  return (data ?? []) as ActionRow[];
+}
+
+/** Approved Gmail drafts: made in Gmail, to the address on the lead's row, at most max_gmail_drafts_per_run per agent. */
+async function applyDrafts(ids?: string[]) {
+  const rows = await approvedOf(DRAFT_EMAIL, ids);
+  if (!rows.length) return null;
+  if (!hasGmail()) return { ok: true, text: "Approved, not in Gmail yet: Gmail isn't connected (GMAIL_CLIENT_ID, GMAIL_CLIENT_SECRET, GMAIL_REFRESH_TOKEN)." };
+  const cap = await numPolicy("max_gmail_drafts_per_run", 10);
+  const byAgent = new Map<string, ActionRow[]>();
+  for (const r of rows) byAgent.set(r.agent_id, [...(byAgent.get(r.agent_id) ?? []), r]);
+  const texts: string[] = [];
+  let ok = true;
+  for (const [agentId, list] of byAgent) {
+    const res = await withRun(agentId, "approval", async (runId) => {
+      const n = { applied: 0, refused: 0, failed: 0 };
+      for (const a of list.slice(0, cap)) { const r = await applyDraft(a, runId); if (r !== "skipped") n[r]++; }
+      const left = Math.max(0, list.length - cap);
+      return { status: "ok", summary: `Gateway made ${n.applied} approved Gmail draft${n.applied === 1 ? "" : "s"}${n.refused ? `, refused ${n.refused} on a fresh check` : ""}${n.failed ? `, ${n.failed} failed` : ""}${left ? `, ${left} left for the next apply (cap ${cap})` : ""}. Zak sends them from Gmail.` };
+    });
+    if (res.status === "skipped") ok = false;
+    texts.push(res.status === "skipped" ? `${agentId}: not applied (${res.summary}) Approved drafts are kept.` : res.summary);
+  }
+  return { ok, text: texts.join(" ") };
+}
+
+async function applyDraft(a: ActionRow, runId: string) {
+  const { data: claimed } = await db().from("agent_actions").update({ status: "executing", exec_run_id: runId, claimed_at: new Date().toISOString() }).eq("id", a.id).eq("status", "approved").select("id").maybeSingle();
+  if (!claimed) return "skipped" as const;
+  const done = (patch: Record<string, unknown>) => db().from("agent_actions").update({ executed_at: new Date().toISOString(), ...patch }).eq("id", a.id);
+  try {
+    const args = a.args_json as unknown as DraftArgs;
+    // the allow-list and the lead again, at execution time: the row may have changed since the card
+    const refused = refuseProposal(a.agent_id, DRAFT_EMAIL, a.target, args as unknown as Record<string, unknown>);
+    const { lead, suppressed } = await leadAndSuppressed(a.target);
+    const no = refused ?? refuseDraftTo(lead, suppressed);
+    if (no) { await done({ status: "refused", reason: no }); return "refused" as const; }
+    const to = lead!.email!.trim();
+    const draftId = await createDraft(to, args.subject, args.body);
+    await done({ status: "applied", result_json: { gmail_draft_id: draftId, to }, diff_json: { before: { stage: lead!.stage }, after: { stage: lead!.stage === "new" ? "drafted" : lead!.stage } } });
+    await db().from("wholesale_leads").update({ gmail_draft_id: draftId, draft_subject: args.subject, draft_body: args.body, ...(lead!.stage === "new" ? { stage: "drafted" } : {}) }).eq("id", lead!.id);
+    return "applied" as const;
+  } catch (e) {
+    await done({ status: "failed", reason: e instanceof Error ? e.message.slice(0, 300) : String(e) });
+    return "failed" as const;
+  }
+}
+
+/** Approved Mercury changes, at most max_mercury_writes_per_run per agent. */
+async function applyMercury(ids?: string[]) {
+  const rows = await approvedOf(ANNOTATE, ids);
+  if (!rows.length) return null;
+  const blocked = writeBlocker();
+  if (blocked) return { ok: true, text: `Approved, not in Mercury yet: ${blocked}` };
   const cap = await numPolicy("max_mercury_writes_per_run", 20);
   const byAgent = new Map<string, ActionRow[]>();
   for (const r of rows) byAgent.set(r.agent_id, [...(byAgent.get(r.agent_id) ?? []), r]);

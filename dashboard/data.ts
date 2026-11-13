@@ -196,7 +196,9 @@ export interface ApprovalItem {
   status: string;
   created_at: string;
   decided_at: string | null;
-  preview: { date?: string; merchant?: string; amount_usd?: number; receipt_path?: string | null; category?: string | null; note?: string | null };
+  preview: { date?: string; merchant?: string; amount_usd?: number; receipt_path?: string | null; category?: string | null; note?: string | null; charge?: string; to?: string; subject?: string; body?: string; why?: string };
+  /** The gateway tool: a Mercury change or a Gmail draft. */
+  tool: string;
   /** A 10-minute signed link to the receipt file, so Zak can check it before approving. */
   receipt_url: string | null;
   action_status: string;
@@ -210,20 +212,20 @@ export async function getApprovals(): Promise<ApprovalsView | null> {
   await requireSession();
   if (!health().supabase) return null;
   const [ap, log, pol] = await Promise.all([
-    db().from("approvals").select("id, action_id, agent_id, title, reasoning, status, created_at, decided_at, preview, agent_actions(status, reason)").order("created_at", { ascending: false }).limit(200),
+    db().from("approvals").select("id, action_id, agent_id, title, reasoning, status, created_at, decided_at, preview, agent_actions(status, reason, tool)").order("created_at", { ascending: false }).limit(200),
     db().from("agent_actions").select("id, agent_id, tool, action_type, target, status, reason, created_at, executed_at, run_id, exec_run_id").order("created_at", { ascending: false }).limit(60),
     db().from("policies").select("value_json").eq("key", "approval_expiry_hours").maybeSingle(),
   ]);
   if (ap.error || log.error) return null;
   const items: ApprovalItem[] = await Promise.all((ap.data ?? []).map(async (r) => {
-    const act = (Array.isArray(r.agent_actions) ? r.agent_actions[0] : r.agent_actions) as { status: string; reason: string | null } | null;
+    const act = (Array.isArray(r.agent_actions) ? r.agent_actions[0] : r.agent_actions) as { status: string; reason: string | null; tool: string } | null;
     const preview = (r.preview ?? {}) as ApprovalItem["preview"];
     let receipt_url: string | null = null;
     if (preview.receipt_path && r.status === "pending") {
       const { data } = await db().storage.from("receipts").createSignedUrl(preview.receipt_path, 600);
       receipt_url = data?.signedUrl ?? null;
     }
-    return { id: r.id, action_id: r.action_id, agent_id: r.agent_id, title: r.title, reasoning: r.reasoning, status: r.status, created_at: r.created_at, decided_at: r.decided_at, preview, receipt_url, action_status: act?.status ?? "?", action_reason: act?.reason ?? null };
+    return { id: r.id, action_id: r.action_id, agent_id: r.agent_id, title: r.title, reasoning: r.reasoning, status: r.status, created_at: r.created_at, decided_at: r.decided_at, preview, receipt_url, action_status: act?.status ?? "?", action_reason: act?.reason ?? null, tool: act?.tool ?? "" };
   }));
   return {
     pending: items.filter((i) => i.status === "pending").reverse(), // oldest first

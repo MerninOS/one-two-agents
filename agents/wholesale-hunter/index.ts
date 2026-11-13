@@ -89,7 +89,8 @@ export const domainOf = (url: string) => {
 };
 const EMAIL = /^[^\s@<>()",;]+@[^\s@<>()",;]+\.[a-z]{2,}$/i;
 
-async function offer() {
+/** What One Two offers a wholesale customer, from Shopify. Rowan's emails may only claim these facts. */
+export async function offer() {
   const [lots, stock] = await Promise.all([getInventoryLots(), fetchStockCoffees()]);
   return {
     site: `${env.siteUrl}/wholesale`,
