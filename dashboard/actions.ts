@@ -20,7 +20,8 @@ import { approvalDecided, startStep } from "@/core/chain";
 import { activateFlow, flowLooser, flowProblems, listFlowVersions, loadFlow, saveFlowVersion, type Flow } from "@/core/flow";
 import { ANNOTATE } from "@/core/gateway";
 import { BUDGET_CEILING, activateSpecVersion, createBuiltAgent, listSpecVersions, loadSpec, readSpec, saveSpecVersion, specLooser, type AgentSpec } from "@/core/agent-spec";
-import { dryRunTools, runExplore } from "@/core/runner";
+import { dryRunTools, runExplore, type PlaybookStep } from "@/core/runner";
+import { activePlaybook, afterRun, approvePlaybook, listPlaybooks, rejectPlaybook } from "@/core/playbook";
 import { loadMemory } from "@/core/memory";
 import { BUILT, BY_ID } from "./crew";
 import { requireSession } from "./data";
@@ -693,24 +694,57 @@ export async function dryRunBuilt(agentId: string, draft?: unknown): Promise<Act
   } catch (e) { return fail(e); }
 }
 
-/** One explore run of the draft (or the saved spec), logged with trigger "preview" and its steps saved for replay. */
-export async function previewBuilt(agentId: string, draft?: unknown): Promise<ActionResult> {
+/**
+ * One run of the draft (or the saved spec), logged with trigger "preview" and its steps saved for
+ * replay. It follows the approved playbook when there is one, unless `explore` asks for a fresh
+ * explore run (Re-explore). Afterwards code drafts or updates the playbook (core/playbook.ts).
+ */
+export async function previewBuilt(agentId: string, draft?: unknown, explore = false): Promise<ActionResult> {
   await requireSession();
   if (!controlsOn()) return { ok: false, text: `${CONTROLS_OFF} A preview makes real model calls.` };
   try {
     const now = await builtAgent(agentId);
     let spec = now?.spec;
-    if (draft !== undefined) { const g = checkedDraft(draft); if ("error" in g) return { ok: false, text: g.error }; spec = g.spec; }
+    if (draft !== undefined && draft !== null) { const g = checkedDraft(draft); if ("error" in g) return { ok: false, text: g.error }; spec = g.spec; }
     else if (now?.problems.length) return { ok: false, text: `The spec asks for something code doesn’t offer: ${now.problems.join("; ")}.` };
     if (!spec) return { ok: false, text: "That agent has no saved spec." };
     const run = spec;
     let block = "";
     try { block = (await loadMemory(agentId)).block; } catch { /* a preview without memory is fine */ }
+    let playbook: { version: number; steps: PlaybookStep[] } | undefined;
+    if (!explore) { try { const a = activePlaybook(await listPlaybooks(agentId)); if (a) playbook = { version: a.version, steps: a.steps }; } catch { /* no playbook table yet: explore */ } }
+    let got: Awaited<ReturnType<typeof runExplore>> | null = null;
+    let rid: string | null = null;
     const res = await withRun(agentId, "preview", async (runId) => {
-      const r = await runExplore(run, { agentId, runId, memoryBlock: block });
+      rid = runId;
+      const r = await runExplore(run, { agentId, runId, memoryBlock: block, playbook });
+      got = r;
       return { status: r.status, summary: r.summary, tokensIn: r.tokensIn, tokensOut: r.tokensOut, costUsd: r.costUsd, metrics: r.metrics };
     });
+    let note = "";
+    if (got) { try { note = ` ${await afterRun(agentId, rid, got)}`; } catch (e) { note = ` (Playbook not updated: ${e instanceof Error ? e.message : String(e)})`; } }
     revalidatePath("/", "layout");
-    return { ok: res.status === "ok", text: `${res.summary.slice(0, 300)}${res.summary.length > 300 ? "…" : ""} ($${(res.costUsd ?? 0).toFixed(4)})` };
+    return { ok: res.status === "ok", text: `${res.summary.slice(0, 300)}${res.summary.length > 300 ? "…" : ""} ($${(res.costUsd ?? 0).toFixed(4)})${note}` };
   } catch (e) { revalidatePath("/", "layout"); return fail(e); }
+}
+
+/** Approves a drafted playbook with the steps Zak kept. Spends nothing and runs nothing. */
+export async function approveBuiltPlaybook(agentId: string, playbookId: number, keep: number[]): Promise<ActionResult> {
+  await requireSession();
+  try {
+    await builtAgent(agentId);
+    const v = await approvePlaybook(agentId, Number(playbookId), (Array.isArray(keep) ? keep : []).map(Number).filter(Number.isInteger));
+    revalidatePath("/", "layout");
+    return { ok: true, text: `Playbook v${v} approved. Preview now follows it; later updates apply on their own unless a run falls back.` };
+  } catch (e) { return fail(e); }
+}
+
+export async function rejectBuiltPlaybook(agentId: string, playbookId: number): Promise<ActionResult> {
+  await requireSession();
+  try {
+    await builtAgent(agentId);
+    const v = await rejectPlaybook(agentId, Number(playbookId));
+    revalidatePath("/", "layout");
+    return { ok: true, text: `Playbook v${v} rejected. Re-explore to draft another.` };
+  } catch (e) { return fail(e); }
 }

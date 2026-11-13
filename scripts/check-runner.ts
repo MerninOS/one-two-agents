@@ -3,6 +3,7 @@
 import assert from "node:assert/strict";
 import { checkInput } from "../core/tools/types";
 import { readSpec, specLooser } from "../core/agent-spec";
+import { draftSteps, sameSteps, stepChanges } from "../core/playbook";
 import { runExplore, traceNumbers, type Step } from "../core/runner";
 
 type Block = { type: "text"; text: string } | { type: "tool_use"; id: string; name: string; input: unknown };
@@ -87,6 +88,38 @@ async function main() {
   const reads = readSpec({ directive: "x", model: "claude-haiku-5-5", tools: ["agent_output"], readsFrom: [{ agentId: "b_green", label: "G" }, { agentId: "b_green" }, { agentId: "Bad Id!" }] });
   assert.deepEqual(reads.spec.readsFrom, [{ agentId: "b_green", label: "G" }]);
   assert.equal(reads.problems.length, 1);
+
+  // playbooks: drafted from the tool calls that worked, in order, without repeats
+  const ran: Step[] = [
+    { idx: 0, kind: "model", ok: true, ms: 0 },
+    { idx: 1, kind: "tool", tool: "shopify_green_lots", input: {}, ok: true, ms: 0 },
+    { idx: 2, kind: "tool", tool: "calc_green_use", input: { days: 30 }, ok: true, ms: 0 },
+    { idx: 3, kind: "tool", tool: "mercury_balances", input: {}, ok: false, ms: 0 },
+    { idx: 4, kind: "tool", tool: "shopify_green_lots", input: {}, ok: true, ms: 0 },
+  ];
+  const pb = draftSteps(ran);
+  assert.deepEqual(pb, [{ tool: "shopify_green_lots", input: {} }, { tool: "calc_green_use", input: { days: 30 } }]);
+  assert.ok(sameSteps(pb, [{ tool: "shopify_green_lots", input: {} }, { tool: "calc_green_use", input: { days: 30 } }]));
+  assert.ok(!sameSteps(pb, [{ tool: "shopify_green_lots", input: {} }, { tool: "calc_green_use", input: { days: 14 } }]));
+  assert.match(stepChanges(pb, [pb[0]]), /^Removed: Green use per week/);
+  assert.match(stepChanges(null, pb), /First playbook: 2 steps/);
+
+  // following a playbook: code makes the calls, the model is offered only finish
+  const r5 = await runExplore(spec, { agentId: "scratch", playbook: { version: 1, steps: [] }, client: fake((t, body) => {
+    assert.deepEqual(body.tools.map((x) => x.name), ["finish"]);
+    return reply([{ type: "tool_use", id: "p", name: "finish", input: { result: "From the playbook." } }]);
+  }) });
+  assert.equal(r5.mode, "playbook");
+  assert.equal(r5.summary, "From the playbook.");
+
+  // a playbook step the agent no longer has: it falls back to exploring with its own tools
+  const r6 = await runExplore(spec, { agentId: "scratch", playbook: { version: 2, steps: [{ tool: "shopify_green_lots", input: {} }] }, client: fake((t, body) => {
+    assert.deepEqual(body.tools.map((x) => x.name), ["mercury_balances", "finish"]);
+    return reply([{ type: "tool_use", id: "q", name: "finish", input: { result: "Explored." } }]);
+  }) });
+  assert.equal(r6.mode, "fallback");
+  assert.match(r6.summary, /Playbook v2 stopped/);
+  assert.equal(r6.steps.find((x) => x.kind === "tool")?.ok, false);
 
   console.log("check-runner: all passed");
 }

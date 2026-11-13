@@ -10,12 +10,13 @@ import { TOOL_LIST, TOOLS } from "@/core/tools/catalog";
 import { MODEL_LIST } from "@/integrations/models";
 import { env } from "@/core/env";
 import { when } from "@/dashboard/format";
+import { activePlaybook, listPlaybooks, pendingPlaybook, playbookHold, stepLabel } from "@/core/playbook";
 
 export interface BuildStep {
   idx: number; kind: "model" | "tool" | "stop"; tool: string | null; toolLabel: string | null; input: unknown; output: string | null;
   ok: boolean; numbers: Record<string, number> | null; tokens_in: number; tokens_out: number; cost_usd: number; ms: number;
 }
-export interface BuildRun { id: string; trigger: string; started_at: string; ended_at: string | null; status: string; summary: string | null; error: string | null; cost_usd: number; steps: BuildStep[] }
+export interface BuildRun { id: string; trigger: string; mode: string | null; started_at: string; ended_at: string | null; status: string; summary: string | null; error: string | null; cost_usd: number; steps: BuildStep[] }
 export interface BuildTool { id: string; label: string; detail: string; kind: string; group: string; trusted: boolean; connected: boolean; needs: string[]; grantable: boolean }
 export interface BuildModel { id: string; label: string; in: number; out: number }
 export interface Standard { id: string; grp: "standing_order" | "crew"; text: string; notionPageId: string | null }
@@ -71,11 +72,12 @@ async function standards(agentId: string): Promise<Standard[]> {
 }
 
 async function runs(agentId: string): Promise<BuildRun[]> {
-  const { data: rs } = await db().from("agent_runs").select("id, trigger, started_at, ended_at, status, summary, error, cost_usd").eq("agent_id", agentId).order("started_at", { ascending: false }).limit(5);
+  const { data: rs } = await db().from("agent_runs").select("id, trigger, started_at, ended_at, status, summary, error, cost_usd, metrics").eq("agent_id", agentId).order("started_at", { ascending: false }).limit(5);
   const runIds = (rs ?? []).map((r) => r.id);
   const { data: steps } = runIds.length ? await db().from("run_steps").select("run_id, idx, kind, tool, input, output, ok, numbers, tokens_in, tokens_out, cost_usd, ms").in("run_id", runIds).order("idx") : { data: [] };
-  return (rs ?? []).map((r) => ({
+  return (rs ?? []).map(({ metrics, ...r }) => ({
     ...r, cost_usd: Number(r.cost_usd),
+    mode: (() => { const m = (metrics ?? {}) as Record<string, number>; return m.playbook ? "followed playbook" : m.fell_back ? "fell back to exploring" : "finished" in m ? "explored" : null; })(),
     steps: (steps ?? []).filter((s) => s.run_id === r.id).map((s) => ({ ...s, cost_usd: Number(s.cost_usd), toolLabel: s.tool ? TOOLS[s.tool]?.label ?? s.tool : null })) as BuildStep[],
   }));
 }
@@ -86,6 +88,20 @@ export interface BuilderData {
   standards: Standard[]; runs: BuildRun[]; spentToday: number;
   others: { id: string; name: string; outputName: string; hasOutput: boolean }[];
   lastOutput: { name: string; summary: string; numbers: { label: string; value: number; tool: string }[]; at: string; finished: boolean } | null;
+  playbooks: PlaybookView | null;
+}
+
+export interface PlaybookRow { id: number; version: number; status: string; steps: string[]; changes: string | null; auto: boolean; when: string }
+export interface PlaybookView { active: PlaybookRow | null; pending: PlaybookRow | null; history: PlaybookRow[]; hold: string | null }
+
+/** Null when the playbook migration isn't applied yet. */
+async function playbookView(agentId: string): Promise<PlaybookView | null> {
+  try {
+    const [all, hold] = await Promise.all([listPlaybooks(agentId), playbookHold(agentId)]);
+    const view = (p: (typeof all)[number]): PlaybookRow => ({ id: p.id, version: p.version, status: p.status, steps: p.steps.map(stepLabel), changes: p.changes, auto: p.auto, when: when(p.decidedAt ?? p.createdAt) });
+    const a = activePlaybook(all), q = pendingPlaybook(all);
+    return { active: a && view(a), pending: q && view(q), history: all.map(view), hold: hold?.reason ?? null };
+  } catch { return null; }
 }
 
 /** Null when the agent isn't one built in the app. */
@@ -95,11 +111,12 @@ export async function getBuilder(agentId: string): Promise<BuilderData | null> {
   const versions = await listSpecVersions(agentId);
   if (!versions.length) return null;
   const since = new Date(Date.now() - 864e5).toISOString();
-  const [active, st, rs, spent, defs, outs] = await Promise.all([
+  const [active, st, rs, spent, defs, outs, playbooks] = await Promise.all([
     loadSpec(agentId), standards(agentId), runs(agentId),
     db().from("agent_runs").select("cost_usd").eq("agent_id", agentId).gte("started_at", since),
     db().from("agent_defs").select("agent_id, spec").eq("active", true).neq("agent_id", agentId),
     db().from("agent_outputs").select("agent_id, name, summary, numbers, created_at, finished").order("created_at", { ascending: false }).limit(200),
+    playbookView(agentId),
   ]);
   const outRows = outs.error ? [] : outs.data ?? [];
   const mine = outRows.find((o) => o.agent_id === agentId);
@@ -110,6 +127,7 @@ export async function getBuilder(agentId: string): Promise<BuilderData | null> {
       const sp = (d.spec ?? {}) as Partial<AgentSpec>;
       return { id: d.agent_id as string, name: sp.name || d.agent_id, outputName: sp.outputName || "result", hasOutput: outRows.some((o) => o.agent_id === d.agent_id && o.finished) };
     }).sort((x, y) => x.name.localeCompare(y.name)),
+    playbooks,
     lastOutput: mine ? { name: mine.name, summary: mine.summary, numbers: (Array.isArray(mine.numbers) ? mine.numbers : []) as { label: string; value: number; tool: string }[], at: when(mine.created_at), finished: mine.finished } : null,
   };
 }

@@ -6,7 +6,7 @@
 import { useRouter } from "next/navigation";
 import { useMemo, useState, useTransition } from "react";
 import type { AgentSpec } from "@/core/agent-spec";
-import type { BuilderMenu, Standard } from "@/dashboard/builder";
+import type { BuilderMenu, PlaybookView, Standard } from "@/dashboard/builder";
 import type { ActionResult } from "../actions";
 import { Modal, Toast, type Confirm } from "./client";
 import { Icon } from "./Icon";
@@ -67,7 +67,10 @@ export interface BuilderProps {
   lastOutput: { name: string; summary: string; numbers: { label: string; value: number; tool: string }[]; at: string; finished: boolean } | null;
   controls: boolean;
   dryRun: Act<[unknown]>;
-  preview: Act<[unknown]>;
+  preview: Act<[unknown, boolean]>;
+  /** The approved playbook a Preview follows, if any, and whether the agent is on hold. */
+  playbook: { version: number; steps: number } | null;
+  pendingPlaybook: number | null;
   save: Act<[unknown, string, boolean]>;
   addStandard: Act<[string, string]>;
   forget: Act<[string]>;
@@ -117,9 +120,15 @@ export function Builder(p: BuilderProps) {
     if (looser.length) setConfirm({ c: { title: `Save as v${p.nextVersion}?`, body: "This version lets a run spend more than the active one.", lines: looser.map((x) => ({ k: "Change", v: x })), confirmLabel: `Save v${p.nextVersion}`, kind: "dark" }, go: () => doSave(true) });
     else doSave(false);
   };
-  const onPreview = () => setConfirm({
-    c: { title: "Run a preview?", body: `A real explore run of this ${dirty ? "unsaved draft" : "version"} on ${model?.label ?? d.model}: it reads live data and calls the model, up to ${d.limits.maxSteps} tool calls and $${d.limits.maxCostUsd.toFixed(2)}. Nothing is written or sent. It counts against today’s budget.`, confirmLabel: "Run preview", kind: "dark" },
-    go: () => run(() => p.preview(d)),
+  const onPreview = (explore: boolean) => setConfirm({
+    c: {
+      title: explore ? "Re-explore?" : "Run a preview?",
+      body: !explore && p.playbook
+        ? `Follows playbook v${p.playbook.version}: code makes its ${p.playbook.steps} tool calls on live data, then ${model?.label ?? d.model} writes the result. If a step fails it explores instead. Up to $${d.limits.maxCostUsd.toFixed(2)}. Nothing is written or sent. It counts against today’s budget.`
+        : `A real explore run of this ${dirty ? "unsaved draft" : "version"} on ${model?.label ?? d.model}: the model picks its own tool calls, up to ${d.limits.maxSteps} and $${d.limits.maxCostUsd.toFixed(2)}. Nothing is written or sent. It counts against today’s budget. Afterwards code drafts a playbook from the calls that worked.`,
+      confirmLabel: explore ? "Re-explore" : "Run preview", kind: "dark",
+    },
+    go: () => run(() => p.preview(d, explore)),
   });
 
   return (
@@ -143,7 +152,7 @@ export function Builder(p: BuilderProps) {
               <span className="stack" style={{ gap: 2 }}><span style={{ fontSize: 14, fontWeight: 600 }}>{t.label}</span><span className="sub">{t.detail}</span></span>
             </label>
           ))}
-          <span className="sub">Explore runs are by hand only. An agent can run on its own only after you approve its first playbook (coming in a later slice), and it starts off duty even then.</span>
+          <span className="sub">{p.playbook ? `Playbook v${p.playbook.version} is approved. Running after another agent or on a schedule comes when the four agents move to the runner; until then it runs when you press Preview.` : "Explore runs are by hand only. An agent can run on its own only after you approve its first playbook, and it starts off duty even then."}</span>
         </Section>
 
         <Section n={2} title="Sources" sub="What it may read. Only ticked tools are handed to the model.">
@@ -303,14 +312,15 @@ export function Builder(p: BuilderProps) {
           </div>
           <div className="stack" style={{ gap: 4, fontSize: 14 }}>
             <span className="ted-k">Playbook</span>
-            <span className="sub">None yet. Its runs explore; saving the steps as a playbook for you to approve comes in a later slice.</span>
+            <span className="sub">{p.playbook ? `v${p.playbook.version} approved, ${p.playbook.steps} steps. Preview follows it.` : "None approved yet. Preview explores, then code drafts a playbook from the calls that worked."}{p.pendingPlaybook ? ` v${p.pendingPlaybook} waits for your approval below.` : ""}</span>
           </div>
           {problems.length > 0 && <div className="ted-warn">Fix first: {problems.join("; ")}.</div>}
           <button type="button" className="btn outline" disabled={busy || problems.length > 0} onClick={() => start2Check()}>
             <Icon name="play" size={15} />Tool check · free
           </button>
           {check && <span className="sub" style={{ color: check.ok ? undefined : "var(--red-ink)", lineHeight: 1.5 }}>{check.text}</span>}
-          <button type="button" className="btn dark" disabled={busy || problems.length > 0 || !p.controls} title={p.controls ? undefined : "Needs DASHBOARD_CONTROLS=on"} onClick={onPreview}>{busy ? "Working…" : "Preview · explore run"}</button>
+          <button type="button" className="btn dark" disabled={busy || problems.length > 0 || !p.controls} title={p.controls ? undefined : "Needs DASHBOARD_CONTROLS=on"} onClick={() => onPreview(false)}>{busy ? "Working…" : p.playbook ? `Preview · follows v${p.playbook.version}` : "Preview · explore run"}</button>
+          {p.playbook && <button type="button" className="btn outline" disabled={busy || problems.length > 0 || !p.controls} onClick={() => onPreview(true)}>Re-explore</button>}
           {!p.controls && <span className="sub">Preview needs DASHBOARD_CONTROLS=on, since it spends money.</span>}
           <div className="rule" />
           <input className="input" placeholder="What changed? (for the version list)" maxLength={300} value={note} onChange={(e) => setNote(e.target.value)} />
@@ -383,6 +393,61 @@ export function SpecVersions({ versions, activate, controls }: { versions: { ver
         </div>
       ))}
       {confirm && <Modal c={confirm.c} busy={busy} onCancel={() => setConfirm(null)} onGo={() => { const g = confirm.go; setConfirm(null); g(); }} />}
+      <Toast t={toast} onDone={() => setToast(null)} />
+    </div>
+  );
+}
+
+/** Playbooks: the approved one, a draft waiting for approval (Zak can drop steps), and the history. */
+export function PlaybookPanel({ view, approve, reject }: { view: PlaybookView; approve: (id: number, keep: number[]) => Promise<ActionResult>; reject: (id: number) => Promise<ActionResult> }) {
+  const { toast, setToast, busy, run } = useAct();
+  const q = view.pending;
+  const [keep, setKeep] = useState<number[]>(q ? q.steps.map((_, i) => i) : []);
+  const statusLook: Record<string, { label: string; bg: string; ink: string }> = {
+    approved: { label: "Approved", bg: "var(--mint-soft)", ink: "var(--mint-ink)" }, proposed: { label: "Waiting for you", bg: "var(--yel-soft)", ink: "var(--yel-ink)" },
+    rejected: { label: "Rejected", bg: "var(--red-soft)", ink: "var(--red-ink)" }, replaced: { label: "Replaced", bg: "var(--soft)", ink: "var(--ink2)" },
+  };
+  return (
+    <div className="card" style={{ gap: 12 }}>
+      <span className="card-t">Playbook</span>
+      <span className="sub">An explore run lets the model pick its own tool calls. Code saves the calls that worked as a playbook. Once you approve one, runs follow it: code makes the same calls on fresh data and the model only writes the result, which is cheaper and steadier. If a step fails, the run explores instead. After your first approval, a playbook from a Re-explore applies on its own and shows what changed; a run that falls back or doesn’t finish puts the agent on hold, so the next one waits for you again.</span>
+      {view.hold && <div className="ted-warn">On hold: {view.hold}. The next playbook waits for your approval.</div>}
+      {q && (
+        <div className="soft-box" style={{ flexDirection: "column", alignItems: "stretch", gap: 8 }}>
+          <span className="ted-k">v{q.version} · waiting for your approval · {q.when}</span>
+          {q.changes && <span style={{ fontSize: 13.5 }}>{q.changes}</span>}
+          {q.steps.map((st, i) => (
+            <label key={i} className="row" style={{ gap: 10, fontSize: 14, cursor: "pointer" }}>
+              <input type="checkbox" checked={keep.includes(i)} onChange={() => setKeep(keep.includes(i) ? keep.filter((x) => x !== i) : [...keep, i].sort((a, b) => a - b))} style={{ width: 18, height: 18 }} />
+              <span>{i + 1}. {st}</span>
+            </label>
+          ))}
+          <span className="row" style={{ gap: 10, fontSize: 14 }}><Icon name="cpu" size={15} /><span>{q.steps.length + 1}. The model writes the result from what these returned</span></span>
+          <div className="row wrap" style={{ gap: 8 }}>
+            <button type="button" className="btn dark sm" disabled={busy || !keep.length} onClick={() => run(() => approve(q.id, keep))}>{keep.length === q.steps.length ? "Approve" : `Approve ${keep.length} of ${q.steps.length} steps`}</button>
+            <button type="button" className="btn ghost sm" disabled={busy} onClick={() => run(() => reject(q.id))}>Reject</button>
+          </div>
+        </div>
+      )}
+      {view.active ? (
+        <div className="stack" style={{ gap: 4 }}>
+          <span className="ted-k">v{view.active.version} · approved{view.active.auto ? " on its own" : ""} · {view.active.when}</span>
+          {view.active.steps.map((st, i) => <span key={i} style={{ fontSize: 14 }}>{i + 1}. {st}</span>)}
+          <span style={{ fontSize: 14 }}>{view.active.steps.length + 1}. The model writes the result</span>
+        </div>
+      ) : !q && <span className="sub">None yet. Press Preview to explore; code drafts one from the calls that worked.</span>}
+      {view.history.length > 0 && (
+        <details>
+          <summary className="muted" style={{ cursor: "pointer", fontSize: 13 }}>History</summary>
+          {view.history.map((h) => (
+            <div key={h.id} className="row wrap rule" style={{ gap: 10, padding: "8px 0", fontSize: 13.5 }}>
+              <span style={{ fontWeight: 600, minWidth: 30 }}>v{h.version}</span>
+              <span style={{ flex: "1 1 220px" }}>{h.changes ?? `${h.steps.length} steps`}<span className="muted" style={{ display: "block", fontSize: 12 }}>{h.when}{h.auto ? " · applied on its own" : ""}</span></span>
+              <span className="pill sm" style={{ background: statusLook[h.status]?.bg, color: statusLook[h.status]?.ink }}>{statusLook[h.status]?.label ?? h.status}</span>
+            </div>
+          ))}
+        </details>
+      )}
       <Toast t={toast} onDone={() => setToast(null)} />
     </div>
   );
