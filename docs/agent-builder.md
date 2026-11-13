@@ -124,6 +124,47 @@ from the tools the spec grants, code runs them, hard limits stop it.
   whether a run explored, followed the playbook or fell back.
 - Running on a trigger stays locked: it arrives when the four agents move to the runner (slices 6-7).
 - Lint: `core/gateway` and `integrations/` may not import `core/playbook` either.
+- Clicking Re-explore after a change is still by hand; marking the playbook stale on a directive
+  change is left for later.
+
+## Slice 5: reports and actions (built)
+
+- **Report tools** (kind `report`): `report_email_zak` (through `integrations/email.ts`, which has
+  no recipient argument, so only `BRIEF_TO`) and `report_notion_page` (a new page under the page
+  picked on the builder screen, `reportPage` in the spec, stored by id). The model is never offered
+  a report tool. After a run that **finishes**, code delivers the result and its traced numbers to
+  every ticked report; a run that stops early sends nothing. Each delivery is a step in Replay.
+- **Action tools** (kind `action`): `mercury_propose_annotation` (a category and/or memo on a
+  Mercury charge, gateway tool `mercury.annotate_transaction`, Draft). The model calls it during
+  the run; code only **stages** a proposal (`stage`, which runs the gateway's own
+  `refuseProposal`). After a run that finishes, the runner queues each one with `propose` in
+  `core/gateway`, which checks it again and puts an approval card in Approvals. Up to
+  `MAX_ACTIONS` (10) a run. Applying an approved one is unchanged (`applyApproved`, live re-check).
+- **Picks, so untrusted text can't choose**: an action names a charge or a category only as a row a
+  tool returned in the same run, by `{ step, pick }` (new param type `pick`). Tools that return such
+  rows give each a code-made pick (`c1`… in Charges, `k1`… in the new read tool `mercury_categories`)
+  and the real id stays in code. A pick that isn't in that step, or is the wrong kind, is refused.
+  The only free text an action takes is a param of type `text`: short, trimmed, no links, no
+  control characters. A merchant name or a web page can't pick a recipient, URL, product or
+  category.
+- **Who may act**: the gateway's allow-list stays the authority (hard rule: Mercury writes only for
+  `cfo` and `bookkeeper`). An action tool carries those agents (`agents`); the runner offers it only
+  to them, `readSpec(raw, agentId)` names it as a problem for anyone else, and a copied agent
+  leaves action tools behind. So a `b_…` agent can't propose yet; Morgan and Quinn get it when they
+  move to the runner (slices 6-7).
+- **Preview** has a **Deliver** switch (shown when the draft has a report or action): off, nothing
+  is sent or queued and the summary says what would have gone out; on, a finished preview sends its
+  reports and queues its proposals.
+- **Saving** a version that adds a report or action, or points a Notion report at another page,
+  counts as reaching further (`specLooser`): it needs a confirm and `DASHBOARD_CONTROLS=on`.
+- **Rejected actions**: rejecting a card from an agent with an approved playbook puts it on hold
+  (`holdAfterRejection`), so its next playbook waits for Zak.
+- Proposals and reports are never playbook steps (`draftSteps` keeps read and calculate calls). A
+  playbook run offers the agent's action tools plus `finish`, so the model still decides what to
+  propose from the data the playbook gathered.
+- Not in this slice: a Gmail draft action and saving to the leads list. Both depend on Rowan's leads
+  and the Gmail compose token, so they arrive with Rowan in slice 7.
+- No migration.
 
 ## Slices
 
@@ -131,6 +172,7 @@ from the tools the spec grants, code runs them, hard limits stop it.
 2. Builder screen: New agent, the eight sections, Preview, versions (built).
 3. Outputs as sources: every run saves one named output; numbers must trace to a tool result (built).
 4. Playbooks: explore, approve, follow, fall back, auto-update, drop back, Re-explore (built).
-5. Report and Action tools, actions only through `core/gateway`.
+5. Report and Action tools, actions only through `core/gateway` (built; Gmail draft and leads list move to slice 7).
 6. Morgan (with the burn rate step) and Avery on the runner.
-7. Rowan and Quinn on the runner; retire the old agent code, menus and Setup tab.
+7. Rowan and Quinn on the runner (with the Gmail draft action and the leads list report); retire
+   the old agent code, menus and Setup tab.

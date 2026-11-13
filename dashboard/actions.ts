@@ -21,7 +21,8 @@ import { activateFlow, flowLooser, flowProblems, listFlowVersions, loadFlow, sav
 import { ANNOTATE } from "@/core/gateway";
 import { BUDGET_CEILING, activateSpecVersion, createBuiltAgent, listSpecVersions, loadSpec, readSpec, saveSpecVersion, specLooser, type AgentSpec } from "@/core/agent-spec";
 import { dryRunTools, runExplore, type PlaybookStep } from "@/core/runner";
-import { activePlaybook, afterRun, approvePlaybook, listPlaybooks, rejectPlaybook } from "@/core/playbook";
+import { TOOLS } from "@/core/tools/catalog";
+import { activePlaybook, afterRun, approvePlaybook, holdAfterRejection, listPlaybooks, rejectPlaybook } from "@/core/playbook";
 import { loadMemory } from "@/core/memory";
 import { BUILT, BY_ID } from "./crew";
 import { requireSession } from "./data";
@@ -185,8 +186,13 @@ export async function reject(approvalId: string, reason?: string): Promise<Actio
         if (ap && await proposeLesson(ap.agent_id, approvalId, ap.title, why)) lesson = ` A lesson is waiting on ${BY_ID[ap.agent_id]?.name ?? "the agent"}’s Memory tab for your Keep.`;
       } catch (e) { lesson = ` The lesson couldn’t be saved: ${e instanceof Error ? e.message : String(e)}.`; }
     }
+    // an agent on a playbook that proposed this goes back to needing approval for its next playbook
+    try {
+      const { data: ap } = await db().from("approvals").select("agent_id, title").eq("id", approvalId).single();
+      if (ap && await holdAfterRejection(ap.agent_id, ap.title)) lesson += " Its next playbook will wait for your approval.";
+    } catch { /* no playbook tables yet */ }
     revalidatePath("/", "layout");
-    return { ok: true, text: `Rejected. Quinn won’t propose this change again.${lesson}` };
+    return { ok: true, text: `Rejected.${lesson}` };
   } catch (e) { return fail(e); }
 }
 
@@ -590,8 +596,8 @@ async function builtAgent(agentId: string) {
 }
 
 /** A draft from the builder, checked against code. Problems refuse it; nothing is clamped. */
-function checkedDraft(draft: unknown): { spec: AgentSpec } | { error: string } {
-  const { spec, problems } = readSpec(draft);
+function checkedDraft(draft: unknown, agentId: string): { spec: AgentSpec } | { error: string } {
+  const { spec, problems } = readSpec(draft, agentId);
   return problems.length ? { error: `This draft asks for something code doesn’t offer: ${problems.join("; ")}.` } : { spec };
 }
 
@@ -605,7 +611,8 @@ export async function createAgent(name: string, mandate: string, from: string): 
     if (from && from !== "blank") {
       const src = await builtAgent(from);
       if (!src) return { ok: false, text: "That agent has no active spec to copy." };
-      base = src.spec;
+      // a copy gets a new id, and the gateway lets only named agents propose actions, so those stay behind
+      base = { ...src.spec, tools: src.spec.tools.filter((t) => TOOLS[t]?.kind !== "action") };
     }
     const { spec } = readSpec({ ...base, name: n, mandate: String(mandate ?? "").trim().slice(0, 200) || base.mandate || "", outputName: "result" });
     const id = await createBuiltAgent(spec, BY);
@@ -621,7 +628,7 @@ export async function saveSpec(agentId: string, draft: unknown, note: string, co
   if (!why) return { ok: false, text: "Add a short note saying what changed, so the version list makes sense later." };
   try {
     const now = await builtAgent(agentId);
-    const got = checkedDraft(draft);
+    const got = checkedDraft(draft, agentId);
     if ("error" in got) return { ok: false, text: `Not saved. ${got.error}` };
     if (now && JSON.stringify(now.spec) === JSON.stringify(got.spec)) return { ok: false, text: "Nothing changed from the active version." };
     const looser = specLooser(now?.spec ?? null, got.spec);
@@ -686,7 +693,7 @@ export async function dryRunBuilt(agentId: string, draft?: unknown): Promise<Act
   try {
     const now = await builtAgent(agentId);
     let spec = now?.spec;
-    if (draft !== undefined) { const g = checkedDraft(draft); if ("error" in g) return { ok: false, text: g.error }; spec = g.spec; }
+    if (draft !== undefined) { const g = checkedDraft(draft, agentId); if ("error" in g) return { ok: false, text: g.error }; spec = g.spec; }
     if (!spec) return { ok: false, text: "That agent has no saved spec." };
     const rows = await dryRunTools(spec, agentId);
     const bad = rows.filter((r) => !r.ok);
@@ -699,13 +706,13 @@ export async function dryRunBuilt(agentId: string, draft?: unknown): Promise<Act
  * replay. It follows the approved playbook when there is one, unless `explore` asks for a fresh
  * explore run (Re-explore). Afterwards code drafts or updates the playbook (core/playbook.ts).
  */
-export async function previewBuilt(agentId: string, draft?: unknown, explore = false): Promise<ActionResult> {
+export async function previewBuilt(agentId: string, draft?: unknown, explore = false, deliver = false): Promise<ActionResult> {
   await requireSession();
   if (!controlsOn()) return { ok: false, text: `${CONTROLS_OFF} A preview makes real model calls.` };
   try {
     const now = await builtAgent(agentId);
     let spec = now?.spec;
-    if (draft !== undefined && draft !== null) { const g = checkedDraft(draft); if ("error" in g) return { ok: false, text: g.error }; spec = g.spec; }
+    if (draft !== undefined && draft !== null) { const g = checkedDraft(draft, agentId); if ("error" in g) return { ok: false, text: g.error }; spec = g.spec; }
     else if (now?.problems.length) return { ok: false, text: `The spec asks for something code doesn’t offer: ${now.problems.join("; ")}.` };
     if (!spec) return { ok: false, text: "That agent has no saved spec." };
     const run = spec;
@@ -717,7 +724,7 @@ export async function previewBuilt(agentId: string, draft?: unknown, explore = f
     let rid: string | null = null;
     const res = await withRun(agentId, "preview", async (runId) => {
       rid = runId;
-      const r = await runExplore(run, { agentId, runId, memoryBlock: block, playbook });
+      const r = await runExplore(run, { agentId, runId, memoryBlock: block, playbook, deliver: !!deliver });
       got = r;
       return { status: r.status, summary: r.summary, tokensIn: r.tokensIn, tokensOut: r.tokensOut, costUsd: r.costUsd, metrics: r.metrics };
     });

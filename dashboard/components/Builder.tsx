@@ -14,9 +14,23 @@ import { Icon } from "./Icon";
 type Act<T extends unknown[] = []> = (...a: T) => Promise<ActionResult>;
 
 const KIND: Record<string, string> = { read: "Read", calculate: "Calculate", report: "Report", action: "Action" };
-const kindStyle = (k: string) => (k === "calculate" ? { background: "var(--yel-soft)", color: "var(--yel-ink)" } : { background: "var(--mint-soft)", color: "var(--mint-ink)" });
-const GROUP_ORDER = ["shopify", "calculate", "mercury", "supabase", "agents", "notion", "web", "gmail"];
-const GROUP_LABEL: Record<string, string> = { shopify: "Shopify", calculate: "Calculate (plain code, no model)", mercury: "Mercury", supabase: "Control Room data", agents: "Other agents’ outputs", notion: "Notion", web: "Web", gmail: "Gmail" };
+const kindStyle = (k: string) => (k === "calculate" ? { background: "var(--yel-soft)", color: "var(--yel-ink)" } : k === "action" ? { background: "var(--red-soft)", color: "var(--red-ink)" } : { background: "var(--mint-soft)", color: "var(--mint-ink)" });
+const GROUP_ORDER = ["shopify", "calculate", "mercury", "supabase", "agents", "notion", "email", "web", "gmail"];
+const GROUP_LABEL: Record<string, string> = { shopify: "Shopify", calculate: "Calculate (plain code, no model)", mercury: "Mercury", supabase: "Control Room data", agents: "Other agents’ outputs", notion: "Notion", email: "Email to Zak", web: "Web", gmail: "Gmail" };
+const notionId = (link: string) => (link.replace(/-/g, "").match(/[0-9a-f]{32}/i)?.[0] ?? "").toLowerCase();
+
+type MenuTool = BuilderMenu["tools"][number];
+function ToolRow({ t, on, toggle, blocked }: { t: MenuTool; on: boolean; toggle: () => void; blocked?: string | null }) {
+  return (
+    <label className="row wrap rule" style={{ gap: 10, padding: "10px 0", fontSize: 14, cursor: blocked ? "not-allowed" : "pointer", opacity: blocked ? 0.6 : 1 }}>
+      <input type="checkbox" checked={on} disabled={!!blocked && !on} onChange={toggle} style={{ width: 18, height: 18 }} />
+      <span style={{ flex: "1 1 220px", minWidth: 0 }}>{t.label}<span className="muted" style={{ display: "block", fontSize: 12 }}>{blocked ?? t.detail}</span></span>
+      <span className="pill sm" style={kindStyle(t.kind)}>{KIND[t.kind]}</span>
+      {!t.trusted && <span className="pill sm" style={{ background: "var(--red-soft)", color: "var(--red-ink)" }} title="Written by people outside One Two. It reaches the model as data, never instructions.">Untrusted</span>}
+      <span className="muted" style={{ fontSize: 12, minWidth: 80, textAlign: "right" }}>{t.connected ? "Connected" : "Missing key"}</span>
+    </label>
+  );
+}
 const OUT_TOKENS: Record<string, number> = { low: 500, medium: 900, high: 1500 };
 const money = (v: number) => (v < 0.01 ? `$${v.toFixed(4)}` : `$${v.toFixed(2)}`);
 
@@ -67,7 +81,7 @@ export interface BuilderProps {
   lastOutput: { name: string; summary: string; numbers: { label: string; value: number; tool: string }[]; at: string; finished: boolean } | null;
   controls: boolean;
   dryRun: Act<[unknown]>;
-  preview: Act<[unknown, boolean]>;
+  preview: Act<[unknown, boolean, boolean]>;
   /** The approved playbook a Preview follows, if any, and whether the agent is on hold. */
   playbook: { version: number; steps: number } | null;
   pendingPlaybook: number | null;
@@ -78,7 +92,7 @@ export interface BuilderProps {
 }
 
 export function Builder(p: BuilderProps) {
-  const start: AgentSpec = p.saved ?? { name: "Untitled agent", mandate: "", directive: "", goodResult: "", model: p.menu.models[p.menu.models.length - 1]?.id ?? "", effort: "low", tools: [], notionPages: [], limits: { maxSteps: p.menu.limits.maxSteps.default, maxCostUsd: p.menu.limits.maxCostUsd.default }, outputName: "result", readsFrom: [] };
+  const start: AgentSpec = p.saved ?? { name: "Untitled agent", mandate: "", directive: "", goodResult: "", model: p.menu.models[p.menu.models.length - 1]?.id ?? "", effort: "low", tools: [], notionPages: [], limits: { maxSteps: p.menu.limits.maxSteps.default, maxCostUsd: p.menu.limits.maxCostUsd.default }, outputName: "result", readsFrom: [], reportPage: null };
   const [d, setD] = useState<AgentSpec>(start);
   const change = (x: Partial<AgentSpec>) => setD((cur) => ({ ...cur, ...x }));
   const dirty = JSON.stringify(d) !== JSON.stringify(start);
@@ -88,10 +102,16 @@ export function Builder(p: BuilderProps) {
   const [check, setCheck] = useState<ActionResult | null>(null);
   const [newStd, setNewStd] = useState(""), [stdLink, setStdLink] = useState("");
   const [pageLink, setPageLink] = useState(""), [pageLabel, setPageLabel] = useState("");
+  const [repLink, setRepLink] = useState(""), [repLabel, setRepLabel] = useState("");
+  const [deliver, setDeliver] = useState(false);
 
   const grantable = p.menu.tools.filter((t) => t.grantable);
-  const later = p.menu.tools.filter((t) => !t.grantable);
-  const groups = GROUP_ORDER.map((g) => ({ g, tools: grantable.filter((t) => t.group === g) })).filter((x) => x.tools.length);
+  const sources = grantable.filter((t) => t.kind === "read" || t.kind === "calculate");
+  const actionTools = grantable.filter((t) => t.kind === "action");
+  const reportTools = grantable.filter((t) => t.kind === "report");
+  const blockedFor = (t: MenuTool) => (t.agents && !t.agents.includes(p.agentId) ? `The gateway lets only ${t.agents.map((a) => p.menu.agentNames[a] ?? a).join(" and ")} propose this (hard rule). It arrives for them when they move to the runner.` : null);
+  const groups = GROUP_ORDER.map((g) => ({ g, tools: sources.filter((t) => t.group === g) })).filter((x) => x.tools.length);
+  const delivers = d.tools.some((id) => grantable.find((t) => t.id === id && (t.kind === "report" || t.kind === "action")));
   const toggle = (id: string) => change({ tools: d.tools.includes(id) ? d.tools.filter((x) => x !== id) : [...d.tools, id] });
   const est = useMemo(() => estimate(d, p.menu), [d, p.menu]);
   const model = p.menu.models.find((m) => m.id === d.model);
@@ -101,18 +121,27 @@ export function Builder(p: BuilderProps) {
   const notionMissing = d.tools.includes("notion_read_page") && !d.notionPages.length;
   const readsMissing = d.tools.includes("agent_output") && !d.readsFrom.length;
   const toggleSource = (a: { id: string; name: string; outputName: string }) => change({ readsFrom: d.readsFrom.some((x) => x.agentId === a.id) ? d.readsFrom.filter((x) => x.agentId !== a.id) : [...d.readsFrom, { agentId: a.id, label: `${a.name}: ${a.outputName}` }].slice(0, 10) });
-  const problems = [!d.directive.trim() && "the directive is empty", !stepsOk && `steps per run must be from ${L.maxSteps.min} to ${L.maxSteps.max}`, !costOk && `cost per run must be from $${L.maxCostUsd.min} to $${L.maxCostUsd.max}`, notionMissing && "list at least one Notion page, or untick Read a Notion page", readsMissing && "pick at least one agent to read from, or untick Read another agent's output"].filter(Boolean) as string[];
+  const reportPageMissing = d.tools.includes("report_notion_page") && !d.reportPage;
+  const problems = [reportPageMissing && "pick the Notion page to write under, or untick Write a Notion page", !d.directive.trim() && "the directive is empty", !stepsOk && `steps per run must be from ${L.maxSteps.min} to ${L.maxSteps.max}`, !costOk && `cost per run must be from $${L.maxCostUsd.min} to $${L.maxCostUsd.max}`, notionMissing && "list at least one Notion page, or untick Read a Notion page", readsMissing && "pick at least one agent to read from, or untick Read another agent's output"].filter(Boolean) as string[];
   const looser = p.saved ? [
+    ...d.tools.filter((id) => !p.saved!.tools.includes(id)).map((id) => grantable.find((t) => t.id === id)).filter((t) => t && (t.kind === "report" || t.kind === "action")).map((t) => `adds ${t!.kind === "action" ? "the action" : "the report"} “${t!.label}”`),
+    d.tools.includes("report_notion_page") && p.saved.tools.includes("report_notion_page") && d.reportPage?.id !== p.saved.reportPage?.id && `writes to a different Notion page (${d.reportPage?.label ?? "none"})`,
     d.limits.maxCostUsd > p.saved.limits.maxCostUsd && `cost per run goes from $${p.saved.limits.maxCostUsd.toFixed(2)} to $${d.limits.maxCostUsd.toFixed(2)}`,
     d.limits.maxSteps > p.saved.limits.maxSteps && `steps per run go from ${p.saved.limits.maxSteps} to ${d.limits.maxSteps}`,
   ].filter(Boolean) as string[] : [];
 
   const addPage = () => {
-    const id = (pageLink.replace(/-/g, "").match(/[0-9a-f]{32}/i)?.[0] ?? "").toLowerCase();
+    const id = notionId(pageLink);
     if (!id) { setToast({ ok: false, text: "That doesn’t look like a Notion page link. In Notion use Share, then Copy link." }); return; }
     if (d.notionPages.some((x) => x.id === id)) return;
     change({ notionPages: [...d.notionPages, { id, label: pageLabel.trim() || "Notion page" }].slice(0, 10) });
     setPageLink(""); setPageLabel("");
+  };
+  const setReportPage = () => {
+    const id = notionId(repLink);
+    if (!id) { setToast({ ok: false, text: "That doesn’t look like a Notion page link. In Notion use Share, then Copy link." }); return; }
+    change({ reportPage: { id, label: repLabel.trim() || "Notion page" } });
+    setRepLink(""); setRepLabel("");
   };
   const doSave = (confirmed: boolean) => run(() => p.save(d, note, confirmed), (r) => { if (r.ok) setNote(""); });
   const onSave = () => {
@@ -120,15 +149,16 @@ export function Builder(p: BuilderProps) {
     if (looser.length) setConfirm({ c: { title: `Save as v${p.nextVersion}?`, body: "This version lets a run spend more than the active one.", lines: looser.map((x) => ({ k: "Change", v: x })), confirmLabel: `Save v${p.nextVersion}`, kind: "dark" }, go: () => doSave(true) });
     else doSave(false);
   };
+  const deliverLine = deliver && delivers ? "If it finishes, its reports go out and its proposals become approval cards for you." : "Nothing is written or sent.";
   const onPreview = (explore: boolean) => setConfirm({
     c: {
       title: explore ? "Re-explore?" : "Run a preview?",
       body: !explore && p.playbook
-        ? `Follows playbook v${p.playbook.version}: code makes its ${p.playbook.steps} tool calls on live data, then ${model?.label ?? d.model} writes the result. If a step fails it explores instead. Up to $${d.limits.maxCostUsd.toFixed(2)}. Nothing is written or sent. It counts against today’s budget.`
-        : `A real explore run of this ${dirty ? "unsaved draft" : "version"} on ${model?.label ?? d.model}: the model picks its own tool calls, up to ${d.limits.maxSteps} and $${d.limits.maxCostUsd.toFixed(2)}. Nothing is written or sent. It counts against today’s budget. Afterwards code drafts a playbook from the calls that worked.`,
+        ? `Follows playbook v${p.playbook.version}: code makes its ${p.playbook.steps} tool calls on live data, then ${model?.label ?? d.model} writes the result. If a step fails it explores instead. Up to $${d.limits.maxCostUsd.toFixed(2)}. ${deliverLine} It counts against today’s budget.`
+        : `A real explore run of this ${dirty ? "unsaved draft" : "version"} on ${model?.label ?? d.model}: the model picks its own tool calls, up to ${d.limits.maxSteps} and $${d.limits.maxCostUsd.toFixed(2)}. ${deliverLine} It counts against today’s budget. Afterwards code drafts a playbook from the calls that worked.`,
       confirmLabel: explore ? "Re-explore" : "Run preview", kind: "dark",
     },
-    go: () => run(() => p.preview(d, explore)),
+    go: () => run(() => p.preview(d, explore, deliver && delivers)),
   });
 
   return (
@@ -159,15 +189,7 @@ export function Builder(p: BuilderProps) {
           {groups.map(({ g, tools }) => (
             <div key={g} className="stack" style={{ gap: 0 }}>
               <span className="ted-k" style={{ paddingBottom: 4 }}>{GROUP_LABEL[g] ?? g}</span>
-              {tools.map((t) => (
-                <label key={t.id} className="row wrap rule" style={{ gap: 10, padding: "10px 0", fontSize: 14, cursor: "pointer" }}>
-                  <input type="checkbox" checked={d.tools.includes(t.id)} onChange={() => toggle(t.id)} style={{ width: 18, height: 18 }} />
-                  <span style={{ flex: "1 1 220px", minWidth: 0 }}>{t.label}<span className="muted" style={{ display: "block", fontSize: 12 }}>{t.detail}</span></span>
-                  <span className="pill sm" style={kindStyle(t.kind)}>{KIND[t.kind]}</span>
-                  {!t.trusted && <span className="pill sm" style={{ background: "var(--red-soft)", color: "var(--red-ink)" }} title="Written by people outside One Two. It reaches the model as data, never instructions.">Untrusted</span>}
-                  <span className="muted" style={{ fontSize: 12, minWidth: 80, textAlign: "right" }}>{t.connected ? "Connected" : "Missing key"}</span>
-                </label>
-              ))}
+              {tools.map((t) => <ToolRow key={t.id} t={t} on={d.tools.includes(t.id)} toggle={() => toggle(t.id)} />)}
             </div>
           ))}
           {d.tools.includes("notion_read_page") && (
@@ -256,9 +278,11 @@ export function Builder(p: BuilderProps) {
         </Section>
 
         <Section n={6} title="Actions" sub="What it may do. Anything that leaves One Two waits for your approval.">
-          <div className="card dashed" style={{ padding: 14, fontSize: 13.5, lineHeight: 1.5 }}>
-            {later.length ? `${later.length} report and action tools are on the list but can’t be granted yet.` : "No report or action tools yet."} For now a built agent can only read and calculate, and its result shows here and in the run log. Emailing you, writing to Notion and proposing actions (always through the approval queue) come in a later slice.
+          <div className="stack" style={{ gap: 0 }}>
+            {actionTools.map((t) => <ToolRow key={t.id} t={t} on={d.tools.includes(t.id)} toggle={() => toggle(t.id)} blocked={blockedFor(t)} />)}
+            {!actionTools.length && <span className="sub">No action tools on the list yet.</span>}
           </div>
+          <span className="sub">An action is only ever a proposal. During a run the model stages it; after a run that finishes (with Deliver on, for a preview) code sends each one to the gateway, which checks its own allow-list and puts an approval card in Approvals. It names a charge or a category only as a row a tool returned in that run, so a merchant name or a web page can never choose one. Up to 10 a run. Rejecting one puts the agent’s next playbook back on your approval. Sending, paying and posting aren’t action types yet, so no agent can have them.</span>
         </Section>
 
         <Section n={7} title="Guardrails" sub="Hard stops, enforced in code whatever the model wants">
@@ -287,6 +311,29 @@ export function Builder(p: BuilderProps) {
             <input className="input" value={d.outputName} maxLength={60} onChange={(e) => change({ outputName: e.target.value })} />
             <span className="sub">Other agents will see it as “{d.name}: {d.outputName || "result"}”.</span>
           </label>
+          <div className="stack" style={{ gap: 0 }}>
+            <span className="ted-k" style={{ paddingBottom: 4 }}>Reports: where the result goes after a run that finishes</span>
+            {reportTools.map((t) => <ToolRow key={t.id} t={t} on={d.tools.includes(t.id)} toggle={() => toggle(t.id)} />)}
+          </div>
+          {d.tools.includes("report_notion_page") && (
+            <div className="stack" style={{ gap: 8 }}>
+              <span className="ted-k">Notion page to write under</span>
+              {d.reportPage ? (
+                <div className="row wrap" style={{ gap: 8, fontSize: 14 }}>
+                  <span style={{ flex: 1 }}>{d.reportPage.label} <span className="muted" style={{ fontSize: 12 }}>{d.reportPage.id.slice(0, 8)}…</span></span>
+                  <button type="button" className="btn ghost xs" onClick={() => change({ reportPage: null })}>Change</button>
+                </div>
+              ) : (
+                <div className="row wrap" style={{ gap: 8 }}>
+                  <input className="input" style={{ flex: "2 1 220px" }} placeholder="Notion page link" value={repLink} onChange={(e) => setRepLink(e.target.value)} />
+                  <input className="input" style={{ flex: "1 1 140px" }} placeholder="Short name" value={repLabel} maxLength={80} onChange={(e) => setRepLabel(e.target.value)} />
+                  <button type="button" className="btn outline sm" onClick={setReportPage}>Use page</button>
+                </div>
+              )}
+              <span className="sub">Each finished run adds one page under it, titled with the agent, the output name and the date. Share the page with the agents’ Notion integration in Notion.</span>
+            </div>
+          )}
+          <span className="sub">Reports carry only the finished result and its traced numbers, and reach only you or our own Notion. The model never calls them, so a run that stops early sends nothing.</span>
           <span className="sub">Each run saves its result in its own words plus the key numbers behind it. A number can only come from a tool result in the same run: the model names the step, code copies the value. A number it can’t trace is left out and counted in the summary.</span>
           {p.lastOutput ? (
             <div className="soft-box" style={{ flexDirection: "column", alignItems: "stretch", gap: 8 }}>
@@ -321,6 +368,12 @@ export function Builder(p: BuilderProps) {
           {check && <span className="sub" style={{ color: check.ok ? undefined : "var(--red-ink)", lineHeight: 1.5 }}>{check.text}</span>}
           <button type="button" className="btn dark" disabled={busy || problems.length > 0 || !p.controls} title={p.controls ? undefined : "Needs DASHBOARD_CONTROLS=on"} onClick={() => onPreview(false)}>{busy ? "Working…" : p.playbook ? `Preview · follows v${p.playbook.version}` : "Preview · explore run"}</button>
           {p.playbook && <button type="button" className="btn outline" disabled={busy || problems.length > 0 || !p.controls} onClick={() => onPreview(true)}>Re-explore</button>}
+          {delivers && (
+            <label className="row" style={{ gap: 8, fontSize: 13.5, cursor: "pointer" }}>
+              <input type="checkbox" checked={deliver} onChange={(e) => setDeliver(e.target.checked)} style={{ width: 16, height: 16 }} />
+              <span>Deliver: send reports and queue proposals if the preview finishes</span>
+            </label>
+          )}
           {!p.controls && <span className="sub">Preview needs DASHBOARD_CONTROLS=on, since it spends money.</span>}
           <div className="rule" />
           <input className="input" placeholder="What changed? (for the version list)" maxLength={300} value={note} onChange={(e) => setNote(e.target.value)} />

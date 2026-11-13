@@ -1,25 +1,35 @@
 import "server-only";
 // The tool list (docs/agent-builder.md): every ability an agent built in the app can be given.
-// Slice 1 has Read and Calculate tools only, built from code the four agents already use.
-// Report and Action tools arrive in slice 5, and actions only ever go through core/gateway.
-// Rules that hold for every tool here:
-// - Read-only. No tool on this list writes anything, anywhere.
+// Read and Calculate tools are built from code the four agents already use (slice 1). Report and
+// Action tools came with slice 5. Rules that hold for every tool here:
+// - Read and Calculate tools write nothing, anywhere.
+// - Report tools reach only Zak (integrations/email.ts, no recipient argument) or our own Notion,
+//   under a page Zak picked. Code delivers them after a finished run, from the run's result and
+//   traced numbers; the model never calls one.
+// - Action tools only stage a proposal. The runner queues it at core/gateway after the run, where
+//   the gateway's own allow-list checks it again and it waits for Zak as an approval card.
 // - Numbers are computed in code and returned in `numbers`, never left to the model.
-// - Inputs are small, checked values (whole numbers in a range, or a choice from a fixed list).
-//   No tool takes a URL, an address or free text from the model.
+// - Inputs are small, checked values (whole numbers in a range, a choice from a fixed list, a row
+//   a tool returned in the same run, or short text with no links). No tool takes a URL, an
+//   address or a recipient from the model.
 import { G_PER_LB, round2 } from "@/domain/coffee";
 import { db } from "@/core/db";
 import { chicagoDate } from "@/core/time";
 import { snapshot } from "@/agents/cfo";
-import { mercuryCash, mercuryTransactions } from "@/integrations/mercury";
-import { notionPageText } from "@/integrations/notion";
+import { mercuryCash, mercuryCategories, mercuryTransactions } from "@/integrations/mercury";
+import { li, notionPage, notionPageText, p as para } from "@/integrations/notion";
+import { emailZak } from "@/integrations/email";
+import { ANNOTATE, TOOLS as GATEWAY_TOOLS, refuseProposal } from "@/core/gateway/policy";
 import { getInventoryLots } from "@/integrations/shopify/lots";
 import { getBoardOrders, greenLedger } from "@/integrations/shopify/orders";
 import { getRoastLoss } from "@/integrations/shopify/settings";
 import { fetchStockCoffees } from "@/integrations/shopify/stock";
-import type { Param, ToolDef } from "./types";
+import type { Param, Pick, ReportInput, ToolDef } from "./types";
 
-const SHOPIFY = ["SHOPIFY_STORE_DOMAIN"], MERCURY = ["MERCURY_API_TOKEN"], NOTION = ["NOTION_TOKEN"], SUPABASE = ["SUPABASE_URL", "SUPABASE_SERVICE_ROLE_KEY"];
+const SHOPIFY = ["SHOPIFY_STORE_DOMAIN"], MERCURY = ["MERCURY_API_TOKEN"], NOTION = ["NOTION_TOKEN"], SUPABASE = ["SUPABASE_URL", "SUPABASE_SERVICE_ROLE_KEY"], EMAIL = ["RESEND_API_KEY", "BRIEF_FROM", "BRIEF_TO"];
+const usd = (n: number) => `${n < 0 ? "-" : ""}$${Math.abs(n).toFixed(2)}`;
+const html = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+const reportTitle = (o: ReportInput) => `${o.agentName}: ${o.outputName} · ${o.date}`;
 const daysParam = (def: number, max: number, what: string): Param => ({ name: "days", type: "int", min: 1, max, default: def, description: what });
 const lb = (g: number) => Math.round((g / G_PER_LB) * 10) / 10;
 
@@ -145,8 +155,24 @@ const TOOLS_LIST: ToolDef[] = [
     kind: "read", group: "mercury", params: [daysParam(30, 60, "How many days back.")], trusted: false, needs: MERCURY, costUsd: 0,
     run: async ({ days }) => {
       const txns = await mercuryTransactions(chicagoDate(Number(days)), chicagoDate(0));
-      const rows = txns.slice(-200).map((t) => ({ date: (t.postedAt ?? t.createdAt ?? "").slice(0, 10), merchant: t.counterpartyNickname || t.counterpartyName || t.bankDescription || "?", amountUsd: t.amount, category: t.categoryData?.name ?? t.mercuryCategory ?? null }));
-      return { data: { days: Number(days), shown: rows.length, of: txns.length, charges: rows }, numbers: { transactions: txns.length } };
+      const picks: Record<string, Pick> = {};
+      const rows = txns.slice(-200).map((t, i) => {
+        const date = (t.postedAt ?? t.createdAt ?? "").slice(0, 10), merchant = t.counterpartyNickname || t.counterpartyName || t.bankDescription || "?";
+        picks[`c${i + 1}`] = { kind: "charge", id: t.id, label: `${merchant.slice(0, 60)} · ${usd(t.amount)} · ${date}` };
+        return { pick: `c${i + 1}`, date, merchant, amountUsd: t.amount, category: t.categoryData?.name ?? t.mercuryCategory ?? null, memo: t.note ?? null };
+      });
+      return { data: { days: Number(days), shown: rows.length, of: txns.length, charges: rows }, numbers: { transactions: txns.length }, picks };
+    },
+  },
+
+  {
+    id: "mercury_categories", label: "Expense categories", detail: "One Two's expense categories in Mercury, the only categories an action may propose",
+    kind: "read", group: "mercury", params: [], trusted: true, needs: MERCURY, costUsd: 0,
+    run: async () => {
+      const cats = await mercuryCategories();
+      const picks: Record<string, Pick> = {};
+      const rows = cats.slice(0, 300).map((c, i) => { picks[`k${i + 1}`] = { kind: "category", id: c.id, label: c.name }; return { pick: `k${i + 1}`, name: c.name }; });
+      return { data: { categories: rows }, numbers: { categories: cats.length }, picks };
     },
   },
 
@@ -232,6 +258,56 @@ const TOOLS_LIST: ToolDef[] = [
       return {
         data: { agent: src.label, output: data.name, at: data.created_at, summary: data.summary, numbers: nums.map((n, i) => ({ key: `n${i + 1}`, label: n.label, value: n.value })) },
         numbers,
+      };
+    },
+  },
+
+  // ---- Reports (slice 5): code delivers the finished result; the model never calls these
+  {
+    id: "report_email_zak", label: "Email Zak the result", detail: "After a run that finishes, code emails its result and traced numbers to Zak (BRIEF_TO). No other recipient is possible",
+    kind: "report", group: "email", params: [], trusted: true, needs: EMAIL, costUsd: 0,
+    deliver: async (o) => {
+      const nums = o.numbers.map((n) => `${n.label}: ${n.value}`);
+      const text = [o.summary, ...(nums.length ? ["", ...nums] : [])].join("\n");
+      const body = `<p style="white-space:pre-wrap">${html(o.summary)}</p>${nums.length ? `<ul>${nums.map((n) => `<li>${html(n)}</li>`).join("")}</ul>` : ""}<p style="color:#888;font-size:12px">Sent by ${html(o.agentName)}, built in the Control Room. Numbers were copied by code from tool results.</p>`;
+      const id = await emailZak(reportTitle(o).slice(0, 150), body, text);
+      return `emailed (${id})`;
+    },
+  },
+  {
+    id: "report_notion_page", label: "Write a Notion page", detail: "After a run that finishes, code writes its result and traced numbers as a new page under the Notion page picked in this agent's setup",
+    kind: "report", group: "notion", params: [], trusted: true, needs: NOTION, costUsd: 0,
+    deliver: async (o, ctx) => {
+      if (!ctx.reportPage) throw new Error("No Notion page is picked to write under.");
+      const blocks = [...o.summary.split(/\n{2,}/).filter((x) => x.trim()).slice(0, 40).map((x) => para(x)), ...o.numbers.map((n) => li(`${n.label}: ${n.value}`))];
+      const url = await notionPage(reportTitle(o).slice(0, 150), blocks, ctx.reportPage.id);
+      return `Notion page ${url}`;
+    },
+  },
+
+  // ---- Actions (slice 5): proposals only, queued at core/gateway after the run, Draft tier
+  {
+    id: "mercury_propose_annotation", label: "Propose a category or memo on a charge", detail: "Stages a change for Zak to approve: a category from Mercury's own list and/or a short memo, on a charge from Mercury. Never writes by itself",
+    kind: "action", group: "mercury", trusted: true, needs: MERCURY, costUsd: 0,
+    agents: GATEWAY_TOOLS[ANNOTATE].agents,
+    params: [
+      { name: "charge", type: "pick", kind: "charge", description: "The charge, from a Charges result." },
+      { name: "category", type: "pick", kind: "category", optional: true, description: "A category from an Expense categories result." },
+      { name: "memo", type: "text", maxLength: 200, optional: true, description: "A short memo." },
+      { name: "why", type: "text", maxLength: 300, description: "One line for Zak on why, shown on the approval card." },
+    ],
+    stage: (input, ctx) => {
+      const charge = input.charge as Pick, category = input.category as Pick | undefined, memo = input.memo as string | undefined;
+      const args: Record<string, unknown> = {};
+      if (category) { args.category_id = category.id; args.category = category.label; }
+      if (memo) args.note = memo;
+      const refused = refuseProposal(ctx.agentId, ANNOTATE, charge.id, args);
+      if (refused) return { problem: refused };
+      return {
+        gatewayTool: ANNOTATE, target: charge.id, args,
+        actionType: [category && "category", memo && "memo"].filter(Boolean).join("+"),
+        title: charge.label,
+        preview: { charge: charge.label, category: category?.label ?? null, note: memo ?? null, why: input.why },
       };
     },
   },

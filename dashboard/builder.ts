@@ -10,6 +10,7 @@ import { TOOL_LIST, TOOLS } from "@/core/tools/catalog";
 import { MODEL_LIST } from "@/integrations/models";
 import { env } from "@/core/env";
 import { when } from "@/dashboard/format";
+import { CREW } from "@/dashboard/crew";
 import { activePlaybook, listPlaybooks, pendingPlaybook, playbookHold, stepLabel } from "@/core/playbook";
 
 export interface BuildStep {
@@ -17,7 +18,7 @@ export interface BuildStep {
   ok: boolean; numbers: Record<string, number> | null; tokens_in: number; tokens_out: number; cost_usd: number; ms: number;
 }
 export interface BuildRun { id: string; trigger: string; mode: string | null; started_at: string; ended_at: string | null; status: string; summary: string | null; error: string | null; cost_usd: number; steps: BuildStep[] }
-export interface BuildTool { id: string; label: string; detail: string; kind: string; group: string; trusted: boolean; connected: boolean; needs: string[]; grantable: boolean }
+export interface BuildTool { id: string; label: string; detail: string; kind: string; group: string; trusted: boolean; connected: boolean; needs: string[]; grantable: boolean; agents: string[] | null }
 export interface BuildModel { id: string; label: string; in: number; out: number }
 export interface Standard { id: string; grp: "standing_order" | "crew"; text: string; notionPageId: string | null }
 export interface BuiltRow { id: string; name: string; mandate: string; enabled: boolean; budget: number; version: number | null; problems: number; lastRun: { at: string; status: string } | null }
@@ -27,11 +28,12 @@ const SETTING: Record<string, unknown> = {
   SHOPIFY_STORE_DOMAIN: env.shopifyDomain && (env.shopifyAdminToken || (env.shopifyClientId && env.shopifyClientSecret)),
   MERCURY_API_TOKEN: env.mercuryToken, NOTION_TOKEN: env.notionToken,
   SUPABASE_URL: env.supabaseUrl, SUPABASE_SERVICE_ROLE_KEY: env.supabaseServiceKey,
+  RESEND_API_KEY: env.resendKey, BRIEF_FROM: env.briefFrom, BRIEF_TO: env.briefTo,
 };
-const GRANTABLE = new Set(["read", "calculate"]);
+const GRANTABLE = new Set(["read", "calculate", "report", "action"]);
 
 export const GROUP_LABEL: Record<string, string> = {
-  shopify: "Shopify", calculate: "Calculate (plain code, no model)", mercury: "Mercury", supabase: "Control Room data", agents: "Other agents’ outputs", notion: "Notion", web: "Web", gmail: "Gmail",
+  shopify: "Shopify", calculate: "Calculate (plain code, no model)", mercury: "Mercury", supabase: "Control Room data", agents: "Other agents’ outputs", notion: "Notion", email: "Email to Zak", web: "Web", gmail: "Gmail",
 };
 
 /** Null when the runner migration isn't applied yet. */
@@ -55,7 +57,8 @@ export async function listBuilt(): Promise<BuiltRow[] | null> {
 /** The pick-lists the builder offers, all from code. */
 export function builderMenu() {
   return {
-    tools: TOOL_LIST.map((t): BuildTool => ({ id: t.id, label: t.label, detail: t.detail, kind: t.kind, group: t.group, trusted: t.trusted, needs: [...t.needs], connected: t.needs.every((k) => !!SETTING[k]), grantable: GRANTABLE.has(t.kind) })),
+    tools: TOOL_LIST.map((t): BuildTool => ({ id: t.id, label: t.label, detail: t.detail, kind: t.kind, group: t.group, trusted: t.trusted, needs: [...t.needs], connected: t.needs.every((k) => !!SETTING[k]), grantable: GRANTABLE.has(t.kind), agents: t.agents ? [...t.agents] : null })),
+    agentNames: Object.fromEntries(CREW.map((a) => [a.id, `${a.name} (${a.id})`])) as Record<string, string>,
     models: MODEL_LIST.filter((m) => m.route === "anthropic").map((m): BuildModel => ({ id: m.id, label: m.label, in: m.in, out: m.out })),
     efforts: [...EFFORTS],
     limits: RUN_LIMITS,
