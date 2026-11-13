@@ -211,6 +211,30 @@ const TOOLS_LIST: ToolDef[] = [
       return { data: { title: t.title, text: t.text, cut: t.cut } };
     },
   },
+  {
+    // outputs as sources (slice 3): the latest finished output of an agent picked in this agent's
+    // setup. Its words are another agent's (untrusted); its numbers were copied by code from that
+    // agent's tool results, so this agent may cite them in its own output in turn.
+    id: "agent_output", label: "Read another agent's output", detail: "The latest finished result of an agent picked in this agent's setup: its words and the numbers code traced",
+    kind: "read", group: "agents", trusted: false, needs: SUPABASE, costUsd: 0,
+    params: [],
+    paramsFor: (ctx) => [{ name: "agent", type: "enum", options: ctx.outputSources.map((a) => a.agentId), description: `Whose output. ${ctx.outputSources.map((a) => `${a.agentId} = ${a.label}`).join("; ")}` }],
+    run: async ({ agent }, ctx) => {
+      const src = ctx.outputSources.find((x) => x.agentId === agent);
+      if (!src) throw new Error("That agent isn't in this agent's setup.");
+      if (src.agentId === ctx.agentId) throw new Error("An agent can't read its own output this way.");
+      const { data, error } = await db().from("agent_outputs").select("name, summary, numbers, created_at").eq("agent_id", src.agentId).eq("finished", true).order("created_at", { ascending: false }).limit(1).maybeSingle();
+      if (error) throw new Error(error.message);
+      if (!data) return { data: { agent: src.label, output: null, note: "No finished output yet." } };
+      const nums = (Array.isArray(data.numbers) ? data.numbers : []) as { label: string; value: number }[];
+      const numbers: Record<string, number> = {};
+      nums.forEach((n, i) => { if (Number.isFinite(n.value)) numbers[`n${i + 1}`] = n.value; });
+      return {
+        data: { agent: src.label, output: data.name, at: data.created_at, summary: data.summary, numbers: nums.map((n, i) => ({ key: `n${i + 1}`, label: n.label, value: n.value })) },
+        numbers,
+      };
+    },
+  },
 ];
 
 export const TOOLS: Readonly<Record<string, ToolDef>> = Object.fromEntries(TOOLS_LIST.map((t) => [t.id, t]));

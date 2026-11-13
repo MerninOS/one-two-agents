@@ -15,8 +15,8 @@ type Act<T extends unknown[] = []> = (...a: T) => Promise<ActionResult>;
 
 const KIND: Record<string, string> = { read: "Read", calculate: "Calculate", report: "Report", action: "Action" };
 const kindStyle = (k: string) => (k === "calculate" ? { background: "var(--yel-soft)", color: "var(--yel-ink)" } : { background: "var(--mint-soft)", color: "var(--mint-ink)" });
-const GROUP_ORDER = ["shopify", "calculate", "mercury", "supabase", "notion", "web", "gmail"];
-const GROUP_LABEL: Record<string, string> = { shopify: "Shopify", calculate: "Calculate (plain code, no model)", mercury: "Mercury", supabase: "Control Room data", notion: "Notion", web: "Web", gmail: "Gmail" };
+const GROUP_ORDER = ["shopify", "calculate", "mercury", "supabase", "agents", "notion", "web", "gmail"];
+const GROUP_LABEL: Record<string, string> = { shopify: "Shopify", calculate: "Calculate (plain code, no model)", mercury: "Mercury", supabase: "Control Room data", agents: "Other agents’ outputs", notion: "Notion", web: "Web", gmail: "Gmail" };
 const OUT_TOKENS: Record<string, number> = { low: 500, medium: 900, high: 1500 };
 const money = (v: number) => (v < 0.01 ? `$${v.toFixed(4)}` : `$${v.toFixed(2)}`);
 
@@ -62,6 +62,9 @@ export interface BuilderProps {
   nextVersion: number;
   menu: BuilderMenu;
   standards: Standard[];
+  /** Other agents built in the app, which this one may read from. */
+  others: { id: string; name: string; outputName: string; hasOutput: boolean }[];
+  lastOutput: { name: string; summary: string; numbers: { label: string; value: number; tool: string }[]; at: string; finished: boolean } | null;
   controls: boolean;
   dryRun: Act<[unknown]>;
   preview: Act<[unknown]>;
@@ -72,7 +75,7 @@ export interface BuilderProps {
 }
 
 export function Builder(p: BuilderProps) {
-  const start: AgentSpec = p.saved ?? { name: "Untitled agent", mandate: "", directive: "", goodResult: "", model: p.menu.models[p.menu.models.length - 1]?.id ?? "", effort: "low", tools: [], notionPages: [], limits: { maxSteps: p.menu.limits.maxSteps.default, maxCostUsd: p.menu.limits.maxCostUsd.default }, outputName: "result" };
+  const start: AgentSpec = p.saved ?? { name: "Untitled agent", mandate: "", directive: "", goodResult: "", model: p.menu.models[p.menu.models.length - 1]?.id ?? "", effort: "low", tools: [], notionPages: [], limits: { maxSteps: p.menu.limits.maxSteps.default, maxCostUsd: p.menu.limits.maxCostUsd.default }, outputName: "result", readsFrom: [] };
   const [d, setD] = useState<AgentSpec>(start);
   const change = (x: Partial<AgentSpec>) => setD((cur) => ({ ...cur, ...x }));
   const dirty = JSON.stringify(d) !== JSON.stringify(start);
@@ -93,7 +96,9 @@ export function Builder(p: BuilderProps) {
   const stepsOk = Number.isInteger(d.limits.maxSteps) && d.limits.maxSteps >= L.maxSteps.min && d.limits.maxSteps <= L.maxSteps.max;
   const costOk = Number.isFinite(d.limits.maxCostUsd) && d.limits.maxCostUsd >= L.maxCostUsd.min && d.limits.maxCostUsd <= L.maxCostUsd.max;
   const notionMissing = d.tools.includes("notion_read_page") && !d.notionPages.length;
-  const problems = [!d.directive.trim() && "the directive is empty", !stepsOk && `steps per run must be from ${L.maxSteps.min} to ${L.maxSteps.max}`, !costOk && `cost per run must be from $${L.maxCostUsd.min} to $${L.maxCostUsd.max}`, notionMissing && "list at least one Notion page, or untick Read a Notion page"].filter(Boolean) as string[];
+  const readsMissing = d.tools.includes("agent_output") && !d.readsFrom.length;
+  const toggleSource = (a: { id: string; name: string; outputName: string }) => change({ readsFrom: d.readsFrom.some((x) => x.agentId === a.id) ? d.readsFrom.filter((x) => x.agentId !== a.id) : [...d.readsFrom, { agentId: a.id, label: `${a.name}: ${a.outputName}` }].slice(0, 10) });
+  const problems = [!d.directive.trim() && "the directive is empty", !stepsOk && `steps per run must be from ${L.maxSteps.min} to ${L.maxSteps.max}`, !costOk && `cost per run must be from $${L.maxCostUsd.min} to $${L.maxCostUsd.max}`, notionMissing && "list at least one Notion page, or untick Read a Notion page", readsMissing && "pick at least one agent to read from, or untick Read another agent's output"].filter(Boolean) as string[];
   const looser = p.saved ? [
     d.limits.maxCostUsd > p.saved.limits.maxCostUsd && `cost per run goes from $${p.saved.limits.maxCostUsd.toFixed(2)} to $${d.limits.maxCostUsd.toFixed(2)}`,
     d.limits.maxSteps > p.saved.limits.maxSteps && `steps per run go from ${p.saved.limits.maxSteps} to ${d.limits.maxSteps}`,
@@ -171,6 +176,20 @@ export function Builder(p: BuilderProps) {
                 <button type="button" className="btn outline sm" onClick={addPage}>Add page</button>
               </div>
               <span className="sub">It can open only these pages, picked by id, never a link it finds. Share each page with the agents’ Notion integration in Notion.</span>
+            </div>
+          )}
+          {d.tools.includes("agent_output") && (
+            <div className="stack" style={{ gap: 8 }}>
+              <span className="ted-k">Agents it may read from</span>
+              {p.others.length === 0 && <span className="sub">No other agents built here yet.</span>}
+              {p.others.map((a) => (
+                <label key={a.id} className="row wrap" style={{ gap: 10, fontSize: 14, cursor: "pointer" }}>
+                  <input type="checkbox" checked={d.readsFrom.some((x) => x.agentId === a.id)} onChange={() => toggleSource(a)} style={{ width: 18, height: 18 }} />
+                  <span style={{ flex: 1 }}>{a.name}: {a.outputName}</span>
+                  <span className="muted" style={{ fontSize: 12 }}>{a.hasOutput ? "Has an output" : "No output yet"}</span>
+                </label>
+              ))}
+              <span className="sub">It reads the latest finished output. The words arrive as another agent’s, never as instructions; the numbers keep their trail back to the tool that computed them.</span>
             </div>
           )}
           <span className="sub">Need something not on the list, like Klaviyo or Instagram? New tools are a code change on purpose, so a web page or an email can never add one. Ask Claude and it shows up here for every agent.</span>
@@ -253,13 +272,21 @@ export function Builder(p: BuilderProps) {
           </div>
         </Section>
 
-        <Section n={8} title="Output" sub="What each run leaves behind, for you and later for other agents">
+        <Section n={8} title="Output" sub="What each run leaves behind, for you and for other agents">
           <label className="ted-field">
             <span className="ted-k">Output name</span>
             <input className="input" value={d.outputName} maxLength={60} onChange={(e) => change({ outputName: e.target.value })} />
             <span className="sub">Other agents will see it as “{d.name}: {d.outputName || "result"}”.</span>
           </label>
-          <span className="sub">For now each run leaves a summary in its own words, shown in Latest runs below. Lists and numbers that other agents can read (numbers only from a tool result in the same run) come in the next slice.</span>
+          <span className="sub">Each run saves its result in its own words plus the key numbers behind it. A number can only come from a tool result in the same run: the model names the step, code copies the value. A number it can’t trace is left out and counted in the summary.</span>
+          {p.lastOutput ? (
+            <div className="soft-box" style={{ flexDirection: "column", alignItems: "stretch", gap: 8 }}>
+              <span className="ted-k">Latest output · {p.lastOutput.at}{p.lastOutput.finished ? "" : " · stopped early, so other agents skip it"}</span>
+              <span style={{ fontSize: 14, lineHeight: 1.5, whiteSpace: "pre-wrap" }}>{p.lastOutput.summary}</span>
+              {p.lastOutput.numbers.map((n, i) => <span key={i} style={{ fontSize: 13.5 }}>{n.label}: <b>{n.value}</b> <span className="muted" style={{ fontSize: 12 }}>from {n.tool}</span></span>)}
+              {!p.lastOutput.numbers.length && <span className="sub">No numbers in this one.</span>}
+            </div>
+          ) : <span className="sub">No output yet. Press Preview to make one.</span>}
         </Section>
       </div>
 

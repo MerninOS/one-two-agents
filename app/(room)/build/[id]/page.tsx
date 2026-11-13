@@ -42,6 +42,8 @@ export default async function BuildAgent({ params }: { params: Promise<{ id: str
         nextVersion={top + 1}
         menu={menu}
         standards={b.standards}
+        others={b.others}
+        lastOutput={b.lastOutput}
         controls={controls}
         dryRun={dryRunBuilt.bind(null, id)}
         preview={previewBuilt.bind(null, id)}

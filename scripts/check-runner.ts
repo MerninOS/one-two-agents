@@ -3,7 +3,7 @@
 import assert from "node:assert/strict";
 import { checkInput } from "../core/tools/types";
 import { readSpec, specLooser } from "../core/agent-spec";
-import { runExplore } from "../core/runner";
+import { runExplore, traceNumbers, type Step } from "../core/runner";
 
 type Block = { type: "text"; text: string } | { type: "tool_use"; id: string; name: string; input: unknown };
 let n = 0;
@@ -59,6 +59,34 @@ async function main() {
   assert.equal(r3.finished, false);
   assert.match(r3.summary, /cost limit/);
   assert.ok(calls <= 1, `made ${calls} calls over the cost limit`);
+
+  // outputs: a number is kept only when it points at a number a tool computed in this run
+  const st: Step[] = [
+    { idx: 0, kind: "model", ok: true, ms: 0 },
+    { idx: 1, kind: "tool", tool: "calc_green_cover", ok: true, numbers: { min_days: 14.5 }, ms: 0 },
+    { idx: 2, kind: "tool", tool: "mercury_balances", ok: false, numbers: { cash: 9 }, ms: 0 },
+  ];
+  const tr = traceNumbers([
+    { label: "Lowest cover", step: 1, key: "min_days" },
+    { label: "Made up", step: 1, key: "max_days" },
+    { label: "Failed tool", step: 2, key: "cash" },
+    { label: "Model step", step: 0, key: "x" },
+    { label: "", step: 1, key: "min_days" },
+  ], st);
+  assert.deepEqual(tr.numbers, [{ label: "Lowest cover", value: 14.5, tool: "calc_green_cover", step: 1, key: "min_days" }]);
+  assert.equal(tr.refused, 4);
+  assert.deepEqual(traceNumbers("not a list", st), { numbers: [], refused: 0 });
+
+  // finish with a number the model typed instead of citing: left out and counted in the summary
+  const r4 = await runExplore(spec, { agentId: "scratch", client: fake(() => reply([{ type: "tool_use", id: "f", name: "finish", input: { result: "Done.", numbers: [{ label: "Cash", step: 7, key: "cash" }] } }])) });
+  assert.deepEqual(r4.output, []);
+  assert.match(r4.summary, /1 number left out/);
+
+  // sources: picking agent_output needs an agent to read from
+  assert.ok(readSpec({ directive: "x", model: "claude-haiku-5-5", tools: ["agent_output"] }).problems.some((p) => /no agent is picked/.test(p)));
+  const reads = readSpec({ directive: "x", model: "claude-haiku-5-5", tools: ["agent_output"], readsFrom: [{ agentId: "b_green", label: "G" }, { agentId: "b_green" }, { agentId: "Bad Id!" }] });
+  assert.deepEqual(reads.spec.readsFrom, [{ agentId: "b_green", label: "G" }]);
+  assert.equal(reads.problems.length, 1);
 
   console.log("check-runner: all passed");
 }
