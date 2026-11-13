@@ -143,13 +143,9 @@ h1, h2, h3, p { margin: 0; }
 .cell { height: 28px; display: flex; align-items: center; justify-content: center; border-radius: 999px; font-size: 11.5px; font-weight: 600; border: 1.5px solid transparent; }
 
 /* access matrix */
-.matrix { display: grid; grid-template-columns: 170px repeat(8, minmax(68px, 1fr)); gap: 6px; align-items: center; }
-.mcell { height: 32px; border-radius: 999px; font-size: 12px; font-weight: 700; display: grid; place-items: center; white-space: nowrap; border: 0; }
 .lv-read { background: var(--mint-soft); color: var(--mint-ink); }
 .lv-draft { background: var(--yel-soft); color: var(--yel-ink); }
 .lv-write { background: var(--acc-soft); color: var(--acc-ink); }
-.lv-uses { background: var(--soft); color: var(--ink2); }
-.lv-none { background: transparent; color: var(--mut2); }
 
 /* canvas */
 .canvas { overflow-x: auto; border-radius: 20px; border: 1px solid var(--bd); background-color: var(--canvas); background-image: radial-gradient(var(--dots) 1.2px, transparent 1.3px); background-size: 18px 18px; }
@@ -245,6 +241,8 @@ h1, h2, h3, p { margin: 0; }
   .h1 { font-size: 24px; }
   .big { font-size: 44px; }
   .home-grid, .grid2, .grid3 { grid-template-columns: minmax(0, 1fr) !important; }
+  /* Connections: the opened connection comes first, right under the page title */
+  .conn-detail { order: -1; }
   .kv { grid-template-columns: 96px minmax(0, 1fr); }
   .input, textarea.input, select { font-size: 16px !important; }
   .modal-bg { padding: 12px; align-items: end; }

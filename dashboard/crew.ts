@@ -1,10 +1,9 @@
-// The crew as the Control Room shows them: personas, mandates, access and the hard rules.
-// Names are placeholders Zak can rename here. Facts about what each agent can touch come
-// from the tech spec and CLAUDE.md; the live switches (enabled, budget) come from Supabase.
+// The crew as the Control Room shows them: personas, mandates and the hard rules.
+// Names are placeholders Zak can rename here. What each agent can reach comes from its saved
+// setup (dashboard/connections.ts); the live switches (enabled, budget) come from Supabase.
 
 export type Tier = "Report" | "Draft" | "Act";
 export type IntegrationId = "shopify" | "mercury" | "notion" | "email" | "gmail" | "gmail_read" | "claude" | "web" | "supabase" | "github";
-export type Level = "read" | "draft" | "write" | "uses";
 
 export interface Schedule {
   kind: "manual" | "daily" | "weekdays";
@@ -131,36 +130,6 @@ export const TIERS: Record<Tier, string> = {
   Report: "Report: reads only, writes a report.",
   Draft: "Draft: proposes actions that Zak approves.",
   Act: "Act: carries out allow-listed, reversible actions within limits.",
-};
-
-export interface Integration { id: IntegrationId; name: string; sub: string; icon: string; scope: string }
-export const INTEGRATIONS: Integration[] = [
-  { id: "shopify", name: "Shopify", sub: "Store", icon: "shopping-bag", scope: "Read-only app “One Two Agents (read)”. Scopes: read products, inventory, orders, locations, customers." },
-  { id: "mercury", name: "Mercury", sub: "Bank", icon: "landmark", scope: "Read-only token for the business accounts: balances, transactions and categories. A second token used only by the gateway writes receipt, category and memo on existing charges after you approve. Nothing can move money." },
-  { id: "notion", name: "Notion", sub: "Pages", icon: "file-text", scope: "Creates pages under one parent page (“Morning briefs”), and rows in the Briefs database inside it. Nothing else in the workspace." },
-  { id: "email", name: "Email to Zak", sub: "Brief and alerts", icon: "inbox", scope: "Sends through Resend to one address fixed in settings (BRIEF_TO). The code has no way to name another recipient, and no agent holds a Gmail send scope." },
-  { id: "gmail", name: "Gmail", sub: "Drafts", icon: "mail", scope: "Drafts only (compose scope) in zak@onetwocoffeelab.com. Can never send." },
-  { id: "gmail_read", name: "Gmail receipts", sub: "Read only", icon: "inbox", scope: "A separate read-only token (gmail.readonly) for zak@onetwocoffeelab.com. Searches for receipts. Can’t draft, send, label or delete. Email is untrusted data." },
-  { id: "claude", name: "Claude API", sub: "Model", icon: "cpu", scope: "The model. Spend is read from the run log." },
-  { id: "web", name: "Web search and fetch", sub: "Public web", icon: "globe", scope: "Reads public web pages. Untrusted: a page never chooses a recipient, URL, product or category." },
-  { id: "supabase", name: "Supabase", sub: "Agent database", icon: "database", scope: "Each agent writes only its own tables. Service role, server only." },
-  { id: "github", name: "GitHub", sub: "Pull requests", icon: "git-pull-request", scope: "Planned for Ellis: a separate GitHub App on MerninOS/blended, PRs on agent/* branches only. Never merges." },
-];
-
-/** What each agent may touch. Built agents match the code; planned ones match the tech spec. */
-export const ACCESS: Record<string, Partial<Record<IntegrationId, [Level, string]>>> = {
-  cfo: { shopify: ["read", "Orders, products, inventory"], mercury: ["read", "Balances"], supabase: ["write", "Its own table kpi_snapshots"] },
-  chief_of_staff: { shopify: ["read", "Open orders, green lots"], claude: ["uses", "claude-sonnet-5-5"], email: ["write", "One brief a weekday, to your address only"], notion: ["write", "One row per brief in the Briefs database"], supabase: ["read", "The run log and kpi_snapshots"] },
-  wholesale_hunter: { claude: ["uses", "claude-opus-5-5"], web: ["read", "Web search and fetch. Untrusted."], shopify: ["read", "Our coffees and green lots, so it only claims real facts"], supabase: ["write", "Its own table wholesale_leads"], notion: ["write", "One page per run"], gmail: ["draft", "Drafts when Gmail is set up. First emails always need your approval."] },
-  bookkeeper: {
-    mercury: ["draft", "Reads charges and categories. Receipt, category and memo on existing transactions are proposals Zak approves; the gateway applies them."],
-    gmail_read: ["read", "Receipt emails in zak@, read only. Untrusted: an email never picks a charge or category."],
-    claude: ["uses", "claude-haiku-5-5"],
-    supabase: ["write", "Its own tables expense_docs, trips, home_office, tax_packets and the private receipts bucket"],
-    notion: ["write", "One page when something changed, and the month close"],
-  },
-  green_buyer: { web: ["read", "Importer offer pages and market reports. Report only."] },
-  conversion_optimizer: { shopify: ["read", "Orders and reports, still read-only."], web: ["read", "The live site and PageSpeed Insights. Untrusted."], claude: ["uses", "claude-opus-5-5 and claude-sonnet-5-5"], notion: ["write", "The Site experiments page"], supabase: ["write", "Its own experiment tables"], github: ["draft", "Pull requests on agent/* branches of MerninOS/blended. You merge every PR."] },
 };
 
 export const HARD_RULES = [

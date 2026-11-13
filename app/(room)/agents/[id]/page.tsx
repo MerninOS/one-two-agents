@@ -4,7 +4,8 @@ import { SEEN_COOKIE, parseSeen } from "@/dashboard/seen";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { discardLessonLine, dryRun, editMemoryLine, forgetMemoryLine, keepLessonLine, realRun, setBudget, setCap, setEnabled, teach } from "@/dashboard/actions";
-import { ACCESS, BY_ID, HARD_RULES, INTEGRATIONS, TIERS, type CrewMember } from "@/dashboard/crew";
+import { BY_ID, HARD_RULES, TIERS, type CrewMember } from "@/dashboard/crew";
+import { ABILITY_WORD, isSetUp, reachOf } from "@/dashboard/connections";
 import { buildCanvas } from "@/dashboard/canvas";
 import { getBooks, getFloor, getMemory, getMemoryMeter, getPipeline, getSetup, getSetupEditor, leadsForRun, runSetupVersion, type Books, type Floor } from "@/dashboard/data";
 import { KEEPS_WORKING, type MemoryRow, type PageLoad } from "@/core/memory";
@@ -24,11 +25,10 @@ import { Avatar, LockList, Pill, Summary } from "@/dashboard/components/ui";
 // which lives as long as this page's function allows.
 export const maxDuration = 300;
 
-const TABS = [["profile", "Profile"], ["setup", "Setup"], ["memory", "Memory"], ["runs", "Runs and replays"], ["access", "Access"], ["shift", "Shift"], ["settings", "Settings"]] as const;
+const TABS = [["profile", "Profile"], ["setup", "Setup"], ["memory", "Memory"], ["runs", "Runs and replays"], ["shift", "Shift"], ["settings", "Settings"]] as const;
 type Tab = (typeof TABS)[number][0];
 
-const LEVEL_CLASS = { read: "lv-read", draft: "lv-draft", write: "lv-write", uses: "lv-uses" } as const;
-const LEVEL_LABEL = { read: "Read", draft: "Draft", write: "Write", uses: "Uses" } as const;
+const ABILITY_CLASS = { read: "lv-read", do: "lv-draft", hands: "lv-write" } as const;
 const STAGE_COLORS: Record<string, string> = { new: "var(--mut2)", drafted: "var(--yel)", contacted: "var(--acc)", replied: "var(--pink)", tasting: "var(--peach)", won: "var(--mint)", lost: "var(--ink2)", skip: "var(--track)" };
 
 export default async function AgentPage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ tab?: string }> }) {
@@ -93,20 +93,9 @@ export default async function AgentPage({ params, searchParams }: { params: Prom
 
       {tab === "setup" && (a.built ? <SetupTab a={a} f={f} /> : <div className="card dashed" style={{ padding: 40, textAlign: "center" }}><span className="muted">{a.name} hasn’t joined yet. Its setup appears when it is built.</span></div>)}
 
-      {tab === "memory" && <Memory a={a} domains={pipeline?.domains} mem={mem} />}
+      {tab === "memory" && <Memory a={a} f={f} domains={pipeline?.domains} mem={mem} />}
 
       {tab === "runs" && (a.built ? <RunTable runs={runs.slice(0, 200)} showAgent={false} foot={`${runs.length} runs in the last 60 days · ${m4(runs.reduce((s, r) => s + r.cost_usd, 0))} spent`} /> : <div className="card dashed" style={{ padding: 40, textAlign: "center" }}><span className="muted">{a.name} hasn’t joined yet. No runs.</span></div>)}
-
-      {tab === "access" && (
-        <div className="grid2" style={{ gridTemplateColumns: "minmax(0,1.3fr) minmax(0,1fr)" }}>
-          <Toolbelt a={a} f={f} title={`What ${a.name} can touch`} noRules />
-          <div className="card" style={{ gap: 4 }}>
-            <span className="row" style={{ gap: 8, fontSize: 15, fontWeight: 600, marginBottom: 8 }}><Icon name="lock" size={15} />Hard rules</span>
-            <span className="sub" style={{ marginBottom: 6 }}>Locked. Can’t be switched off in this app.</span>
-            <LockList rules={HARD_RULES} />
-          </div>
-        </div>
-      )}
 
       {tab === "shift" && <Shift a={a} f={f} controls={controls} />}
 
@@ -144,7 +133,7 @@ async function SetupTab({ a, f }: { a: CrewMember; f: Floor }) {
   const row = f.agents[a.id];
   const [editor, guard] = await Promise.all([getSetupEditor(a.id, f.runs, f.health, setup), row ? getGuardrails(a.id, row.daily_budget_usd) : Promise.resolve(null)]);
   return (
-    <AgentCanvas model={buildCanvas({ a, row, run, runSetupVersion: version, leads, health: f.health, setup, memory })} editor={editor}
+    <AgentCanvas model={buildCanvas({ a, row, run, runSetupVersion: version, leads, health: f.health, reach: reachOf(a.id, f.grants), setup, memory })} editor={editor}
       guard={guard && { d: guard, saveCap: setCap, budgetForm: <BudgetForm current={row!.daily_budget_usd} save={setBudget.bind(null, a.id)} controls={guard.controls} /> }} />
   );
 }
@@ -277,26 +266,22 @@ function BooksCard({ books }: { books: Books | null }) {
 }
 
 function Toolbelt({ a, f, title = "Toolbelt", noRules }: { a: CrewMember; f: Floor; title?: string; noRules?: boolean }) {
-  const acc = ACCESS[a.id] ?? {};
-  const tools = INTEGRATIONS.filter((i) => acc[i.id]);
+  const reach = reachOf(a.id, f.grants);
   return (
     <div className="card" style={{ gap: 12 }}>
-      <div className="card-h"><span className="card-t">{title}</span><span className="muted" style={{ fontSize: 12 }}>Read · Draft · Write</span></div>
-      {tools.map((i) => {
-        const [lv, scope] = acc[i.id]!;
-        return (
-          <div key={i.id} className="row" style={{ gap: 12, padding: "10px 12px", borderRadius: 16, background: "var(--soft)" }}>
-            <span style={{ width: 32, height: 32, borderRadius: 999, background: "var(--card)", display: "grid", placeItems: "center", flex: "none" }}><Icon name={i.icon} size={15} /></span>
-            <span style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", gap: 2 }}><span style={{ fontSize: 13.5, fontWeight: 600 }}>{i.name}</span><span style={{ fontSize: 12 }} className="ink2">{scope}</span></span>
-            {a.built && !f.health[i.id] && <span style={{ fontSize: 11.5, fontWeight: 600, color: "var(--red-ink)" }}>Not set up</span>}
-            <span className={`pill sm ${LEVEL_CLASS[lv]}`} style={{ fontWeight: 700, fontSize: 11.5 }}>{LEVEL_LABEL[lv]}</span>
-          </div>
-        );
-      })}
-      {!tools.length && <span style={{ fontSize: 13, lineHeight: 1.5 }} className="ink2">Access is set when {a.name} is built, following the tech spec.</span>}
+      <div className="card-h"><span className="card-t">{title}</span><Link href="/connections" className="muted" style={{ fontSize: 12 }}>All connections</Link></div>
+      {reach.map((r) => (
+        <Link key={r.conn.id} href={`/connections?c=${r.conn.id}`} className="row" style={{ gap: 12, padding: "10px 12px", borderRadius: 16, background: "var(--soft)", color: "var(--ink)", textDecoration: "none" }}>
+          <span style={{ width: 32, height: 32, borderRadius: 999, background: "var(--card)", display: "grid", placeItems: "center", flex: "none" }}><Icon name={r.conn.icon} size={15} /></span>
+          <span style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", gap: 2 }}><span style={{ fontSize: 13.5, fontWeight: 600 }}>{r.conn.name}</span><span style={{ fontSize: 12 }} className="ink2">{r.tools.join(" · ")}</span></span>
+          {!isSetUp(r.conn, f.health) && <span style={{ fontSize: 11.5, fontWeight: 600, color: "var(--red-ink)" }}>Not set up</span>}
+          <span className={`pill sm ${ABILITY_CLASS[r.ability]}`} style={{ fontWeight: 700, fontSize: 11.5 }}>{ABILITY_WORD[r.ability]}</span>
+        </Link>
+      ))}
+      {!reach.length && <span style={{ fontSize: 13, lineHeight: 1.5 }} className="ink2">{a.built ? `${a.name} has no saved setup yet, so nothing is listed.` : `What ${a.name} can reach is set when it is built.`}</span>}
       {!noRules && (
         <div style={{ display: "flex", flexDirection: "column", gap: 2, marginTop: 6, padding: "14px 16px", borderRadius: 18, border: "1px solid var(--bd)" }}>
-          <span className="row" style={{ gap: 8, fontSize: 13, fontWeight: 600, marginBottom: 6 }}><Icon name="lock" size={14} />Never · locked for every agent</span>
+          <span className="row" style={{ gap: 8, fontSize: 13, fontWeight: 600, marginBottom: 6 }}><Icon name="lock" size={14} />Always on, for every agent</span>
           {HARD_RULES.map((r) => <span key={r} className="row ink2" style={{ gap: 8, fontSize: 12.5, padding: "3px 0", lineHeight: 1.45, alignItems: "flex-start" }}><Icon name="lock" size={12} style={{ marginTop: 3, flex: "none", opacity: 0.5 }} />{r}</span>)}
         </div>
       )}
@@ -360,10 +345,10 @@ const toLine = (r: MemoryRow, pages: PageLoad[] = []): LineView => {
 
 const EVENT_WORDS: Record<string, string> = { added: "Taught", edited: "Edited", forgotten: "Forgot", expired: "Expired", rewritten: "Working memory rewritten", proposed: "Lesson proposed", kept: "Kept", discarded: "Discarded" };
 
-function Memory({ a, domains, mem }: { a: CrewMember; domains?: string[]; mem: Awaited<ReturnType<typeof getMemory>> | null }) {
+function Memory({ a, f, domains, mem }: { a: CrewMember; f: Floor; domains?: string[]; mem: Awaited<ReturnType<typeof getMemory>> | null }) {
   if (!a.built) return <div className="card" style={{ padding: 56, textAlign: "center", fontSize: 16 }}><span className="ink2">{a.name} hasn’t joined yet. Memory starts on day one.</span></div>;
   const tab = mem?.tab ?? null;
-  const reads = INTEGRATIONS.filter((i) => ACCESS[a.id]?.[i.id]?.[0] === "read");
+  const reads = reachOf(a.id, f.grants).filter((r) => r.has.includes("read"));
   const mine = (g: string) => (tab?.rows ?? []).filter((r) => r.grp === g && r.state === "kept" && (g === "crew" ? r.agent_id === null : r.agent_id === a.id));
   const editable = !!tab;
   const proposed = (tab?.rows ?? []).filter((r) => r.grp === "lesson" && r.state === "proposed" && r.agent_id === a.id);
@@ -379,7 +364,7 @@ function Memory({ a, domains, mem }: { a: CrewMember; domains?: string[]; mem: A
       </>
     ) },
     { n: 2, title: "Facts it may claim", color: "var(--mint)", meta: "Read fresh every run, never from the model", body: (
-      <>{reads.map((i) => <div key={i.id} className="row rule" style={{ alignItems: "flex-start", padding: "10px 0", fontSize: 13.5, lineHeight: 1.45 }}><span className="dot" style={{ width: 6, height: 6, marginTop: 7, background: "var(--mint)" }} />{i.name}: {ACCESS[a.id]![i.id]![1]}</div>)}{!reads.length && <span className="muted" style={{ fontSize: 13 }}>Reads nothing.</span>}</>
+      <>{reads.map((r) => <div key={r.conn.id} className="row rule" style={{ alignItems: "flex-start", padding: "10px 0", fontSize: 13.5, lineHeight: 1.45 }}><span className="dot" style={{ width: 6, height: 6, marginTop: 7, background: "var(--mint)" }} />{r.conn.name}: {(r.by.read ?? []).join(", ")}</div>)}{!reads.length && <span className="muted" style={{ fontSize: 13 }}>Reads nothing.</span>}</>
     ) },
     { n: 3, title: "Lessons", color: "var(--yel)", meta: "Proposed when you reject an approval and say why. Nothing sticks until you tap Keep.", body: (
       <>

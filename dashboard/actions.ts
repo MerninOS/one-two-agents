@@ -25,7 +25,7 @@ import { TOOLS } from "@/core/tools/catalog";
 import { REBUILT, dryRunPlaybook, setOnRunner } from "@/core/built";
 import { activePlaybook, afterRun, approvePlaybook, holdAfterRejection, listPlaybooks, rejectPlaybook } from "@/core/playbook";
 import { loadMemory } from "@/core/memory";
-import { BUILT, BY_ID } from "./crew";
+import { BY_ID } from "./crew";
 import { requireSession } from "./data";
 import { SESSION_COOKIE, SESSION_DAYS, checkPassword, controlsOn, newSessionToken } from "./session";
 
@@ -772,6 +772,9 @@ export async function switchEngine(agentId: string, toRunner: boolean, confirmed
       if (!confirmed) return { ok: false, text: "Confirm first." };
       const dry = await dryRunPlaybook(agentId);
       if (dry.status !== "ok") return { ok: false, text: dry.summary };
+      // the dry run returning is not enough: every playbook step has to have worked
+      if (!dry.steps) return { ok: false, text: "Not switched: its playbook has no steps to check yet." };
+      if (dry.failed) return { ok: false, text: `Not switched: ${dry.failed} of ${dry.steps} playbook steps didn't work in the check just now. ${dry.lines.filter((l) => l.startsWith("FAILED")).join(" · ")}` };
     }
     await setOnRunner(agentId, toRunner);
     revalidatePath("/", "layout");

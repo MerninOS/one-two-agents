@@ -1,5 +1,6 @@
 // "Needs you": things on the floor that want Zak, worked out from real runs and settings.
-import { ACCESS, BUILT, BY_ID, INTEGRATIONS } from "./crew";
+import { BUILT, BY_ID } from "./crew";
+import { CONNECTIONS, usersOfCheck } from "./connections";
 import type { Floor } from "./data";
 import type { Seen } from "./seen";
 import { stateOf } from "./status";
@@ -16,7 +17,7 @@ export function needs(f: Floor, now = Date.now(), seen: Seen = {}): Need[] {
     if (r.status !== "ok" || r.summary?.startsWith("[dry run")) continue;
     lastOk[r.agent_id] = Math.max(lastOk[r.agent_id] ?? 0, Date.parse(r.started_at));
   }
-  if (!f.ok) out.push({ pri: "High", title: "Can’t read the agent database", sub: f.problem ?? "", href: "/integrations" });
+  if (!f.ok) out.push({ pri: "High", title: "Can’t read the agent database", sub: f.problem ?? "", href: "/connections" });
   for (const r of f.runs) {
     const a = BY_ID[r.agent_id];
     if (!a) continue;
@@ -36,17 +37,21 @@ export function needs(f: Floor, now = Date.now(), seen: Seen = {}): Need[] {
     if (a && n) out.push({ pri: "Low", title: `Review ${n} lesson${n === 1 ? "" : "s"} for ${a.name}`, sub: "Proposed from your rejections. Keep, edit or discard each one.", href: `/agents/${agentId}?tab=memory`, agentId });
   }
   if (f.photosWaiting) out.push({ pri: "Medium", title: `${f.photosWaiting} charge${f.photosWaiting === 1 ? "" : "s"} need a receipt photo`, sub: "Quinn couldn’t find a receipt. The list is on Quinn’s profile and the latest Books page in Notion.", href: "/agents/bookkeeper", agentId: "bookkeeper" });
-  for (const i of INTEGRATIONS) {
-    if (f.health[i.id] || i.id === "supabase") continue;
-    const users = BUILT.filter((a) => ACCESS[a.id]?.[i.id]);
-    if (!users.length) continue;
-    out.push({
-      pri: i.id === "gmail" || i.id === "gmail_read" || i.id === "email" ? "Low" : "Medium",
-      title: `Connect ${i.name}`,
-      sub: i.id === "email" ? "Avery’s brief goes to Notion only until email is set up." : i.id === "gmail" ? "Rowan’s drafts land in Notion only until Gmail is connected." : i.id === "gmail_read" ? "Quinn can’t look for receipts in email until the read-only Gmail token is set." : `${users.map((u) => u.name).join(" and ")} ${users.length > 1 ? "need" : "needs"} it.`,
-      href: "/integrations",
-      agentId: users[0].id,
-    });
+  for (const c of CONNECTIONS) {
+    for (const k of c.checks) {
+      if (f.health[k.key] || k.key === "supabase") continue;
+      const users = usersOfCheck(c, k, f.grants);
+      if (!users.length) continue;
+      const names = users.map((u) => BY_ID[u]?.name ?? f.setupNames[u] ?? u);
+      const what = c.checks.length > 1 ? `${c.name} ${k.label.toLowerCase()}` : c.name;
+      out.push({
+        pri: c.id === "gmail" || c.id === "email" ? "Low" : "Medium",
+        title: `Connect ${what}`,
+        sub: `${names.join(" and ")} ${names.length > 1 ? "need" : "needs"} it. ${k.setup}`,
+        href: `/connections?c=${c.id}`,
+        agentId: users[0],
+      });
+    }
   }
   const order: Record<Priority, number> = { High: 0, Medium: 1, Low: 2 };
   return out.sort((a, b) => order[a.pri] - order[b.pri]);

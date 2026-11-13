@@ -41,9 +41,13 @@ async function ready(agentId: string) {
 }
 
 /** A free dry run: the playbook's tool calls, made in code. No model, nothing written. */
-export async function dryRunPlaybook(agentId: string): Promise<RunResult & { lines: string[] }> {
+/**
+ * Runs each playbook step's read for real and writes nothing. `failed` counts the steps that
+ * didn't work: going live needs it to be 0 (the status stays "ok" because the dry run itself ran).
+ */
+export async function dryRunPlaybook(agentId: string): Promise<RunResult & { lines: string[]; failed: number; steps: number }> {
   const r = await ready(agentId);
-  if ("problem" in r) return { status: "skipped", summary: `Not ready for the runner: ${r.problem}.`, lines: [] };
+  if ("problem" in r) return { status: "skipped", summary: `Not ready for the runner: ${r.problem}.`, lines: [], failed: 0, steps: 0 };
   const ctx: ToolCtx = { agentId, notionPages: r.spec.notionPages, outputSources: r.spec.readsFrom, reportPage: r.spec.reportPage };
   const lines: string[] = [];
   const numbers: Record<string, number> = {};
@@ -64,13 +68,13 @@ export async function dryRunPlaybook(agentId: string): Promise<RunResult & { lin
   return {
     status: "ok",
     summary: `[dry run, nothing sent] Spec v${r.version}, playbook v${r.playbook.version}: ${r.playbook.steps.length - bad} of ${r.playbook.steps.length} steps worked. A real run then has ${r.spec.model} write the result${reports.length ? ` and delivers: ${reports.join("; ")}` : ""}.`,
-    metrics: numbers, lines,
+    metrics: numbers, lines, failed: bad, steps: r.playbook.steps.length,
   };
 }
 
 /** One run on the runner, following the approved playbook, delivering what it produces. Call inside withRun. */
 export async function runBuilt(agentId: string, opts: { runId?: string; dryRun?: boolean; memory?: MemoryLoad | null; handoff?: Handoff | null }): Promise<RunResult> {
-  if (opts.dryRun) { const { lines, ...res } = await dryRunPlaybook(agentId); return { ...res, summary: `${res.summary} ${lines.join(" · ")}` }; }
+  if (opts.dryRun) { const d = await dryRunPlaybook(agentId); return { status: d.status, summary: `${d.summary} ${d.lines.join(" · ")}`, metrics: d.metrics }; }
   const r = await ready(agentId);
   if ("problem" in r) return { status: "skipped", summary: `Not run on the runner: ${r.problem}.` };
   const h = opts.handoff ? { from: opts.handoff.from, summary: opts.handoff.summary ?? "", metrics: opts.handoff.metrics ?? {} } : null;

@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { cookies } from "next/headers";
-import { BUILT, BY_ID, CREW, INTEGRATIONS, PLANNED } from "@/dashboard/crew";
+import { BUILT, BY_ID, CREW, PLANNED } from "@/dashboard/crew";
+import { CONNECTIONS, isSetUp } from "@/dashboard/connections";
 import { getFloor } from "@/dashboard/data";
 import { longDay } from "@/dashboard/format";
 import { needs } from "@/dashboard/needs";
@@ -14,7 +15,7 @@ export default async function RoomLayout({ children }: { children: React.ReactNo
   const jar = await cookies();
   const theme = jar.get("cr_theme")?.value === "dark" ? "dark" : "light";
   const open = needs(floor, floor.now, parseSeen(jar.get(SEEN_COOKIE)?.value));
-  const notSetUp = INTEGRATIONS.filter((i) => !floor.health[i.id]).length;
+  const notSetUp = CONNECTIONS.filter((c) => !c.builtIn && !isSetUp(c, floor.health)).length;
   const rail = CREW.map((a) => {
     const st = stateOf(a, floor.agents[a.id], floor.runs, floor.spentToday[a.id] ?? 0);
     return { a, st, badge: open.filter((n) => n.agentId === a.id).length };
@@ -27,8 +28,7 @@ export default async function RoomLayout({ children }: { children: React.ReactNo
   const nav = [
     { label: "Floor", items: [{ href: "/", match: "/", icon: "layout-dashboard", label: "Mission control" }, { href: "/runs/latest", match: "/runs/*", icon: "history", label: "Run replay" }, { href: "/runs", match: "/runs", icon: "list", label: "Run log" }] },
     { label: "Crew", items: [{ href: `/agents/${firstBuilt}`, match: "/agents/*", tab: "!memory", icon: "users", label: "Crew profiles", count: `${BUILT.length} + ${PLANNED.length}` }, { href: `/agents/${firstBuilt}?tab=memory`, match: "/agents/*", tab: "memory", icon: "brain", label: "Memory" }, { href: "/crew", match: "/crew", icon: "git-pull-request", label: "Crew canvas" }, { href: "/build", match: "/build*", icon: "pencil", label: "Agent builder" }] },
-    { label: "Trust", items: [{ href: "/access", match: "/access", icon: "shield-check", label: "Access" }, { href: "/approvals", match: "/approvals", icon: "inbox", label: "Approvals", count: floor.approvalsPending ? String(floor.approvalsPending) : undefined }] },
-    { label: "System", items: [{ href: "/integrations", match: "/integrations", icon: "plug", label: "Integrations", note: notSetUp ? `${notSetUp} not set up` : undefined, noteColor: "var(--red-ink)" }] },
+    { label: "Trust", items: [{ href: "/approvals", match: "/approvals", icon: "inbox", label: "Approvals", count: floor.approvalsPending ? String(floor.approvalsPending) : undefined }, { href: "/connections", match: "/connections", icon: "plug", label: "Connections", note: notSetUp ? `${notSetUp} to fix` : undefined, noteColor: "var(--red-ink)" }] },
   ];
 
   return (

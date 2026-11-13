@@ -304,7 +304,7 @@ export function Builder(p: BuilderProps) {
           {p.budget}
           <div className="soft-box" style={{ alignItems: "flex-start", fontSize: 13.5, lineHeight: 1.5 }}>
             <Icon name="lock" size={15} style={{ marginTop: 2, flex: "none" }} />
-            <span>Locked for every agent: the crew hard rules on the Access page. No sending, paying or posting outside the approval queue; caps of $500 a purchase, $1,500 a month and 20 emails a day; a first email to a new person always waits for you. Lowering a limit takes effect right away; raising one needs a confirm and Controls on.</span>
+            <span>Locked for every agent: the crew hard rules on the Connections page. No sending, paying or posting outside the approval queue; caps of $500 a purchase, $1,500 a month and 20 emails a day; a first email to a new person always waits for you. Lowering a limit takes effect right away; raising one needs a confirm and Controls on.</span>
           </div>
         </Section>
 

@@ -9,7 +9,8 @@ import { env } from "@/core/env";
 import { liveSections, type AgentMenu, type Setup } from "@/core/setup";
 import { hasGateway } from "@/integrations/gateway";
 import { modelDef } from "@/integrations/models";
-import { ACCESS, HARD_RULES, INTEGRATIONS, type CrewMember, type IntegrationId } from "./crew";
+import { HARD_RULES, type CrewMember, type IntegrationId } from "./crew";
+import { isSetUp, type Reach } from "./connections";
 import type { AgentRow, Run } from "./data";
 import { budget, dur, m4, num, when } from "./format";
 import { schedSentence, schedWords } from "./schedule";
@@ -30,6 +31,8 @@ export interface CanvasInput {
   runSetupVersion?: number | null;
   leads?: number | null;
   health: Record<IntegrationId, boolean>;
+  /** What its saved setup can reach, per connection (dashboard/connections.ts). */
+  reach: Reach[];
   /** Null for an agent without a menu. */
   setup: { setup: Setup; problem?: string } | null;
   /** What the agent's next run would load from memory, when it can be read. */
@@ -55,7 +58,6 @@ export function buildCanvas(i: CanvasInput): CanvasModel {
     label: d.label, value: (setup?.choices[k] ?? d.default).map((id) => d.options.find((o) => o.id === id)?.label ?? id).join(", "), home: "app", where: `${from(setup?.fromSetup.choices[k])} · ${d.detail}`,
   }));
   const choiceWords = (box: CanvasBox["id"]) => Object.entries(menu?.choices ?? {}).filter(([, d]) => d.box === box).map(([k, d]) => `${d.label} · ${(setup?.choices[k] ?? d.default).length} picked`);
-  const access = (levels: string[]) => INTEGRATIONS.filter((x) => levels.includes(ACCESS[a.id]?.[x.id]?.[0] ?? ""));
 
   // 1. Trigger
   const sched = a.schedule;
@@ -93,11 +95,11 @@ export function buildCanvas(i: CanvasInput): CanvasModel {
   };
 
   // 3. Reads
-  const readsAccess = access(["read"]);
+  const readsAccess = i.reach.filter((x) => x.has.includes("read"));
   const reads: CanvasBox = {
     id: "reads", title: "Reads · facts", icon: "shopping-bag",
-    replay: readsAccess.length ? readsAccess.map((x) => x.name) : ["No reads"],
-    edit: menu ? [`${menu.reads.length - (setup?.readsOff.length ?? 0)} of ${menu.reads.length} fact sources on`, ...numbers("reads").map((r) => `${r.label} ${r.value}`), ...choiceWords("reads")] : (readsAccess.length ? readsAccess.map((x) => x.name) : ["No reads"]),
+    replay: readsAccess.length ? readsAccess.map((x) => x.conn.name) : ["No reads"],
+    edit: menu ? [`${menu.reads.length - (setup?.readsOff.length ?? 0)} of ${menu.reads.length} fact sources on`, ...numbers("reads").map((r) => `${r.label} ${r.value}`), ...choiceWords("reads")] : (readsAccess.length ? readsAccess.map((x) => x.conn.name) : ["No reads"]),
     // nothing to pick when every source is locked and no setting lives here (Morgan)
     editable: !!(setup && menu && (menu.reads.some((r) => !r.locked) || numbers("reads").length || choices("reads").length)),
     rows: menu
@@ -108,7 +110,7 @@ export function buildCanvas(i: CanvasInput): CanvasModel {
         }),
         ...numbers("reads"), ...choices("reads"), ...fixed("reads"),
       ]
-      : readsAccess.map((x): CanvasRow => ({ label: x.name, value: ACCESS[a.id]?.[x.id]?.[1] ?? "", home: "code", where: file, status: status(health[x.id]) })),
+      : readsAccess.map((x): CanvasRow => ({ label: x.conn.name, value: (x.by.read ?? []).join(", "), home: "app", where: "Its saved setup", status: status(isSetUp(x.conn, health)) })),
   };
 
   // 4. Thinking
@@ -165,13 +167,13 @@ export function buildCanvas(i: CanvasInput): CanvasModel {
       { label: "Daily budget", value: row ? `${budget(row.daily_budget_usd)} of model spend per UTC day` : "Set when built", home: "app", where: "Settings tab. Raising it needs DASHBOARD_CONTROLS=on" },
       { label: "Before every run", value: "Off duty or over budget means the run is skipped and logged at $0", home: "code", where: "withRun in core/runs.ts" },
       { label: "Numbers", value: "Money, margins, counts and days of cover are computed in code, never by the model", home: "code", where: file },
-      ...(ACCESS[a.id]?.email ? [{ label: "Email recipient", value: "One address. The email code has no recipient field.", home: "vercel", where: "BRIEF_TO in Vercel, read by integrations/email.ts", status: status(!!process.env.BRIEF_TO?.trim()) } as CanvasRow] : []),
+      ...(i.reach.some((x) => x.conn.id === "email") ? [{ label: "Email recipient", value: "One address. The email code has no recipient field.", home: "vercel", where: "BRIEF_TO in Vercel, read by integrations/email.ts", status: status(!!process.env.BRIEF_TO?.trim()) } as CanvasRow] : []),
       ...numbers("guardrails"), ...choices("guardrails"), ...fixed("guardrails"),
     ],
   };
 
   // 6. Writes
-  const writesAccess = access(["write", "draft"]);
+  const writesAccess = i.reach.filter((x) => x.has.some((h) => h !== "read"));
   const outOn = (id: string) => !setup?.outputsOff.includes(id);
   const envSet = (k?: string) => !!(k && process.env[k]?.trim());
   const target = !menu?.notion ? "" : setup?.notion ? `${setup.notion.kind === "database" ? "Database" : "Page"} “${setup.notion.title}”` : envSet(menu.notion.envDb) ? `The database in ${menu.notion.envDb}` : envSet(menu.notion.envPage) ? `A page per run under ${menu.notion.envPage}` : a.id !== "chief_of_staff" && env.notionBriefParent ? "A page per run under NOTION_BRIEF_PARENT_ID" : "Not set";
@@ -179,8 +181,8 @@ export function buildCanvas(i: CanvasInput): CanvasModel {
   const tools = Object.entries(TOOLS).filter(([, t]) => (t.agents as readonly string[]).includes(a.id));
   const writes: CanvasBox = {
     id: "writes", title: "Writes · outputs", icon: "shield-check",
-    replay: writesAccess.map((x) => `${x.name}${ACCESS[a.id]?.[x.id]?.[0] === "draft" ? " · draft" : ""}`),
-    edit: menu && setup ? [menu.outputs.filter((o) => outOn(o.id)).map((o) => o.label).join(" + ") || "Nothing on", ...(menu.sections.length ? [`${liveSections(menu, setup).length} sections`] : []), ...numbers("writes").map((r) => `${r.label} ${r.value}`)] : menu ? menu.outputs.map((o) => o.label) : writesAccess.map((x) => x.name),
+    replay: writesAccess.map((x) => `${x.conn.name}${x.has.includes("do") ? " · asks first" : ""}`),
+    edit: menu && setup ? [menu.outputs.filter((o) => outOn(o.id)).map((o) => o.label).join(" + ") || "Nothing on", ...(menu.sections.length ? [`${liveSections(menu, setup).length} sections`] : []), ...numbers("writes").map((r) => `${r.label} ${r.value}`)] : menu ? menu.outputs.map((o) => o.label) : writesAccess.map((x) => x.conn.name),
     editable: !!(setup && menu && (menu.outputs.some((o) => !o.locked) || menu.notion || menu.sections.length || numbers("writes").length)),
     rows: menu
       ? [
@@ -190,7 +192,7 @@ export function buildCanvas(i: CanvasInput): CanvasModel {
         { label: "Gateway actions", value: tools.length ? tools.map(([k, t]) => `${k} (${t.tier})`).join(", ") : "None. It can’t send, pay or post.", home: "code", where: "core/gateway/policy.ts. A new action type is a pull request and starts at Draft" },
         ...numbers("writes"), ...choices("writes"), ...fixed("writes"),
       ]
-      : writesAccess.map((x): CanvasRow => ({ label: x.name, value: ACCESS[a.id]?.[x.id]?.[1] ?? "", home: "code", where: file, status: status(health[x.id]) })),
+      : writesAccess.map((x): CanvasRow => ({ label: x.conn.name, value: [...(x.by.hands ?? []), ...(x.by.do ?? [])].join(", "), home: "app", where: "Its saved setup", status: status(isSetUp(x.conn, health)) })),
   };
 
   const look = run ? RUN_LOOK[run.status] : null;
