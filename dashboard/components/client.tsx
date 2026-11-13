@@ -34,13 +34,11 @@ export function MarkSeen({ agentId, at }: { agentId: string; at: number }) {
 }
 
 /** Sidebar link, active when the path matches (a trailing * matches a prefix) and, if given, the tab matches. */
-export function SideLink({ href, match, tab, icon, label, note, noteColor, count }: { href: string; match: string; tab?: string; icon: string; label: string; note?: string; noteColor?: string; count?: string }) {
+export function SideLink({ href, match, icon, label, note, noteColor, count }: { href: string; match: string | string[]; icon: string; label: string; note?: string; noteColor?: string; count?: string }) {
   const path = usePathname();
-  const curTab = useSearchParams().get("tab") ?? "profile";
-  const pathOk = match.endsWith("*") ? path.startsWith(match.slice(0, -1)) : path === match;
-  const active = pathOk && (!tab || (tab.startsWith("!") ? curTab !== tab.slice(1) : curTab === tab));
+  const active = (Array.isArray(match) ? match : [match]).some((m) => (m.endsWith("*") ? path.startsWith(m.slice(0, -1)) : path === m));
   return (
-    <Link href={href} className={"side-item" + (active ? " active" : "")}>
+    <Link href={href} className={"side-item" + (active ? " active" : "")} aria-current={active ? "page" : undefined}>
       <Icon name={icon} size={17} />
       <span style={{ flex: 1, minWidth: 0, whiteSpace: "nowrap" }}>{label}</span>
       {note && <span className="side-note" style={{ color: noteColor }}>{note}</span>}
@@ -52,9 +50,10 @@ export function SideLink({ href, match, tab, icon, label, note, noteColor, count
 export function RailLink({ id, name, title, icon, planned, running, badge }: { id: string; name: string; title: string; icon: string; planned?: boolean; running?: boolean; badge?: number }) {
   const path = usePathname();
   const tab = useSearchParams().get("tab");
-  const sel = path === `/agents/${id}`;
+  // the builder page is the agent's Edit tab, so its chip stays selected there too
+  const sel = path === `/agents/${id}` || path === `/build/${id}`;
   // switching agents keeps the tab Zak is on (Memory to Memory), except for agents not built yet
-  const href = `/agents/${id}${tab && !planned && path.startsWith("/agents/") ? `?tab=${tab}` : ""}`;
+  const href = path.startsWith("/build/") && !planned && !path.startsWith("/build/new") ? `/build/${id}` : `/agents/${id}${tab && !planned && path.startsWith("/agents/") ? `?tab=${tab}` : ""}`;
   return (
     <Link href={href} title={title} className={"rail-item" + (sel ? " sel" : "") + (planned ? " planned" : "")} aria-current={sel ? "page" : undefined}>
       <span className={"rail-av" + (sel ? " sel" : planned ? " planned" : "") + (running ? " running" : "")}>

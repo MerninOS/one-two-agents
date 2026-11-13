@@ -44,3 +44,26 @@ export function Empty({ title, children, action }: { title: string; children?: R
     </div>
   );
 }
+
+export type AgentTab = "overview" | "edit" | "memory" | "runs";
+/**
+ * An agent's four tabs (docs/builder-flow.md, slice 5). Edit is the builder page (`/build/<id>`: the
+ * map, Try it, Go live), so it shows only once the agent has a saved setup to edit.
+ */
+export function AgentTabs({ id, on, editable }: { id: string; on: AgentTab; editable: boolean }) {
+  const tabs: [AgentTab, string, string][] = [
+    ["overview", "Overview", `/agents/${id}`],
+    ...(editable ? [["edit", "Edit", `/build/${id}`] as [AgentTab, string, string]] : []),
+    ["memory", "Memory", `/agents/${id}?tab=memory`],
+    ["runs", "Runs", `/agents/${id}?tab=runs`],
+  ];
+  return (
+    <nav className="row wrap tabs" style={{ gap: 6 }} aria-label="Agent">
+      {tabs.map(([k, l, href]) => (
+        <Link key={k} href={href} aria-current={on === k ? "page" : undefined} className="btn sm" style={{ height: 38, fontSize: 13.5, background: on === k ? "var(--ink)" : "var(--soft)", color: on === k ? "var(--ws)" : "var(--ink)" }}>
+          {k === "edit" && <Icon name="pencil" size={14} />}{l}
+        </Link>
+      ))}
+    </nav>
+  );
+}

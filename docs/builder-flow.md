@@ -100,3 +100,20 @@ Flow feel: a card per step that slides in, a 6-segment progress bar that fills a
 
 **Checks.** `npm run check`, `npm run check:runner`, `npm run build`. No migration.
 
+## Slice 5: Menu and tabs
+
+**Why.** The menu had grown to ten items in three groups, with two ways into the same thing (Run replay and Run log, Crew profiles and Memory, Crew canvas and each agent's Shift tab), and each agent had five tabs plus an "Edit in the builder" button.
+
+**What it is.**
+
+- **The menu is six places:** Today, Approvals, Crew, Runs, Connections, and Settings at the bottom (`app/(room)/layout.tsx`). Crew stays lit on an agent's pages and the builder; Runs stays lit on a replay. `SideLink` takes a list of paths to match instead of a tab.
+- **Crew** (`/crew`) lists every agent as a card (state, job, schedule, live version, last run), agents built in the app that aren't one of the crew in code, and the planned crew, with **New agent** (the flow). Its **Schedule** view (`/crew?view=schedule`) is the old Crew canvas, the one place a schedule or chain is turned on.
+- **Each agent has four tabs** (`AgentTabs` in `dashboard/components/ui.tsx`): **Overview** (was Profile: on/off switch, last run, live version, Toolbelt, Journal), **Edit** (the builder page `/build/<id>`: map, Try it, Go live; shown once the agent has a saved setup), **Memory**, **Runs** (each with its replay). The agent chips in the top bar keep you on Edit when you switch agents there.
+- **Runs** (`/runs`) is the run log; a row opens its replay.
+
+**What it replaces.** The Floor / Crew / Trust menu groups, the Run replay item and `/runs/latest`, the Run log and Crew canvas names, the Memory and Crew profiles items, the Agent builder item and its list page (`/build` now redirects to Crew), the agent Shift tab (the schedule shows on Overview and in Go live, and is edited in Crew > Schedule), the agent Settings tab and `setBudget` (the daily budget is in step 4, `setBuiltBudget`; the read-only facts are on Overview), and the "Edit in the builder" button. The budget alert in Needs you opens step 4.
+
+**Note.** Agents built in the app (not in `dashboard/crew.ts`) open straight on their builder page, which keeps its own latest runs list until slice 6 gives every agent the same profile and replay.
+
+**Checks.** `npm run check`, `npm run build`. No migration.
+

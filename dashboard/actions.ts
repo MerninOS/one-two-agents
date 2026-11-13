@@ -102,21 +102,6 @@ export async function pauseAll(): Promise<ActionResult> {
   return { ok: true, text: "Every agent is off duty." };
 }
 
-export async function setBudget(agentId: string, value: number): Promise<ActionResult> {
-  await requireSession();
-  if (!known(agentId)) return { ok: false, text: "Unknown agent." };
-  if (!(Number.isFinite(value) && value >= 0 && value <= 50)) return { ok: false, text: "Pick a budget between $0 and $50 a day. $50 is the ceiling in code." };
-  const { data: cur, error: e1 } = await db().from("agents").select("daily_budget_usd").eq("id", agentId).single();
-  if (e1) return fail(e1.message);
-  // lowering a budget only stops spend, so it's always allowed
-  if (value > Number(cur.daily_budget_usd) && !controlsOn()) return { ok: false, text: CONTROLS_OFF };
-  const v = Math.round(value * 100) / 100;
-  const { error } = await db().from("agents").update({ daily_budget_usd: v }).eq("id", agentId);
-  if (error) return fail(error.message);
-  revalidatePath("/", "layout");
-  return { ok: true, text: `Budget saved: $${v.toFixed(2)} a day.` };
-}
-
 // ---- Approvals. Deciding only records Zak's choice. Writing the approved change to Mercury
 // also needs DASHBOARD_CONTROLS=on and MERCURY_WRITE_TOKEN, and the agent on duty (withRun).
 
@@ -343,7 +328,7 @@ export async function runChainNow(key: string): Promise<ActionResult> {
     const chainId = crypto.randomUUID();
     after(() => startStep(origin, c, { chainId, key: c.key, step: 0, manual: true }));
     revalidatePath("/", "layout");
-    return { ok: true, text: `${c.name} started: ${c.steps.map((s) => BY_ID[s.agent]?.name ?? s.agent).join(", then ")}. An agent that is off duty is skipped and the chain stops there. The run log shows each step.` };
+    return { ok: true, text: `${c.name} started: ${c.steps.map((s) => BY_ID[s.agent]?.name ?? s.agent).join(", then ")}. An agent that is off duty is skipped and the chain stops there. Runs shows each step.` };
   } catch (e) { return fail(e); }
 }
 

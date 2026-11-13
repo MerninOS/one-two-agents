@@ -6,7 +6,8 @@ import { RunTable } from "@/dashboard/components/RunTable";
 
 type Q = { agent?: string; status?: string; trigger?: string; q?: string };
 
-export default async function RunLog({ searchParams }: { searchParams: Promise<Q> }) {
+// Runs (builder flow slice 5): the run log; each row opens its replay at /runs/<id>.
+export default async function Runs({ searchParams }: { searchParams: Promise<Q> }) {
   const sp = await searchParams;
   const f = await getFloor();
   const agent = BUILT.some((a) => a.id === sp.agent) ? sp.agent! : "all";
@@ -30,7 +31,7 @@ export default async function RunLog({ searchParams }: { searchParams: Promise<Q
 
   return (
     <>
-      <div style={{ display: "flex", flexDirection: "column", gap: 4 }}><h1 className="h1">Run log</h1><span style={{ fontSize: 13.5 }} className="muted">Every real run, every agent, last 60 days. Dry runs aren’t logged.</span></div>
+      <div style={{ display: "flex", flexDirection: "column", gap: 4 }}><h1 className="h1">Runs</h1><span style={{ fontSize: 13.5 }} className="muted">Every real run, every agent, last 60 days. Tap one to replay it. Dry runs and tries from the builder aren’t listed here.</span></div>
       <div className="row wrap" style={{ gap: 14 }}>
         {seg("agent", agent, [["all", "All agents"], ...BUILT.map((a) => [a.id, a.name] as [string, string])])}
         {seg("status", status, [["all", "Any status"], ["ok", "OK"], ["failed", "Failed"], ["skipped", "Skipped"]])}

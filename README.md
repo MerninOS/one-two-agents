@@ -20,7 +20,7 @@ The old paths `/api/agents/brief` and `/api/agents/hunter` still work.
 - Add `?trigger=manual` when running one by hand, so `agent_runs` records it as manual.
 - Add `?dryRun=1` to read real data without writing anything or calling a model: no
   `agent_runs` row, no Supabase, Notion or Gmail writes. Good for checking a deploy.
-- Schedules live in the crew flow (Control Room, Crew canvas; `docs/agent-setup.md`, slice 5),
+- Schedules live in the crew flow (Control Room, Crew > Schedule; `docs/agent-setup.md`, slice 5),
   not in `vercel.json`. The one Vercel Schedule is `dispatch` (`/api/dispatch`, every 15
   minutes, `America/Chicago`): it starts the chains that are on and due, and steps waiting for
   their "not before" time. **Every chain is off while the agents are in development**, so the
@@ -58,7 +58,7 @@ matrix and integrations, built from the Claude Design file "Agent Control Room".
   Approving writes to Mercury only when `MERCURY_WRITE_TOKEN` is set, `DASHBOARD_CONTROLS=on` and
   Quinn is on duty; otherwise the approval is kept and applied later. See `core/gateway/README.md`.
 - Agent map: what an agent reads, how it thinks, what it hands you and who uses its result, drawn from its saved spec; on its builder page (tap a box to change that step), on Today and on each run replay with the run laid over it. See `docs/builder-flow.md`, slice 3.
-- Agent builder (`/build`): build or edit an agent one question at a time (the job, Connections, what it hands you, brain and budget), see `docs/builder-flow.md`. Each agent is a saved spec that runs on one shared engine; new agents start off duty.
+- Agent builder (New agent on Crew, or an agent's Edit tab): build or edit an agent one question at a time (the job, Connections, what it hands you, brain and budget), see `docs/builder-flow.md`. Each agent is a saved spec that runs on one shared engine; new agents start off duty.
 - Memory (`?tab=memory` on a profile): what each agent carries into its runs, with Teach, Edit and Forget. Avery, Rowan and Quinn load memory; the CFO snapshot uses no model. Spec: `docs/agent-memory.md`.
 
 ## Layout

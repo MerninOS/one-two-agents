@@ -170,7 +170,7 @@ export function CrewCanvas({ d, actions }: { d: CrewCanvasData; actions: CrewAct
     setConfirm({ title: `Make flow v${v.version} active again?`, body: v.on.length ? `These chains are on in v${v.version} and would run on their own: ${v.on.join(", ")}. Agents that are off duty are still skipped.` : `Every chain is off in v${v.version}, so nothing runs on its own.`, confirmLabel: "Roll back", kind: "dark", go: () => go(true) });
   };
   const runNow = (c: Chain) => setConfirm({
-    title: `Run ${c.name} now?`, body: "Real runs, one after another, logged in the run log. An agent that is off duty is skipped and the chain stops there.",
+    title: `Run ${c.name} now?`, body: "Real runs, one after another, shown in Runs. An agent that is off duty is skipped and the chain stops there.",
     lines: c.steps.map((s, k) => ({ k: `Step ${k + 1}`, v: `${name(s.agent)}${byId[s.agent]?.enabled ? "" : " (off duty, skipped)"}${byId[s.agent]?.avgCost != null ? ` · about ${money(byId[s.agent].avgCost!)}` : ""}` })),
     confirmLabel: "Run chain", kind: "primary", go: () => run(() => actions.runNow(c.key)),
   });

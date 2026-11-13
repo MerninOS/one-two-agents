@@ -3,27 +3,29 @@ import { needs } from "@/dashboard/needs";
 import { SEEN_COOKIE, parseSeen } from "@/dashboard/seen";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { discardLessonLine, dryRun, editMemoryLine, forgetMemoryLine, keepLessonLine, realRun, setBudget, setEnabled, teach } from "@/dashboard/actions";
+import { discardLessonLine, dryRun, editMemoryLine, forgetMemoryLine, keepLessonLine, realRun, setEnabled, teach } from "@/dashboard/actions";
 import { BY_ID, HARD_RULES, TIERS, type CrewMember } from "@/dashboard/crew";
 import { ABILITY_WORD, isSetUp, reachOf } from "@/dashboard/connections";
 import { getBooks, getFloor, getMemory, getPipeline, type Books, type Floor } from "@/dashboard/data";
 import { KEEPS_WORKING, type MemoryRow, type PageLoad } from "@/core/memory";
 import { MemoryLine, TeachForm, type LineView } from "@/dashboard/components/memory";
 import { budget, dur, hm, m2, m4, md, num, when } from "@/dashboard/format";
-import { nextRuns, schedSentence, schedWords } from "@/dashboard/schedule";
+import { nextRuns, schedWords } from "@/dashboard/schedule";
 import { controlsOn } from "@/dashboard/session";
 import { STATE_LOOK, combined, stateOf } from "@/dashboard/status";
-import { ActionButton, BudgetForm, DryRun, MarkSeen, SwitchButton } from "@/dashboard/components/client";
+import { ActionButton, DryRun, MarkSeen, SwitchButton } from "@/dashboard/components/client";
 import { Icon } from "@/dashboard/components/Icon";
 import { RunTable } from "@/dashboard/components/RunTable";
-import { Avatar, LockList, Pill, Summary } from "@/dashboard/components/ui";
+import { AgentTabs, Avatar, LockList, Pill, Summary } from "@/dashboard/components/ui";
 
 // A real Wholesale Hunter run takes a few minutes. realRun returns at once and finishes the run in after(),
 // which lives as long as this page's function allows.
 export const maxDuration = 300;
 
-const TABS = [["profile", "Profile"], ["memory", "Memory"], ["runs", "Runs and replays"], ["shift", "Shift"], ["settings", "Settings"]] as const;
-type Tab = (typeof TABS)[number][0];
+// Overview, Memory and Runs live here; Edit is the builder page (AgentTabs). Shift and Settings went in
+// builder flow slice 5: the schedule is on Crew > Schedule, the daily budget in the flow's step 4.
+const TABS = ["overview", "memory", "runs"] as const;
+type Tab = (typeof TABS)[number];
 
 const ABILITY_CLASS = { read: "lv-read", do: "lv-draft", hands: "lv-write" } as const;
 const STAGE_COLORS: Record<string, string> = { new: "var(--mut2)", drafted: "var(--yel)", contacted: "var(--acc)", replied: "var(--pink)", tasting: "var(--peach)", won: "var(--mint)", lost: "var(--ink2)", skip: "var(--track)" };
@@ -33,21 +35,21 @@ export default async function AgentPage({ params, searchParams }: { params: Prom
   const a = BY_ID[id];
   if (!a) notFound();
   const tabParam = (await searchParams).tab;
-  const tab: Tab = (TABS.find(([k]) => k === tabParam)?.[0] ?? "profile") as Tab;
+  const tab: Tab = TABS.find((k) => k === tabParam) ?? "overview";
   const f = await getFloor();
   const row = f.agents[id];
   const st = stateOf(a, row, f.runs, f.spentToday[id] ?? 0);
   const controls = controlsOn();
   const pipeline = id === "wholesale_hunter" ? await getPipeline() : null;
   const books = id === "bookkeeper" ? await getBooks() : null;
-  const mem = a.built && (tab === "memory" || tab === "profile") ? await getMemory(id) : null;
+  const mem = a.built && (tab === "memory" || tab === "overview") ? await getMemory(id) : null;
   const runs = f.runs.filter((r) => r.agent_id === id);
   const unseen = needs(f, f.now, parseSeen((await cookies()).get(SEEN_COOKIE)?.value)).some((n) => n.run && n.agentId === id);
 
   return (
     <>
       {unseen && <MarkSeen agentId={id} at={f.now} />}
-      {tab === "profile" ? <HeroFull a={a} f={f} controls={controls} /> : (
+      {tab === "overview" ? <HeroFull a={a} f={f} controls={controls} /> : (
         <div className="row wrap" style={{ gap: 14 }}>
           <Avatar a={a} size={48} working={st === "running"} />
           <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 2, minWidth: 200 }}><span style={{ fontSize: 24, fontWeight: 600, letterSpacing: "-.02em" }}>{a.name}</span><span className="muted" style={{ fontSize: 13 }}>{a.role} · {a.built ? `on the crew since ${a.since}` : `joining after launch · phase ${a.phase}`}</span></div>
@@ -56,14 +58,11 @@ export default async function AgentPage({ params, searchParams }: { params: Prom
         </div>
       )}
 
-      {a.built && tab === "profile" && <Stats a={a} f={f} pipelineTotal={pipeline?.total} books={books} />}
+      {a.built && tab === "overview" && <Stats a={a} f={f} pipelineTotal={pipeline?.total} books={books} />}
 
-      <div className="row wrap tabs" style={{ gap: 6 }}>
-        {TABS.map(([k, l]) => <Link key={k} href={`/agents/${id}${k === "profile" ? "" : `?tab=${k}`}`} className="btn sm" style={{ height: 38, fontSize: 13.5, background: tab === k ? "var(--ink)" : "var(--soft)", color: tab === k ? "var(--ws)" : "var(--ink)" }}>{l}</Link>)}
-        {id in f.grants && <Link href={`/build/${id}?edit=1`} className="btn sm" style={{ height: 38, fontSize: 13.5, background: "var(--soft)", color: "var(--ink)" }}><Icon name="pencil" size={14} />Edit in the builder</Link>}
-      </div>
+      <AgentTabs id={id} on={tab} editable={id in f.grants} />
 
-      {tab === "profile" && (
+      {tab === "overview" && (
         <div className="grid2">
           <div className="stack">
             <div className="card" style={{ gap: 0 }}>
@@ -93,27 +92,6 @@ export default async function AgentPage({ params, searchParams }: { params: Prom
 
       {tab === "runs" && (a.built ? <RunTable runs={runs.slice(0, 200)} showAgent={false} foot={`${runs.length} runs in the last 60 days · ${m4(runs.reduce((s, r) => s + r.cost_usd, 0))} spent`} /> : <div className="card dashed" style={{ padding: 40, textAlign: "center" }}><span className="muted">{a.name} hasn’t joined yet. No runs.</span></div>)}
 
-      {tab === "shift" && <Shift a={a} f={f} controls={controls} />}
-
-      {tab === "settings" && (
-        <div className="grid2">
-          <div className="card" style={{ gap: 12 }}>
-            <span className="card-t">Daily budget</span>
-            {a.built && row ? (
-              <>
-                <BudgetForm current={row.daily_budget_usd} save={setBudget.bind(null, id)} controls={controls} />
-                <span className="sub">Spent today {m4(f.spentToday[id] ?? 0)}. Model spend is capped per agent per UTC day by withRun.</span>
-              </>
-            ) : <span className="muted" style={{ fontSize: 13.5 }}>{a.built ? "Not in the agents table yet." : "Set when built."}</span>}
-          </div>
-          <div className="card" style={{ gap: 0 }}>
-            <span className="card-t" style={{ marginBottom: 10 }}>Read only</span>
-            {[["Agent id", id], ["Model", row?.model ?? a.model ?? "Set when built"], ["Schedule", row?.schedule ?? schedWords(a.schedule)], ["Tier", TIERS[a.tier]], ["On the crew since", a.since ?? "Not yet"]].map(([k, v]) => (
-              <div key={k} className="row rule" style={{ justifyContent: "space-between", padding: "10px 0", fontSize: 13.5, gap: 16 }}><span className="muted">{k}</span><span style={{ fontWeight: 500, textAlign: "right" }}>{v}</span></div>
-            ))}
-          </div>
-        </div>
-      )}
     </>
   );
 }
@@ -149,6 +127,7 @@ function HeroFull({ a, f, controls }: { a: CrewMember; f: Floor; controls: boole
           <div className="row wrap" style={{ gap: 6, fontSize: 12.5 }}>
             <span className="pill" style={{ background: "var(--soft)", fontWeight: 500 }}><span className="muted">Model</span>{a.model ?? "Set when built"}</span>
             <span className="pill" style={{ background: "var(--soft)", fontWeight: 500 }}><span className="muted">Budget</span>{row ? `${budget(row.daily_budget_usd)} a day` : "Set when built"}</span>
+            {f.liveVersion[a.id] != null && <Link href={`/build/${a.id}`} className="pill" style={{ background: "var(--soft)", fontWeight: 500, color: "var(--ink)" }}><span className="muted">Live version</span>v{f.liveVersion[a.id]}</Link>}
             {a.works && <span className="pill" style={{ background: "var(--soft)", fontWeight: 500, whiteSpace: "normal", borderRadius: 14 }}><span className="muted">Works with</span>{a.works}</span>}
           </div>
         </div>
@@ -160,7 +139,7 @@ function HeroFull({ a, f, controls }: { a: CrewMember; f: Floor; controls: boole
               <DryRun action={dryRun.bind(null, a.id)} />
               <ActionButton className="btn dark" action={realRun.bind(null, a.id)} disabled={!controls || !row || st === "running"} busyLabel="Starting…"
                 title={!controls ? "Real runs need DASHBOARD_CONTROLS=on" : st === "running" ? `${a.name} is working. One run at a time.` : undefined}
-                confirm={{ title: `Run ${a.name} for real?`, body: row?.enabled ? `${a.name} reads real data and writes: ${a.writes}. Logged in the run log.` : `${a.name} is off duty, so this run is logged as skipped at $0.`, lines: [{ k: "Expected cost", v: row?.enabled ? a.estCostLabel ?? "?" : "$0" }, { k: "Spent today", v: `${m4(f.spentToday[a.id] ?? 0)} of ${m2(row?.daily_budget_usd ?? 0)}` }, ...(a.id === "wholesale_hunter" && !f.health.gmail ? [{ k: "Note", v: "Gmail isn’t connected, so drafts land in Notion only." }] : [])], confirmLabel: "Run for real", kind: "dark" }}>
+                confirm={{ title: `Run ${a.name} for real?`, body: row?.enabled ? `${a.name} reads real data and writes: ${a.writes}. Shows in Runs.` : `${a.name} is off duty, so this run is logged as skipped at $0.`, lines: [{ k: "Expected cost", v: row?.enabled ? a.estCostLabel ?? "?" : "$0" }, { k: "Spent today", v: `${m4(f.spentToday[a.id] ?? 0)} of ${m2(row?.daily_budget_usd ?? 0)}` }, ...(a.id === "wholesale_hunter" && !f.health.gmail ? [{ k: "Note", v: "Gmail isn’t connected, so drafts land in Notion only." }] : [])], confirmLabel: "Run for real", kind: "dark" }}>
                 {st === "running" ? <><span className="dot pulse" style={{ background: "var(--acc)" }} />Working…</> : realLabel}
               </ActionButton>
             </div>
@@ -169,8 +148,8 @@ function HeroFull({ a, f, controls }: { a: CrewMember; f: Floor; controls: boole
                 <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 2, minWidth: 0 }}><span style={{ fontSize: 13.5, fontWeight: 600 }}>On the crew</span><span className="muted" style={{ fontSize: 11.5 }}>{row?.enabled ? "Every run goes through" : "Every run is skipped at $0"}</span></div>
                 {crewSwitch(a, f, controls)}
               </div>
-              <Link href={`/agents/${a.id}?tab=shift`} className="soft-box" style={{ color: "var(--ink)", textDecoration: "none" }}>
-                <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 2, minWidth: 0 }}><span style={{ fontSize: 13.5, fontWeight: 600 }}>Shift</span><span className="muted" style={{ fontSize: 11.5 }}>{schedWords(a.schedule)}</span></div>
+              <Link href="/crew?view=schedule" className="soft-box" style={{ color: "var(--ink)", textDecoration: "none" }}>
+                <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 2, minWidth: 0 }}><span style={{ fontSize: 13.5, fontWeight: 600 }}>Schedule</span><span className="muted" style={{ fontSize: 11.5 }}>{schedWords(a.schedule)}{a.schedule?.chain ? ` · ${a.schedule.chain} chain` : ""}</span></div>
                 <Icon name="chevron-right" size={15} style={{ opacity: 0.5 }} />
               </Link>
             </div>
@@ -337,7 +316,7 @@ function Memory({ a, f, domains, mem }: { a: CrewMember; f: Floor; domains?: str
   ));
   const load = tab?.load ?? null;
   const groups: { n: number; title: string; color: string; meta: string; body: React.ReactNode }[] = [
-    { n: 1, title: "Standing orders", color: "var(--acc)", meta: "Yours, kept until you forget them. An order can link a Notion page, read fresh each run. Its base instructions stay in code (see Profile).", body: (
+    { n: 1, title: "Standing orders", color: "var(--acc)", meta: "Yours, kept until you forget them. An order can link a Notion page, read fresh each run. Its base instructions are its job line (see Edit).", body: (
       <>
         {lines("standing_order")}
         {!mine("standing_order").length && <span className="muted" style={{ fontSize: 13 }}>None yet. Use Teach and pick “A standing order”, with a Notion page if it should read one.</span>}
@@ -436,48 +415,6 @@ function Memory({ a, f, domains, mem }: { a: CrewMember; f: Floor; domains?: str
             <span style={{ fontSize: 12.5, lineHeight: 1.45 }} className="ink2">Anything an agent read on a web page or in an email is kept marked as data. The agent sees it as information, never as an instruction. {(tab?.rows ?? []).filter((r) => r.trust === "data" && r.state === "kept").length} line(s) of {a.name}’s memory are marked as data.</span>
           </div>
         </div>
-      </div>
-    </div>
-  );
-}
-
-function Shift({ a, f, controls }: { a: CrewMember; f: Floor; controls: boolean }) {
-  if (!a.built) {
-    return (
-      <div className="card row" style={{ flexDirection: "row", padding: 24, gap: 14 }}>
-        <span style={{ width: 40, height: 40, borderRadius: 999, background: "var(--soft)", display: "grid", placeItems: "center" }}><Icon name="clock" size={17} /></span>
-        <div style={{ display: "flex", flexDirection: "column", gap: 2 }}><span className="sub">Intended trigger · read only</span><span style={{ fontSize: 15, fontWeight: 600 }}>{a.trigger}</span></div>
-      </div>
-    );
-  }
-  const row = f.agents[a.id];
-  const next = nextRuns(a.schedule, f.now, 5);
-  const chain = a.schedule?.chain;
-  return (
-    <div className="grid2" style={{ gridTemplateColumns: "minmax(0,1.3fr) minmax(0,1fr)" }}>
-      <div className="card" style={{ gap: 16 }}>
-        <span className="card-t">Shift</span>
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 8 }}>
-          <div className="soft-box" style={{ alignItems: "flex-start", padding: 14 }}>
-            <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 3 }}><span style={{ fontSize: 13.5, fontWeight: 600 }}>Schedule</span><span style={{ fontSize: 12, lineHeight: 1.4 }} className="ink2">{chain ? <>Set on the <Link href="/crew">Crew canvas</Link> (chain “{chain}”). It runs on its own only while that chain is on.</> : <>Not in a chain, so it never runs on its own. Add it on the <Link href="/crew">Crew canvas</Link>.</>}</span></div>
-          </div>
-          <div className="soft-box" style={{ alignItems: "flex-start", padding: 14 }}>
-            <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 3 }}><span style={{ fontSize: 13.5, fontWeight: 600 }}>On the crew</span><span style={{ fontSize: 12, lineHeight: 1.4 }} className="ink2">The master switch. When off, every run is skipped and logged at $0.</span></div>
-            {crewSwitch(a, f, controls)}
-          </div>
-        </div>
-        <span style={{ fontSize: 13.5, fontWeight: 500 }}>{combined(a, row)}</span>
-        <span style={{ fontSize: 13.5, lineHeight: 1.5 }} className="ink2">{schedSentence(a.schedule)}</span>
-      </div>
-      <div className="card" style={{ gap: 4 }}>
-        <span className="card-t" style={{ marginBottom: 8 }}>Next 5 runs</span>
-        {next.map((t) => (
-          <div key={t} className="row rule" style={{ justifyContent: "space-between", padding: "10px 0", fontSize: 13.5 }}>
-            <span>{when(t)} CT</span>
-            {row?.enabled ? <span className="pill sm" style={{ background: "var(--mint-soft)", color: "var(--mint-ink)" }}>Will run</span> : <span className="pill sm" style={{ background: "var(--soft)", color: "var(--ink2)" }}>Will skip, off duty</span>}
-          </div>
-        ))}
-        {!next.length && <span style={{ fontSize: 13.5, padding: "10px 0" }} className="muted">On call. No automatic runs.</span>}
       </div>
     </div>
   );

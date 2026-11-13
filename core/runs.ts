@@ -90,7 +90,8 @@ export async function withRun(agentId: string, trigger: string, job: (runId: str
     await finish({
       status: res.status, summary: `${res.summary}${memoryNote}`, tokens_in: res.tokensIn ?? 0, tokens_out: res.tokensOut ?? 0, cost_usd: res.costUsd ?? 0,
       ...(memory ? { memory_json: loadSummary(memory) } : {}), ...setupCol(setup),
-      ...(c && res.metrics ? { metrics: res.metrics } : {}),
+      // every run's metrics are kept: a try's spec_version and finished flag are what unlock Go live
+      ...(res.metrics ? { metrics: res.metrics } : {}),
     });
     return { ...res, summary: `${res.summary}${memoryNote}`, runId: run.id };
   } catch (e) {

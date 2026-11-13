@@ -7,8 +7,8 @@ Source design: Claude Design project "Agent Control Room Prototype", file `Agent
 A "mission control" for the agents, light and dark themes, Plus Jakarta Sans, white rounded cards on a grey page, orange accent (#F2884B), mint / sunflower / pink / peach supporting colors, a dark output card.
 
 - **Top bar:** "12" logo, crew rail (one round avatar per agent; 3 built, a divider, 8 planned with dashed rings), theme toggle, bell, date pill, Zak's avatar.
-- **Sidebar:** Floor (Mission control, Run replay, Run log), Crew (Crew profiles, Memory), Trust (Approvals, Connections), Settings at the bottom. (Builder flow slice 5 trims this to Today, Approvals, Crew, Runs, Connections, Settings.)
-- **Screens:** Mission control (greeting, stat chips, "Live floor" agent map of the latest run (docs/builder-flow.md, slice 3), Needs you, Shift board, Spend by agent, Memory per agent, Joining the crew), Agent profile with tabs (Profile, Memory, Runs and replays, Shift, Settings) and an Edit in the builder link, Run replay (dark header with scrubber, money breakdown, the agent map with the run laid over it, step timeline, gateway inspector), Run log (filters, search, totals), Connections (one page per integration: status, what agents can read, do and hand you there, and who has it), the agent builder (`/build`, the step-by-step flow in docs/builder-flow.md), Approvals, Settings (including the money and email caps). A confirm modal and a toast are shared.
+- **Sidebar:** Today, Approvals, Crew, Runs, Connections, and Settings at the bottom (docs/builder-flow.md, slice 5).
+- **Screens:** Today (greeting, stat chips, "Live floor" agent map of the latest run (docs/builder-flow.md, slice 3), Needs you, Shift board, Spend by agent, Memory per agent, Joining the crew), Crew (a card per agent, New agent, and a Schedule view with the chains), Agent profile with tabs (Overview, Edit (the builder page), Memory, Runs), Run replay (dark header with scrubber, money breakdown, the agent map with the run laid over it, step timeline, gateway inspector), Runs (the run log: filters, search, totals; each row opens its replay), Connections (one page per integration: status, what agents can read, do and hand you there, and who has it), the agent builder (New agent on Crew, or an agent's Edit tab: the step-by-step flow in docs/builder-flow.md), Approvals, Settings (including the money and email caps). A confirm modal and a toast are shared.
 - Agents are personas: Avery (Chief of Staff), Morgan (CFO), Rowan (Wholesale Hunter), Quinn (Bookkeeper, built 2026-11-09, off until launch); planned: Sage, Blair, Sol, Remy, Jules, Ellis (Conversion Optimizer), Kit.
 
 ## 2. What exists in the backend today, and what doesn't
@@ -53,7 +53,7 @@ At 860px and narrower (`app/globals.css`, last block): one sticky top bar with t
 - Dry runs are allowed: they read real data, write nothing and call no model (existing `dryRun` path). They are not logged, as today.
 - Every control goes through a confirm modal that states what will happen and what it costs.
 - Real runs from the UI go through `withRun` with trigger `manual`, so they respect `agents.enabled` and the daily budget.
-- Schedules and chains are edited on the Crew canvas (`/crew`, `docs/agent-setup.md` slice 5). The only Vercel Schedule is `dispatch`, which starts chains that are on.
+- Schedules and chains are edited in Crew > Schedule (`/crew?view=schedule`, `docs/agent-setup.md` slice 5). The only Vercel Schedule is `dispatch`, which starts chains that are on.
 
 ## 5. Phase 2 (needs backend, not in this PR)
 

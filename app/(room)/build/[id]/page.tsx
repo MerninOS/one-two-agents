@@ -12,8 +12,9 @@ import { Flow } from "@/dashboard/components/Flow";
 import { BY_ID } from "@/dashboard/crew";
 import { schedSentence, schedWords } from "@/dashboard/schedule";
 import { RunSteps } from "@/dashboard/components/RunSteps";
+import { AgentTabs } from "@/dashboard/components/ui";
 
-// One agent's builder page (docs/builder-flow.md, slices 2-4). With ?edit it is the flow, steps 1-4,
+// One agent's builder page, its Edit tab (docs/builder-flow.md, slices 2-5). With ?edit it is the flow, steps 1-4,
 // one per card, editing the draft (else the live version). Without it, the agent map (tap a box to
 // change that step; it builds itself right after a save, ?saved), step 5 Try it, step 6 Go live,
 // the versions to go back to, its latest result and its latest runs.
@@ -54,13 +55,14 @@ export default async function BuildAgent({ params, searchParams }: { params: Pro
     );
   }
 
+  const crew = !!BY_ID[id];
   const sch = BY_ID[id]?.schedule;
   const saved = sp.saved != null;
   return (
     <div className="stack" style={{ maxWidth: 1180 }}>
       <div className="row wrap" style={{ gap: 12, alignItems: "flex-end" }}>
         <div className="stack" style={{ gap: 6, flex: "1 1 320px" }}>
-          <span className="sub"><Link href="/build">Agent builder</Link> / {s.name}</span>
+          <span className="sub"><Link href="/crew">Crew</Link> / {s.name}</span>
           <div className="row wrap" style={{ gap: 10 }}>
             <h1 className="h1">{saved ? `Saved. Here’s ${s.name}.` : s.name}</h1>
             <span className="pill sm" style={{ background: "var(--soft)", color: "var(--ink2)" }}>{b.enabled ? "On duty" : "Off duty"}</span>
@@ -72,6 +74,7 @@ export default async function BuildAgent({ params, searchParams }: { params: Pro
         </div>
         <Link href={`/build/${id}?edit=1`} className="btn dark">Edit {s.name}</Link>
       </div>
+      {crew && <AgentTabs id={id} on="edit" editable />}
 
       <TryLive
         key={`${working?.version ?? 0}-${b.playbooks?.pending?.id ?? 0}`}
@@ -106,7 +109,8 @@ export default async function BuildAgent({ params, searchParams }: { params: Pro
         ) : <span className="sub">Nothing saved for other agents yet. Live runs save their result; tries don’t.</span>}
       </div>
 
-      <div className="card" style={{ gap: 10 }}>
+      {/* the crew in code have a Runs tab with replays; agents built in the app get theirs in slice 6 */}
+      {crew ? <span className="sub"><Link href={`/agents/${id}?tab=runs`}>All of {s.name}’s runs</Link>, each with a replay.</span> : <div className="card" style={{ gap: 10 }}>
         <span className="card-t">Latest runs</span>
         {!b.runs.length && <span className="sub">None yet.</span>}
         {b.runs.map((r, i) => (
@@ -123,7 +127,7 @@ export default async function BuildAgent({ params, searchParams }: { params: Pro
             </div>
           </details>
         ))}
-      </div>
+      </div>}
     </div>
   );
 }
