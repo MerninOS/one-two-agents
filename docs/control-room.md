@@ -16,7 +16,7 @@ A "mission control" for the agents, light and dark themes, Plus Jakarta Sans, wh
 | Design element | Backend today | Phase 1 (this PR) |
 | --- | --- | --- |
 | Crew, status, model, budget | `agents` table (enabled, daily_budget_usd, model, schedule) | Real |
-| Org chart | `departments`, `seats` (docs/org-chart.md) | Real |
+| Org chart | `departments` (with monthly budget and email cap), `seats`, department rules in `agent_memory` (docs/org-chart.md) | Real |
 | Run log, cost, tokens, summaries, errors | `agent_runs` | Real |
 | Spend today vs budget | `agent_runs.cost_usd` since UTC midnight (same rule `withRun` uses) | Real |
 | Schedules (Shift) | `vercel.json` Vercel Schedules; on/off lives in Vercel, not the DB | Read only, from a mirror of `vercel.json` |

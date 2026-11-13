@@ -3,30 +3,33 @@ import "server-only";
 // limits, who reports to whom) are in core/org-rules.ts, which the browser can use too.
 // Callers check the login and that an agent id is one the Control Room knows.
 import { db } from "@/core/db";
+import { chicagoDate, offsetOn } from "@/core/time";
 import {
-  MAX_DEPARTMENTS, MAX_DEPTH, MAX_SEATS, childrenOf, cleanSub, cleanTitle, depthOf, deptSlug, headOf,
+  MAX_DEPARTMENTS, MAX_DEPTH, MAX_SEATS, agentsIn, childrenOf, cleanSub, cleanTitle, deptBudgetChange, deptEmailChange, depthOf, deptOf, deptSlug, headOf,
   type Department, type Holder, type Org, type Seat,
 } from "@/core/org-rules";
 
 export * from "@/core/org-rules";
 
+interface DeptRow { id: string; name: string; sort: number; monthly_budget_usd: number | string | null; max_emails_per_day: number | null }
 interface SeatRow { id: string; department_id: string | null; parent_id: string | null; title: string; sub: string; holder: Holder; agent_id: string | null; sort: number }
 
+const toDept = (r: DeptRow): Department => ({ id: r.id, name: r.name, sort: r.sort, monthlyBudgetUsd: r.monthly_budget_usd == null ? null : Number(r.monthly_budget_usd), maxEmailsPerDay: r.max_emails_per_day });
 const toSeat = (r: SeatRow): Seat => ({ id: r.id, departmentId: r.department_id, parentId: r.parent_id, title: r.title, sub: r.sub ?? "", holder: r.holder, agentId: r.agent_id, sort: r.sort });
 
 /** The chart. Null when the org chart migration isn't applied yet. */
 export async function loadOrg(): Promise<Org | null> {
   const [d, s] = await Promise.all([
-    db().from("departments").select("id, name, sort").order("sort"),
+    db().from("departments").select("id, name, sort, monthly_budget_usd, max_emails_per_day").order("sort"),
     db().from("seats").select("id, department_id, parent_id, title, sub, holder, agent_id, sort").order("sort"),
   ]);
   if (d.error || s.error) return null;
-  return { departments: (d.data ?? []) as Department[], seats: ((s.data ?? []) as SeatRow[]).map(toSeat) };
+  return { departments: ((d.data ?? []) as DeptRow[]).map(toDept), seats: ((s.data ?? []) as SeatRow[]).map(toSeat) };
 }
 
 async function mustLoad(): Promise<Org> {
   const o = await loadOrg();
-  if (!o) throw new Error("The org chart migration (20261115090000_org_chart.sql) isn’t applied yet.");
+  if (!o) throw new Error("The org chart tables aren’t up to date: apply the org chart migrations (20261115090000_org_chart.sql, 20261116090000_department_budgets.sql).");
   return o;
 }
 
@@ -72,6 +75,12 @@ export async function removeDepartment(id: string) {
   const seats = o.seats.filter((s) => s.departmentId === id);
   const held = seats.filter((s) => s.holder !== "open");
   if (held.length) throw new Error(`Move ${held.map((s) => `“${s.title}”`).join(", ")} out of ${d.name} first: only a department with every seat open can be removed.`);
+  // its rules are kept for the timeline, marked forgotten (nothing in agent_memory is deleted)
+  const { data: rules } = await db().from("agent_memory").select("id, text").eq("grp", "department").eq("department_id", id).eq("state", "kept");
+  for (const r of rules ?? []) {
+    await db().from("agent_memory").update({ state: "forgotten", updated_at: new Date().toISOString() }).eq("id", r.id);
+    await db().from("memory_events").insert({ memory_id: r.id, agent_id: null, department_id: id, kind: "forgotten", before: r.text, after: null, by: `zak (control room), ${d.name} removed` });
+  }
   // deepest first, so no seat is removed while another still sits under it
   const order = [...seats].sort((a, b) => depthOf(o, b) - depthOf(o, a));
   for (const s of order) {
@@ -141,5 +150,72 @@ export async function setHolder(seatId: string, holder: Holder, agentId: string 
 /** Takes an agent off the chart: its seat opens. */
 export async function unseat(agentId: string) {
   const { error } = await db().from("seats").update({ holder: "open", agent_id: null, updated_at: new Date().toISOString() }).eq("agent_id", agentId);
+  if (error) throw new Error(error.message);
+}
+
+// ---- Department limits (slice 2)
+
+/** Midnight at the start of this Chicago calendar month, as an ISO time. */
+export function chicagoMonthStart(now = new Date()) {
+  const first = `${chicagoDate(0, now).slice(0, 8)}01`;
+  return new Date(`${first}T00:00:00${offsetOn(first)}`).toISOString();
+}
+/** "2026-11": this Chicago calendar month. */
+export const chicagoMonth = (now = new Date()) => chicagoDate(0, now).slice(0, 7);
+
+/** AI spend this Chicago month per agent, from agent_runs (cost computed by the runner, added up here in code). */
+export async function monthSpendByAgent(agentIds: string[], now = new Date()): Promise<Record<string, number>> {
+  if (!agentIds.length) return {};
+  const { data, error } = await db().from("agent_runs").select("agent_id, cost_usd").in("agent_id", agentIds).gte("started_at", chicagoMonthStart(now)).limit(20000);
+  if (error) throw new Error(error.message);
+  const cents: Record<string, number> = {};
+  for (const r of data ?? []) cents[r.agent_id] = (cents[r.agent_id] ?? 0) + Math.round(Number(r.cost_usd) * 100);
+  return Object.fromEntries(Object.entries(cents).map(([k, v]) => [k, v / 100]));
+}
+
+/**
+ * The department an agent sits in, with what its agents spent this month. Null when the agent
+ * isn't in a department, or the org chart tables aren't there.
+ */
+export async function agentDepartment(agentId: string, opts: { spend?: boolean } = {}): Promise<{ dept: Department; spentUsd: number } | null> {
+  const o = await loadOrg();
+  const d = o ? deptOf(o, agentId) : null;
+  if (!o || !d) return null;
+  if (!opts.spend) return { dept: d, spentUsd: 0 };
+  const ids = agentsIn(o, d.id);
+  const by = await monthSpendByAgent(ids);
+  return { dept: d, spentUsd: ids.reduce((s, id) => s + Math.round((by[id] ?? 0) * 100), 0) / 100 };
+}
+
+/**
+ * Marks that Zak was told this month that the department is at its budget. True only for the
+ * first caller this month, so a department sends one alert a month however many runs it skips.
+ */
+export async function claimBudgetAlert(deptId: string, now = new Date()): Promise<boolean> {
+  const month = chicagoMonth(now);
+  const { data, error } = await db().from("departments").update({ budget_alerted: month }).eq("id", deptId).or(`budget_alerted.is.null,budget_alerted.neq.${month}`).select("id");
+  return !error && !!data?.length;
+}
+
+/** Sets a department's monthly budget (null: none). The caller checks Controls and the confirm for a looser one. */
+export async function setDeptBudget(id: string, next: number | null) {
+  const o = await mustLoad();
+  const d = o.departments.find((x) => x.id === id);
+  if (!d) throw new Error("That department isn’t on the chart any more.");
+  const ch = deptBudgetChange(d.monthlyBudgetUsd, next);
+  if ("refuse" in ch) throw new Error(ch.refuse);
+  // a new budget gets a fresh alert if it is reached again this month
+  const { error } = await db().from("departments").update({ monthly_budget_usd: next, budget_alerted: null }).eq("id", id);
+  if (error) throw new Error(error.message);
+}
+
+/** Sets a department's email cap (null: the company cap), never above the company cap. */
+export async function setDeptEmailCap(id: string, next: number | null, companyCap: number) {
+  const o = await mustLoad();
+  const d = o.departments.find((x) => x.id === id);
+  if (!d) throw new Error("That department isn’t on the chart any more.");
+  const ch = deptEmailChange(d.maxEmailsPerDay, next, companyCap);
+  if ("refuse" in ch) throw new Error(ch.refuse);
+  const { error } = await db().from("departments").update({ max_emails_per_day: next }).eq("id", id);
   if (error) throw new Error(error.message);
 }

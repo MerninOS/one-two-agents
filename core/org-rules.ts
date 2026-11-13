@@ -13,7 +13,15 @@ export const MAX_DEPTH = 4;
 
 export type Holder = "open" | "zak" | "agent";
 
-export interface Department { id: string; name: string; sort: number }
+export interface Department {
+  id: string;
+  name: string;
+  sort: number;
+  /** AI spend of the agents seated here per Chicago calendar month; null for no department budget. */
+  monthlyBudgetUsd: number | null;
+  /** Outbound emails a day from the agents seated here; null for the company cap alone. */
+  maxEmailsPerDay: number | null;
+}
 export interface Seat {
   id: string;
   /** Null for the company seat. */
@@ -96,3 +104,58 @@ export function orgProblems(o: Org): string[] {
   for (const d of o.departments) if (!headOf(o, d.id)) out.push(`${d.name} has no head seat.`);
   return out;
 }
+
+// ---- Department limits (slice 2). A department can only be stricter than the company: its budget
+// sits on top of each agent's daily budget, and its email cap is held at or under the company's.
+
+/** The most a department's monthly AI budget may be. The migration holds the same ceiling. */
+export const DEPT_BUDGET_CEILING = 500;
+
+/** Agents seated in a department, at any depth. */
+export const agentsIn = (o: Org, deptId: string) => o.seats.filter((s) => s.departmentId === deptId && s.holder === "agent" && s.agentId).map((s) => s.agentId as string);
+
+/** The department an agent sits in, or null (off the chart, or the company seat). */
+export const deptOf = (o: Org, agentId: string) => {
+  const s = seatOf(o, agentId);
+  return s?.departmentId ? o.departments.find((d) => d.id === s.departmentId) ?? null : null;
+};
+
+/** What a department's agents spent this month, added up in cents in code, back in dollars. */
+export function deptSpent(o: Org, deptId: string, spentByAgent: Record<string, number>): number {
+  const cents = agentsIn(o, deptId).reduce((sum, id) => sum + Math.round((spentByAgent[id] ?? 0) * 100), 0);
+  return cents / 100;
+}
+
+/** Why a department may not spend more this month, or null. */
+export function deptBudgetBlock(d: Department, spentUsd: number): string | null {
+  if (d.monthlyBudgetUsd == null) return null;
+  if (Math.round(spentUsd * 100) < Math.round(d.monthlyBudgetUsd * 100)) return null;
+  return `${d.name}’s monthly budget of $${d.monthlyBudgetUsd.toFixed(2)} is used up ($${spentUsd.toFixed(2)} spent this month).`;
+}
+
+/**
+ * Why a new department budget can't be saved, or whether it is looser (needs Controls on and a
+ * confirm). Null means no department budget, the loosest.
+ */
+export function deptBudgetChange(now: number | null, next: number | null): { refuse: string } | { looser: boolean } {
+  if (next !== null) {
+    if (!Number.isFinite(next) || next < 0) return { refuse: "Pick an amount of $0 or more, or leave it blank for no department budget." };
+    if (Math.abs(Math.round(next * 100) - next * 100) > 1e-6) return { refuse: "Whole cents only." };
+    if (next > DEPT_BUDGET_CEILING) return { refuse: `A department budget can’t go above $${DEPT_BUDGET_CEILING} a month. That ceiling is in code (core/org-rules.ts).` };
+  }
+  if (next === now) return { refuse: "That is already the budget." };
+  return { looser: next === null || (now !== null && next > now) };
+}
+
+/** The same for a department's email cap, which may never pass the company cap. */
+export function deptEmailChange(now: number | null, next: number | null, companyCap: number): { refuse: string } | { looser: boolean } {
+  if (next !== null) {
+    if (!Number.isInteger(next) || next < 0) return { refuse: "Pick a whole number of emails, or leave it blank to use the company cap." };
+    if (next > companyCap) return { refuse: `A department can’t send more than the company cap of ${companyCap} a day. Change that in Settings first.` };
+  }
+  if (next === now) return { refuse: "That is already the cap." };
+  return { looser: next === null || (now !== null && next > now) };
+}
+
+/** A department's email cap as enforced: never above the company cap, whatever the row says. */
+export const deptEmailCap = (d: Department, companyCap: number) => (d.maxEmailsPerDay == null ? companyCap : Math.max(0, Math.min(companyCap, d.maxEmailsPerDay)));

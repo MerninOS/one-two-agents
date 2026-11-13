@@ -22,8 +22,8 @@ so he teaches an agent once instead of rewriting its prompt.
 
 ## Storage (migration `20261112120000_agent_memory.sql`)
 
-- `agent_memory`: one row per line. `agent_id` (null = shared crew memory), `grp` (`crew`,
-  `standing_order`, `lesson`, `note`, `working`), `text` (≤ 280), `source` (`zak`, `approval`,
+- `agent_memory`: one row per line. `agent_id` (null = shared crew memory or a department rule), `grp` (`crew`,
+  `department` (with `department_id`, loaded by every agent seated there: docs/org-chart.md slice 2), `standing_order`, `lesson`, `note`, `working`), `text` (≤ 280), `source` (`zak`, `approval`,
   `agent`), `source_tag`, `notion_page_id` (a standing order may point at a Notion page to load,
   read fresh each run), `trust`, `state` (`proposed`, `kept`, `discarded`,
   `expired`, `forgotten`), `keep` (`next_run`, `days_30`, `always`), `runs_left`, `expires_at`, `tokens`.
@@ -35,7 +35,7 @@ so he teaches an agent once instead of rewriting its prompt.
 ## A run
 
 1. `withRun` checks on duty and budget, then (for agents in `MEMORY_AGENTS`, cron or manual
-   runs only) calls `loadMemory`: kept rows for the agent plus crew rows, expired ones left out.
+   runs only) calls `loadMemory`: kept rows for the agent plus crew rows and its department's rules, expired ones left out.
 2. Tokens are counted in code (characters ÷ 3.5, rounded up). Over budget, lines go in this
    order, oldest first: working memory, lessons, notes. Crew memory and standing orders are
    never trimmed.

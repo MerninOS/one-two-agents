@@ -1,8 +1,10 @@
 import "server-only";
-// Run plumbing shared by every agent: the run log, the enabled flag and daily budget
-// check, and the cron bearer check.
+// Run plumbing shared by every agent: the run log, the enabled flag, the daily budget and
+// department budget checks, and the cron bearer check.
 import { db } from "@/core/db";
 import { env } from "@/core/env";
+import { agentDepartment, claimBudgetAlert, deptBudgetBlock } from "@/core/org";
+import { emailZak, hasEmail } from "@/integrations/email";
 import { MEMORY_AGENTS, afterLoad, loadMemory, loadSummary, saveWorking, type MemoryLoad } from "@/core/memory";
 
 /** Vercel Cron sends `Authorization: Bearer $CRON_SECRET`; manual runs use the same header. */
@@ -25,8 +27,9 @@ export interface RunResult {
 export interface RunChain { chainId: string; key: string; step: number; parent?: string }
 
 /**
- * Why the agent may not run now (disabled, or over today's budget), or null. A Preview (Setup
- * tab) writes and sends nothing, so it may run while the agent is off duty; it still needs budget.
+ * Why the agent may not run now (disabled, over today's budget, or its department over this
+ * month's budget), or null. A Preview (Setup tab) writes and sends nothing, so it may run while
+ * the agent is off duty; it still needs budget.
  */
 async function blockedReason(agentId: string, trigger: string) {
   const { data: agent } = await db().from("agents").select("enabled, daily_budget_usd").eq("id", agentId).single();
@@ -35,7 +38,29 @@ async function blockedReason(agentId: string, trigger: string) {
   const since = new Date(); since.setUTCHours(0, 0, 0, 0);
   const { data: runs } = await db().from("agent_runs").select("cost_usd").eq("agent_id", agentId).gte("started_at", since.toISOString());
   const spent = (runs ?? []).reduce((a, r) => a + Number(r.cost_usd), 0);
-  return spent >= Number(agent.daily_budget_usd) ? `Daily budget of $${agent.daily_budget_usd} reached ($${spent.toFixed(2)} spent).` : null;
+  if (spent >= Number(agent.daily_budget_usd)) return `Daily budget of $${agent.daily_budget_usd} reached ($${spent.toFixed(2)} spent).`;
+  return deptBlocked(agentId);
+}
+
+/**
+ * The department budget (docs/org-chart.md, slice 2): the agents seated in a department share its
+ * monthly budget, on top of each one's daily budget. The first skip of the month emails Zak. No
+ * org chart, no department or no department budget: nothing to check. Spend that can't be read
+ * blocks the run, since it can't be shown to be under the budget.
+ */
+async function deptBlocked(agentId: string): Promise<string | null> {
+  let at: Awaited<ReturnType<typeof agentDepartment>>;
+  try { at = await agentDepartment(agentId, { spend: true }); }
+  catch (e) { return `Couldn’t check the department budget: ${(e instanceof Error ? e.message : String(e)).slice(0, 100)}.`; }
+  const why = at && deptBudgetBlock(at.dept, at.spentUsd);
+  if (!at || !why) return null;
+  try {
+    if (hasEmail() && (await claimBudgetAlert(at.dept.id))) {
+      const line = `${why} Its agents’ runs are skipped at $0 until next month, or until you raise the budget on Crew > Org chart (Edit chart, then Edit on ${at.dept.name}).`;
+      await emailZak(`${at.dept.name} reached its monthly AI budget`, `<p>${line.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")}</p>`, line);
+    }
+  } catch { /* an alert that can't be sent never changes the skip */ }
+  return why;
 }
 
 /**

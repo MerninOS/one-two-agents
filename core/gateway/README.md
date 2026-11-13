@@ -75,7 +75,8 @@ The fences the payment and email action types will have to pass. Neither action 
 - `checkPurchase`: payee must be in `vendors` with a Mercury recipient; amount within the
   per-purchase cap; this month plus the amount within the monthly cap (cents, in code). A first
   payment to a vendor is flagged so it always waits for Zak.
-- `checkEmail`: never to an address in `email_suppressions`, never past today's cap.
+- `checkEmail`: never to an address in `email_suppressions`, never past today's cap, and for an
+  agent seated in a department never past that department's cap (never above the company cap).
 - `index.ts`: `loadCaps`, `monthSpentUsd` and `emailsSentToday` (Chicago month and day, from
   applied actions), `paidVendorIds`, and `onBreach`, where the trust levels card will demote
   the action type to Draft.

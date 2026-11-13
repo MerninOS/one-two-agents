@@ -220,11 +220,17 @@ export function checkPurchase(p: { amountUsd: number; vendorId: string; vendors:
   return { ok: true, firstPayment: !p.paidVendorIds.has(v.id) };
 }
 
-/** Whether an email may be proposed: never to a suppressed address, never past today's cap. */
-export function checkEmail(p: { to: string; suppressed: Set<string>; sentToday: number; maxPerDay: number }): { ok: false; reason: string } | { ok: true } {
+/**
+ * Whether an email may be proposed: never to a suppressed address, never past today's company
+ * cap, and for an agent seated in a department, never past that department's cap (held at or
+ * under the company cap: core/org-rules.ts deptEmailCap).
+ */
+export function checkEmail(p: { to: string; suppressed: Set<string>; sentToday: number; maxPerDay: number; dept?: { name: string; sentToday: number; maxPerDay: number } | null }): { ok: false; reason: string } | { ok: true } {
   const to = p.to.trim().toLowerCase();
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(to)) return { ok: false, reason: "That isn’t an email address." };
   if (p.suppressed.has(to)) return { ok: false, reason: `${to} asked not to be emailed.` };
   if (p.sentToday >= p.maxPerDay) return { ok: false, reason: `Today’s email cap (${p.maxPerDay}) is used up.` };
+  const d = p.dept;
+  if (d && d.sentToday >= Math.min(d.maxPerDay, p.maxPerDay)) return { ok: false, reason: `${d.name}’s email cap for today (${Math.min(d.maxPerDay, p.maxPerDay)}) is used up.` };
   return { ok: true };
 }
