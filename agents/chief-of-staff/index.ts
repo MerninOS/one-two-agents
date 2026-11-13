@@ -348,10 +348,10 @@ export async function runBrief(opts: { dryRun?: boolean; memory?: MemoryLoad | n
   // a dry run never calls the model: it checks the data plumbing for free
   if (opts.dryRun) judgment = rulesJudgment(f);
   else ({ judgment, tokens, servedBy, note: fallback } = await think(f, memory, setup));
-  const view = (notionUrl?: string) => briefView(f, judgment, sections, notionUrl);
-  const { email, notion: target, notionFrom } = destinations(setup);
-  const off = [...(outputOn(setup, "email") ? [] : ["email"]), ...(outputOn(setup, "notion") ? [] : ["Notion"])];
   if (opts.dryRun) {
+    const view = (notionUrl?: string) => briefView(f, judgment, sections, notionUrl);
+    const { email, notion: target, notionFrom } = destinations(setup);
+    const off = [...(outputOn(setup, "email") ? [] : ["email"]), ...(outputOn(setup, "notion") ? [] : ["Notion"])];
     const { subject, html } = briefEmail(view());
     const to = email ? "would email it" : target ? "no email, would post to Notion only" : "no email or Notion to write to";
     // reading the target is free and proves the id and the sharing are right before a real run
@@ -362,6 +362,25 @@ export async function runBrief(opts: { dryRun?: boolean; memory?: MemoryLoad | n
     } else if (target) archive = ` Notion: would add a page under “${target.title}” (${notionFrom}).`;
     return { status: "ok", summary: `[dry run, nothing sent] "${subject}" (${Math.round(html.length / 1024)} KB, ${to}).${archive}${off.length ? ` Turned off: ${off.join(", ")}.` : ""} ${f.approvals?.pending ?? "?"} approvals pending, ${f.lowGreen.length} low lots, ${f.agentRuns.length} runs in 24h.${f.notRead.length ? ` Not read: ${f.notRead.join(", ")}.` : ""}${memoryWords}${setupNote}` };
   }
+  const sent = await sendBrief(f, judgment, setup, sections);
+  const tokensIn = tokens?.in ?? 0;
+  const tokensOut = tokens?.out ?? 0;
+  const cost = servedBy ? costUsd(servedBy, tokensIn, tokensOut) : 0;
+  return {
+    status: "ok",
+    summary: `${sent} Focus: ${judgment.focus.action}${fallback}${servedBy ? `. Written by ${servedBy}` : ""}${memory ? `. ${loadWords(memory).replace(/^m/, "M")}.` : ""}`.trim(),
+    tokensIn, tokensOut,
+    costUsd: cost,
+    // only what the model chose to remember; the rules fallback leaves the old working memory alone
+    remember: tokens ? judgment.remember ?? [] : undefined,
+  };
+}
+
+/** Writes the Notion copy, then emails the brief. Returns one line on what went where. */
+async function sendBrief(f: Facts, judgment: Judgment, setup: Setup, sections: readonly string[]): Promise<string> {
+  const view = (notionUrl?: string) => briefView(f, judgment, sections, notionUrl);
+  const { email, notion: target } = destinations(setup);
+  const off = [...(outputOn(setup, "email") ? [] : ["email"]), ...(outputOn(setup, "notion") ? [] : ["Notion"])];
   if (!email && !target) throw new Error(`Nowhere to send the brief${off.length ? ` (${off.join(" and ")} turned off in the setup)` : ""}: email needs RESEND_API_KEY, BRIEF_FROM and BRIEF_TO; Notion needs NOTION_TOKEN and a target picked on the Setup tab (or NOTION_BRIEFS_DB_ID / NOTION_BRIEF_PARENT_ID)`);
 
   // Notion first, so the email can link to its copy. A Notion failure never stops the email.
@@ -382,15 +401,35 @@ export async function runBrief(opts: { dryRun?: boolean; memory?: MemoryLoad | n
     // the row is written before the send, so it is only marked once the email has gone
     if (rowId) await notionSetProps(rowId, { Emailed: prop.check(true) }).catch(() => { notionError += " The row's Emailed box could not be ticked."; });
   }
-  const tokensIn = tokens?.in ?? 0;
-  const tokensOut = tokens?.out ?? 0;
-  const cost = servedBy ? costUsd(servedBy, tokensIn, tokensOut) : 0;
-  return {
-    status: "ok",
-    summary: `${sent}${url ? `${sent ? " Notion copy" : "Brief posted"}: ${url}.` : ""}${notionError} Focus: ${judgment.focus.action}${fallback}${servedBy ? `. Written by ${servedBy}` : ""}${memory ? `. ${loadWords(memory).replace(/^m/, "M")}.` : ""}`.trim(),
-    tokensIn, tokensOut,
-    costUsd: cost,
-    // only what the model chose to remember; the rules fallback leaves the old working memory alone
-    remember: tokens ? judgment.remember ?? [] : undefined,
-  };
+  return `${sent}${url ? `${sent ? " Notion copy" : "Brief posted"}: ${url}.` : ""}${notionError}`.trim();
+}
+
+/**
+ * Avery's focus and watch list from a runner result (docs/agent-builder.md, slice 6): a line
+ * starting "Focus:" and up to five lines starting "- ". Null when there is no Focus line.
+ */
+export function parseJudgment(text: string): Judgment | null {
+  const lines = text.split("\n").map((l) => l.trim()).filter(Boolean);
+  const f = lines.find((l) => /^focus\s*:/i.test(l));
+  if (!f) return null;
+  const body = f.replace(/^focus\s*:\s*/i, "");
+  const cut = body.search(/\.\s/);
+  const focus = cut > 0 ? { action: body.slice(0, cut), reason: body.slice(cut + 1).trim() } : { action: body.replace(/\.$/, ""), reason: "" };
+  const watch = lines.filter((l) => /^[-•*]\s+/.test(l)).map((l) => l.replace(/^[-•*]\s+/, "").slice(0, 300)).slice(0, 5);
+  return focus.action ? { watch, focus } : null;
+}
+
+/**
+ * The runner's report tool for Avery (report_morning_brief): the same email and Briefs row as
+ * runBrief, with every number worked out here in code from today's facts, and the focus and
+ * watch list taken from the runner's finished result. When the result has no Focus line, the
+ * fixed rules write both, as they do when no model can be reached.
+ */
+export async function deliverBrief(result: string): Promise<string> {
+  const { setup } = await setupOrDefaults(MENU);
+  const f = await facts(setup);
+  const parsed = parseJudgment(result);
+  const judgment = parsed ?? rulesJudgment(f);
+  const sent = await sendBrief(f, judgment, setup, liveSections(MENU, setup));
+  return `${sent}${parsed ? "" : " (no Focus line in the result, so the fixed rules wrote the focus and watch list)"}`;
 }

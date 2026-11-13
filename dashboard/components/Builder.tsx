@@ -85,6 +85,8 @@ export interface BuilderProps {
   /** The approved playbook a Preview follows, if any, and whether the agent is on hold. */
   playbook: { version: number; steps: number } | null;
   pendingPlaybook: number | null;
+  /** Morgan and Avery: whether runs use their own code or the runner. */
+  engine?: { onRunner: boolean } | null;
   save: Act<[unknown, string, boolean]>;
   addStandard: Act<[string, string]>;
   forget: Act<[string]>;
@@ -182,6 +184,7 @@ export function Builder(p: BuilderProps) {
               <span className="stack" style={{ gap: 2 }}><span style={{ fontSize: 14, fontWeight: 600 }}>{t.label}</span><span className="sub">{t.detail}</span></span>
             </label>
           ))}
+          {p.engine && <span className="sub">{p.engine.onRunner ? "Switched to the runner: its crew chains and schedule now run this spec, following the approved playbook." : "Its crew chains and schedule still run its own code. Use Compare and Switch below the builder to move it to this spec."}</span>}
           <span className="sub">{p.playbook ? `Playbook v${p.playbook.version} is approved. Running after another agent or on a schedule comes when the four agents move to the runner; until then it runs when you press Preview.` : "Explore runs are by hand only. An agent can run on its own only after you approve its first playbook, and it starts off duty even then."}</span>
         </Section>
 
@@ -452,6 +455,34 @@ export function SpecVersions({ versions, activate, controls }: { versions: { ver
 }
 
 /** Playbooks: the approved one, a draft waiting for approval (Zak can drop steps), and the history. */
+/** Morgan and Avery (slice 6): compare their own code with the runner, then switch which one runs. */
+export function EnginePanel({ name, onRunner, controls, compare, switchTo }: { name: string; onRunner: boolean; controls: boolean; compare: Act; switchTo: Act<[boolean, boolean]> }) {
+  const { toast, setToast, busy, run } = useAct();
+  const [cmp, setCmp] = useState<ActionResult | null>(null);
+  const [confirm, setConfirm] = useState<{ c: Confirm; go: () => void } | null>(null);
+  const onSwitch = () => {
+    if (onRunner) { run(() => switchTo(false, false)); return; }
+    if (!controls) { setToast({ ok: false, text: "Controls are off. Set DASHBOARD_CONTROLS=on in Vercel to switch." }); return; }
+    setConfirm({ c: { title: `Switch ${name} to the runner?`, body: `From its next run, on the schedule, in a chain or by hand, ${name} follows its approved playbook on the runner and delivers through its report tools. Its own code stays, and you can switch back here at any time.`, confirmLabel: "Switch", kind: "dark" }, go: () => run(() => switchTo(true, true)) });
+  };
+  return (
+    <div className="card" style={{ gap: 10 }}>
+      <div className="row wrap" style={{ gap: 10 }}>
+        <span className="card-t">Runs on</span>
+        <span className="pill sm" style={onRunner ? { background: "var(--mint-soft)", color: "var(--mint-ink)" } : { background: "var(--soft)", color: "var(--ink2)" }}>{onRunner ? "The runner (this spec and playbook)" : "Its own code"}</span>
+      </div>
+      <span className="sub">{name} was rebuilt here from its own code, with a starting playbook. Compare runs both as free dry runs on today’s data: no model, nothing sent. Preview (above) shows what the runner’s model would write. Switch when they match.</span>
+      <div className="row wrap" style={{ gap: 8 }}>
+        <button type="button" className="btn outline" disabled={busy} onClick={() => { setCmp({ ok: true, text: "Running both dry runs…" }); run(compare, (r) => setCmp(r)); }}>Compare · free</button>
+        <button type="button" className={onRunner ? "btn outline" : "btn dark"} disabled={busy || (!onRunner && !controls)} onClick={onSwitch}>{onRunner ? "Switch back to its own code" : "Switch to the runner"}</button>
+      </div>
+      {cmp && <span className="sub" style={{ whiteSpace: "pre-wrap", lineHeight: 1.5, color: cmp.ok ? undefined : "var(--red-ink)" }}>{cmp.text}</span>}
+      {confirm && <Modal c={confirm.c} busy={busy} onCancel={() => setConfirm(null)} onGo={() => { const g = confirm.go; setConfirm(null); g(); }} />}
+      <Toast t={toast} onDone={() => setToast(null)} />
+    </div>
+  );
+}
+
 export function PlaybookPanel({ view, approve, reject }: { view: PlaybookView; approve: (id: number, keep: number[]) => Promise<ActionResult>; reject: (id: number) => Promise<ActionResult> }) {
   const { toast, setToast, busy, run } = useAct();
   const q = view.pending;

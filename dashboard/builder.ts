@@ -11,6 +11,7 @@ import { MODEL_LIST } from "@/integrations/models";
 import { env } from "@/core/env";
 import { when } from "@/dashboard/format";
 import { CREW } from "@/dashboard/crew";
+import { REBUILT, onRunner } from "@/core/built";
 import { activePlaybook, listPlaybooks, pendingPlaybook, playbookHold, stepLabel } from "@/core/playbook";
 
 export interface BuildStep {
@@ -92,6 +93,8 @@ export interface BuilderData {
   others: { id: string; name: string; outputName: string; hasOutput: boolean }[];
   lastOutput: { name: string; summary: string; numbers: { label: string; value: number; tool: string }[]; at: string; finished: boolean } | null;
   playbooks: PlaybookView | null;
+  /** Morgan and Avery (slice 6): whether runs use their own code or the runner. Null for agents built here. */
+  engine: { onRunner: boolean } | null;
 }
 
 export interface PlaybookRow { id: number; version: number; status: string; steps: string[]; changes: string | null; auto: boolean; when: string }
@@ -121,6 +124,7 @@ export async function getBuilder(agentId: string): Promise<BuilderData | null> {
     db().from("agent_outputs").select("agent_id, name, summary, numbers, created_at, finished").order("created_at", { ascending: false }).limit(200),
     playbookView(agentId),
   ]);
+  const engine = REBUILT.has(agentId) ? { onRunner: await onRunner(agentId) } : null;
   const outRows = outs.error ? [] : outs.data ?? [];
   const mine = outRows.find((o) => o.agent_id === agentId);
   return {
@@ -130,7 +134,7 @@ export async function getBuilder(agentId: string): Promise<BuilderData | null> {
       const sp = (d.spec ?? {}) as Partial<AgentSpec>;
       return { id: d.agent_id as string, name: sp.name || d.agent_id, outputName: sp.outputName || "result", hasOutput: outRows.some((o) => o.agent_id === d.agent_id && o.finished) };
     }).sort((x, y) => x.name.localeCompare(y.name)),
-    playbooks,
+    playbooks, engine,
     lastOutput: mine ? { name: mine.name, summary: mine.summary, numbers: (Array.isArray(mine.numbers) ? mine.numbers : []) as { label: string; value: number; tool: string }[], at: when(mine.created_at), finished: mine.finished } : null,
   };
 }

@@ -90,6 +90,12 @@ export interface ToolDef {
   /** Report tools: code calls it after a finished run. Returns a short note (a link, an id). */
   deliver?: (out: ReportInput, ctx: ToolCtx) => Promise<string>;
   /**
+   * Report tools that save numbers code works out again itself and never use the model's words
+   * (Morgan's snapshot). In a playbook run they are delivered as soon as every playbook step has
+   * worked, so a model that can't be reached doesn't stop the numbers being saved.
+   */
+  codeOnly?: boolean;
+  /**
    * Action tools: turns checked inputs (picks already resolved to their rows) into a proposal, or
    * says why not. Pure: nothing is queued here; the runner queues it at the gateway after the run.
    */

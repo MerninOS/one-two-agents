@@ -12,8 +12,8 @@ const SETUP_MSG = "A setup is choices, never authority: the gateway and integrat
 const SETUP_RULE = { name: "@/core/setup", message: SETUP_MSG };
 const SETUP_PATTERN = { group: ["**/core/setup", "../setup", "./setup"], message: SETUP_MSG };
 const SPEC_MSG = "An agent spec is choices, never authority: the gateway and integrations must not read it.";
-const SPEC_RULES = [{ name: "@/core/agent-spec", message: SPEC_MSG }, { name: "@/core/runner", message: SPEC_MSG }, { name: "@/core/playbook", message: SPEC_MSG }];
-const SPEC_PATTERN = { group: ["**/core/agent-spec", "**/core/runner", "**/core/playbook", "../agent-spec", "../runner", "../playbook"], message: SPEC_MSG };
+const SPEC_RULES = [{ name: "@/core/agent-spec", message: SPEC_MSG }, { name: "@/core/runner", message: SPEC_MSG }, { name: "@/core/playbook", message: SPEC_MSG }, { name: "@/core/built", message: SPEC_MSG }];
+const SPEC_PATTERN = { group: ["**/core/agent-spec", "**/core/runner", "**/core/playbook", "**/core/built", "../agent-spec", "../runner", "../playbook", "../built"], message: SPEC_MSG };
 
 export default defineConfig([
   ...nextVitals,
