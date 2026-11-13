@@ -9,6 +9,7 @@ import { SAFETY } from "@/core/runner";
 import { TOOL_LIST, TOOLS } from "@/core/tools/catalog";
 import { MODEL_LIST } from "@/integrations/models";
 import { env } from "@/core/env";
+import { when } from "@/dashboard/format";
 
 export interface BuildStep {
   idx: number; kind: "model" | "tool" | "stop"; tool: string | null; toolLabel: string | null; input: unknown; output: string | null;
@@ -29,7 +30,7 @@ const SETTING: Record<string, unknown> = {
 const GRANTABLE = new Set(["read", "calculate"]);
 
 export const GROUP_LABEL: Record<string, string> = {
-  shopify: "Shopify", calculate: "Calculate (plain code, no model)", mercury: "Mercury", supabase: "Control Room data", notion: "Notion", web: "Web", gmail: "Gmail",
+  shopify: "Shopify", calculate: "Calculate (plain code, no model)", mercury: "Mercury", supabase: "Control Room data", agents: "Other agents’ outputs", notion: "Notion", web: "Web", gmail: "Gmail",
 };
 
 /** Null when the runner migration isn't applied yet. */
@@ -83,6 +84,8 @@ export interface BuilderData {
   id: string; enabled: boolean; budget: number; active: SpecVersion | null;
   versions: (SpecVersion & { active: boolean; createdBy: string })[];
   standards: Standard[]; runs: BuildRun[]; spentToday: number;
+  others: { id: string; name: string; outputName: string; hasOutput: boolean }[];
+  lastOutput: { name: string; summary: string; numbers: { label: string; value: number; tool: string }[]; at: string; finished: boolean } | null;
 }
 
 /** Null when the agent isn't one built in the app. */
@@ -92,12 +95,21 @@ export async function getBuilder(agentId: string): Promise<BuilderData | null> {
   const versions = await listSpecVersions(agentId);
   if (!versions.length) return null;
   const since = new Date(Date.now() - 864e5).toISOString();
-  const [active, st, rs, spent] = await Promise.all([
+  const [active, st, rs, spent, defs, outs] = await Promise.all([
     loadSpec(agentId), standards(agentId), runs(agentId),
     db().from("agent_runs").select("cost_usd").eq("agent_id", agentId).gte("started_at", since),
+    db().from("agent_defs").select("agent_id, spec").eq("active", true).neq("agent_id", agentId),
+    db().from("agent_outputs").select("agent_id, name, summary, numbers, created_at, finished").order("created_at", { ascending: false }).limit(200),
   ]);
+  const outRows = outs.error ? [] : outs.data ?? [];
+  const mine = outRows.find((o) => o.agent_id === agentId);
   return {
     id: a.id, enabled: a.enabled, budget: Number(a.daily_budget_usd), active, versions, standards: st, runs: rs,
     spentToday: (spent.data ?? []).reduce((s, r) => s + Number(r.cost_usd), 0),
+    others: (defs.data ?? []).map((d) => {
+      const sp = (d.spec ?? {}) as Partial<AgentSpec>;
+      return { id: d.agent_id as string, name: sp.name || d.agent_id, outputName: sp.outputName || "result", hasOutput: outRows.some((o) => o.agent_id === d.agent_id && o.finished) };
+    }).sort((x, y) => x.name.localeCompare(y.name)),
+    lastOutput: mine ? { name: mine.name, summary: mine.summary, numbers: (Array.isArray(mine.numbers) ? mine.numbers : []) as { label: string; value: number; tool: string }[], at: when(mine.created_at), finished: mine.finished } : null,
   };
 }

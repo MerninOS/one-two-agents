@@ -32,6 +32,8 @@ export interface AgentSpec {
   limits: { maxSteps: number; maxCostUsd: number };
   /** What each run's result is called when other agents read it (outputs as sources, slice 3). */
   outputName: string;
+  /** Agents whose latest output agent_output may read, picked in the builder. */
+  readsFrom: { agentId: string; label: string }[];
 }
 
 export const MAX_DIRECTIVE = 4000;
@@ -41,6 +43,7 @@ export const specModelOk = (id: string) => modelDef(id)?.route === "anthropic";
 
 const str = (v: unknown, max: number) => (typeof v === "string" ? v.trim().slice(0, max) : "");
 const NOTION_ID = /^[0-9a-f]{32}$/;
+const AGENT_ID = /^[a-z0-9_]{1,60}$/;
 
 /**
  * A stored or drafted spec, checked against what code offers. Anything it asks for that code
@@ -70,6 +73,13 @@ export function readSpec(raw: unknown): { spec: AgentSpec; problems: string[] } 
     return [{ id, label: str(x.label, 80) || "Notion page" }];
   }).slice(0, 10);
   if (tools.includes("notion_read_page") && !notionPages.length) problems.push("Read a Notion page is granted but no page is listed");
+  const readsFrom = (Array.isArray(r.readsFrom) ? r.readsFrom : []).flatMap((p) => {
+    const x = (p ?? {}) as Record<string, unknown>;
+    const agentId = str(x.agentId, 60);
+    if (!AGENT_ID.test(agentId)) { problems.push("an agent to read from is not valid"); return []; }
+    return [{ agentId, label: str(x.label, 80) || agentId }];
+  }).filter((x, i, a) => a.findIndex((y) => y.agentId === x.agentId) === i).slice(0, 10);
+  if (tools.includes("agent_output") && !readsFrom.length) problems.push("Read another agent's output is granted but no agent is picked");
   const lim = (r.limits ?? {}) as Record<string, unknown>;
   const limit = (k: keyof typeof RUN_LIMITS) => {
     const c = RUN_LIMITS[k], v = lim[k] === undefined ? c.default : Number(lim[k]);
@@ -77,7 +87,7 @@ export function readSpec(raw: unknown): { spec: AgentSpec; problems: string[] } 
     return k === "maxSteps" ? Math.floor(v) : v;
   };
   return {
-    spec: { name, mandate: str(r.mandate, 200), directive, goodResult: str(r.goodResult, 1000), model, effort, tools, notionPages, limits: { maxSteps: limit("maxSteps"), maxCostUsd: limit("maxCostUsd") }, outputName: str(r.outputName, 60) || "result" },
+    spec: { name, mandate: str(r.mandate, 200), directive, goodResult: str(r.goodResult, 1000), model, effort, tools, notionPages, limits: { maxSteps: limit("maxSteps"), maxCostUsd: limit("maxCostUsd") }, outputName: str(r.outputName, 60) || "result", readsFrom },
     problems,
   };
 }

@@ -11,7 +11,7 @@
 export type ToolKind = "read" | "calculate" | "report" | "action";
 
 /** Groups on the builder screen, one per integration. */
-export type ToolGroup = "shopify" | "mercury" | "supabase" | "notion" | "calculate" | "web" | "gmail";
+export type ToolGroup = "shopify" | "mercury" | "supabase" | "notion" | "calculate" | "agents" | "web" | "gmail";
 
 /** One input the model may pass. Kept to plain shapes so code can check every value. */
 export type Param =
@@ -22,6 +22,8 @@ export interface ToolCtx {
   agentId: string;
   /** Notion pages the spec allows notion_read_page to open: the model picks one of these ids, never a URL. */
   notionPages: { id: string; label: string }[];
+  /** Agents whose latest output agent_output may read: the model picks one of these ids. */
+  outputSources: { agentId: string; label: string }[];
 }
 
 export interface ToolResult {

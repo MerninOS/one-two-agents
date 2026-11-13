@@ -82,11 +82,29 @@ from the tools the spec grants, code runs them, hard limits stop it.
   agents row's name and model follow the active version.
 - Latest runs step by step, as on the old test page (`dashboard/components/RunSteps.tsx`).
 
+## Slice 3: outputs as sources (built)
+
+- **One output per run**: migration `20261113150000_agent_outputs.sql` adds `agent_outputs` (one row
+  per run: the spec's output name, the model's summary, traced numbers, finished or not). The runner
+  saves it after the run, next to its steps; a failure to save only notes itself in the summary.
+- **Numbers trace to a tool result**: every tool result the model sees ends with the numbers code
+  computed and the step they came from. `finish` takes `numbers: [{ label, step, key }]`; code
+  (`traceNumbers` in `core/runner.ts`) copies each value from that step's `numbers`. A number that
+  doesn't point at a successful tool step in the same run is left out, and the summary says how
+  many were. The model never types a value.
+- **Reading another agent's output**: Read tool `agent_output` (group "Other agents' outputs",
+  untrusted). It reads the latest *finished* output of an agent listed in the spec's `readsFrom`
+  (picked on the builder screen, never chosen by the model), returns the words as another agent's
+  and the numbers under keys `n1`, `n2`… in the tool's own `numbers`, so the reading agent can cite
+  them in turn. "Numbers are computed in code" holds down a chain of agents.
+- Builder screen: Sources shows the agents it may read from when the tool is ticked; Output shows
+  the latest output with each number and the tool it came from.
+
 ## Slices
 
 1. Tool list and runner (built).
 2. Builder screen: New agent, the eight sections, Preview, versions (built).
-3. Outputs as sources: every run saves one named output; numbers must trace to a tool result.
+3. Outputs as sources: every run saves one named output; numbers must trace to a tool result (built).
 4. Playbooks: explore, approve, follow, fall back, auto-update, drop back, Re-explore.
 5. Report and Action tools, actions only through `core/gateway`.
 6. Morgan (with the burn rate step) and Avery on the runner.
