@@ -16,6 +16,7 @@ import { G_PER_LB, round2 } from "@/domain/coffee";
 import { db } from "@/core/db";
 import { chicagoDate } from "@/core/time";
 import { snapshot } from "@/agents/cfo";
+import { deliverBrief } from "@/agents/chief-of-staff";
 import { mercuryCash, mercuryCategories, mercuryTransactions } from "@/integrations/mercury";
 import { li, notionPage, notionPageText, p as para } from "@/integrations/notion";
 import { emailZak } from "@/integrations/email";
@@ -283,6 +284,20 @@ const TOOLS_LIST: ToolDef[] = [
       const url = await notionPage(reportTitle(o).slice(0, 150), blocks, ctx.reportPage.id);
       return `Notion page ${url}`;
     },
+  },
+
+  {
+    id: "report_kpi_snapshot", label: "Save yesterday's numbers", detail: "Works out yesterday's daily numbers again in code (Morgan's math) and saves them to kpi_snapshots, which Avery's brief reads. Never uses the model's words",
+    kind: "report", group: "supabase", params: [], trusted: true, needs: [...SHOPIFY, ...SUPABASE], costUsd: 0, codeOnly: true,
+    deliver: async () => {
+      const s = await snapshot(chicagoDate(1));
+      return `saved ${s.date}: ${s.orders} orders, ${usd(s.revenue)} revenue`;
+    },
+  },
+  {
+    id: "report_morning_brief", label: "Send the morning brief", detail: "Avery's brief email and Briefs row: the Focus line and watch lines from the result, every number worked out again in code from today's facts. Only to BRIEF_TO and the Briefs target",
+    kind: "report", group: "email", params: [], trusted: true, needs: EMAIL, costUsd: 0,
+    deliver: async (o) => deliverBrief(o.summary),
   },
 
   // ---- Actions (slice 5): proposals only, queued at core/gateway after the run, Draft tier

@@ -1,13 +1,13 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { activateSpec, addStandard, approveBuiltPlaybook, dryRunBuilt, forgetMemoryLine, previewBuilt, rejectBuiltPlaybook, saveSpec, setBuiltBudget } from "@/dashboard/actions";
+import { activateSpec, addStandard, approveBuiltPlaybook, compareEngines, switchEngine, dryRunBuilt, forgetMemoryLine, previewBuilt, rejectBuiltPlaybook, saveSpec, setBuiltBudget } from "@/dashboard/actions";
 import { builderMenu, getBuilder } from "@/dashboard/builder";
 import { requireSession } from "@/dashboard/data";
 import { controlsOn } from "@/dashboard/session";
 import { m4, when } from "@/dashboard/format";
 import { specLooser } from "@/core/agent-spec";
 import { BudgetForm } from "@/dashboard/components/client";
-import { Builder, PlaybookPanel, SpecVersions } from "@/dashboard/components/Builder";
+import { Builder, EnginePanel, PlaybookPanel, SpecVersions } from "@/dashboard/components/Builder";
 import { RunSteps } from "@/dashboard/components/RunSteps";
 
 // One agent's builder screen (docs/agent-builder.md, slice 2): the eight parts as a draft, Preview,
@@ -49,6 +49,7 @@ export default async function BuildAgent({ params }: { params: Promise<{ id: str
         preview={previewBuilt.bind(null, id)}
         playbook={b.playbooks?.active ? { version: b.playbooks.active.version, steps: b.playbooks.active.steps.length } : null}
         pendingPlaybook={b.playbooks?.pending?.version ?? null}
+        engine={b.engine}
         save={saveSpec.bind(null, id)}
         addStandard={addStandard.bind(null, id)}
         forget={forgetMemoryLine}
@@ -60,6 +61,8 @@ export default async function BuildAgent({ params }: { params: Promise<{ id: str
           </div>
         }
       />
+
+      {b.engine && <EnginePanel name={s?.name ?? id} onRunner={b.engine.onRunner} controls={controls} compare={compareEngines.bind(null, id)} switchTo={switchEngine.bind(null, id)} />}
 
       {b.playbooks ? (
         <PlaybookPanel key={`${b.playbooks.pending?.id ?? 0}-${b.playbooks.active?.id ?? 0}`} view={b.playbooks} approve={approveBuiltPlaybook.bind(null, id)} reject={rejectBuiltPlaybook.bind(null, id)} />

@@ -166,6 +166,40 @@ from the tools the spec grants, code runs them, hard limits stop it.
   and the Gmail compose token, so they arrive with Rowan in slice 7.
 - No migration.
 
+## Slice 6: Morgan and Avery on the runner (built, switch off)
+
+- **Migration** `20261113190000_runner_switch.sql`: column `agents.on_runner` (default false), spec v1
+  for `cfo` (Morgan) and `chief_of_staff` (Avery), and an approved starting playbook for each,
+  written from what their code does, so neither needs an explore run. Both now show in the
+  agent builder.
+  - Morgan: Daily numbers snapshot (yesterday) and Burn rate and runway (90 days), then one cheap
+    judgment step (Claude Haiku 5.5, low effort, $0.10 cap) writing a line or two on burn rate from
+    those numbers. Report `report_kpi_snapshot` works yesterday's numbers out again in code and
+    saves them to `kpi_snapshots`.
+  - Avery: Morgan's daily numbers, open orders, days of green cover, other agents' runs and
+    approvals waiting, then the model (Sonnet 5.5, medium, $0.30 cap) writes a `Focus:` line and up
+    to five `- ` watch lines. Report `report_morning_brief` sends the same email and Briefs row as
+    before (`deliverBrief`, sharing `sendBrief` with the old code): every number is worked out again
+    in code from today's facts; only the focus and watch lines come from the result
+    (`parseJudgment`), and the fixed rules write them when there is no Focus line.
+- **Code-only reports** (`codeOnly`): in a playbook run they are delivered as soon as every
+  playbook step has worked, before the model is called, so Morgan's snapshot is saved even if the
+  burn rate line can't be written.
+- **Running outside the builder** (`core/built.ts`): `runBuilt` follows the approved playbook with
+  Deliver on, passes a chain hand-off to the model as untrusted data, and updates the playbook as
+  Preview does. Without an approved playbook it skips (explore runs stay by hand). A dry run
+  (`dryRunPlaybook`) makes the playbook's tool calls in code: no model, nothing written.
+- **The switch**: `agents/registry.ts` sends a run of Morgan or Avery to `runBuilt` when
+  `on_runner` is true, otherwise to its own code. Schedules, chains and manual runs all go through
+  it, inside `withRun` as before. On the builder screen, **Compare** runs both as free dry runs on
+  today's data, and **Switch to the runner** (Controls on, a confirm, and a passing dry run) or
+  **Switch back** (always allowed) flips it.
+- Lint: `core/gateway` and `integrations/` may not import `core/built`.
+- Differences from the old code, on purpose or for later: on the runner Avery keeps no working
+  memory (`remember`); her standing orders and lessons still load. If no model can be reached the
+  run fails instead of falling back to the fixed rules (Morgan's numbers are still saved). Rowan's
+  new drafts are still in the email (the report reads them), but the model doesn't see them.
+
 ## Slices
 
 1. Tool list and runner (built).
@@ -173,6 +207,6 @@ from the tools the spec grants, code runs them, hard limits stop it.
 3. Outputs as sources: every run saves one named output; numbers must trace to a tool result (built).
 4. Playbooks: explore, approve, follow, fall back, auto-update, drop back, Re-explore (built).
 5. Report and Action tools, actions only through `core/gateway` (built; Gmail draft and leads list move to slice 7).
-6. Morgan (with the burn rate step) and Avery on the runner.
+6. Morgan (with the burn rate step) and Avery on the runner (built; each switched by hand on the builder screen).
 7. Rowan and Quinn on the runner (with the Gmail draft action and the leads list report); retire
    the old agent code, menus and Setup tab.

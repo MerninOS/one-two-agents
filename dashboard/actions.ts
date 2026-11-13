@@ -5,7 +5,7 @@ import { cookies, headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { after } from "next/server";
-import { AGENTS } from "@/agents/registry";
+import { AGENTS, OWN_JOBS } from "@/agents/registry";
 import { db } from "@/core/db";
 import { withRun } from "@/core/runs";
 import { discardLesson, editMemory, forgetMemory, keepLesson, proposeLesson, teach as teachMemory, type Keep } from "@/core/memory";
@@ -22,6 +22,7 @@ import { ANNOTATE } from "@/core/gateway";
 import { BUDGET_CEILING, activateSpecVersion, createBuiltAgent, listSpecVersions, loadSpec, readSpec, saveSpecVersion, specLooser, type AgentSpec } from "@/core/agent-spec";
 import { dryRunTools, runExplore, type PlaybookStep } from "@/core/runner";
 import { TOOLS } from "@/core/tools/catalog";
+import { REBUILT, dryRunPlaybook, setOnRunner } from "@/core/built";
 import { activePlaybook, afterRun, approvePlaybook, holdAfterRejection, listPlaybooks, rejectPlaybook } from "@/core/playbook";
 import { loadMemory } from "@/core/memory";
 import { BUILT, BY_ID } from "./crew";
@@ -743,6 +744,38 @@ export async function approveBuiltPlaybook(agentId: string, playbookId: number, 
     const v = await approvePlaybook(agentId, Number(playbookId), (Array.isArray(keep) ? keep : []).map(Number).filter(Number.isInteger));
     revalidatePath("/", "layout");
     return { ok: true, text: `Playbook v${v} approved. Preview now follows it; later updates apply on their own unless a run falls back.` };
+  } catch (e) { return fail(e); }
+}
+
+/**
+ * Side by side (slice 6): the agent's own code and the runner, both as free dry runs on today's
+ * data. Neither calls a model or writes anything. Preview shows what the runner's model writes.
+ */
+export async function compareEngines(agentId: string): Promise<ActionResult> {
+  await requireSession();
+  if (!REBUILT.has(agentId) || !OWN_JOBS[agentId]) return { ok: false, text: "Only Morgan and Avery have their own code to compare with." };
+  try {
+    const [own, built] = await Promise.allSettled([OWN_JOBS[agentId]({ dryRun: true }), dryRunPlaybook(agentId)]);
+    const ownText = own.status === "fulfilled" ? own.value.summary : `failed: ${own.reason instanceof Error ? own.reason.message : String(own.reason)}`;
+    const builtText = built.status === "fulfilled" ? `${built.value.summary} ${built.value.lines.join(" · ")}` : `failed: ${built.reason instanceof Error ? built.reason.message : String(built.reason)}`;
+    return { ok: own.status === "fulfilled" && built.status === "fulfilled", text: `Own code: ${ownText}\n\nRunner: ${builtText}` };
+  } catch (e) { return fail(e); }
+}
+
+/** Switches which one runs on schedules, chains and by hand. To the runner needs Controls on and a confirm; back is always allowed. */
+export async function switchEngine(agentId: string, toRunner: boolean, confirmed: boolean): Promise<ActionResult> {
+  await requireSession();
+  if (!REBUILT.has(agentId)) return { ok: false, text: "Only Morgan and Avery can be switched." };
+  try {
+    if (toRunner) {
+      if (!controlsOn()) return { ok: false, text: `${CONTROLS_OFF} Switching changes what runs on the schedule.` };
+      if (!confirmed) return { ok: false, text: "Confirm first." };
+      const dry = await dryRunPlaybook(agentId);
+      if (dry.status !== "ok") return { ok: false, text: dry.summary };
+    }
+    await setOnRunner(agentId, toRunner);
+    revalidatePath("/", "layout");
+    return { ok: true, text: toRunner ? "Switched. Its next run, on the schedule, in a chain or by hand, follows the approved playbook on the runner." : "Switched back. Its next run uses its own code again." };
   } catch (e) { return fail(e); }
 }
 
