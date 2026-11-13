@@ -28,7 +28,7 @@ export interface MapCol { key: ColKey; title: string; nodes: MapNode[] }
 export interface AgentMapModel { name: string; cols: MapCol[]; edges: { from: string; to: string }[]; run: MapRun | null }
 
 export interface MapStep { kind: string; tool: string | null; ok: boolean; ms: number }
-/** A run laid over the map. Runs of an agent's own code have no steps, so only the brain shows how it went. */
+/** A run laid over the map. Runs from before the engine (an agent's old code) have no steps, so only the brain shows how it went. */
 export interface MapRun {
   status: RunStatus; trigger: string; at: string;
   tokensIn: number; tokensOut: number; costUsd: number;

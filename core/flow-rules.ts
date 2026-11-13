@@ -45,8 +45,6 @@ export interface Flow { chains: Chain[] }
 
 /** Numbers an agent's run reports (RunResult.metrics), which a check may test. */
 export const METRICS: Record<string, { key: string; label: string }[]> = {
-  wholesale_hunter: [{ key: "new_leads", label: "New leads" }, { key: "drafts", label: "Gmail drafts" }],
-  bookkeeper: [{ key: "proposals", label: "Changes proposed" }, { key: "open", label: "Receipts still missing" }],
   cfo: [{ key: "orders", label: "Orders yesterday" }],
 };
 /** Agents that read a hand-off (JobOpts.handoff) as facts. The rest ignore it, so the palette doesn't offer it. */

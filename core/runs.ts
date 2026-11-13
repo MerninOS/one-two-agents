@@ -4,8 +4,6 @@ import "server-only";
 import { db } from "@/core/db";
 import { env } from "@/core/env";
 import { MEMORY_AGENTS, afterLoad, loadMemory, loadSummary, saveWorking, type MemoryLoad } from "@/core/memory";
-import { setupOrDefaults, type Setup } from "@/core/setup";
-import { MENUS } from "@/agents/menus";
 
 /** Vercel Cron sends `Authorization: Bearer $CRON_SECRET`; manual runs use the same header. */
 export const cronAuthorized = (req: Request) => !!env.cronSecret && req.headers.get("authorization") === `Bearer ${env.cronSecret}`;
@@ -40,21 +38,15 @@ async function blockedReason(agentId: string, trigger: string) {
   return spent >= Number(agent.daily_budget_usd) ? `Daily budget of $${agent.daily_budget_usd} reached ($${spent.toFixed(2)} spent).` : null;
 }
 
-// The column arrives with the agent_setup migration. A version only exists once that has been
-// applied, so a run on built-in values never names the column.
-const setupCol = (s: Setup | null) => (s?.version != null ? { setup_version: s.version } : {});
-
 /**
  * Run one agent job with a row in agent_runs around it; a failure is recorded, then rethrown.
  * Agents in MEMORY_AGENTS get their memory loaded after the on-duty and budget check (a skipped
  * run loads nothing) and leave working memory when the run finishes. A memory store that can't
  * be read never stops the run: the job gets null and the summary says so.
- * Agents with a menu (agents/menus.ts) also get their active setup (core/setup.ts). A setup that
- * can't be read never stops the run either: the job gets the menu's defaults and the summary says so.
- * Trigger "preview" (a try from the builder) gets neither: the job brings its own
- * draft and reads memory without changing it.
+ * Trigger "preview" (a try from the builder) loads none: the job reads memory itself without
+ * changing it.
  */
-export async function withRun(agentId: string, trigger: string, job: (runId: string, memory: MemoryLoad | null, setup: Setup | null) => Promise<RunResult>, opts: { chain?: RunChain } = {}): Promise<RunResult & { runId: string }> {
+export async function withRun(agentId: string, trigger: string, job: (runId: string, memory: MemoryLoad | null) => Promise<RunResult>, opts: { chain?: RunChain } = {}): Promise<RunResult & { runId: string }> {
   // chain columns arrive with the crew_flow migration; only a chain run names them
   const c = opts.chain;
   const chainCols = c ? { chain_id: c.chainId, chain_key: c.key, chain_step: c.step, ...(c.parent ? { parent_run_id: c.parent } : {}) } : {};
@@ -62,23 +54,16 @@ export async function withRun(agentId: string, trigger: string, job: (runId: str
   if (error || !run) throw new Error(`Could not start run: ${error?.message}`);
   const finish = (patch: Record<string, unknown>) => db().from("agent_runs").update({ ended_at: new Date().toISOString(), ...patch }).eq("id", run.id);
   let memory: MemoryLoad | null = null, memoryNote = "";
-  let setup: Setup | null = null;
   try {
     const blocked = await blockedReason(agentId, trigger);
     const agentRun = !blocked && (trigger === "cron" || trigger === "manual" || trigger === "chain");
-    if (agentRun && MENUS[agentId]) {
-      const got = await setupOrDefaults(MENUS[agentId]);
-      setup = got.setup;
-      if (got.problem) memoryNote = ` (setup not loaded, built-in values used: ${got.problem})`;
-      else if (setup.problems.length) memoryNote = ` (setup v${setup.version} values ignored: ${setup.problems.join("; ").slice(0, 200)})`;
-    }
     // only agent runs load memory; a gateway apply run (trigger "approval") is not the agent thinking,
     // and a Preview reads memory itself without counting anything down
     if (agentRun && MEMORY_AGENTS.has(agentId)) {
       try { memory = await loadMemory(agentId); }
       catch (e) { memoryNote += ` (memory not loaded: ${(e instanceof Error ? e.message : String(e)).slice(0, 100)})`; }
     }
-    const res: RunResult = blocked ? { status: "skipped", summary: blocked } : await job(run.id, memory, setup);
+    const res: RunResult = blocked ? { status: "skipped", summary: blocked } : await job(run.id, memory);
     // `remember` (even empty) means the model read its memory: count down next-run notes and
     // replace working memory. Without it (rules fallback, model unreachable) memory is left as it was.
     if (memory && res.status === "ok" && (res.remember !== undefined || res.readMemory)) {
@@ -89,13 +74,13 @@ export async function withRun(agentId: string, trigger: string, job: (runId: str
     }
     await finish({
       status: res.status, summary: `${res.summary}${memoryNote}`, tokens_in: res.tokensIn ?? 0, tokens_out: res.tokensOut ?? 0, cost_usd: res.costUsd ?? 0,
-      ...(memory ? { memory_json: loadSummary(memory) } : {}), ...setupCol(setup),
+      ...(memory ? { memory_json: loadSummary(memory) } : {}),
       // every run's metrics are kept: a try's spec_version and finished flag are what unlock Go live
       ...(res.metrics ? { metrics: res.metrics } : {}),
     });
     return { ...res, summary: `${res.summary}${memoryNote}`, runId: run.id };
   } catch (e) {
-    await finish({ status: "failed", error: e instanceof Error ? e.message : String(e), ...(memory ? { memory_json: loadSummary(memory) } : {}), ...setupCol(setup) });
+    await finish({ status: "failed", error: e instanceof Error ? e.message : String(e), ...(memory ? { memory_json: loadSummary(memory) } : {}) });
     throw e;
   }
 }

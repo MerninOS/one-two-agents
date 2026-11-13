@@ -32,8 +32,8 @@ export default async function Replay({ params }: { params: Promise<{ id: string 
   const look = RUN_LOOK[run.status];
 
   // Where the money went, split in code with the same prices the agents bill with.
-  // a setup can pick another model (any provider), so use the priced model whose prices give this run's cost, the agent's usual one first
-  const usual = Object.values(MODELS).find((m) => a.model?.startsWith(m));
+  // a version can pick another model, so use the priced model whose prices give this run's cost, the live version's first
+  const usual = Object.values(MODELS).find((m) => f.agents[a.id]?.model?.startsWith(m));
   const fits = (m: string) => Math.abs(costUsd(m, run.tokens_in, run.tokens_out) - run.cost_usd) <= 0.0002;
   const model = usual && (fits(usual) || a.id === "wholesale_hunter") ? usual : MODEL_LIST.find((m) => fits(m.id))?.id ?? usual;
   const inUsd = model ? costUsd(model, run.tokens_in, 0) : 0;
@@ -130,7 +130,7 @@ export default async function Replay({ params }: { params: Promise<{ id: string 
 
       {run.status !== "skipped" && map && (
         <div className="card" style={{ padding: 16, gap: 10 }}>
-          <span className="card-t" style={{ padding: "0 4px" }}>How this run went{steps.length ? "" : " · its own code logs no steps, so only the brain shows the result"}</span>
+          <span className="card-t" style={{ padding: "0 4px" }}>How this run went{steps.length ? "" : " · runs from before the engine log no steps, so only the brain shows the result"}</span>
           <AgentMap m={map} />
         </div>
       )}

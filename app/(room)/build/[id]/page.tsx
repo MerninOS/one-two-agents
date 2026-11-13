@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { addStandard, backToOwnCode, dryRunBuilt, forgetMemoryLine, goBack, goLive, saveSpec, setBuiltBudget, tryBuilt } from "@/dashboard/actions";
+import { addStandard, dryRunBuilt, forgetMemoryLine, goBack, goLive, saveSpec, setBuiltBudget, tryBuilt } from "@/dashboard/actions";
 import { builderMenu, getBuilder } from "@/dashboard/builder";
 import { requireSession } from "@/dashboard/data";
 import { controlsOn } from "@/dashboard/session";
@@ -66,7 +66,7 @@ export default async function BuildAgent({ params, searchParams }: { params: Pro
           <div className="row wrap" style={{ gap: 10 }}>
             <h1 className="h1">{saved ? `Saved. Here’s ${s.name}.` : s.name}</h1>
             <span className="pill sm" style={{ background: "var(--soft)", color: "var(--ink2)" }}>{b.enabled ? "On duty" : "Off duty"}</span>
-            {live && <span className="pill sm" style={{ background: "var(--mint-soft)", color: "var(--mint-ink)" }}>Live: v{live.version}{b.engine && !b.engine.onRunner ? " (still its own code)" : ""}</span>}
+            {live && <span className="pill sm" style={{ background: "var(--mint-soft)", color: "var(--mint-ink)" }}>Live: v{live.version}</span>}
             {b.draft && <span className="pill sm" style={{ background: "var(--acc-soft)", color: "var(--acc-ink)" }}>Draft v{b.draft.version}</span>}
           </div>
           {saved && <span className="sub">{b.draft ? `Saved as draft v${b.draft.version}. ${live ? `v${live.version} keeps running until you try the draft and go live.` : "Try it, then go live."}` : `Version ${working?.version ?? top}. Try it, then go live.`}</span>}
@@ -86,7 +86,6 @@ export default async function BuildAgent({ params, searchParams }: { params: Pro
         tried={b.tried}
         today={b.today}
         routine={{ pending: b.playbooks?.pending ? { steps: b.playbooks.pending.steps, changes: b.playbooks.pending.changes } : null, active: b.playbooks?.active ? { version: b.playbooks.active.version, steps: b.playbooks.active.steps } : null, hold: b.playbooks?.hold ?? null }}
-        engine={b.engine}
         looser={b.draft && live ? specLooser(live.spec, b.draft.spec) : []}
         when={`${schedSentence(sch)}${sch?.chain ? ` In the ${sch.chain} chain.` : ""}`}
         estimate={estimate(s, menu.models)}
@@ -95,7 +94,6 @@ export default async function BuildAgent({ params, searchParams }: { params: Pro
         tryIt={tryBuilt.bind(null, id)}
         goLive={goLive.bind(null, id)}
         goBack={goBack.bind(null, id)}
-        backToOwnCode={backToOwnCode.bind(null, id)}
       />
 
       <div className="card" style={{ gap: 10 }}>

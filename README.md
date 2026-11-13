@@ -9,9 +9,9 @@ ten agents is the "One Two Coffee Lab Agent System" tech spec.
 
 | Route | Schedule | What it does |
 | --- | --- | --- |
-| `/api/agents/cfo` | Morning chain: daily 5:30 AM Central (off) | Yesterday's revenue, orders, AOV, repeat rate, green cost and margin from Shopify, cash from Mercury → `kpi_snapshots`. Plain code, no model |
-| `/api/agents/chief_of_staff` | Morning chain: after Morgan, weekdays not before 6:45 AM Central (off) | Morning brief → an email to Zak (when `RESEND_API_KEY`, `BRIEF_FROM` and `BRIEF_TO` are set; see `docs/avery-email.md`) and a Notion page. Numbers come from code; Claude writes only the Watch list and today's focus, with a rules fallback when the API can't be reached |
-| `/api/agents/bookkeeper` | manual only until launch (planned daily 6:00 AM Central) | Business charges from Mercury → `expense_docs`, receipts found in Gmail (read-only token) saved to the private `receipts` bucket, category suggestions from Mercury's own list, charges that need a photo, month close on the 3rd → a Notion page. Haiku reads receipts; code decides every match. **Never writes to Mercury itself**: receipt, category and memo are proposals that the tool gateway applies after Zak approves them in the Control Room. A few cents a run. Ships off (`agents.enabled = false`) |
+| `/api/agents/cfo` | Morning chain: daily 5:30 AM Central (off) | Yesterday's revenue, orders, AOV, repeat rate, green cost and margin from Shopify, cash from Mercury → `kpi_snapshots`. The numbers are code; the model only writes the summary |
+| `/api/agents/chief_of_staff` | Morning chain: after Morgan, weekdays not before 6:45 AM Central (off) | Morning brief → an email to Zak (when `RESEND_API_KEY`, `BRIEF_FROM` and `BRIEF_TO` are set; see `docs/avery-email.md`) and a Notion page. Numbers come from code; the model writes only the Watch list and today's focus |
+| `/api/agents/bookkeeper` | manual only until launch (planned daily 6:00 AM Central) | Business charges from Mercury → `expense_docs`, receipts found in Gmail (read-only token) saved to the private `receipts` bucket, category suggestions from Mercury's own list (as approval cards), charges that need a photo, month close on the 3rd → a Notion page. Haiku reads receipts; code decides every match. **Never writes to Mercury itself**: receipt, category and memo are proposals that the tool gateway applies after Zak approves them in the Control Room. A few cents a run. Ships off (`agents.enabled = false`) |
 | `/api/agents/wholesale_hunter` | manual only | Claude searches the web for a few new wholesale/private label prospects in Austin, Lakeway and Bee Cave, scores fit, writes a first-touch email → `wholesale_leads`, Gmail drafts (if `GMAIL_*` is set) and a Notion page. Drafts only; nothing is sent. About $1 a run |
 
 The old paths `/api/agents/brief` and `/api/agents/hunter` still work.
@@ -68,8 +68,8 @@ app/(room)/                Control Room pages (login in app/login, guarded by pr
 app/api/agents/[agent]/   one route for every agent: auth, trigger, run log
 app/api/health/           settings present + Supabase reachable
 dashboard/                Control Room data, actions, session and components
-agents/                   one folder per agent, plus registry.ts (see agents/README.md)
-core/                     the runner and agent specs for agents built in the app, the tool list (core/tools), env, Supabase client, withRun (log, enabled flag, budget, memory, setup), agent memory, agent setup, time helpers, the tool gateway
+agents/                   registry.ts (which agents can run on a schedule) and the code the engine's tools call (see agents/README.md)
+core/                     the runner and agent specs for agents built in the app, the tool list (core/tools), env, Supabase client, withRun (log, enabled flag, budget, memory), agent memory, time helpers, the tool gateway
 integrations/             Shopify (read-only), Mercury (read-only; mercury-write.ts is gateway-only), Notion, Gmail (drafts only; receipts read-only), Anthropic
 domain/                   coffee constants and green math (copied from the storefront), bookkeeping rules (books.ts)
 supabase/migrations/      agent tables

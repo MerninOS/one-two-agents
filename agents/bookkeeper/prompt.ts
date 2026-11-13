@@ -1,5 +1,5 @@
-// Quinn's instructions. The model only reads: it pulls fields off a receipt and picks a
-// category id from a fixed list. Code decides every match, status and number.
+// How the books sync's small model reads a receipt. It only pulls fields off it: code decides
+// every match, status and number.
 
 export const READ_RECEIPT = `You read one email (and any attached PDF) from the inbox of One Two Coffee Lab, a small coffee roaster, and report what it says about a purchase.
 
@@ -12,7 +12,3 @@ Report:
 - date: the purchase or charge date as YYYY-MM-DD. null if none is shown.
 
 Copy values from the email; never estimate or compute a total that is not written there.`;
-
-export const PICK_CATEGORY = `You suggest a bookkeeping category for business charges of One Two Coffee Lab, a small specialty coffee roaster in Austin, Texas (green coffee, roasting, packaging, shipping, software, marketing, equipment, travel).
-
-For each charge, pick the one category id from the allowed list that fits best, or null when the charge could be personal, is ambiguous, or nothing fits. Use null rather than guessing: Zak reviews every suggestion, and a wrong category costs more than a blank one.`;

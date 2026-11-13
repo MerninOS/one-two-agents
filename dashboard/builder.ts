@@ -11,7 +11,6 @@ import { MODEL_LIST } from "@/integrations/models";
 import { env } from "@/core/env";
 import { when } from "@/dashboard/format";
 import { CREW } from "@/dashboard/crew";
-import { REBUILT, onRunner } from "@/core/built";
 import { activePlaybook, listPlaybooks, pendingPlaybook, playbookHold, stepLabel } from "@/core/playbook";
 import { CONNECTIONS, connOf, isSetUp, type ConnId } from "@/dashboard/connections";
 import { health } from "@/dashboard/data";
@@ -110,7 +109,7 @@ export async function mapFor(agentId: string): Promise<{ spec: AgentSpec; usedBy
   return mine ? { spec: readSpec(mine.spec, agentId).spec, usedBy: usedByOf(agentId, data ?? []) } : null;
 }
 
-/** One run's tool calls, for laying the run over the map. Empty for runs of an agent's own code. */
+/** One run's tool calls, for laying the run over the map. Empty for runs from before the engine (an agent's old code logged none). */
 export async function mapSteps(runId: string): Promise<{ kind: string; tool: string | null; ok: boolean; ms: number }[]> {
   const { data, error } = await db().from("run_steps").select("kind, tool, ok, ms").eq("run_id", runId).order("idx");
   return error ? [] : (data ?? []).map((s) => ({ kind: s.kind, tool: s.tool, ok: !!s.ok, ms: Number(s.ms ?? 0) }));
@@ -179,8 +178,6 @@ export interface BuilderData {
   today: { at: string; summary: string } | null;
   lastOutput: { name: string; summary: string; numbers: { label: string; value: number; tool: string }[]; at: string; finished: boolean } | null;
   playbooks: PlaybookView | null;
-  /** Morgan, Avery, Rowan and Quinn (slices 6 and 7): whether runs use their own code or the runner. Null for agents built here. */
-  engine: { onRunner: boolean } | null;
 }
 
 export interface PlaybookRow { id: number; version: number; status: string; steps: string[]; changes: string | null; auto: boolean; when: string }
@@ -212,8 +209,7 @@ export async function getBuilder(agentId: string): Promise<BuilderData | null> {
   ]);
   const draft = draftOf(versions);
   const working = draft ?? versions.find((v) => v.active) ?? null;
-  const [engine, tried, today] = await Promise.all([
-    REBUILT.has(agentId) ? onRunner(agentId).then((onRunner) => ({ onRunner })) : null,
+  const [tried, today] = await Promise.all([
     working ? lastTry(agentId, working.version) : null,
     db().from("agent_runs").select("started_at, summary").eq("agent_id", agentId).eq("status", "ok").neq("trigger", "preview").order("started_at", { ascending: false }).limit(1).maybeSingle(),
   ]);
@@ -229,7 +225,7 @@ export async function getBuilder(agentId: string): Promise<BuilderData | null> {
     usedBy: usedByOf(agentId, defs.data ?? []),
     draft, tried,
     today: today.data?.summary ? { at: when(today.data.started_at), summary: today.data.summary } : null,
-    playbooks, engine,
+    playbooks,
     lastOutput: mine ? { name: mine.name, summary: mine.summary, numbers: (Array.isArray(mine.numbers) ? mine.numbers : []) as { label: string; value: number; tool: string }[], at: when(mine.created_at), finished: mine.finished } : null,
   };
 }

@@ -16,6 +16,7 @@ import { STATE_LOOK, combined, stateOf } from "@/dashboard/status";
 import { ActionButton, DryRun, MarkSeen, SwitchButton } from "@/dashboard/components/client";
 import { Icon } from "@/dashboard/components/Icon";
 import { RunTable } from "@/dashboard/components/RunTable";
+import { builderMenu, mapFor } from "@/dashboard/builder";
 import { AgentTabs, Avatar, LockList, Pill, Summary } from "@/dashboard/components/ui";
 
 // A real Wholesale Hunter run takes a few minutes. realRun returns at once and finishes the run in after(),
@@ -43,6 +44,7 @@ export default async function AgentPage({ params, searchParams }: { params: Prom
   const pipeline = id === "wholesale_hunter" ? await getPipeline() : null;
   const books = id === "bookkeeper" ? await getBooks() : null;
   const mem = a.built && (tab === "memory" || tab === "overview") ? await getMemory(id) : null;
+  const how = a.built && tab === "overview" ? await howItWorks(id) : null;
   const runs = f.runs.filter((r) => r.agent_id === id);
   const unseen = needs(f, f.now, parseSeen((await cookies()).get(SEEN_COOKIE)?.value)).some((n) => n.run && n.agentId === id);
 
@@ -67,7 +69,7 @@ export default async function AgentPage({ params, searchParams }: { params: Prom
           <div className="stack">
             <div className="card" style={{ gap: 0 }}>
               <span className="card-t" style={{ marginBottom: 10 }}>How {a.name} works</span>
-              {(a.how ?? [["What it will do", a.job], ["Phase", `${a.phase} · build after launch`], ["Tier", TIERS[a.tier]], ["Intended trigger", a.trigger ?? "Set when built"]]).map(([k, v]) => <div key={k} className="kv"><span>{k}</span><span style={{ lineHeight: 1.45 }}>{v}</span></div>)}
+              {(how ?? (a.built ? [["Setup", "No saved version yet."]] : [["What it will do", a.job], ["Phase", `${a.phase} · build after launch`], ["Tier", TIERS[a.tier]], ["Intended trigger", a.trigger ?? "Set when built"]])).map(([k, v]) => <div key={k} className="kv"><span>{k}</span><span style={{ lineHeight: 1.45 }}>{v}</span></div>)}
             </div>
             <Toolbelt a={a} f={f} />
           </div>
@@ -94,6 +96,23 @@ export default async function AgentPage({ params, searchParams }: { params: Prom
 
     </>
   );
+}
+
+/** How it works, read from its live version: the same facts the builder's steps set. */
+async function howItWorks(id: string): Promise<[string, string][] | null> {
+  const m = await mapFor(id);
+  if (!m) return null;
+  const { spec } = m, menu = builderMenu();
+  const labels = (kinds: string[]) => spec.tools.map((t) => menu.tools.find((x) => x.id === t)).filter((t) => t && kinds.includes(t.kind)).map((t) => t!.label);
+  const reads = labels(["read", "calculate"]), hands = labels(["report"]), does = labels(["action"]);
+  const model = menu.models.find((x) => x.id === spec.model)?.label ?? spec.model;
+  return [
+    ["Job", spec.mandate || "No job line yet"],
+    ["Brain", `${model}, ${spec.effort} effort, stops at $${spec.limits.maxCostUsd.toFixed(2)} a run`],
+    ["Reads", reads.length ? reads.join(", ") : "Nothing"],
+    ["Hands you", [...hands, `“${spec.outputName}” for other agents`].join(", ")],
+    ...(does.length ? [["Can do, after you approve", does.join(", ")] as [string, string]] : []),
+  ];
 }
 
 function crewSwitch(a: CrewMember, f: Floor, controls: boolean) {
@@ -125,7 +144,7 @@ function HeroFull({ a, f, controls }: { a: CrewMember; f: Floor; controls: boole
           <span className="muted" style={{ fontSize: 14 }}>{a.role} · {a.built ? `on the crew since ${a.since}` : `joining after launch · phase ${a.phase}`}</span>
           <p style={{ fontSize: 16, lineHeight: 1.55, maxWidth: 600, textWrap: "pretty" }} className="ink2">“{a.mandate}”</p>
           <div className="row wrap" style={{ gap: 6, fontSize: 12.5 }}>
-            <span className="pill" style={{ background: "var(--soft)", fontWeight: 500 }}><span className="muted">Model</span>{a.model ?? "Set when built"}</span>
+            <span className="pill" style={{ background: "var(--soft)", fontWeight: 500 }}><span className="muted">Model</span>{row?.model ?? "Set when built"}</span>
             <span className="pill" style={{ background: "var(--soft)", fontWeight: 500 }}><span className="muted">Budget</span>{row ? `${budget(row.daily_budget_usd)} a day` : "Set when built"}</span>
             {f.liveVersion[a.id] != null && <Link href={`/build/${a.id}`} className="pill" style={{ background: "var(--soft)", fontWeight: 500, color: "var(--ink)" }}><span className="muted">Live version</span>v{f.liveVersion[a.id]}</Link>}
             {a.works && <span className="pill" style={{ background: "var(--soft)", fontWeight: 500, whiteSpace: "normal", borderRadius: 14 }}><span className="muted">Works with</span>{a.works}</span>}

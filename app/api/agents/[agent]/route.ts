@@ -29,7 +29,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ agent: s
   }
   try {
     if (dryRun) return NextResponse.json({ dryRun: true, ...(await def.job({ dryRun })) });
-    return NextResponse.json(await withRun(id, trigger, (runId, memory, setup) => def.job({ runId, memory, setup })));
+    return NextResponse.json(await withRun(id, trigger, (runId, memory) => def.job({ runId, memory })));
   } catch (e) {
     console.error(`[agents/${id}]`, e);
     return NextResponse.json({ error: e instanceof Error ? e.message : "Run failed" }, { status: 500 });
@@ -57,7 +57,7 @@ async function chainStep(req: Request, id: string) {
   const handoff = step.passAlong && TAKES_HANDOFF.has(id) ? await handoffFrom(ctx.parent) : null;
   const origin = url.origin;
   try {
-    const res = await withRun(id, "chain", (runId, memory, setup) => AGENTS[id].job({ runId, memory, setup, handoff }), { chain: { chainId: ctx.chainId, key: ctx.key, step: ctx.step, parent: ctx.parent } });
+    const res = await withRun(id, "chain", (runId, memory) => AGENTS[id].job({ runId, memory, handoff }), { chain: { chainId: ctx.chainId, key: ctx.key, step: ctx.step, parent: ctx.parent } });
     // the next step is its own request; this one answers now
     after(() => continueChain(origin, c, ctx, res.runId, { status: res.status, metrics: res.metrics }).then((w) => console.log(`[chain ${c.key}] ${w}`), (e) => console.error(`[chain ${c.key}]`, e)));
     return NextResponse.json(res);

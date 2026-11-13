@@ -1,30 +1,22 @@
 # Agents
 
-One folder per agent. Each exports a job that returns a `RunResult`, and is listed in
-`registry.ts` under its id in the `agents` table. The route `/api/agents/[id]` handles
-auth, the run log, the enabled flag and the daily budget for all of them.
+Every agent is a saved spec that runs on the shared engine (`core/runner.ts`, `core/built.ts`):
+its active version and its approved routine. Building or changing one is the builder flow in the
+Control Room (Crew, then New agent or an agent's Edit tab; `docs/builder-flow.md`). When it runs
+is the crew flow (Crew > Schedule).
 
-| Agent | id | Folder | Status |
-| --- | --- | --- | --- |
-| CFO | `cfo` | `cfo/` | Live, off until launch (schedule disabled, paused in DB). Daily 5:30 AM CT |
-| Chief of Staff | `chief_of_staff` | `chief-of-staff/` | Live, off until launch (schedule disabled, paused in DB). Weekdays 6:45 AM CT |
-| Wholesale Hunter | `wholesale_hunter` | `wholesale-hunter/` | Live, manual runs only (~$1 a run) |
-| Bookkeeper | `bookkeeper` | `bookkeeper/` | Built, off until launch (manual only, `enabled = false`, no schedule). Planned daily 6:00 AM CT. Mercury writes wait for the gateway |
-| Blend Coach | `blend_coach` | `blend-coach/` | Planned (phase 3) |
-| Roast Planner | `roast_planner` | `roast-planner/` | Planned (phase 3) |
-| Green Buyer | `green_buyer` | `green-buyer/` | Planned (phase 3, after launch) |
-| Merchandiser | `merchandiser` | `merchandiser/` | Planned (phase 4) |
-| Concierge | `concierge` | `concierge/` | Planned (phase 4) |
-| Content Scout | `content_scout` | `content-scout/` | Planned (phase 4, after launch) |
+`registry.ts` lists the agents that can run on a schedule, in a chain or by hand through
+`/api/agents/<id>`; the route handles auth, the run log, the on-duty switch and the daily budget.
 
-Adding one:
+The folders here hold only code the engine's tools call (`core/tools/catalog.ts`). Numbers are
+worked out there in code, never by the model:
 
-1. `agents/<folder>/index.ts` exporting the job, `prompt.ts` for its instructions.
-2. A migration in `supabase/migrations/` inserting its `agents` row and any tables it owns.
-3. An entry in `registry.ts`, and a `menu.ts` listed in `menus.ts` if its model, numbers or
-   instructions should be picked in the Control Room (`docs/agent-setup.md`).
-4. A named entry under `schedules` in `vercel.json` (with `"requestMethod": "GET"` and
-   `"timezone": "America/Chicago"`) if it runs on a schedule, then
-   `vercel schedules disable <name>` until it should go live.
-5. New external systems go in `integrations/`, read-only unless the tech spec gives the
-   agent a write, and then only through `core/gateway/` once it exists.
+| Folder | Used by | What it is |
+| --- | --- | --- |
+| `cfo/` | `calc_daily_snapshot`, `report_kpi_snapshot` | Morgan's daily numbers: revenue, orders, AOV, repeat rate, green cost and margin, cash |
+| `chief-of-staff/` | `report_morning_brief` | Avery's brief email and Briefs row; the focus and watch list come from the run's result |
+| `wholesale-hunter/` | `wholesale_offer`, `report_leads` | What One Two offers a wholesale customer (the only facts an email may claim), and the lead dedupe key |
+| `bookkeeper/` | `report_books_sync` | Quinn's books sync: one row per Mercury charge, receipts found in Gmail and matched in code, photo asks, receipt approvals, month close |
+
+Adding an agent is done in the builder, not here. A new kind of read, calculation, report or
+action is a new tool in `core/tools/catalog.ts` (actions only through `core/gateway`).

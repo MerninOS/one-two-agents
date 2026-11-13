@@ -26,7 +26,7 @@ export interface BriefView {
   notionUrl?: string;
   /** Persona names by agent id, for "What ran" */
   names?: Record<string, string>;
-  /** Sections to include, in order (agents/chief-of-staff/menu.ts). Default: all, in the built-in order. */
+  /** Sections to include, in order Default: all, in the built-in order (SECTIONS). */
   sections?: readonly string[];
 }
 

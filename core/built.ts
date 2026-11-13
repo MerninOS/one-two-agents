@@ -1,12 +1,11 @@
 import "server-only";
-// Runs an agent on the runner outside the builder screen (docs/agent-builder.md, slice 6): on a
-// schedule, in a chain, or by hand through /api/agents/<id>. Morgan, Avery (slice 6), Rowan and
-// Quinn (slice 7) use it once Zak switches each over (agents.on_runner); until then their own code runs.
+// Runs an agent on the shared engine outside the builder: on a schedule, in a chain, or by hand
+// through /api/agents/<id> (agents/registry.ts). Every agent runs this way since builder flow
+// slice 6 retired the agents' own code.
 //
 // - Only an approved playbook runs this way. Explore runs stay by hand, from the builder screen.
 // - A real run delivers: its reports go out and its proposals become approval cards.
 // - A dry run makes the playbook's tool calls in code and stops there: no model, nothing written.
-import { db } from "@/core/db";
 import { loadSpec } from "@/core/agent-spec";
 import { activePlaybook, afterRun, listPlaybooks } from "@/core/playbook";
 import { runExplore } from "@/core/runner";
@@ -15,20 +14,6 @@ import { checkInput, paramsOf, type ToolCtx } from "@/core/tools/types";
 import type { MemoryLoad } from "@/core/memory";
 import type { RunResult } from "@/core/runs";
 import type { Handoff } from "@/core/chain";
-
-/** Agents rebuilt on the runner that can be switched between their own code and the runner. */
-export const REBUILT = new Set(["cfo", "chief_of_staff", "wholesale_hunter", "bookkeeper"]);
-
-/** True when Zak switched this agent to the runner. False when the column isn't there yet. */
-export async function onRunner(agentId: string): Promise<boolean> {
-  const { data, error } = await db().from("agents").select("on_runner").eq("id", agentId).maybeSingle();
-  return !error && !!(data as { on_runner?: boolean } | null)?.on_runner;
-}
-
-export async function setOnRunner(agentId: string, on: boolean) {
-  const { error } = await db().from("agents").update({ on_runner: on }).eq("id", agentId);
-  if (error) throw new Error(error.message);
-}
 
 /** The active spec and approved playbook, or why the agent can't run on the runner. */
 async function ready(agentId: string) {

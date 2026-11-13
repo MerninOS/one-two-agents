@@ -18,7 +18,6 @@ import { ANNOTATE } from "@/core/gateway";
 import { BUDGET_CEILING, activateSpecVersion, createBuiltAgent, draftOf, listSpecVersions, loadSpec, readSpec, saveSpecVersion, specLooser, type AgentSpec } from "@/core/agent-spec";
 import { dryRunTools, runExplore, type PlaybookStep } from "@/core/runner";
 import { TOOLS } from "@/core/tools/catalog";
-import { REBUILT, onRunner, setOnRunner } from "@/core/built";
 import { lastTry } from "./builder";
 import { activePlaybook, afterRun, approvePlaybook, holdAfterRejection, listPlaybooks, pendingPlaybook } from "@/core/playbook";
 import { loadMemory } from "@/core/memory";
@@ -72,7 +71,7 @@ export async function realRun(agentId: string): Promise<ActionResult> {
 
   let markStarted: () => void = () => {};
   const started = new Promise<null>((resolve) => { markStarted = () => resolve(null); });
-  const run = withRun(agentId, "manual", (runId, memory, setup) => { markStarted(); return AGENTS[agentId].job({ runId, memory, setup }); })
+  const run = withRun(agentId, "manual", (runId, memory) => { markStarted(); return AGENTS[agentId].job({ runId, memory }); })
     .then((res) => ({ res }), (err: unknown) => { console.error(`[control-room] ${agentId} run failed`, err); return { err }; });
   after(run);
   const first = await Promise.race([started, run]);
@@ -575,8 +574,8 @@ export async function tryBuilt(agentId: string, fresh = false): Promise<ActionRe
 
 /**
  * Go live (step 6): makes a version the one that runs, only after its latest try worked on every
- * step. It approves the routine that try drafted (with the steps Zak kept), and moves Morgan,
- * Avery, Rowan or Quinn off their own code. On or off duty, schedules and chains don't change.
+ * step. It approves the routine that try drafted (with the steps Zak kept). On or off duty,
+ * schedules and chains don't change.
  */
 export async function goLive(agentId: string, version: number, keep: number[] | null, confirmed: boolean): Promise<ActionResult> {
   await requireSession();
@@ -591,8 +590,7 @@ export async function goLive(agentId: string, version: number, keep: number[] | 
     if (!t) return { ok: false, text: `Try v${version} first. Go live unlocks after a try where every step worked.` };
     if (!t.clean) return { ok: false, text: `Go live is locked: the latest try of v${version} ${t.why}. Try it again.` };
     const looser = target.active ? [] : specLooser(now?.spec ?? null, target.spec);
-    const offOwnCode = REBUILT.has(agentId) && !(await onRunner(agentId));
-    if ((looser.length || offOwnCode) && !confirmed) return { ok: false, text: `Confirm first${looser.length ? `: ${looser.join("; ")}` : ""}.` };
+    if (looser.length && !confirmed) return { ok: false, text: `Confirm first${looser.length ? `: ${looser.join("; ")}` : ""}.` };
     const all = await listPlaybooks(agentId);
     const pending = pendingPlaybook(all);
     let routine = "";
@@ -601,19 +599,8 @@ export async function goLive(agentId: string, version: number, keep: number[] | 
       routine = ` Routine v${v} approved.`;
     } else if (!activePlaybook(all)) return { ok: false, text: "No routine yet: try it fresh, so code can save the calls that worked." };
     if (!target.active) await activateSpecVersion(agentId, version);
-    if (offOwnCode) await setOnRunner(agentId, true);
     revalidatePath("/", "layout");
-    return { ok: true, text: `v${version} is live.${routine}${offOwnCode ? " Its runs follow this version now, not its own code." : ""} On or off duty hasn’t changed.` };
+    return { ok: true, text: `v${version} is live.${routine} On or off duty hasn’t changed.` };
   } catch (e) { return fail(e); }
 }
 
-/** Morgan, Avery, Rowan and Quinn: back to their own code, always allowed. */
-export async function backToOwnCode(agentId: string): Promise<ActionResult> {
-  await requireSession();
-  if (!REBUILT.has(agentId)) return { ok: false, text: "Only Morgan, Avery, Rowan and Quinn have their own code." };
-  try {
-    await setOnRunner(agentId, false);
-    revalidatePath("/", "layout");
-    return { ok: true, text: "Back on its own code from its next run." };
-  } catch (e) { return fail(e); }
-}
