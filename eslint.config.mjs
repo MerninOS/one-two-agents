@@ -11,6 +11,9 @@ const MEMORY_PATTERN = { group: ["**/core/memory", "../memory", "./memory"], mes
 const SETUP_MSG = "A setup is choices, never authority: the gateway and integrations must not read it.";
 const SETUP_RULE = { name: "@/core/setup", message: SETUP_MSG };
 const SETUP_PATTERN = { group: ["**/core/setup", "../setup", "./setup"], message: SETUP_MSG };
+const SPEC_MSG = "An agent spec is choices, never authority: the gateway and integrations must not read it.";
+const SPEC_RULES = [{ name: "@/core/agent-spec", message: SPEC_MSG }, { name: "@/core/runner", message: SPEC_MSG }];
+const SPEC_PATTERN = { group: ["**/core/agent-spec", "**/core/runner", "../agent-spec", "../runner"], message: SPEC_MSG };
 
 export default defineConfig([
   ...nextVitals,
@@ -28,11 +31,11 @@ export default defineConfig([
   // (A later block replaces the rule for these files, so integrations/ repeats the Mercury rule.)
   {
     files: ["core/gateway/**/*.ts"],
-    rules: { "no-restricted-imports": ["error", { paths: [MEMORY_RULE, SETUP_RULE], patterns: [MEMORY_PATTERN, SETUP_PATTERN] }] },
+    rules: { "no-restricted-imports": ["error", { paths: [MEMORY_RULE, SETUP_RULE, ...SPEC_RULES], patterns: [MEMORY_PATTERN, SETUP_PATTERN, SPEC_PATTERN] }] },
   },
   {
     files: ["integrations/**/*.ts"],
-    rules: { "no-restricted-imports": ["error", { paths: [MEMORY_RULE, SETUP_RULE, ...MERCURY_PATHS], patterns: [MEMORY_PATTERN, SETUP_PATTERN, MERCURY_PATTERN] }] },
+    rules: { "no-restricted-imports": ["error", { paths: [MEMORY_RULE, SETUP_RULE, ...SPEC_RULES, ...MERCURY_PATHS], patterns: [MEMORY_PATTERN, SETUP_PATTERN, SPEC_PATTERN, MERCURY_PATTERN] }] },
   },
   globalIgnores([".next/**", "out/**", "build/**", "next-env.d.ts", ".schemas/**"]),
 ]);

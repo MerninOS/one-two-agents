@@ -19,6 +19,9 @@ import { priceOf } from "@/integrations/anthropic";
 import { approvalDecided, startStep } from "@/core/chain";
 import { activateFlow, flowLooser, flowProblems, listFlowVersions, loadFlow, saveFlowVersion, type Flow } from "@/core/flow";
 import { ANNOTATE } from "@/core/gateway";
+import { loadSpec } from "@/core/agent-spec";
+import { dryRunTools, runExplore } from "@/core/runner";
+import { loadMemory } from "@/core/memory";
 import { BUILT, BY_ID } from "./crew";
 import { requireSession } from "./data";
 import { SESSION_COOKIE, SESSION_DAYS, checkPassword, controlsOn, newSessionToken } from "./session";
@@ -92,7 +95,8 @@ export async function setEnabled(agentId: string, on: boolean): Promise<ActionRe
 
 export async function pauseAll(): Promise<ActionResult> {
   await requireSession();
-  const { error } = await db().from("agents").update({ enabled: false }).in("id", BUILT.map((a) => a.id));
+  // every agent, including ones built in the app (agent_defs), not only the crew in code
+  const { error } = await db().from("agents").update({ enabled: false }).eq("enabled", true);
   if (error) return fail(error.message);
   revalidatePath("/", "layout");
   return { ok: true, text: "Every agent is off duty." };
@@ -563,4 +567,40 @@ export async function suppressEmail(address: string, reason: string): Promise<Ac
   if (error) return fail(error.message);
   revalidatePath("/settings");
   return { ok: true, text: `No agent will email ${email}.` };
+}
+
+// ---- Agent builder, slice 1: the runner's test page (/lab). A built agent's spec runs only here
+// until the builder screen (slice 2). Preview is a real explore run with a real model, so it needs
+// DASHBOARD_CONTROLS=on and counts against the agent's daily budget; it may run while the agent is
+// off duty because no tool in this slice writes anything. The tool check is free.
+
+/** Runs every granted tool once with default inputs. No model, nothing written, not logged. */
+export async function dryRunBuilt(agentId: string): Promise<ActionResult> {
+  await requireSession();
+  try {
+    const got = await loadSpec(agentId);
+    if (!got) return { ok: false, text: "That agent has no saved spec." };
+    const rows = await dryRunTools(got.spec, agentId);
+    const bad = rows.filter((r) => !r.ok);
+    return { ok: !bad.length, text: rows.map((r) => `${r.ok ? "OK" : "FAILED"} ${r.label}: ${r.note}`).join(" · ") || "No tools granted." };
+  } catch (e) { return fail(e); }
+}
+
+/** One explore run of the saved spec, logged with trigger "preview" and its steps saved for the test page. */
+export async function previewBuilt(agentId: string): Promise<ActionResult> {
+  await requireSession();
+  if (!controlsOn()) return { ok: false, text: `${CONTROLS_OFF} A preview makes real model calls.` };
+  try {
+    const got = await loadSpec(agentId);
+    if (!got) return { ok: false, text: "That agent has no saved spec." };
+    if (got.problems.length) return { ok: false, text: `The spec asks for something code doesn’t offer: ${got.problems.join("; ")}.` };
+    let block = "";
+    try { block = (await loadMemory(agentId)).block; } catch { /* a test run without memory is fine */ }
+    const res = await withRun(agentId, "preview", async (runId) => {
+      const r = await runExplore(got.spec, { agentId, runId, memoryBlock: block });
+      return { status: r.status, summary: r.summary, tokensIn: r.tokensIn, tokensOut: r.tokensOut, costUsd: r.costUsd, metrics: r.metrics };
+    });
+    revalidatePath("/lab");
+    return { ok: res.status === "ok", text: `${res.summary.slice(0, 300)}${res.summary.length > 300 ? "…" : ""} ($${(res.costUsd ?? 0).toFixed(4)})` };
+  } catch (e) { revalidatePath("/lab"); return fail(e); }
 }

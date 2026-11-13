@@ -11,6 +11,7 @@
     "schemas": "bash scripts/fetch-schemas.sh",
     "validate:graphql": "node scripts/validate-graphql.mjs",
     "check:policy": "npx --yes tsx scripts/check-policy.ts",
+    "check:runner": "npx --yes tsx --conditions=react-server scripts/check-runner.ts",
     "check": "npm run typecheck && npm run lint && npm run validate:graphql"
   },
   "dependencies": {
