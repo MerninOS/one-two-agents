@@ -113,7 +113,25 @@ Flow feel: a card per step that slides in, a 6-segment progress bar that fills a
 
 **What it replaces.** The Floor / Crew / Trust menu groups, the Run replay item and `/runs/latest`, the Run log and Crew canvas names, the Memory and Crew profiles items, the Agent builder item and its list page (`/build` now redirects to Crew), the agent Shift tab (the schedule shows on Overview and in Go live, and is edited in Crew > Schedule), the agent Settings tab and `setBudget` (the daily budget is in step 4, `setBuiltBudget`; the read-only facts are on Overview), and the "Edit in the builder" button. The budget alert in Needs you opens step 4.
 
-**Note.** Agents built in the app (not in `dashboard/crew.ts`) open straight on their builder page, which keeps its own latest runs list until slice 6 gives every agent the same profile and replay.
+**Note.** Agents built in the app (not in `dashboard/crew.ts`) open straight on their builder page, which keeps its own latest runs list. Giving them the same profile, Memory tab and replay as the crew in code is a follow-up card, not part of this epic.
 
 **Checks.** `npm run check`, `npm run build`. No migration.
+
+## Slice 6: Retire the old agents
+
+**Why.** Morgan, Avery, Rowan and Quinn each had two ways to run: their own hand-written code (with its own prompts, menu and saved setup in `agent_setup`) and the shared engine, picked by `agents.on_runner`. Once all four went live on the engine, the old path was dead weight that could still be switched back on.
+
+**What it is.**
+
+- Every run of the four, scheduled, in a chain, by hand or a dry run, goes through the engine: their active version and approved routine (`agents/registry.ts` maps each id to `runBuilt`). A dry run makes the routine's reads in code and writes nothing.
+- `withRun` no longer loads a setup; it still checks on duty and the budget, loads memory and logs the run.
+- The agent folders keep only the code the engine's tools call (`core/tools/catalog.ts`): Morgan's snapshot math (`agents/cfo`), Avery's brief email and Briefs row (`agents/chief-of-staff`, numbers from code, focus and watch list from the run's result), Rowan's wholesale offer and lead dedupe key (`agents/wholesale-hunter`), and Quinn's books sync (`agents/bookkeeper`, `syncBooks`: receipts in Gmail, statuses, receipt approvals, the books page under the page picked in step 3, else `NOTION_BOOKS_PARENT_ID`). Category suggestions are the model's, through Quinn's own Mercury tools and approval cards.
+- The Overview tab's "How it works" and model are read from the live version (job, brain, reads, hands you, can do), not written by hand in `dashboard/crew.ts`.
+- Go live no longer has an "instead of its own code" step, and Go back lists older versions only.
+
+**What it replaces.** `runCfoSnapshot`, `runBrief` (with its own model call, fallback rules path and answer schema), `runHunter` (its own web search loop and lead recording), `runBookkeeper` and its category picker, the prompts only they used, every `agents/*/menu.ts` and `agents/menus.ts`, `core/setup.ts` (the setup store's reader), the ESLint rule for it, `REBUILT`, `onRunner`, `setOnRunner`, `backToOwnCode` and the "Go back to its own code" row, and `model` and `how` in `dashboard/crew.ts`.
+
+**Database.** Nothing reads `agent_setup`, `agent_runs.setup_version` or `agents.on_runner` any more. Migration `20261114120000_retire_setup_store.sql` drops the table and the `on_runner` column (the old runs keep their `setup_version` as history). It is not applied: apply it once this is merged and live.
+
+**Checks.** `npm run check`, `npm run check:runner`, `npm run build`.
 

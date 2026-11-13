@@ -1,34 +1,34 @@
 import "server-only";
-// Bookkeeper (Quinn): one expense_docs row per business charge in Mercury, the receipt
-// that backs it (already in Mercury, or found in Gmail), a category suggestion, and a
-// short list of charges that need a photo. On the 3rd it also closes last month.
+// Quinn's books sync, as the engine's report tool report_books_sync runs it (core/tools/catalog.ts):
+// one expense_docs row per business charge in Mercury, the receipt that backs it (already in
+// Mercury, or found in Gmail), and a short list of charges that need a photo. On the 3rd it also
+// closes last month. Category suggestions are the model's, through the run's own Mercury tools.
 //
 // Quinn never writes to Mercury: a receipt, category or memo is stored on the row as a
 // proposal and handed to the tool gateway (core/gateway), which applies it only after Zak
 // approves it in the Control Room.
 // Emails are untrusted: Haiku only reads fields off them, code decides every match.
 import { db } from "@/core/db";
-import { loadMemory, loadWords, type MemoryLoad } from "@/core/memory";
-import type { RunResult } from "@/core/runs";
-import { outputOn, setupOrDefaults, setupWords, type Setup, type StepChoice } from "@/core/setup";
 import { TZ, chicagoDate, dayTitle } from "@/core/time";
 import {
   DEFAULT_POLICIES, amountText, coverage, mileageUsd, needsEvidence, photoNeeded, whyNoMatch,
   type BookPolicies, type DocStatus, type ReadReceipt,
 } from "@/domain/books";
 import { round2 } from "@/domain/coffee";
-import { claude, costUsd, inputTokens, isModel, type Anthropic } from "@/integrations/anthropic";
+import { claude, costUsd, inputTokens, type Anthropic } from "@/integrations/anthropic";
 import { GmailReader, hasGmailRead, type Mail } from "@/integrations/gmail-read";
-import { hasMercury, mercuryCategories, mercuryTransactions, type MercuryCategory, type MercuryTxn } from "@/integrations/mercury";
+import { hasMercury, mercuryTransactions, type MercuryTxn } from "@/integrations/mercury";
 import { divider, h2, h3, li, notionPage, p as para, type Block } from "@/integrations/notion";
 import { env } from "@/core/env";
 import { queueBookkeeperProposals } from "@/core/gateway";
-import { CANDIDATES, LOOKBACK_DAYS, MAX_SEARCHES, MAX_SEARCHES_PER_CHARGE, MENU } from "./menu";
-import { PICK_CATEGORY, READ_RECEIPT } from "./prompt";
+import { READ_RECEIPT } from "./prompt";
 
-/** Limits in code; the setup picks at or under each (menu.ts). Gmail searches per run, newest charges first, and per charge over its life. */
-export { CANDIDATES, LOOKBACK_DAYS, MAX_SEARCHES, MAX_SEARCHES_PER_CHARGE };
-export const MAX_PDF_BYTES = 3_000_000;
+/** Limits in code: days of charges looked at, Gmail searches per run (newest charges first), per charge over its life, and emails read per search. */
+const LOOKBACK_DAYS = 45, MAX_SEARCHES = 25, MAX_SEARCHES_PER_CHARGE = 3, CANDIDATES = 3;
+const MAX_PDF_BYTES = 3_000_000;
+/** The small model that reads receipts. It only pulls fields off them; code decides every match. */
+const READER = { model: "claude-haiku-5-5", effort: "low" } as const;
+type Reader = typeof READER;
 const OPEN: DocStatus[] = ["open", "needs_photo", "bank_record_only"];
 
 interface Doc {
@@ -113,7 +113,7 @@ const RECEIPT_SCHEMA = {
   additionalProperties: false,
 };
 
-async function structured<T>(step: StepChoice, system: string, content: Anthropic.ContentBlockParam[], schema: Record<string, unknown>, u: Usage, maxTokens = 1024): Promise<T | null> {
+async function structured<T>(step: Reader, system: string, content: Anthropic.ContentBlockParam[], schema: Record<string, unknown>, u: Usage, maxTokens = 1024): Promise<T | null> {
   const res = await claude().messages.create({
     model: step.model,
     max_tokens: maxTokens,
@@ -131,7 +131,7 @@ async function structured<T>(step: StepChoice, system: string, content: Anthropi
   try { return JSON.parse(text.text) as T; } catch { return null; }
 }
 
-async function readReceipt(gmail: GmailReader, mail: Mail, u: Usage, step: StepChoice): Promise<ReadReceipt | null> {
+async function readReceipt(gmail: GmailReader, mail: Mail, u: Usage, step: Reader): Promise<ReadReceipt | null> {
   const content: Anthropic.ContentBlockParam[] = [];
   const pdf = mail.attachments.find((a) => a.mimeType === "application/pdf" && a.size > 0 && a.size <= MAX_PDF_BYTES);
   if (pdf) content.push({ type: "document", source: { type: "base64", media_type: "application/pdf", data: (await gmail.attachment(mail.id, pdf.id)).toString("base64") } });
@@ -154,7 +154,7 @@ async function saveReceipt(gmail: GmailReader, doc: Doc, mail: Mail) {
 
 interface Found { mail: Mail; read: ReadReceipt }
 
-async function findReceipt(gmail: GmailReader, doc: Doc, p: BookPolicies, u: Usage, step: StepChoice): Promise<Found | null> {
+async function findReceipt(gmail: GmailReader, doc: Doc, p: BookPolicies, u: Usage, step: Reader): Promise<Found | null> {
   const a = amountText(doc.amount_usd);
   const withComma = Number(a) >= 1000 ? Number(a).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : a;
   const amount = withComma === a ? `"${a}"` : `("${a}" OR "${withComma}")`;
@@ -165,32 +165,6 @@ async function findReceipt(gmail: GmailReader, doc: Doc, p: BookPolicies, u: Usa
     if (read && whyNoMatch({ date: doc.date, amountUsd: doc.amount_usd, merchant: doc.merchant }, read, p.matchWindowDays) === null) return { mail, read };
   }
   return null;
-}
-
-// ---- Category suggestions (from Mercury's own list only)
-
-async function suggestCategories(docs: Doc[], cats: MercuryCategory[], u: Usage, memory: MemoryLoad | null, step: StepChoice) {
-  if (!docs.length || !cats.length) return new Map<string, MercuryCategory>();
-  const ids = cats.map((c) => c.id);
-  const schema = {
-    type: "object",
-    properties: {
-      picks: { type: "array", items: { type: "object", properties: { ref: { type: "integer" }, category_id: { anyOf: [{ type: "string", enum: ids }, { type: "null" }] } }, required: ["ref", "category_id"], additionalProperties: false } },
-    },
-    required: ["picks"],
-    additionalProperties: false,
-  };
-  const list = docs.map((d, i) => ({ ref: i, merchant: d.merchant, amount_usd: d.amount_usd, merchant_type: d.mercury_category }));
-  // Zak's notes and lessons (e.g. "Costco is packaging supplies") help pick; Mercury's list still decides what is allowed
-  const out = await structured<{ picks: { ref: number; category_id: string | null }[] }>(step, memory?.block ? `${PICK_CATEGORY}\n\n${memory.block}` : PICK_CATEGORY,
-    [{ type: "text", text: `Allowed categories:\n${JSON.stringify(cats.map((c) => ({ id: c.id, name: c.name })))}\n\nCharges:\n${JSON.stringify(list)}` }], schema, u, 4096);
-  const byId = new Map(cats.map((c) => [c.id, c]));
-  const picks = new Map<string, MercuryCategory>();
-  for (const x of out?.picks ?? []) {
-    const d = docs[x.ref], c = x.category_id ? byId.get(x.category_id) : undefined;
-    if (d && c) picks.set(d.mercury_txn_id, c); // anything not on Mercury's list is dropped here
-  }
-  return picks;
 }
 
 // ---- Monthly close (numbers in code)
@@ -232,29 +206,24 @@ async function closeMonth(today: string, p: BookPolicies) {
  * skipCategories: on the runner (slice 7) the model proposes categories itself, through the
  * gateway action, so this code only syncs charges, matches receipts and queues receipt proposals.
  */
-export async function runBookkeeper(runId?: string, opts: { dryRun?: boolean; memory?: MemoryLoad | null; setup?: Setup | null; skipCategories?: boolean } = {}): Promise<RunResult> {
+/**
+ * One books sync. Writes expense_docs, saves receipts, queues receipt approvals at the gateway and,
+ * when there is something to look at, a Notion page under `notionParent`. Returns one line on
+ * what it did and what the receipt reads cost.
+ */
+export async function syncBooks(runId: string | undefined, opts: { notionParent?: string } = {}): Promise<{ summary: string; tokensIn: number; tokensOut: number; costUsd: number }> {
   if (!hasMercury()) throw new Error("MERCURY_API_TOKEN must be set (business org, read-only)");
-  // a real run gets its setup from withRun; a dry run reads it here. A setup that can't be read falls back to the menu.
-  let setup = opts.setup ?? null, setupNote = "";
-  if (!setup) { const got = await setupOrDefaults(MENU); setup = got.setup; if (got.problem) setupNote = ` (setup not read: ${got.problem}; built-in values used)`; }
-  const readStep: StepChoice = { model: setup.model, effort: setup.effort, fallback: null };
-  const pickStep: StepChoice = setup.more.pick_category ?? { model: MENU.steps[1].model, effort: MENU.steps[1].effort, fallback: null };
-  for (const m of [readStep.model, pickStep.model]) if (!isModel(m)) throw new Error(`No price for ${m} in integrations/models.ts, so its cost can't be computed`);
-  // never past the limits in code, whatever the row says (the menu already refuses more)
-  const num = (k: string, max: number) => Math.max(1, Math.min(max, Math.floor(setup.numbers[k] ?? max)));
-  const lookback = num("lookback_days", LOOKBACK_DAYS), maxSearches = num("max_searches", MAX_SEARCHES), perCharge = num("per_charge", MAX_SEARCHES_PER_CHARGE);
   const today = chicagoDate(0);
-  const start = chicagoDate(lookback);
-  const [p, txns, cats, { data: existingRows, error }] = await Promise.all([
+  const start = chicagoDate(LOOKBACK_DAYS);
+  const [p, txns, { data: existingRows, error }] = await Promise.all([
     policies(),
     mercuryTransactions(start, today),
-    mercuryCategories().catch(() => [] as MercuryCategory[]),
-    db().from("expense_docs").select(COLS).gte("date", chicagoDate(lookback + 2)),
+    db().from("expense_docs").select(COLS).gte("date", chicagoDate(LOOKBACK_DAYS + 2)),
   ]);
   if (error) throw new Error(`Could not read expense_docs (is the bookkeeper migration applied?): ${error.message}`);
   const existing = new Map(((existingRows ?? []) as Doc[]).map((d) => [d.mercury_txn_id, d]));
   const charges = txns.filter((t) => t.amount < 0 && t.postedAt);
-  const gmailOn = !setup.readsOff.includes("gmail"), gmailReady = hasGmailRead() && gmailOn;
+  const gmailReady = hasGmailRead();
 
   const fresh: Doc[] = [];
   const touched = new Map<string, Doc>(); // existing rows that changed, by txn id
@@ -268,17 +237,6 @@ export async function runBookkeeper(runId?: string, opts: { dryRun?: boolean; me
     if (JSON.stringify(next) !== JSON.stringify(old)) touched.set(t.id, next);
   }
 
-  if (opts.dryRun) {
-    const newOpen = fresh.filter((d) => d.status === "open");
-    const wouldPhoto = newOpen.filter((d) => photoNeeded(d.amount_usd, d.merchant, d.mercury_category, p)).length;
-    let mem = "";
-    try { mem = `; ${loadWords(await loadMemory("bookkeeper"))}`; } catch (e) { mem = `; memory not loaded (${e instanceof Error ? e.message.slice(0, 80) : e})`; }
-    return {
-      status: "ok",
-      summary: `[dry run, nothing saved, no model] ${charges.length} charges in Mercury since ${start} (${fresh.length} new: ${fresh.filter((d) => d.status === "matched").length} with a receipt in Mercury, ${fresh.filter((d) => d.status === "not_needed").length} own-account moves, ${newOpen.length} to look for, ${wouldPhoto} of them would need a photo if no receipt turns up); ${cats.length} Mercury categories; Gmail receipt search ${gmailReady ? "set up" : gmailOn ? "not set up" : "off in the setup"}; ${setupWords(setup)}${setupNote}${mem}`,
-    };
-  }
-
   const u = usage();
   const now = new Date().toISOString();
   const all = new Map<string, Doc>([...[...existing.values()].map((d) => [d.mercury_txn_id, touched.get(d.mercury_txn_id) ?? d] as const), ...fresh.map((d) => [d.mercury_txn_id, d] as const)]);
@@ -287,15 +245,15 @@ export async function runBookkeeper(runId?: string, opts: { dryRun?: boolean; me
 
   // 1. Look for receipts in Gmail, newest charges first, within the run's search budget.
   // open or waiting on a photo: up to 3 searches over its life; small charges already on the bank record: one
-  const canSearch = (d: Doc) => !d.receipt_path && (d.status === "open" || d.status === "needs_photo" ? d.search_count < perCharge : d.status === "bank_record_only" && d.search_count < 1);
+  const canSearch = (d: Doc) => !d.receipt_path && (d.status === "open" || d.status === "needs_photo" ? d.search_count < MAX_SEARCHES_PER_CHARGE : d.status === "bank_record_only" && d.search_count < 1);
   const toSearch = [...all.values()].filter(canSearch)
-    .sort((a, b) => b.date.localeCompare(a.date)).slice(0, maxSearches);
+    .sort((a, b) => b.date.localeCompare(a.date)).slice(0, MAX_SEARCHES);
   if (gmailReady && toSearch.length) {
     const gmail = await GmailReader.open();
     for (const d of toSearch) {
       d.search_count += 1; d.last_searched_at = now;
       try {
-        const hit = await findReceipt(gmail, d, p, u, readStep);
+        const hit = await findReceipt(gmail, d, p, u, READER);
         if (hit) {
           d.receipt_path = await saveReceipt(gmail, d, hit.mail);
           Object.assign(d, { status: "matched", status_note: null, source: "gmail", gmail_message_id: hit.mail.id, receipt_json: hit.read, matched_at: now, proposal_attach: true, proposal_memo: `Receipt on file (Bookkeeper, ${today})`, proposal_status: "proposed" });
@@ -318,17 +276,7 @@ export async function runBookkeeper(runId?: string, opts: { dryRun?: boolean; me
     }
   }
 
-  // 3. Category suggestions for charges with no category in Mercury and no suggestion yet.
-  const needCat = opts.skipCategories ? [] : [...all.values()].filter((d) => !d.category_id && !d.proposal_category_id && d.status !== "not_needed" && d.status !== "personal").slice(0, 40);
-  const picks = await suggestCategories(needCat, cats, u, opts.memory ?? null, pickStep);
-  for (const d of needCat) {
-    const c = picks.get(d.mercury_txn_id);
-    if (!c) continue;
-    d.proposal_category_id = c.id; d.proposal_category = c.name; d.proposal_status = "proposed";
-    change(d);
-  }
-
-  // 4. Save. New rows are inserted, changed rows updated one by one (a few a day).
+  // 3. Save. New rows are inserted, changed rows updated one by one (a few a day).
   if (fresh.length) {
     const { error: e } = await db().from("expense_docs").insert(fresh.map((d) => ({ ...d, run_id: runId ?? null })));
     if (e) throw new Error(`Could not save new charges: ${e.message}`);
@@ -339,19 +287,17 @@ export async function runBookkeeper(runId?: string, opts: { dryRun?: boolean; me
     if (e) throw new Error(`Could not update ${d.merchant}: ${e.message}`);
   }
 
-  // 5. Hand every proposal to the gateway: one approval per charge in the Control Room.
+  // 4. Hand every proposal to the gateway: one approval per charge in the Control Room.
   // Quinn never writes to Mercury; the gateway applies only what Zak approves.
   const gate = await queueBookkeeperProposals(runId ?? null);
 
-  // 6. Notion: a page only when there is something to look at.
+  // 5. Notion: a page only when there is something to look at.
   const waiting = [...all.values()].filter((d) => d.status === "needs_photo").sort((a, b) => b.date.localeCompare(a.date));
   const proposals = [...all.values()].filter((d) => d.proposal_status === "proposed");
   const close = today.slice(8) === "03" ? await closeMonth(today, p) : null;
   let url: string | null = null;
-  // the page picked in the setup, else NOTION_BOOKS_PARENT_ID; none when the output is off
-  const parent = outputOn(setup, "notion") && env.notionToken ? (setup.notion?.id ?? env.notionBooksParent) : undefined;
-  const notion = !!parent;
-  if (notion && (newlyMatched.length || newlyPhoto.length || picks.size || close)) {
+  const parent = env.notionToken ? opts.notionParent : undefined;
+  if (parent && (newlyMatched.length || newlyPhoto.length || close)) {
     url = await notionPage(`Books · ${dayTitle(today)}`, [
       ...(close?.blocks ?? []),
       h2(`${newlyMatched.length} receipt${newlyMatched.length === 1 ? "" : "s"} found`),
@@ -367,23 +313,16 @@ export async function runBookkeeper(runId?: string, opts: { dryRun?: boolean; me
 
   const covered = coverage([...all.values()].map((d) => d.status));
   return {
-    status: "ok",
     summary: [
       `${charges.length} charges since ${start}, ${fresh.length} new`,
-      `${newlyMatched.length} receipts found${gmailReady ? ` (${toSearch.length} searched)` : gmailOn ? " (Gmail receipt search not set up)" : " (Gmail receipt search off in the setup)"}`,
+      `${newlyMatched.length} receipts found${gmailReady ? ` (${toSearch.length} searched)` : " (Gmail receipt search not set up)"}`,
       `${waiting.length} need a photo`,
-      opts.skipCategories ? "categories left to the model" : `${picks.size} category suggestions`,
       `${gate.queued} sent for approval${gate.refused ? ` (${gate.refused} refused by the gateway)` : ""}`,
       `coverage ${covered == null ? "n/a" : `${covered}%`}`,
       ...(close ? [close.summary] : []),
       ...(notes.length ? [`${notes.length} couldn't be checked`] : []),
-      ...(opts.memory ? [loadWords(opts.memory)] : []),
-      setupWords(setup),
-    ].join(", ") + (url ? `: ${url}` : notion ? "" : outputOn(setup, "notion") ? " (Notion not set up, no page)" : " (Notion page off in the setup)"),
+    ].join(", ") + (url ? `: ${url}` : parent ? "" : " (no Notion page set, so no page)"),
     tokensIn: u.in, tokensOut: u.out,
     costUsd: Number(u.cost.toFixed(4)),
-    // memory goes only to the category call, so next-run notes count down only when that call ran
-    readMemory: needCat.length > 0 && cats.length > 0,
-    metrics: { proposals: gate.queued, open: waiting.length },
   };
 }

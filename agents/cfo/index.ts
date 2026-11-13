@@ -1,11 +1,11 @@
 import "server-only";
-// CFO daily snapshot: yesterday's numbers in plain code, no model. Orders come
-// from Shopify (all channels), green cost from what each order took out of green
-// inventory (blended.green_usage, or worked out the same way when it was never
-// deducted), cash from Mercury's read-only API.
+// Morgan's math (CFO daily snapshot): one day's numbers in plain code, no model. The engine's
+// tools calc_daily_snapshot and report_kpi_snapshot call it (core/tools/catalog.ts). Orders come
+// from Shopify (all channels), green cost from what each order took out of green inventory
+// (blended.green_usage, or worked out the same way when it was never deducted), cash from
+// Mercury's read-only API.
 import { G_PER_LB, round2 } from "@/domain/coffee";
 import { db } from "@/core/db";
-import type { RunResult } from "@/core/runs";
 import { chicagoDate, nextDay, offsetOn } from "@/core/time";
 import { mercuryCash } from "@/integrations/mercury";
 import { admin, gql } from "@/integrations/shopify/client";
@@ -98,10 +98,4 @@ export async function snapshot(date = chicagoDate(1), opts: { dryRun?: boolean }
     if (error) throw new Error(`Could not save snapshot: ${error.message}`);
   }
   return row;
-}
-
-export async function runCfoSnapshot(opts: { dryRun?: boolean } = {}): Promise<RunResult> {
-  const s = await snapshot(chicagoDate(1), opts);
-  const margin = s.green_margin == null ? "n/a" : `${Math.round(s.green_margin * 100)}%`;
-  return { status: "ok", summary: `${opts.dryRun ? "[dry run, not saved] " : ""}${s.date}: ${s.orders} orders, $${s.revenue.toFixed(2)} revenue, green margin ${margin}${s.cash_usd == null ? "" : `, cash $${s.cash_usd.toFixed(0)}`}`, metrics: { orders: s.orders } };
 }

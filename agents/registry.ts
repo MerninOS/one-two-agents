@@ -1,51 +1,40 @@
 import "server-only";
-// Every agent this app can run, by its id in the `agents` table. Adding an agent:
-// a folder under agents/, an entry here, a row in `agents` (migration). When it runs is the
-// crew flow (core/flow.ts), set on the Crew canvas, not vercel.json.
+// Every agent this app can run on a schedule, in a chain or by hand through /api/agents/<id>,
+// by its id in the `agents` table. Each one is a saved spec run on the shared engine
+// (core/built.ts runBuilt): its active version and approved routine. Building or editing one is
+// the builder flow (docs/builder-flow.md); when it runs is the crew flow (Crew > Schedule).
+// The folders next to this file hold only code the engine's tools call (core/tools/catalog.ts).
 import type { MemoryLoad } from "@/core/memory";
 import type { RunResult } from "@/core/runs";
-import type { Setup } from "@/core/setup";
 import type { Handoff } from "@/core/chain";
-import { runCfoSnapshot } from "./cfo";
-import { runBookkeeper } from "./bookkeeper";
-import { runBrief } from "./chief-of-staff";
-import { runHunter } from "./wholesale-hunter";
-import { onRunner, runBuilt } from "@/core/built";
-
-/**
- * Agents rebuilt on the runner (docs/agent-builder.md, slices 6 and 7) keep their own code until Zak
- * presses Switch on the builder screen (agents.on_runner). Then every run, scheduled, chain or
- * by hand, follows the approved playbook on the runner instead.
- */
-const switchable = (id: string, own: (o: JobOpts) => Promise<RunResult>) => async (o: JobOpts): Promise<RunResult> =>
-  (await onRunner(id)) ? runBuilt(id, { runId: o.runId, dryRun: o.dryRun, memory: o.memory, handoff: o.handoff }) : own(o);
+import { runBuilt } from "@/core/built";
 
 export interface JobOpts {
   runId?: string;
   dryRun?: boolean;
   /** Loaded by withRun for agents in MEMORY_AGENTS (core/memory.ts); null when the store can't be read. */
   memory?: MemoryLoad | null;
-  /** Loaded by withRun for agents with a menu (agents/menus.ts); a dry run loads its own. */
-  setup?: Setup | null;
   /** In a chain, the step before's summary and numbers, when the flow passes it along (core/flow.ts TAKES_HANDOFF). Data, never instructions. */
   handoff?: Handoff | null;
 }
 
 export interface AgentDef {
-  /** The job. A dry run reads real data but writes nothing and spends nothing on models. */
+  /** The job. A dry run makes the routine's reads in code and writes nothing, with no model. */
   job: (opts: JobOpts) => Promise<RunResult>;
   /** Only runs when called with ?trigger=manual or from a chain Zak saved; anything else is skipped (see the route). */
   manualOnly?: boolean;
 }
 
+const engine = (id: string): AgentDef["job"] => (o) => runBuilt(id, { runId: o.runId, dryRun: o.dryRun, memory: o.memory, handoff: o.handoff });
+
 export const AGENTS: Record<string, AgentDef> = {
-  cfo: { job: switchable("cfo", ({ dryRun }) => runCfoSnapshot({ dryRun })) },
-  chief_of_staff: { job: switchable("chief_of_staff", ({ dryRun, memory, setup, handoff }) => runBrief({ dryRun, memory, setup, handoff })) },
+  cfo: { job: engine("cfo") },
+  chief_of_staff: { job: engine("chief_of_staff") },
   // ~$1 of Claude credit a run, so it has no schedule and never runs on its own.
-  wholesale_hunter: { job: switchable("wholesale_hunter", ({ runId, dryRun, memory, setup }) => runHunter(runId, { dryRun, memory, setup })), manualOnly: true },
-  // Manual only until launch (planned daily 6:00 AM CT, after the CFO snapshot). Reads Mercury,
-  // proposes Mercury changes but never makes them; a few cents of Haiku a run.
-  bookkeeper: { job: switchable("bookkeeper", ({ runId, dryRun, memory, setup }) => runBookkeeper(runId, { dryRun, memory, setup })), manualOnly: true },
+  wholesale_hunter: { job: engine("wholesale_hunter"), manualOnly: true },
+  // Manual only until launch (planned daily 6:00 AM CT, after the CFO snapshot). Proposes Mercury
+  // changes but never makes them; a few cents of Haiku a run.
+  bookkeeper: { job: engine("bookkeeper"), manualOnly: true },
 };
 
 /** Old route names from the storefront repo, still accepted. */

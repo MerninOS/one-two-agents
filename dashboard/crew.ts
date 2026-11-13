@@ -26,13 +26,11 @@ export interface CrewMember {
   built: boolean;
   phase?: number;
   hue?: string;
-  model?: string;
   since?: string;
   /** Rough cost of one real run, for confirm dialogs. Computed cost is always read from agent_runs. */
   estCostLabel?: string;
   writes?: string;
   works?: string;
-  how?: [string, string][];
   schedule?: Schedule;
   trigger?: string;
 }
@@ -40,62 +38,34 @@ export interface CrewMember {
 export const CREW: CrewMember[] = [
   {
     id: "chief_of_staff", name: "Avery", role: "Chief of Staff", hue: "#F2884B", icon: "clipboard-list", built: true, tier: "Report",
-    model: "claude-sonnet-5-5", since: "Oct 29", estCostLabel: "About $0.003", writes: "1 email to you, 1 row in the Briefs database",
+    since: "Oct 29", estCostLabel: "About $0.003", writes: "1 email to you, 1 row in the Briefs database",
     mandate: "I read every other agent’s runs and your numbers, and email you one morning brief before you start the day.",
     job: "Morning brief emailed to you, with a copy in Notion: today’s focus, what’s waiting on you, numbers, watch list.",
     works: "Reads every run from Morgan and Rowan for the morning brief.",
-    how: [
-      ["Voice", "Numbers first, then one focus for the day."],
-      ["Reads", "The run log, kpi_snapshots, Shopify open orders and green lots"],
-      ["Writes", "One email to your address, which is fixed in settings, and one row per brief in the Notion Briefs database (a page under Morning briefs until that is set up)"],
-      ["Numbers", "Come from code. Claude writes only the watch list and today’s focus, with a rules fallback."],
-      ["Works with", "Reads every other agent’s runs for the morning brief."],
-    ],
     schedule: { kind: "weekdays", time: "06:45", chain: "morning" },
   },
   {
     id: "cfo", name: "Morgan", role: "CFO", hue: "#6CC69A", icon: "calculator", built: true, tier: "Report",
-    model: "None (plain code)", since: "Oct 29", estCostLabel: "$0", writes: "1 row in kpi_snapshots",
+    since: "Oct 29", estCostLabel: "$0", writes: "1 row in kpi_snapshots",
     mandate: "I count yesterday’s revenue, orders, margin and cash in code and write them down. I never estimate a number.",
     job: "Daily snapshot: yesterday’s revenue, orders, AOV, repeat rate, green coffee cost and margin from Shopify, cash from Mercury.",
     works: "Avery reads my snapshot every morning.",
-    how: [
-      ["Method", "Plain code, no model. Money, margins and counts are computed in code."],
-      ["Reads", "Shopify orders, products, inventory. Mercury balances."],
-      ["Writes", "Its own table kpi_snapshots"],
-      ["Works with", "Avery reads the snapshot each morning."],
-    ],
     schedule: { kind: "daily", time: "05:30", chain: "morning" },
   },
   {
     id: "wholesale_hunter", name: "Rowan", role: "Wholesale Hunter", hue: "#F5D35C", icon: "compass", built: true, tier: "Draft",
-    model: "claude-opus-5-5 + web search", since: "Oct 29", estCostLabel: "About $1", writes: "wholesale_leads, 1 Notion page, Gmail drafts if set up",
+    since: "Oct 29", estCostLabel: "About $1", writes: "wholesale_leads, 1 Notion page, Gmail drafts if set up",
     mandate: "I find cafés, restaurants and offices around Austin that would pour One Two, and write the first hello. You approve every first email before it goes out.",
     job: "Finds a few new wholesale prospects in Austin, Lakeway and Bee Cave, scores fit, writes a first-touch email as a draft. First emails always wait for your approval.",
     works: "You review and send every draft. Avery reads each run.",
-    how: [
-      ["Voice", "Plain and short. Opens with the coffee. Signs as Zak."],
-      ["Territory", "Austin, Lakeway, Bee Cave"],
-      ["Looks for", "Independent cafés, restaurants and offices that pour espresso and don’t roast in house"],
-      ["Shift", "Manual only. About $1 a run, so it never runs on its own."],
-      ["Works with", "You review and send every draft. Avery reads each run for the brief."],
-    ],
     schedule: { kind: "manual" },
   },
   {
     id: "bookkeeper", name: "Quinn", role: "Bookkeeper", hue: "#F6B8C9", icon: "receipt", built: true, tier: "Draft",
-    model: "claude-haiku-5-5", since: "Nov 9", estCostLabel: "A few cents", writes: "expense_docs rows, receipt files, 1 Notion page when something changed",
+    since: "Nov 9", estCostLabel: "A few cents", writes: "expense_docs rows, receipt files, 1 Notion page when something changed",
     mandate: "I find the receipt behind every business charge, suggest a category, and ask you for a photo only when it matters. I never change Mercury myself: you approve every entry.",
     job: "Pulls business charges from Mercury, finds receipts in Gmail, suggests categories from Mercury’s own list, lists charges that need a photo, and closes each month on the 3rd.",
     works: "You approve every Mercury change. Morgan reads my categories once I ship.",
-    how: [
-      ["Method", "Code decides every match: exact amount, date within 3 days, merchant name. Haiku only reads receipts and suggests a category from Mercury’s list."],
-      ["Reads", "Mercury charges and categories (business org, read only). Gmail receipts in zak@ when the read-only token is set."],
-      ["Writes", "Its own tables (expense_docs, trips, home_office, tax_packets), receipt files in Supabase Storage, a Notion page when something changed."],
-      ["Mercury", "Receipt, category and memo are proposals. You approve each one in Approvals; the gateway re-checks the charge and writes only those three fields, never over something already set."],
-      ["Photos", "Asked for at $75 and up, lodging, or stores that sell personal things too. After 30 days a charge stays as bank record only."],
-      ["Shift", "Manual only until launch. Planned daily at 6:00 AM CT, after Morgan’s snapshot. Month close on the 3rd."],
-    ],
     schedule: { kind: "manual" },
   },
   { id: "blend_coach", name: "Sage", role: "Blend Coach", icon: "sliders-horizontal", built: false, phase: 3, tier: "Draft", trigger: "When a Shopify order is fulfilled + 5 days",

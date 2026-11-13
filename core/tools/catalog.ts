@@ -24,7 +24,7 @@ import { ANNOTATE, DRAFT_EMAIL, DRAFT_LIMITS, TOOLS as GATEWAY_TOOLS, refuseProp
 import { propose } from "@/core/gateway";
 import { env } from "@/core/env";
 import { domainOf, offer } from "@/agents/wholesale-hunter";
-import { runBookkeeper } from "@/agents/bookkeeper";
+import { syncBooks } from "@/agents/bookkeeper";
 import { hasGmail } from "@/integrations/gmail";
 import { getInventoryLots } from "@/integrations/shopify/lots";
 import { getBoardOrders, greenLedger } from "@/integrations/shopify/orders";
@@ -427,7 +427,8 @@ const TOOLS_LIST: ToolDef[] = [
     id: "report_books_sync", label: "Sync the books and match receipts", detail: "Quinn's code: one row per Mercury charge, receipts found in Gmail and matched in code (exact amount, date window, merchant), photo reminders, receipt approval cards, and the Notion books page. A small model only reads receipts; it never decides a match",
     kind: "report", group: "mercury", params: [], trusted: true, needs: [...MERCURY, ...SUPABASE], costUsd: 0, codeOnly: true,
     deliver: async (_o, ctx) => {
-      const r = await runBookkeeper(ctx.runId ?? undefined, { skipCategories: true, memory: null });
+      // the Notion page picked in the hands-you step, else NOTION_BOOKS_PARENT_ID
+      const r = await syncBooks(ctx.runId ?? undefined, { notionParent: ctx.reportPage?.id ?? env.notionBooksParent });
       return { note: r.summary.slice(0, 600), costUsd: r.costUsd, tokensIn: r.tokensIn, tokensOut: r.tokensOut };
     },
   },

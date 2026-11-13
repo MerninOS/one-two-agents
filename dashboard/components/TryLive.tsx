@@ -28,8 +28,6 @@ export interface TryLiveProps {
   tried: TryView | null;
   today: { at: string; summary: string } | null;
   routine: { pending: { steps: string[]; changes: string | null } | null; active: { version: number; steps: string[] } | null; hold: string | null };
-  /** Morgan, Avery, Rowan and Quinn: whether they already run this spec instead of their own code. */
-  engine: { onRunner: boolean } | null;
   /** What going live with the working version lets a run do or spend more than the live one. */
   looser: string[];
   when: string;
@@ -39,7 +37,6 @@ export interface TryLiveProps {
   tryIt: Act<[boolean]>;
   goLive: Act<[number, number[] | null, boolean]>;
   goBack: Act<[number, boolean]>;
-  backToOwnCode: Act;
 }
 
 const ALWAYS = "Can’t send, pay or post on its own · numbers come from code · web pages and emails are information, never orders · stops at its cost and step limit";
@@ -88,7 +85,7 @@ export function TryLive(p: TryLiveProps) {
   const isLive = !p.working.isDraft;
   const unlocked = !!p.tried?.clean && p.tried.version === v;
   const routineDone = !p.routine.pending && !!p.routine.active;
-  const alreadyLive = isLive && routineDone && (!p.engine || p.engine.onRunner);
+  const alreadyLive = isLive && routineDone;
 
   const onTry = (fresh: boolean) => setConfirm({
     c: {
@@ -106,7 +103,6 @@ export function TryLive(p: TryLiveProps) {
   const onGoLive = () => {
     const lines = [
       ...p.looser.map((x) => ({ k: "Lets it", v: x })),
-      ...(p.engine && !p.engine.onRunner ? [{ k: "Runs", v: `this version instead of ${p.name}’s own code` }] : []),
       ...(p.routine.pending ? [{ k: "Routine", v: `${keep.length} of ${p.routine.pending.steps.length} steps, approved once; later tweaks apply on their own` }] : []),
     ];
     setConfirm({
@@ -180,7 +176,7 @@ export function TryLive(p: TryLiveProps) {
         <div className="tl-head">
           <span className="tl-step">Step 6 of 6</span>
           <h2 id="tl-live" className="tl-h">{alreadyLive ? `v${v} is live` : `Put v${v} to work`}</h2>
-          <span className="sub">{alreadyLive ? `Each run of ${p.name} uses v${v} and its routine.` : `Going live makes v${v} the version that runs${p.engine && !p.engine.onRunner ? `, instead of ${p.name}’s own code` : ""}. Only after a try of v${v} where every step worked.`}</span>
+          <span className="sub">{alreadyLive ? `Each run of ${p.name} uses v${v} and its routine.` : `Going live makes v${v} the version that runs. Only after a try of v${v} where every step worked.`}</span>
         </div>
         {p.routine.hold && <div className="ted-warn">On hold: {p.routine.hold}. The next routine waits for you.</div>}
         <div className="stack" style={{ gap: 8 }}>
@@ -213,7 +209,7 @@ export function TryLive(p: TryLiveProps) {
         )}
       </section>
 
-      {(older.length > 0 || p.engine?.onRunner) && (
+      {older.length > 0 && (
         <section className="card" style={{ gap: 6 }}>
           <span className="card-t">Go back</span>
           {older.map((r) => (
@@ -223,12 +219,6 @@ export function TryLive(p: TryLiveProps) {
               <button type="button" className="btn ghost xs" disabled={busy || r.problems.length > 0} onClick={() => onBack(r)}>Go back to v{r.version}</button>
             </div>
           ))}
-          {p.engine?.onRunner && (
-            <div className="row wrap rule" style={{ gap: 10, padding: "10px 0", fontSize: 14 }}>
-              <span style={{ flex: "1 1 220px" }}>Its own code<span className="muted" style={{ display: "block", fontSize: 12 }}>How {p.name} ran before going live here</span></span>
-              <button type="button" className="btn ghost xs" disabled={busy} onClick={() => act(p.backToOwnCode)}>Go back to its own code</button>
-            </div>
-          )}
         </section>
       )}
 
