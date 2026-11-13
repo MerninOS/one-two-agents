@@ -4,6 +4,8 @@
 
 export interface Kpi { date: string; revenue: number | string; orders: number; aov: number | string | null; repeat_rate: number | string | null; green_margin: number | string | null; cash_usd: number | string | null }
 export interface BriefRun { id: string; agent_id: string; status: string; summary: string | null; error: string | null }
+/** One department on the org chart (docs/org-chart.md, slice 3): Avery's line from the head's report, and run counts worked out in code. */
+export interface BriefDept { name: string; line: string | null; runs: number; failed: number; costUsd: number }
 export interface BriefView {
   /** Chicago date the brief is for, "2026-11-12" */
   today: string;
@@ -14,6 +16,8 @@ export interface BriefView {
   openOrders: { paid: number; roasting: number; packing: number; qcHold: string[] } | null;
   neverDeducted: string[];
   runs: BriefRun[];
+  /** One line per department, then the agents not in one ("Not in a department"). Empty before the org chart exists. */
+  departments: BriefDept[];
   /** Null when the Approvals source is turned off. */
   approvals: { pending: number; oldestHours: number | null } | null;
   /** Gmail drafts Rowan wrote in the last 24 hours */
@@ -24,14 +28,14 @@ export interface BriefView {
   dashboardUrl?: string;
   /** The Notion archive page, when one was written */
   notionUrl?: string;
-  /** Persona names by agent id, for "What ran" */
+  /** Persona names by agent id, for failed runs */
   names?: Record<string, string>;
   /** Sections to include, in order Default: all, in the built-in order (SECTIONS). */
   sections?: readonly string[];
 }
 
 /** The built-in section order; the setup may reorder or drop any but the focus. */
-export const SECTIONS = ["focus", "waiting", "numbers", "watch", "ran"] as const;
+export const SECTIONS = ["focus", "waiting", "numbers", "watch", "departments"] as const;
 export interface Change { text: string; dir: "up" | "down" | "flat" }
 
 const num = (n: number | string | null | undefined) => (n == null || n === "" || !Number.isFinite(Number(n)) ? null : Number(n));
@@ -90,13 +94,13 @@ function waiting(v: BriefView): Item[] {
   return out;
 }
 
-function ranLine(v: BriefView) {
-  if (!v.runs.length) return "No agent runs in the last 24 hours.";
-  const failed = v.runs.filter((r) => r.status === "failed").length;
-  const skipped = v.runs.filter((r) => r.status === "skipped").length;
-  const tail = failed ? `${failed} failed` : skipped ? `${skipped} skipped, the rest OK` : "all OK";
-  return `${plural(v.runs.length, "run")} in the last 24 hours, ${tail}.`;
+/** "Finance: Cash covers 14 months. 3 runs, all OK, $0.12, in the last 24 hours." The counts are code's; the words are Avery's, from the head's report. */
+export function deptLine(d: BriefDept) {
+  const runs = !d.runs ? "No runs" : `${plural(d.runs, "run")}, ${d.failed ? `${d.failed} failed` : "all OK"}, $${d.costUsd.toFixed(2)},`;
+  const said = d.line ? oneLine(d.line).replace(/[.\s]*$/, ". ") : "";
+  return `${d.name}: ${said}${runs} in the last 24 hours.`;
 }
+const NO_DEPTS = "No departments on the org chart yet.";
 
 export function briefSubject(v: BriefView) {
   const action = oneLine(v.focus.action).slice(0, 80);
@@ -146,8 +150,9 @@ export function briefEmail(v: BriefView): { subject: string; html: string; text:
         : `<p style="margin:0;font:15px/22px ${FONT};color:${C.ink2}">No snapshot yet. Morgan runs at 5:30 AM CT.</p>`),
     watch: () => label("Watch") +
       (v.watch.length ? rows(v.watch.slice(0, 5).map((t) => ({ text: oneLine(t) }))) : `<p style="margin:0;font:15px/22px ${FONT};color:${C.ink2}">Nothing flagged.</p>`),
-    ran: () => label("What ran") +
-      `<p style="margin:0;font:15px/22px ${FONT};color:${C.ink2}">${esc(ranLine(v))}${v.dashboardUrl && v.runs.length ? ` <a href="${esc(v.dashboardUrl)}/runs" style="color:${C.ink2}">See the runs</a>` : ""}</p>`,
+    departments: () => label("Departments") +
+      (v.departments.length ? rows(v.departments.map((d) => ({ text: deptLine(d) }))) : `<p style="margin:0;font:15px/22px ${FONT};color:${C.ink2}">${NO_DEPTS}</p>`) +
+      (v.dashboardUrl && v.runs.length ? `<p style="margin:8px 0 0;font:13px/18px ${FONT}"><a href="${esc(v.dashboardUrl)}/runs" style="color:${C.ink2}">See the runs</a></p>` : ""),
   };
   const page = `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="light only"><title>${esc(subject)}</title></head>` +
     `<body style="margin:0;padding:0;background:${C.bg}">` +
@@ -157,7 +162,7 @@ export function briefEmail(v: BriefView): { subject: string; html: string; text:
     `<p style="margin:0;font:13px/18px ${FONT};color:${C.mut}">Morning brief &middot; ${esc(longDay(v.today))}</p>` +
     order.map((id) => html[id]()).join("") +
     // footer
-    `<p style="margin:32px 0 0;padding-top:16px;border-top:1px solid ${C.line};font:12px/18px ${FONT};color:${C.mut}">Sent by Avery, your Chief of Staff agent, to this one fixed address. Numbers are computed in code; the focus and watch list are written by the model from those numbers.` +
+    `<p style="margin:32px 0 0;padding-top:16px;border-top:1px solid ${C.line};font:12px/18px ${FONT};color:${C.mut}">Sent by Avery, your Chief of Staff agent, to this one fixed address. Numbers are computed in code; the focus, watch list and department lines are written by the model from those numbers and the heads' reports.` +
     (v.notionUrl ? ` <a href="${esc(v.notionUrl)}" style="color:${C.mut}">Notion copy</a>.` : "") +
     `</p></td></tr></table></td></tr></table></body></html>`;
 
@@ -171,7 +176,7 @@ export function briefEmail(v: BriefView): { subject: string; html: string; text:
         : ["No snapshot yet. Morgan runs at 5:30 AM CT."]),
     ],
     watch: () => ["WATCH", ...(v.watch.length ? v.watch.slice(0, 5).map((w) => `- ${oneLine(w)}`) : ["Nothing flagged."])],
-    ran: () => ["WHAT RAN", ranLine(v), ...failed.map((r) => `- ${v.names?.[r.agent_id] ?? r.agent_id} failed: ${oneLine(r.error ?? "no error recorded").slice(0, 160)}`)],
+    departments: () => ["DEPARTMENTS", ...(v.departments.length ? v.departments.map((d) => `- ${deptLine(d)}`) : [NO_DEPTS]), ...failed.map((r) => `- ${v.names?.[r.agent_id] ?? r.agent_id} failed: ${oneLine(r.error ?? "no error recorded").slice(0, 160)}`)],
   };
   const t: string[] = [
     `Morning brief · ${longDay(v.today)}`,

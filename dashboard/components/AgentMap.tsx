@@ -28,7 +28,7 @@ export function AgentMap({ m, draw, foot }: { m: AgentMapModel; draw?: boolean; 
   return (
     <div className={`am${draw ? " am-draw" : ""}`}>
       <div className="am-scroll">
-        <div className="am-inner" style={{ height: H }}>
+        <div className="am-inner" style={{ height: H, "--am-cols": m.cols.length } as React.CSSProperties}>
           <svg className="am-lines" width="100%" height={H} viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" aria-hidden="true">
             {m.edges.map((e) => {
               const a = at[e.from], b = at[e.to];

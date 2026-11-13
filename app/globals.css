@@ -418,7 +418,7 @@ h1, h2, h3, p { margin: 0; }
 /* The agent map (dashboard/components/AgentMap.tsx, builder flow slice 3) */
 .am { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
 .am-scroll { overflow-x: auto; border-radius: 20px; border: 1px solid var(--bd); background-color: var(--canvas); background-image: radial-gradient(var(--dots) 1.2px, transparent 1.3px); background-size: 18px 18px; }
-.am-inner { position: relative; min-width: 960px; }
+.am-inner { position: relative; min-width: calc(var(--am-cols, 5) * 192px); }
 .am-lines { position: absolute; inset: 0; pointer-events: none; }
 .am-line { fill: none; stroke: var(--mut2); stroke-width: 1.8; stroke-linecap: round; vector-effect: non-scaling-stroke; }
 .am-line.done { stroke: var(--mint); }

@@ -5,7 +5,8 @@ import "server-only";
 import { loadCaps } from "@/core/gateway";
 import { CAPS } from "@/core/gateway/policy";
 import { departmentRules } from "@/core/memory";
-import { companySeat, deptSpent, headOf, childrenOf, monthSpendByAgent, orgProblems, seatOf, seatPath, type Org, type Seat } from "@/core/org";
+import { agentNames, companySeat, deptSpent, headOf, childrenOf, liveAgentIds, monthSpendByAgent, orgProblems, reportsTo, seatOf, seatPath, seatTeam, seatToolBlocks, type Org, type Seat } from "@/core/org";
+import type { MapOrg } from "./agentMap";
 import type { BuiltRow } from "./builder";
 import { BY_ID, CREW } from "./crew";
 import type { Floor } from "./data";
@@ -121,4 +122,31 @@ export async function deptExtras(org: Org): Promise<DeptExtras> {
     rules: rules.map((r) => ({ id: r.id, departmentId: r.department_id as string, text: r.text })),
     companyEmails: caps?.max_emails_per_day.value ?? CAPS.max_emails_per_day.start,
   };
+}
+
+/** For the builder's step 2: why Your team and Department reports are off, for each seat and for no seat (""). Empty before the org chart migration. */
+export async function seatToolChoices(org: Org | null): Promise<Record<string, { team: string | null; company: string | null }>> {
+  if (!org) return {};
+  const live = await liveAgentIds().catch(() => new Set<string>());
+  const out: Record<string, { team: string | null; company: string | null }> = { "": seatToolBlocks(org, null, live) };
+  for (const s of org.seats) out[s.id] = seatToolBlocks(org, s.id, live);
+  return out;
+}
+
+/** An agent's place for its map: who its result goes up to, and the live agents under it. Null before the org chart migration. */
+export async function mapOrgOf(org: Org | null, agentId: string): Promise<MapOrg | null> {
+  if (!org) return null;
+  const seat = seatOf(org, agentId);
+  if (!seat) return { reportsTo: null, team: [] };
+  const live = await liveAgentIds().catch(() => new Set<string>());
+  const team = seatTeam(org, seat, live).agents;
+  const up = reportsTo(org, seat);
+  const names = await agentNames([...team, ...(up?.agentId ? [up.agentId] : [])]).catch(() => ({} as Record<string, string>));
+  const name = (id: string) => names[id] ?? BY_ID[id]?.name ?? id;
+  const box: MapOrg["reportsTo"] = !up
+    ? { title: "Zak", sub: "The company seat reports to you, in the morning brief", agentId: null, open: false }
+    : up.holder === "agent" && up.agentId ? { title: name(up.agentId), sub: seatPath(org, up), agentId: up.agentId, open: false }
+    : up.holder === "zak" ? { title: "Zak", sub: seatPath(org, up), agentId: null, open: false }
+    : { title: up.title, sub: "No one sits here yet, so its result waits", agentId: null, open: true };
+  return { reportsTo: box, team: team.map((id) => ({ id, name: name(id) })) };
 }

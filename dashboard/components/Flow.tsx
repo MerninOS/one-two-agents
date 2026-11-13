@@ -42,6 +42,8 @@ export interface FlowProps {
   seats?: { id: string; label: string; free: boolean }[];
   /** Its seat now, or for a new agent the seat it was opened from. */
   seatId?: string | null;
+  /** Why Your team and Department reports are off, by seat id ("" for no seat), from the org chart. */
+  seatBlocks?: Record<string, { team: string | null; company: string | null }>;
   /** An existing agent's seat is saved straight away, not as part of a version. */
   place?: Act<[string | null]>;
   /** Answers a new agent starts with (from the seat it was opened from). */
@@ -74,7 +76,12 @@ export function Flow(p: FlowProps) {
   const step = STEPS[cur].key;
   const last = cur === STEPS.length - 1;
   const nm = !d.name.trim() || (!p.agentId && d.name.trim() === "New agent") ? "your new agent" : d.name.trim();
-  const problems = problemsOf(d, p.menu);
+  // Your team and Department reports follow the seat picked in step 1; the tool checks the chart again on every call
+  const seatBlock = (t: Tool) => (!t.seat || !p.seatBlocks ? null : (p.seatBlocks[seat ?? ""] ?? p.seatBlocks[""])?.[t.seat] ?? null);
+  const problems = [
+    ...problemsOf(d, p.menu),
+    ...p.menu.tools.filter((t) => d.tools.includes(t.id) && seatBlock(t)).map((t) => ({ step: "connections" as StepKey, text: `untick ${t.label}: ${seatBlock(t)}` })),
+  ];
   const stepProblems = problems.filter((x) => x.step === step);
 
   // the draft lives on this device until it is saved or discarded
@@ -168,7 +175,7 @@ export function Flow(p: FlowProps) {
             </div>
 
             {step === "job" && <JobStep d={d} change={change} p={p} from={from} setFrom={setFrom} act={act} busy={busy} seat={seat} setSeat={setSeat} />}
-            {step === "connections" && <ConnStep d={d} change={change} p={p} setToast={setToast} act={act} busy={busy} />}
+            {step === "connections" && <ConnStep d={d} change={change} p={p} setToast={setToast} act={act} busy={busy} seatBlock={seatBlock} />}
             {step === "hands" && <HandsStep d={d} change={change} p={p} setToast={setToast} />}
             {step === "brain" && <BrainStep d={d} change={change} p={p} />}
 
@@ -302,7 +309,7 @@ function ConnTile({ c, on, n, asks, open }: { c: FlowConn; on: () => void; n: nu
   );
 }
 
-function ConnStep({ d, change, p, setToast, act, busy }: StepProps & { setToast: (r: ActionResult) => void; act: Run; busy: boolean }) {
+function ConnStep({ d, change, p, setToast, act, busy, seatBlock }: StepProps & { setToast: (r: ActionResult) => void; act: Run; busy: boolean; seatBlock: (t: Tool) => string | null }) {
   const grantable = p.menu.tools.filter((t) => t.grantable && abilityOf(t) !== "hands");
   const conns = p.menu.conns.filter((c) => grantable.some((t) => t.conn === c.id));
   const count = (id: string) => grantable.filter((t) => t.conn === id && d.tools.includes(t.id));
@@ -334,7 +341,7 @@ function ConnStep({ d, change, p, setToast, act, busy }: StepProps & { setToast:
           </div>
           <span className="sub">{c.about}</span>
           <span className="bf-k">Can read · looks only</span>
-          {reads.map((t) => <OptRow key={t.id} t={t} on={d.tools.includes(t.id)} toggle={() => toggle(t.id)} />)}
+          {reads.map((t) => <OptRow key={t.id} t={t} on={d.tools.includes(t.id)} toggle={() => toggle(t.id)} blocked={seatBlock(t)} />)}
           {!reads.length && <span className="sub">Nothing to read here.</span>}
           {c.id === "notion" && d.tools.includes("notion_read_page") && (
             <div className="bf-extra">

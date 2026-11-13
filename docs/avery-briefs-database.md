@@ -32,7 +32,7 @@ can already reach it. Nothing new has to be shared.
 | Failed runs | Number | Avery | Failed agent runs in the last 24 hours |
 | Emailed | Checkbox | Avery | Ticked once the email has gone |
 
-The row's page body is the brief itself: Numbers, Waiting on you, What ran, Watch, Today's
+The row's page body is the brief itself: Numbers, Waiting on you, Watch, Departments, Today's
 focus. Same blocks the daily page had.
 
 A number that isn't known is left blank, never written as zero.

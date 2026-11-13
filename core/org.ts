@@ -153,6 +153,58 @@ export async function unseat(agentId: string) {
   if (error) throw new Error(error.message);
 }
 
+// ---- Teams (slice 3)
+
+/** Agents that exist (rows in agents), as opposed to planned ones on the chart. */
+export async function liveAgentIds(): Promise<Set<string>> {
+  const { data, error } = await db().from("agents").select("id");
+  if (error) throw new Error(error.message);
+  return new Set((data ?? []).map((r) => r.id as string));
+}
+
+/** Each agent's name from its active spec, or its id. */
+export async function agentNames(agentIds: string[]): Promise<Record<string, string>> {
+  const out: Record<string, string> = Object.fromEntries(agentIds.map((id) => [id, id]));
+  if (!agentIds.length) return out;
+  const { data } = await db().from("agent_defs").select("agent_id, spec").in("agent_id", agentIds).eq("active", true);
+  for (const r of data ?? []) { const n = (r.spec as { name?: unknown } | null)?.name; if (typeof n === "string" && n.trim()) out[r.agent_id] = n.trim().slice(0, 60); }
+  return out;
+}
+
+export interface RunStats { runs: number; ok: number; failed: number; skipped: number; costUsd: number; lastError: string | null }
+
+/** How each agent's runs went since a time (tries from the builder left out). Counted and added up in code. */
+export async function runStats(agentIds: string[], since: string): Promise<Record<string, RunStats>> {
+  const out: Record<string, RunStats> = Object.fromEntries(agentIds.map((id) => [id, { runs: 0, ok: 0, failed: 0, skipped: 0, costUsd: 0, lastError: null }]));
+  if (!agentIds.length) return out;
+  const { data, error } = await db().from("agent_runs").select("agent_id, status, cost_usd, error, started_at").in("agent_id", agentIds).gte("started_at", since).neq("trigger", "preview").order("started_at").limit(2000);
+  if (error) throw new Error(error.message);
+  const cents: Record<string, number> = {};
+  for (const r of data ?? []) {
+    const s = out[r.agent_id];
+    if (!s) continue;
+    s.runs++;
+    if (r.status === "ok") s.ok++; else if (r.status === "failed") { s.failed++; s.lastError = (r.error ?? "").slice(0, 200) || "no error recorded"; } else if (r.status === "skipped") s.skipped++;
+    cents[r.agent_id] = (cents[r.agent_id] ?? 0) + Math.round(Number(r.cost_usd) * 100);
+  }
+  for (const id of agentIds) out[id].costUsd = (cents[id] ?? 0) / 100;
+  return out;
+}
+
+/** The latest finished saved output of each agent (core/runner.ts writes agent_outputs). Words are the agent's, so untrusted. */
+export async function latestOutputs(agentIds: string[]): Promise<Record<string, { name: string; summary: string; numbers: { label: string; value: number }[]; at: string }>> {
+  if (!agentIds.length) return {};
+  const { data, error } = await db().from("agent_outputs").select("agent_id, name, summary, numbers, created_at").in("agent_id", agentIds).eq("finished", true).order("created_at", { ascending: false }).limit(200);
+  if (error) throw new Error(error.message);
+  const out: Record<string, { name: string; summary: string; numbers: { label: string; value: number }[]; at: string }> = {};
+  for (const r of data ?? []) {
+    if (out[r.agent_id]) continue;
+    const nums = (Array.isArray(r.numbers) ? r.numbers : []) as { label: string; value: number }[];
+    out[r.agent_id] = { name: r.name, summary: String(r.summary ?? "").slice(0, 800), numbers: nums.filter((n) => Number.isFinite(n.value)).slice(0, 12), at: r.created_at };
+  }
+  return out;
+}
+
 // ---- Department limits (slice 2)
 
 /** Midnight at the start of this Chicago calendar month, as an ISO time. */

@@ -21,7 +21,7 @@ export interface BuildStep {
   ok: boolean; numbers: Record<string, number> | null; tokens_in: number; tokens_out: number; cost_usd: number; ms: number;
 }
 export interface BuildRun { id: string; trigger: string; mode: string | null; started_at: string; ended_at: string | null; status: string; summary: string | null; error: string | null; cost_usd: number; steps: BuildStep[] }
-export interface BuildTool { id: string; label: string; detail: string; kind: string; group: string; conn: ConnId; trusted: boolean; connected: boolean; needs: string[]; grantable: boolean; agents: string[] | null }
+export interface BuildTool { id: string; label: string; detail: string; kind: string; group: string; conn: ConnId; trusted: boolean; connected: boolean; needs: string[]; grantable: boolean; agents: string[] | null; seat: "team" | "company" | null }
 /** A connection as the flow shows it: plain data, set up or not (no values of keys). */
 export interface FlowConn { id: ConnId; name: string; sub: string; icon: string; builtIn: boolean; about: string; setUp: boolean }
 export interface BuildModel { id: string; label: string; in: number; out: number }
@@ -60,7 +60,7 @@ export async function listBuilt(): Promise<BuiltRow[] | null> {
 export function builderMenu() {
   const h = health();
   return {
-    tools: TOOL_LIST.map((t): BuildTool => ({ id: t.id, label: t.label, detail: t.detail, kind: t.kind, group: t.group, conn: connOf(t), trusted: t.trusted, needs: [...t.needs], connected: t.needs.every((k) => !!SETTING[k]), grantable: GRANTABLE.has(t.kind), agents: t.agents ? [...t.agents] : null })),
+    tools: TOOL_LIST.map((t): BuildTool => ({ id: t.id, label: t.label, detail: t.detail, kind: t.kind, group: t.group, conn: connOf(t), trusted: t.trusted, needs: [...t.needs], connected: t.needs.every((k) => !!SETTING[k]), grantable: GRANTABLE.has(t.kind), agents: t.agents ? [...t.agents] : null, seat: t.seat ?? null })),
     agentNames: Object.fromEntries(CREW.map((a) => [a.id, `${a.name} (${a.id})`])) as Record<string, string>,
     models: MODEL_LIST.filter((m) => m.route === "anthropic").map((m): BuildModel => ({ id: m.id, label: m.label, in: m.in, out: m.out })),
     efforts: [...EFFORTS],

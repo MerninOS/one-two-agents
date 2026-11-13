@@ -16,9 +16,11 @@ import { getBoardOrders, greenLedger } from "@/integrations/shopify/orders";
 import { getRoastLoss } from "@/integrations/shopify/settings";
 import { fetchStockCoffees } from "@/integrations/shopify/stock";
 import { BY_ID } from "@/dashboard/crew";
-import { SECTIONS, briefEmail, type BriefView, type Kpi } from "./email";
+import { agentsIn, companySeat, departmentLines, loadOrg, seatOf } from "@/core/org";
+import { SECTIONS, briefEmail, deptLine, type BriefDept, type BriefView, type Kpi } from "./email";
 
-interface Judgment { watch: string[]; focus: { action: string; reason: string }; remember?: string[] }
+/** depts: Avery's line for each department, by name, written from the head's report. */
+interface Judgment { watch: string[]; focus: { action: string; reason: string }; depts?: Record<string, string>; remember?: string[] }
 
 const usd = (n: number | null | undefined) => (n == null ? "n/a" : `$${Number(n).toLocaleString("en-US", { maximumFractionDigits: 0 })}`);
 const pct = (n: number | null | undefined) => (n == null ? "n/a" : `${Math.round(Number(n) * 100)}%`);
@@ -26,13 +28,33 @@ const pct = (n: number | null | undefined) => (n == null ? "n/a" : `${Math.round
 /** How far back the brief looks, and when a green lot counts as low. */
 const KPI_DAYS = 8, GREEN_DAYS = 30, COVER_WARN_DAYS = 21;
 
+const NO_DEPT = "Not in a department";
+
+/**
+ * The last day's runs per department on the org chart (docs/org-chart.md, slice 3), counted and
+ * added up in code, then the agents not in a department. Avery's own runs (the company seat) are
+ * left out. Empty when the org chart isn't there.
+ */
+async function departmentRuns(runs: { agent_id: string; status: string; cost_usd: number | string | null }[]): Promise<Omit<BriefDept, "line">[]> {
+  const o = await loadOrg().catch(() => null);
+  if (!o) return [];
+  const top = companySeat(o)?.agentId;
+  const tally = (ids: (id: string) => boolean, name: string) => {
+    const mine = runs.filter((r) => r.agent_id !== top && ids(r.agent_id));
+    return { name, runs: mine.length, failed: mine.filter((r) => r.status === "failed").length, costUsd: mine.reduce((s, r) => s + Math.round(Number(r.cost_usd ?? 0) * 100), 0) / 100 };
+  };
+  const out = o.departments.map((d) => { const ids = new Set(agentsIn(o, d.id)); return tally((id) => ids.has(id), d.name); });
+  const loose = tally((id) => !seatOf(o, id), NO_DEPT);
+  return loose.runs ? [...out, loose] : out;
+}
+
 /** Today's facts, every number worked out in code. */
 async function facts() {
   const dayAgo = new Date(Date.now() - 864e5).toISOString();
   const [{ data: kpis }, { data: runs }, { data: pending }, { count: newDrafts }, orders, green] = await Promise.all([
     db().from("kpi_snapshots").select("*").order("date", { ascending: false }).limit(KPI_DAYS),
     // a try from the builder is not a run the brief reports on
-    db().from("agent_runs").select("id, agent_id, status, summary, error, started_at").gte("started_at", dayAgo).neq("trigger", "preview").order("started_at"),
+    db().from("agent_runs").select("id, agent_id, status, summary, error, started_at, cost_usd").gte("started_at", dayAgo).neq("trigger", "preview").order("started_at"),
     db().from("approvals").select("created_at").eq("status", "pending").order("created_at").limit(500),
     db().from("wholesale_leads").select("id", { count: "exact", head: true }).not("gmail_draft_id", "is", null).gte("created_at", dayAgo),
     getBoardOrders(),
@@ -57,6 +79,7 @@ async function facts() {
     },
     lowGreen: cover.filter((c) => c.daysOfCover != null && c.daysOfCover < COVER_WARN_DAYS),
     agentRuns: runs ?? [],
+    departments: await departmentRuns(runs ?? []),
     approvals: { pending: pending?.length ?? 0, oldestHours: pending?.length ? (Date.now() - Date.parse(pending[0].created_at)) / 36e5 : null },
     newDrafts: newDrafts ?? 0,
     neverDeducted: green.ledger.filter((r) => r.state === "missing").map((r) => r.name),
@@ -80,10 +103,13 @@ export function rulesJudgment(f: Facts): Judgment {
   return { watch, focus };
 }
 
+/** Each department's counts (code) with Avery's line for it (the model, from the head's report). */
+const briefDepts = (f: Facts, j: Judgment): BriefDept[] => f.departments.map((d) => ({ ...d, line: j.depts?.[d.name] ?? null }));
+
 /** The Notion page body: the same sections, in the same order, as the email. */
 export function briefBlocks(f: Facts, j: Judgment, sections: readonly string[] = SECTIONS): Block[] {
   const y = f.yesterday, o = f.openOrders;
-  const ran = f.agentRuns.map((r) => `${r.agent_id}: ${r.status}${r.summary ? `. ${r.summary}` : ""}${r.error ? `. ${r.error}` : ""}`);
+  const depts = briefDepts(f, j);
   const waiting = [
     ...(f.approvals?.pending ? [li(`Approvals waiting: ${f.approvals.pending}`)] : []),
     ...(f.newDrafts ? [li(`New wholesale drafts from Rowan: ${f.newDrafts}`)] : []),
@@ -98,7 +124,7 @@ export function briefBlocks(f: Facts, j: Judgment, sections: readonly string[] =
       ? [li(`${y.date}: ${usd(y.revenue)} revenue from ${y.orders} orders, AOV ${usd(y.aov)}`), li(`Repeat rate ${pct(y.repeat_rate)}, green margin ${pct(y.green_margin)}`), li(`Cash ${usd(y.cash_usd)}`)]
       : [p("No snapshot yet. The CFO runs at 5:30 AM CT.")])],
     watch: () => [h2("Watch"), ...(j.watch.length ? j.watch.map(li) : [p("Nothing flagged.")])],
-    ran: () => [h2("What ran"), ...(ran.length ? ran.map(li) : [p("No agent runs in the last 24 hours.")])],
+    departments: () => [h2("Departments"), ...(depts.length ? depts.map((d) => li(deptLine(d))) : [p("No departments on the org chart yet.")])],
   };
   return sections.flatMap((id) => part[id]?.() ?? []);
 }
@@ -147,6 +173,7 @@ const briefView = (f: Facts, j: Judgment, sections: readonly string[], notionUrl
   openOrders: f.openOrders,
   neverDeducted: f.neverDeducted,
   runs: f.agentRuns,
+  departments: briefDepts(f, j),
   approvals: f.approvals,
   newDrafts: f.newDrafts,
   watch: j.watch,
@@ -220,7 +247,8 @@ export function parseJudgment(text: string): Judgment | null {
 export async function deliverBrief(result: string): Promise<string> {
   const f = await facts();
   const parsed = parseJudgment(result);
-  const judgment = parsed ?? rulesJudgment(f);
+  // department lines match only department names on the chart, so a line can't add a section
+  const judgment = { ...(parsed ?? rulesJudgment(f)), depts: departmentLines(result, f.departments.map((d) => d.name)) };
   const sent = await sendBrief(f, judgment);
   return `${sent}${parsed ? "" : " (no Focus line in the result, so the fixed rules wrote the focus and watch list)"}`;
 }

@@ -1,7 +1,7 @@
 // Checks the org chart rules (core/org-rules.ts) on a small chart: no database, no network.
 // Run: npm run check:org
 import assert from "node:assert/strict";
-import { agentsIn, below, deptBudgetBlock, deptBudgetChange, deptEmailCap, deptEmailChange, deptOf, deptSpent, depthOf, deptSlug, headOf, orgProblems, reportsTo, seatOf, seatPath, type Org } from "../core/org-rules";
+import { LEAD_MIN_TEAM, agentsIn, below, companyBlock, departmentLines, seatToolBlocks, teamBlock, teamOf, deptBudgetBlock, deptBudgetChange, deptEmailCap, deptEmailChange, deptOf, deptSpent, depthOf, deptSlug, headOf, orgProblems, reportsTo, seatOf, seatPath, type Org } from "../core/org-rules";
 
 const org: Org = {
   departments: [{ id: "marketing", name: "Marketing", sort: 1, monthlyBudgetUsd: 20, maxEmailsPerDay: null }],
@@ -58,5 +58,44 @@ assert.deepEqual(deptEmailChange(5, null, 20), { looser: true });
 assert.equal(deptEmailCap(broken.departments[1], 20), 5);
 assert.equal(deptEmailCap(broken.departments[1], 3), 3, "a lowered company cap wins over a department row");
 assert.equal(deptEmailCap(mk, 20), 20, "no department cap: the company cap");
+
+
+// Slice 3: leads watch, heads report up. The team comes from the chart, live agents only.
+const team: Org = {
+  departments: org.departments,
+  seats: [
+    org.seats[0],
+    { ...org.seats[1], holder: "agent", agentId: "b_head" },
+    { ...org.seats[2], holder: "agent", agentId: "b_lead" },
+    org.seats[3],
+    { id: "s2", departmentId: "marketing", parentId: "l", title: "Wholesale", sub: "", holder: "agent", agentId: "b_ws", sort: 2 },
+  ],
+};
+const live = new Set(["chief_of_staff", "b_head", "b_lead", "b_sub", "b_ws"]);
+assert.equal(LEAD_MIN_TEAM, 2);
+assert.deepEqual(teamOf(team, "b_head", live)?.agents, ["b_lead", "b_sub", "b_ws"], "a head's team is everyone under it, at any depth");
+assert.equal(teamOf(team, "b_head", live)?.head, true);
+assert.equal(teamOf(team, "nobody", live), null);
+assert.equal(teamBlock(team, "b_head", live), null);
+assert.equal(teamBlock(team, "b_lead", live), null, "a lead with 2 live agents under it");
+assert.ok(teamBlock(team, "b_lead", new Set(["b_sub"]))?.includes("2 live agents"), "a lead with 1 live agent waits");
+assert.equal(teamBlock(team, "b_head", new Set(["b_sub"])), null, "a head needs only 1");
+assert.ok(teamBlock(team, "b_sub", live)?.includes("No live agent"), "a seat with nobody under it");
+assert.ok(teamBlock(team, "chief_of_staff", live)?.includes("Department reports"), "the company seat reads Department reports instead");
+assert.ok(teamBlock(team, "b_other", live)?.includes("org chart"));
+assert.ok(teamBlock(team, null, live)?.includes("org chart"), "a new agent with no seat");
+assert.equal(companyBlock(team, "chief_of_staff"), null);
+assert.ok(companyBlock(team, "b_head"));
+assert.ok(companyBlock(team, null));
+assert.deepEqual(seatToolBlocks(team, "l", live), { team: null, company: companyBlock(team, "b_head") }, "a new agent picking the lead seat gets the same answer");
+assert.equal(seatToolBlocks(team, "nope", live).team, teamBlock(team, null, live));
+
+// Avery's department lines are matched to chart names in code; anything else is ignored
+assert.deepEqual(
+  departmentLines("Focus: Ship it. Today.\n- watch this\nmarketing: Two drafts wait.\n- Finance: Cash is fine.\nSales: not on the chart\nMarketing: a second line", ["Marketing", "Finance"]),
+  { Marketing: "Two drafts wait.", Finance: "Cash is fine." },
+);
+assert.equal(departmentLines(`Marketing: ${"x".repeat(400)}`, ["Marketing"]).Marketing.length, 300);
+assert.deepEqual(departmentLines("", ["Marketing"]), {});
 
 console.log("check-org: all passed");

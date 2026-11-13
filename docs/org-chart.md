@@ -17,7 +17,7 @@ Zak, Nov 13: agents organised like a company, with departments, heads, leads and
 |---|---|---|
 | 1 | The org chart: departments and seats on Crew | The Crew Agents card grid |
 | 2 | Department budgets and rules (monthly AI budget checked in `withRun`, email cap under the company cap, department rules in memory) | |
-| 3 | Leads watch, heads report up (Team connection, team and department reports, Avery reads heads, "Reports to" on the agent map) | Avery reading every agent's runs one by one |
+| 3 | Leads watch, heads report up (Team connection, team and department reports, Avery reads heads, "Reports to" on the agent map) | Avery reading every agent's runs one by one (`agent_runs_recent` retired) |
 | 4 | Lead checks drafts, approvals by department | |
 
 ## Slice 1: The org chart
@@ -59,3 +59,19 @@ Lowering or setting a limit applies straight away. Raising or removing one needs
 **Not in this slice.** Memory is still loaded only for agents in `MEMORY_AGENTS` (Avery, Rowan, Quinn), so a department rule reaches the other agents' runs once Build Board Order 57 gives app-built agents memory. Leads and heads reporting up is slice 3.
 
 **Checks.** `npm run check`, `npm run check:org`, `npm run check:policy`, `npm run build`. Apply the migration once merged. Until then the Crew page can't read the new columns and shows the "not applied" note, and runs skip the department check (no department is found).
+
+## Slice 3: Leads watch, heads report up
+
+**What Zak sees.**
+
+- **Builder step 2, Agents connection: "Your team".** Each agent under its seat on the org chart, at any depth: its latest finished result and how its runs went (runs, failures, cost against its daily budget). The team is read from the chart in code on every call, never picked by the model or the page. It can be ticked only by an agent whose seat has live agents under it: a department head needs 1, a lead needs 2 (`LEAD_MIN_TEAM`, Zak's call). Otherwise the row is greyed with the reason ("A lead needs 2 live agents under its seat first (it has 1)."). The seat picked in step 1 decides it, so a new agent gets the same answer before it exists. If the chart changes later, the tool refuses at run time and the builder asks to untick it.
+- **"Department reports"**, for the company seat only (Avery's). Per department: the head's latest finished result (its report), and code's count of the department's runs, failures, cost and spend this month against its budget, plus agents not in a department. This replaces `agent_runs_recent` ("Other agents' runs"), which is retired from the tool list.
+- **Avery's brief.** "What ran" becomes **Departments**: one line per department on the chart, "Finance: Cash covers about 14 months and burn is flat. 3 runs, all OK, $0.12, in the last 24 hours." The sentence is Avery's, written from the head's report; it is matched to the chart's department names in code (`departmentLines`), and the counts after it come from code (`deptLine`). A department with no line from Avery still shows its counts. Runs by agents not on the chart get a "Not in a department" line. Same section in the email and the Notion copy.
+- **Agent map.** A "Reports to" column: the agent or person in the seat above (the head for a lead, the company seat for a head, Zak for the company seat), dashed when that seat is open, and "Not on the org chart" with a link to step 1 when it has no seat. With Your team ticked, each teammate is its own box under Reads.
+- **Running after its team.** A lead or head reads its team's latest results, so it should run after them: add it as the last step of a chain on Crew > Schedule (each step "after it worked" or "either way"). No new scheduling code: chains already do this.
+
+**Reports are ordinary outputs.** A lead's or head's report is its saved result (`agent_outputs`), like any agent's. Nothing new is stored. The words arrive as another agent's data (untrusted), never as instructions; numbers keep their trail.
+
+**Data.** Migration `20261117090000_avery_reads_departments.sql`: Avery's spec gets a new version (copied from the live one, so its model and limits stay) with `agent_runs_recent` swapped for `department_reports` and the directive asking for one line per department; its approved playbook is replaced by one with the same swap (an update after Zak's first approval applies on its own, with what changed shown). It raises a notice if any other active spec still names the retired tool (none did on 2026-11-13).
+
+**Checks.** `npm run check`, `npm run check:org` (team, blocks, department lines), `npm run check:runner` (department line format), `npm run build`. Apply the migration once merged: until then Avery's live spec asks for a tool code no longer offers and the run is refused with that reason.
