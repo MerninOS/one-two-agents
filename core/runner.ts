@@ -154,6 +154,11 @@ export interface ExploreOpts {
    * a preview unless Zak ticks Deliver; then the summary says what would have gone out.
    */
   deliver?: boolean;
+  /**
+   * A try from the builder (slice 4): each step is saved as it happens, so the agent map can play
+   * the run, and the result is not saved as the agent's output, so no other agent reads a try.
+   */
+  trying?: boolean;
   /** In a chain: what the agent before reported (core/chain.ts). Another agent's words, so untrusted data. */
   handoff?: { from: string; summary: string; metrics: Record<string, number> } | null;
   /** Tests only: stand-ins for the gateway and for report delivery. */
@@ -207,7 +212,12 @@ export async function runExplore(spec: AgentSpec, opts: ExploreOpts): Promise<Ru
   let tokensIn = 0, tokensOut = 0, spent = 0, toolCalls = 0, lastIn = 3000;
   let cited: unknown = null;
   let result: string | null = null, stopped: string | null = null, wrapUp = false, nudged = false;
-  const step = (s: Omit<Step, "idx">) => steps.push({ idx: steps.length, ...s });
+  // a try saves its steps as they happen, in order; everything else saves them once at the end
+  let saved = 0, saving: Promise<unknown> = Promise.resolve();
+  const step = (s: Omit<Step, "idx">) => {
+    steps.push({ idx: steps.length, ...s });
+    if (opts.trying && opts.runId) { const runId = opts.runId; saving = saving.then(() => { const batch = steps.slice(saved); saved = steps.length; return saveSteps(runId, batch); }); }
+  };
   let mode: RunMode = "explore", fellBack: string | null = null;
 
   /** Runs one granted tool with checked input and records the step. The content is what goes back to the model. */
@@ -395,7 +405,8 @@ export async function runExplore(spec: AgentSpec, opts: ExploreOpts): Promise<Ru
     } else for (const a of actions) a.status = "dropped";
   } finally {
     if (stopped) step({ kind: "stop", output: `Stopped at ${stopped}.`, ok: false, ms: 0 });
-    const note = opts.runId ? await saveSteps(opts.runId, steps) : "";
+    await saving;
+    const note = opts.runId ? await saveSteps(opts.runId, steps.slice(saved)) : "";
     if (note) stopped = stopped ? `${stopped}${note}` : null;
     if (note && !stopped) result = `${result ?? ""}${note}`;
   }
@@ -410,13 +421,13 @@ export async function runExplore(spec: AgentSpec, opts: ExploreOpts): Promise<Ru
   const plural = (n: number, w: string) => `${n} ${w}${n === 1 ? "" : "s"}`;
   if (actions.length) {
     if (opts.deliver && finished) summary += ` (${plural(count("queued"), "proposal")} queued for Zak${count("refused") ? `, ${count("refused")} refused by the gateway` : ""}${count("duplicate") ? `, ${count("duplicate")} already waiting` : ""})`;
-    else summary += ` (${plural(actions.length, "proposal")} staged, not queued: ${finished ? "Deliver was off" : "the run didn't finish"})`;
+    else summary += ` (${plural(actions.length, "proposal")} staged, not queued: ${finished ? "a try sends nothing" : "the run didn't finish"})`;
   }
   if (reportTools.length) {
     if (opts.deliver && (finished || reports.length)) { const bad = reports.filter((r) => !r.ok); summary += ` (${plural(reports.length - bad.length, "report")} delivered${bad.length ? `; not delivered: ${bad.map((r) => `${TOOLS[r.tool]?.label ?? r.tool}: ${r.note.slice(0, 80)}`).join("; ")}` : ""})`; }
-    else summary += ` (reports not sent: ${opts.deliver ? "the run didn't finish" : "Deliver was off"})`;
+    else summary += ` (reports not sent: ${opts.deliver ? "the run didn't finish" : "a try sends nothing"})`;
   }
-  if (opts.runId) summary += await saveOutput(opts.runId, opts.agentId, spec.outputName, summary, traced.numbers, finished);
+  if (opts.runId && !opts.trying) summary += await saveOutput(opts.runId, opts.agentId, spec.outputName, summary, traced.numbers, finished);
   return {
     status: "ok",
     summary,
@@ -432,7 +443,7 @@ export async function dryRunTools(spec: AgentSpec, agentId: string): Promise<{ t
   return Promise.all(spec.tools.map(async (id) => {
     const t = TOOLS[id], t0 = Date.now();
     if (!t) return { tool: id, label: id, ok: false, note: "not on the tool list", ms: 0 };
-    if (t.kind === "report") return { tool: id, label: t.label, ok: true, note: t.collect ? "not tried here: the model hands it rows during a run, saved after a run with Deliver on" : "not tried here: it is delivered after a run with Deliver on", ms: 0 };
+    if (t.kind === "report") return { tool: id, label: t.label, ok: true, note: t.collect ? "not tried here: the model hands it rows during a run, saved after a live run" : "not tried here: it is delivered after a live run", ms: 0 };
     if (t.server) return { tool: id, label: t.label, ok: true, note: `not tried here: it runs on Claude's side during a run, at most ${t.server.maxUses} a run`, ms: 0 };
     if (t.kind === "action") return { tool: id, label: t.label, ok: !!t.agents?.includes(agentId), note: t.agents?.includes(agentId) ? "not tried here: it only stages proposals during a run" : `the gateway lets only ${t.agents?.join(" and ")} use it`, ms: 0 };
     const params = paramsOf(t, ctx);

@@ -140,7 +140,7 @@ async function main() {
   assert.deepEqual(rep1.reportPage, null);
   assert.match(specLooser(spec, { ...spec, tools: [...spec.tools, "report_email_zak"] }).join(), /adds the report/);
 
-  // actions: stage by pick, refuse a made-up or wrong-kind pick, queue only after a finished run with Deliver on
+  // actions: stage by pick, refuse a made-up or wrong-kind pick, queue only after a finished run that delivers (never a try)
   const TXN = "0b7c2a7e-1f7e-4c55-9d3a-111111111111", CAT = "5d1e8a4c-2b6f-4e8a-8c1d-222222222222";
   const fakeTools: Record<string, ToolDef> = {
     ...TOOLS,
@@ -179,7 +179,7 @@ async function main() {
   const r8 = await runExplore(qs, { agentId: "bookkeeper", tools: fakeTools, propose: async (pp) => { queued2.push(pp); return { status: "queued" }; }, report: async () => { throw new Error("must not send"); }, client: fake(script) });
   assert.equal(queued2.length, 0);
   assert.equal(r8.actions[0].status, "dropped");
-  assert.match(r8.summary, /staged, not queued: Deliver was off/);
+  assert.match(r8.summary, /staged, not queued: a try sends nothing/);
   const r9 = await runExplore(qs, { agentId: "b_green", tools: fakeTools, client: fake((t, body) => {
     assert.ok(!body.tools.some((x) => x.name === "mercury_propose_annotation"));
     return reply([{ type: "tool_use", id: "z", name: "finish", input: { result: "ok" } }]);

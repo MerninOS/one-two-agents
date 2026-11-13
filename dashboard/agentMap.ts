@@ -57,6 +57,8 @@ const clip = (s: string, n: number) => (s.length > n ? `${s.slice(0, n - 1).trim
 export function mapOf(x: MapInput): AgentMapModel {
   const { spec, menu, run } = x;
   const stepped = !!run && run.steps.length > 0;
+  // a try sends, queues and saves nothing by design, so those boxes say so instead of "not used"
+  const isTry = run?.trigger === "preview";
   const step = (k: StepKey) => (x.edit ? `${x.edit}&step=${k}` : null);
   const connName = (id: string) => menu.conns.find((c) => c.id === id)?.name ?? id;
   const tools = spec.tools.map((id) => menu.tools.find((t) => t.id === id)).filter((t): t is BuilderMenu["tools"][number] => !!t);
@@ -77,7 +79,7 @@ export function mapOf(x: MapInput): AgentMapModel {
 
   const reads: MapNode[] = [{
     id: "memory", kicker: "Memory", title: "Standing orders",
-    sub: run?.memory ? `${run.memory.lines} line${run.memory.lines === 1 ? "" : "s"} · ${run.memory.tokens.toLocaleString("en-US")} tokens` : run ? "Loaded none this run" : "Loaded at the start of each run",
+    sub: run?.memory ? `${run.memory.lines} line${run.memory.lines === 1 ? "" : "s"} · ${run.memory.tokens.toLocaleString("en-US")} tokens` : isTry ? "Loaded as on a live run" : run ? "Loaded none this run" : "Loaded at the start of each run",
     href: `/agents/${x.agentId}?tab=memory`, look: "plain", state: null,
   }];
   for (const t of tools.filter((t) => t.kind === "read" || t.kind === "calculate")) {
@@ -104,12 +106,12 @@ export function mapOf(x: MapInput): AgentMapModel {
   const hands: MapNode[] = [];
   for (const t of tools.filter((t) => t.kind === "report")) {
     const sub = t.id === "report_notion_page" && spec.reportPage ? `Under ${spec.reportPage.label}` : clip(t.detail, 90);
-    hands.push({ id: `t:${t.id}`, kicker: connName(t.conn), title: t.label, ...did(t.id, sub), href: step("hands"), look: "plain" });
+    hands.push({ id: `t:${t.id}`, kicker: connName(t.conn), title: t.label, ...(isTry ? { state: "unused" as const, sub: "Not sent in a try" } : did(t.id, sub)), href: step("hands"), look: "plain" });
   }
   for (const t of tools.filter((t) => t.kind === "action")) {
-    hands.push({ id: `t:${t.id}`, kicker: `${connName(t.conn)} · asks you first`, title: t.label, ...did(t.id, "An approval card you tap"), href: step("connections"), look: "do" });
+    hands.push({ id: `t:${t.id}`, kicker: `${connName(t.conn)} · asks you first`, title: t.label, ...(isTry ? { state: "unused" as const, sub: "Not queued in a try" } : did(t.id, "An approval card you tap")), href: step("connections"), look: "do" });
   }
-  hands.push({ id: "out", kicker: "Saves", title: `“${spec.outputName}”`, sub: "Other agents can read it", href: step("hands"), look: "out", state: null });
+  hands.push({ id: "out", kicker: "Saves", title: `“${spec.outputName}”`, sub: isTry ? "Not saved in a try" : "Other agents can read it", href: step("hands"), look: "out", state: isTry ? "unused" : null });
 
   const usedBy: MapNode[] = x.usedBy.length
     ? x.usedBy.map((u) => ({ id: `by:${u.id}`, kicker: "Reads its result", title: u.name, sub: "Picked in its Connections step", href: `/build/${u.id}`, look: "plain" as const, state: null }))

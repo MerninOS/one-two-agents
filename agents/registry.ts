@@ -48,14 +48,6 @@ export const AGENTS: Record<string, AgentDef> = {
   bookkeeper: { job: switchable("bookkeeper", ({ runId, dryRun, memory, setup }) => runBookkeeper(runId, { dryRun, memory, setup })), manualOnly: true },
 };
 
-/** The agents' own code, for the builder screen's side-by-side compare with the runner (dry runs only). */
-export const OWN_JOBS: Record<string, (o: JobOpts) => Promise<RunResult>> = {
-  cfo: ({ dryRun }) => runCfoSnapshot({ dryRun }),
-  chief_of_staff: ({ dryRun, memory, setup, handoff }) => runBrief({ dryRun, memory, setup, handoff }),
-  wholesale_hunter: ({ dryRun }) => runHunter(undefined, { dryRun }),
-  bookkeeper: ({ dryRun }) => runBookkeeper(undefined, { dryRun }),
-};
-
 /** Old route names from the storefront repo, still accepted. */
 const ALIASES: Record<string, string> = { brief: "chief_of_staff", hunter: "wholesale_hunter" };
 
