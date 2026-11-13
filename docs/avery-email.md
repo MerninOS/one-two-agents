@@ -28,7 +28,7 @@ revenue. With no snapshot: `Thu: Reorder Guji`.
    orders (with AOV), cash (against the snapshot 7 days back). Repeat rate and green
    margin on one line under them.
 4. **Watch.** Up to five items.
-5. **What ran.** One line ("4 runs, all OK") unless a run failed; failures are listed.
+5. **Departments.** One line per department on the org chart: Avery's sentence from the head's report, then code's count of its runs in the last 24 hours ("Finance: Cash is fine. 3 runs, all OK, $0.12, in the last 24 hours."). Replaced "What ran" in departments slice 3 (docs/org-chart.md).
 6. **Footer.** Link to the Notion copy (the day's row in the Briefs database) when one was written.
 
 ## Rules it keeps

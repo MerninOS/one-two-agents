@@ -8,18 +8,24 @@ import { when } from "./format";
 import type { BuilderMenu } from "./builder";
 import { estimate, money, type StepKey } from "./flowSteps";
 
-export type ColKey = "when" | "reads" | "thinks" | "hands" | "usedBy";
-/**
- * The columns, left to right. Only columns the data can fill: the departments epic adds a
- * "Reports to" column here (and lead agents' team outputs under Reads) once an agent can have a head.
- */
+export type ColKey = "when" | "reads" | "thinks" | "hands" | "usedBy" | "reportsTo";
+/** The columns, left to right. "Reports to" shows only where the org chart is loaded (docs/org-chart.md, slice 3). */
 export const MAP_COLS: { key: ColKey; title: string }[] = [
   { key: "when", title: "When" },
   { key: "reads", title: "Reads" },
   { key: "thinks", title: "Thinks" },
   { key: "hands", title: "Hands you" },
   { key: "usedBy", title: "Used by" },
+  { key: "reportsTo", title: "Reports to" },
 ];
+
+/** Where the agent sits on the org chart, for the map (dashboard/org.ts mapOrgOf). */
+export interface MapOrg {
+  /** Who its result goes up to; null when it has no seat. */
+  reportsTo: { title: string; sub: string; agentId: string | null; open: boolean } | null;
+  /** The live agents under its seat, which Your team reads. */
+  team: { id: string; name: string }[];
+}
 
 export type NodeState = "ok" | "failed" | "unused" | "live";
 export type NodeLook = "plain" | "brain" | "dashed" | "do" | "out";
@@ -47,6 +53,8 @@ export interface MapInput {
   /** The flow's edit link (`/build/<id>?edit=1`), so each box opens its step; null where the map is read-only. */
   edit: string | null;
   run?: MapRun | null;
+  /** Its place on the org chart; leave it out and the map has no "Reports to" column. */
+  org?: MapOrg | null;
 }
 
 const MAX_PER_COL = 6;
@@ -87,6 +95,10 @@ export function mapOf(x: MapInput): AgentMapModel {
       for (const r of spec.readsFrom) reads.push({ id: `from:${r.agentId}`, kicker: "Another agent", title: r.label, ...did(t.id, "Its latest finished result"), href: `/build/${r.agentId}`, look: "plain" });
       continue;
     }
+    if (t.id === "team_report" && x.org?.team.length) {
+      for (const a of x.org.team) reads.push({ id: `team:${a.id}`, kicker: "Your team", title: a.name, ...did(t.id, "Its latest result and how its runs went"), href: `/build/${a.id}`, look: "plain" });
+      continue;
+    }
     const sub = t.id === "notion_read_page" && spec.notionPages.length ? spec.notionPages.map((p) => p.label).join(", ") : t.detail;
     reads.push({ id: `t:${t.id}`, kicker: t.kind === "calculate" ? "Math in code" : connName(t.conn), title: t.label, ...did(t.id, clip(sub, 90)), href: step("connections"), look: "plain" });
   }
@@ -120,14 +132,21 @@ export function mapOf(x: MapInput): AgentMapModel {
   const cap = (nodes: MapNode[], col: ColKey): MapNode[] => nodes.length <= MAX_PER_COL ? nodes
     : [...nodes.slice(0, MAX_PER_COL - 1), { id: `${col}:more`, kicker: "", title: `+${nodes.length - MAX_PER_COL + 1} more`, sub: nodes.slice(MAX_PER_COL - 1).map((n) => n.title).join(", "), href: nodes[MAX_PER_COL - 1].href, look: "dashed", state: null }];
 
-  const byCol: Record<ColKey, MapNode[]> = { when: [when], reads: cap(reads, "reads"), thinks: [brain], hands: cap(hands, "hands"), usedBy: cap(usedBy, "usedBy") };
-  const cols = MAP_COLS.map((c) => ({ ...c, nodes: byCol[c.key] }));
+  // its saved result goes up the chart: the head or lead above reads it with Your team, Avery with Department reports
+  const up = x.org?.reportsTo ?? null;
+  const reportsTo: MapNode[] = x.org == null ? []
+    : !up ? [{ id: "up:none", kicker: "Not on the org chart", title: "", sub: "Pick a seat in step 1 so its result reaches a head", href: step("job"), look: "dashed", state: null }]
+    : [{ id: "up", kicker: up.open ? "Open seat" : "Reads it", title: up.title, sub: up.sub, href: up.agentId ? `/build/${up.agentId}` : "/crew", look: up.open ? "dashed" : "plain", state: null }];
+
+  const byCol: Record<ColKey, MapNode[]> = { when: [when], reads: cap(reads, "reads"), thinks: [brain], hands: cap(hands, "hands"), usedBy: cap(usedBy, "usedBy"), reportsTo };
+  const cols = MAP_COLS.filter((c) => byCol[c.key].length).map((c) => ({ ...c, nodes: byCol[c.key] }));
 
   const edges: AgentMapModel["edges"] = [];
   for (const r of byCol.reads) edges.push({ from: "when", to: r.id }, { from: r.id, to: "brain" });
   for (const h of byCol.hands) edges.push({ from: "brain", to: h.id });
   const out = byCol.hands.find((h) => h.id === "out") ?? byCol.hands[byCol.hands.length - 1];
   for (const u of byCol.usedBy) edges.push({ from: out.id, to: u.id });
+  for (const r of byCol.reportsTo) edges.push({ from: out.id, to: r.id });
 
   return { name: spec.name, cols, edges, run: run ?? null };
 }

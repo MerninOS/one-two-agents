@@ -14,7 +14,7 @@ import { schedSentence, schedWords } from "@/dashboard/schedule";
 import { RunSteps } from "@/dashboard/components/RunSteps";
 import { AgentTabs } from "@/dashboard/components/ui";
 import { placeAgent } from "@/dashboard/orgActions";
-import { seatChoices } from "@/dashboard/org";
+import { mapOrgOf, seatChoices, seatToolChoices } from "@/dashboard/org";
 import { loadOrg, seatOf } from "@/core/org";
 
 // One agent's builder page, its Edit tab (docs/builder-flow.md, slices 2-5). With ?edit it is the flow, steps 1-4,
@@ -38,6 +38,7 @@ export default async function BuildAgent({ params, searchParams }: { params: Pro
 
   if (sp.edit != null || !s) {
     const org = await loadOrg();
+    const seatBlocks = await seatToolChoices(org);
     return (
       <Flow
         key={working?.version ?? 0}
@@ -56,12 +57,14 @@ export default async function BuildAgent({ params, searchParams }: { params: Pro
         addStandard={addStandard.bind(null, id)}
         forget={forgetMemoryLine}
         seats={org ? seatChoices(org, id) : undefined}
+        seatBlocks={seatBlocks}
         seatId={org ? seatOf(org, id)?.id ?? null : null}
         place={placeAgent.bind(null, id)}
       />
     );
   }
 
+  const mapOrg = await mapOrgOf(await loadOrg(), id);
   const crew = !!BY_ID[id];
   const sch = BY_ID[id]?.schedule;
   const saved = sp.saved != null;
@@ -85,7 +88,7 @@ export default async function BuildAgent({ params, searchParams }: { params: Pro
 
       <TryLive
         key={`${working?.version ?? 0}-${b.playbooks?.pending?.id ?? 0}`}
-        map={{ agentId: id, spec: s, menu: { tools: menu.tools, models: menu.models, conns: menu.conns }, schedule: sch && sch.kind !== "manual" ? schedWords(sch) : null, chain: sch?.chain ?? null, usedBy: b.usedBy, edit: `/build/${id}?edit=1` }}
+        map={{ agentId: id, spec: s, menu: { tools: menu.tools, models: menu.models, conns: menu.conns }, schedule: sch && sch.kind !== "manual" ? schedWords(sch) : null, chain: sch?.chain ?? null, usedBy: b.usedBy, edit: `/build/${id}?edit=1`, org: mapOrg }}
         name={s.name}
         draw={saved}
         working={{ version: working!.version, isDraft: !!b.draft }}

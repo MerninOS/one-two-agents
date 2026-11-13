@@ -132,6 +132,12 @@ export interface ToolDef {
   stage?: (input: Record<string, string | number | Pick>, ctx: ToolCtx) => Staged | { problem: string };
   /** Action tools: the only agents the gateway lets use it (hard rule), copied from core/gateway. */
   agents?: readonly string[];
+  /**
+   * Tools that depend on where the agent sits on the org chart (docs/org-chart.md, slice 3):
+   * "team" for an agent with live agents under its seat, "company" for the company seat. The
+   * builder offers them only there, and the tool checks the chart again on every call.
+   */
+  seat?: "team" | "company";
 }
 
 export const paramsOf = (t: ToolDef, ctx: ToolCtx): readonly Param[] => (t.paramsFor ? t.paramsFor(ctx) : t.params);

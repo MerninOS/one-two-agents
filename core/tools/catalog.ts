@@ -15,6 +15,10 @@ import "server-only";
 import { G_PER_LB, round2 } from "@/domain/coffee";
 import { db } from "@/core/db";
 import { chicagoDate } from "@/core/time";
+import {
+  agentNames, agentsIn, companyBlock, deptSpent, headOf, latestOutputs, liveAgentIds, loadOrg, monthSpendByAgent, runStats, seatOf, seatPath, teamBlock, teamOf,
+  type RunStats,
+} from "@/core/org";
 import { snapshot } from "@/agents/cfo";
 import { deliverBrief } from "@/agents/chief-of-staff";
 import { mercuryCash, mercuryCategories, mercuryTransactions } from "@/integrations/mercury";
@@ -240,15 +244,80 @@ const TOOLS_LIST: ToolDef[] = [
       return { data: data ?? [], numbers };
     },
   },
+  // ---- The org chart (docs/org-chart.md, slice 3). Who counts as the team comes from the chart,
+  // checked again on every call; the model never picks it. Teammates' words are untrusted; run
+  // counts and spend are added up here in code.
   {
-    id: "agent_runs_recent", label: "Other agents' runs", detail: "Every agent run in the last 24 hours: who, when, status and summary. Summaries can quote web pages, so they are untrusted",
-    kind: "read", group: "supabase", params: [], trusted: false, needs: SUPABASE, costUsd: 0,
-    run: async (_input, ctx) => {
-      const since = new Date(Date.now() - 864e5).toISOString();
-      const { data, error } = await db().from("agent_runs").select("agent_id, status, summary, started_at").gte("started_at", since).neq("trigger", "preview").neq("agent_id", ctx.agentId).order("started_at").limit(100);
-      if (error) throw new Error(error.message);
-      const rows = (data ?? []).map((r) => ({ ...r, summary: (r.summary ?? "").slice(0, 400) }));
-      return { data: rows, numbers: { runs: rows.length, failed_runs: rows.filter((r) => r.status === "failed").length } };
+    id: "team_report", label: "Your team", detail: "For an agent with live agents under its seat on the org chart: each one's latest finished result and how its runs went (failures, cost against its budget). The team comes from the chart",
+    kind: "read", group: "agents", params: [daysParam(1, 7, "How many days of runs to look at.")], trusted: false, needs: SUPABASE, costUsd: 0, seat: "team",
+    run: async ({ days }, ctx) => {
+      const [o, live] = await Promise.all([loadOrg(), liveAgentIds()]);
+      if (!o) throw new Error("The org chart isn't set up.");
+      const why = teamBlock(o, ctx.agentId, live);
+      if (why) throw new Error(why);
+      const t = teamOf(o, ctx.agentId, live)!;
+      const since = new Date(Date.now() - Number(days) * 864e5).toISOString();
+      const [stats, outs, names, { data: budgets }] = await Promise.all([
+        runStats(t.agents, since), latestOutputs(t.agents), agentNames(t.agents),
+        db().from("agents").select("id, daily_budget_usd").in("id", t.agents),
+      ]);
+      const budget = new Map((budgets ?? []).map((b) => [b.id as string, Number(b.daily_budget_usd)]));
+      const numbers: Record<string, number> = {};
+      const team = t.agents.map((id, i) => {
+        const s = stats[id], out = outs[id], k = `a${i + 1}`;
+        numbers[`${k}_runs`] = s.runs; numbers[`${k}_failed`] = s.failed; numbers[`${k}_cost_usd`] = s.costUsd;
+        out?.numbers.forEach((n, j) => { numbers[`${k}_n${j + 1}`] = n.value; });
+        return {
+          key: k, agent: names[id], seat: seatOf(o, id)?.title ?? "",
+          latest: out ? { output: out.name, at: out.at, summary: out.summary, numbers: out.numbers.map((n, j) => ({ key: `${k}_n${j + 1}`, label: n.label, value: n.value })) } : null,
+          runs: s.runs, failed: s.failed, skipped: s.skipped, costUsd: s.costUsd, budgetUsd: Math.round((budget.get(id) ?? 0) * Number(days) * 100) / 100, lastError: s.lastError,
+        };
+      });
+      numbers.team_agents = team.length;
+      numbers.team_runs = team.reduce((a, x) => a + x.runs, 0);
+      numbers.team_failed = team.reduce((a, x) => a + x.failed, 0);
+      numbers.team_cost_usd = Math.round(team.reduce((a, x) => a + Math.round(x.costUsd * 100), 0)) / 100;
+      return { data: { seat: seatPath(o, t.seat), days: Number(days), team }, numbers };
+    },
+  },
+  {
+    id: "department_reports", label: "Department reports", detail: "For the company seat (Avery's): each department's head report (its latest finished result) and how the department's runs went, plus agents not in a department. Replaces reading every agent's runs",
+    kind: "read", group: "agents", params: [daysParam(1, 7, "How many days of runs to look at.")], trusted: false, needs: SUPABASE, costUsd: 0, seat: "company",
+    run: async ({ days }, ctx) => {
+      const [o, live] = await Promise.all([loadOrg(), liveAgentIds()]);
+      if (!o) throw new Error("The org chart isn't set up.");
+      const why = companyBlock(o, ctx.agentId);
+      if (why) throw new Error(why);
+      const since = new Date(Date.now() - Number(days) * 864e5).toISOString();
+      const ids = [...live].filter((id) => id !== ctx.agentId);
+      const heads = o.departments.map((d) => headOf(o, d.id)?.agentId).filter((id): id is string => !!id && live.has(id));
+      const [stats, outs, names, month] = await Promise.all([runStats(ids, since), latestOutputs(heads), agentNames(ids), monthSpendByAgent(ids)]);
+      const numbers: Record<string, number> = {};
+      const sum = (list: string[], f: (s: RunStats) => number) => list.reduce((a, id) => a + (stats[id] ? f(stats[id]) : 0), 0);
+      const departments = o.departments.map((d) => {
+        const members = agentsIn(o, d.id).filter((id) => live.has(id));
+        const head = headOf(o, d.id);
+        const headId = head?.holder === "agent" && head.agentId && live.has(head.agentId) ? head.agentId : null;
+        const out = headId ? outs[headId] : undefined;
+        const cost = Math.round(sum(members, (s) => Math.round(s.costUsd * 100))) / 100;
+        numbers[`${d.id}_runs`] = sum(members, (s) => s.runs);
+        numbers[`${d.id}_failed`] = sum(members, (s) => s.failed);
+        numbers[`${d.id}_cost_usd`] = cost;
+        numbers[`${d.id}_spent_month_usd`] = deptSpent(o, d.id, month);
+        out?.numbers.forEach((n, j) => { numbers[`${d.id}_n${j + 1}`] = n.value; });
+        return {
+          department: d.name, head: headId ? names[headId] : head?.holder === "zak" ? "Zak" : "open seat",
+          headReport: out ? { output: out.name, at: out.at, summary: out.summary, numbers: out.numbers.map((n, j) => ({ key: `${d.id}_n${j + 1}`, label: n.label, value: n.value })) } : null,
+          agents: members.length, runs: numbers[`${d.id}_runs`], failed: numbers[`${d.id}_failed`], costUsd: cost,
+          failures: members.filter((id) => stats[id]?.failed).map((id) => ({ agent: names[id], error: stats[id].lastError })),
+          monthlyBudgetUsd: d.monthlyBudgetUsd, spentThisMonthUsd: numbers[`${d.id}_spent_month_usd`],
+        };
+      });
+      const loose = ids.filter((id) => !seatOf(o, id) && stats[id]?.runs);
+      const notInADepartment = loose.map((id) => ({ agent: names[id], runs: stats[id].runs, failed: stats[id].failed, lastError: stats[id].lastError }));
+      numbers.departments = departments.length;
+      numbers.failed_runs = sum(ids, (s) => s.failed);
+      return { data: { days: Number(days), departments, notInADepartment }, numbers };
     },
   },
   {

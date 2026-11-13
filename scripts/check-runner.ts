@@ -8,6 +8,7 @@ import { runExplore, traceNumbers, type Step } from "../core/runner";
 import { TOOLS } from "../core/tools/catalog";
 import type { ToolDef } from "../core/tools/types";
 import { parseJudgment } from "../agents/chief-of-staff";
+import { deptLine } from "../agents/chief-of-staff/email";
 
 type Block = { type: "text"; text: string } | { type: "tool_use"; id: string; name: string; input: unknown };
 let n = 0;
@@ -206,6 +207,11 @@ async function main() {
   // Avery's focus and watch lines from a runner result
   assert.deepEqual(parseJudgment("Focus: Reorder Ethiopia Guji. It runs out first.\n- Guji has 9 days left.\n- 2 orders on QC hold.\nsomething else"), { focus: { action: "Reorder Ethiopia Guji", reason: "It runs out first." }, watch: ["Guji has 9 days left.", "2 orders on QC hold."] });
   assert.equal(parseJudgment("No focus here"), null);
+  // slice 3 of departments: department lines have no dash, so they never become watch items; counts come from code
+  assert.deepEqual(parseJudgment("Focus: Ship it. Now.\n- one\nFinance: Cash is fine.")?.watch, ["one"]);
+  assert.equal(deptLine({ name: "Finance", line: "Cash covers 14 months.", runs: 3, failed: 0, costUsd: 0.123 }), "Finance: Cash covers 14 months. 3 runs, all OK, $0.12, in the last 24 hours.");
+  assert.equal(deptLine({ name: "Sales", line: null, runs: 0, failed: 0, costUsd: 0 }), "Sales: No runs in the last 24 hours.");
+  assert.equal(deptLine({ name: "Ops", line: "", runs: 2, failed: 1, costUsd: 0.5 }), "Ops: 2 runs, 1 failed, $0.50, in the last 24 hours.");
 
   // slice 7: multiline text keeps line breaks but no links; url and email shapes
   const body = [{ name: "body", type: "text", maxLength: 200, multiline: true, description: "" }] as const;

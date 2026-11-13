@@ -157,5 +157,62 @@ export function deptEmailChange(now: number | null, next: number | null, company
   return { looser: next === null || (now !== null && next > now) };
 }
 
+// ---- Teams (slice 3). Who an agent watches comes from the chart, never from the model: the live
+// agents seated under its seat, at any depth. A lead watches its seats; a head its whole department.
+
+/** A lead needs this many live agents under it before it gets the Team connection. A head needs one. */
+export const LEAD_MIN_TEAM = 2;
+
+/** The live agents under an agent's seat, at any depth, and whether that seat is a department head. Null off the chart. */
+export function teamOf(o: Org, agentId: string, live: ReadonlySet<string>): { seat: Seat; head: boolean; company: boolean; agents: string[] } | null {
+  const seat = seatOf(o, agentId);
+  return seat ? seatTeam(o, seat, live) : null;
+}
+
+/** The live agents under a seat, at any depth. The company seat has no team: it reads Department reports. */
+export function seatTeam(o: Org, seat: Seat, live: ReadonlySet<string>): { seat: Seat; head: boolean; company: boolean; agents: string[] } {
+  const company = seat.departmentId == null;
+  const agents = company ? [] : below(o, seat.id).filter((s) => s.holder === "agent" && s.agentId && live.has(s.agentId)).map((s) => s.agentId as string);
+  return { seat, head: !company && seat.parentId == null, company, agents };
+}
+
+const OFF_CHART_TEAM = "Only for an agent in a seat with agents under it. Put it on the org chart first (step 1).";
+const NOT_COMPANY = "Only for the agent in the company seat (Avery’s), which reports to you.";
+
+/** Why the agent in this seat (or with no seat) can't have Your team and Department reports, or null for each. */
+export function seatToolBlocks(o: Org, seatId: string | null, live: ReadonlySet<string>): { team: string | null; company: string | null } {
+  const seat = seatId ? o.seats.find((s) => s.id === seatId) ?? null : null;
+  if (!seat) return { team: OFF_CHART_TEAM, company: NOT_COMPANY };
+  const t = seatTeam(o, seat, live);
+  if (t.company) return { team: "The company seat reads Department reports instead.", company: null };
+  const need = t.head ? 1 : LEAD_MIN_TEAM;
+  const team = t.agents.length >= need ? null
+    : !t.agents.length ? "No live agent sits under its seat yet." : `A lead needs ${LEAD_MIN_TEAM} live agents under its seat first (it has ${t.agents.length}).`;
+  return { team, company: NOT_COMPANY };
+}
+
+/** Why an agent can't have the Team connection now, or null. */
+export function teamBlock(o: Org, agentId: string | null, live: ReadonlySet<string>): string | null {
+  return seatToolBlocks(o, agentId ? seatOf(o, agentId)?.id ?? null : null, live).team;
+}
+
+/** Why an agent can't have Department reports, or null: only the company seat reads every department. */
+export function companyBlock(o: Org, agentId: string | null): string | null {
+  return seatToolBlocks(o, agentId ? seatOf(o, agentId)?.id ?? null : null, new Set()).company;
+}
+
+/** A department's line in Avery's result: "Finance: ..." for a department on the chart. Matched in code, case-insensitive. */
+export function departmentLines(text: string, names: readonly string[]): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const raw of text.split("\n")) {
+    const l = raw.trim().replace(/^[-•*]\s+/, "");
+    const m = /^([^:]{1,60}):\s*(.+)$/.exec(l);
+    if (!m) continue;
+    const name = names.find((n) => n.toLowerCase() === m[1].trim().toLowerCase());
+    if (name && !out[name]) out[name] = m[2].replace(/\s+/g, " ").trim().slice(0, 300);
+  }
+  return out;
+}
+
 /** A department's email cap as enforced: never above the company cap, whatever the row says. */
 export const deptEmailCap = (d: Department, companyCap: number) => (d.maxEmailsPerDay == null ? companyCap : Math.max(0, Math.min(companyCap, d.maxEmailsPerDay)));

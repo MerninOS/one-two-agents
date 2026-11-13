@@ -3,7 +3,7 @@ import { builderMenu, listBuilt, listOthers, listTemplates } from "@/dashboard/b
 import { requireSession } from "@/dashboard/data";
 import { controlsOn } from "@/dashboard/session";
 import { Flow } from "@/dashboard/components/Flow";
-import { seatChoices } from "@/dashboard/org";
+import { seatChoices, seatToolChoices } from "@/dashboard/org";
 import { loadOrg } from "@/core/org";
 
 // New agent: the builder flow with nothing saved yet (docs/builder-flow.md, slice 2). Its last step
@@ -16,6 +16,7 @@ export default async function NewAgent({ searchParams }: { searchParams: Promise
   // opened from an open seat on the org chart: that seat is picked, and its name fills in the job line
   const seats = org ? seatChoices(org, null).filter((x) => x.free) : undefined;
   const seat = org?.seats.find((x) => x.id === sp.seat && x.holder === "open") ?? null;
+  const seatBlocks = await seatToolChoices(org);
   if (built == null) return <div className="card"><span className="sub">The runner migration (20261113120000_agent_builder_runner.sql) isn’t applied yet.</span></div>;
   return (
     <Flow
@@ -29,6 +30,7 @@ export default async function NewAgent({ searchParams }: { searchParams: Promise
       others={others}
       create={createBuilt}
       seats={seats}
+      seatBlocks={seatBlocks}
       seatId={seat?.id ?? null}
       seed={seat ? { mandate: [seat.title, seat.sub].filter(Boolean).join(": ").slice(0, 200) } : undefined}
     />
