@@ -499,3 +499,32 @@ label.tl-rstep { cursor: pointer; }
 .tl-facts > div { display: flex; flex-direction: column; gap: 4px; padding: 14px 16px; border-radius: 16px; border: 1px solid var(--bd); font-size: 14px; line-height: 1.5; }
 .tl-note { font-size: 12.5px; font-weight: 600; color: var(--acc-ink); }
 @media (max-width: 760px) { .tl-card { padding: 18px; } }
+
+/* Crew > Org chart (docs/org-chart.md) */
+.org { display: flex; flex-direction: column; gap: 16px; }
+.org-top { display: flex; flex-direction: column; align-items: center; }
+.org-stem { width: 2px; height: 18px; background: var(--mut2); }
+.org-depts { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 300px), 1fr)); gap: 14px; align-items: start; }
+.org-dept { gap: 10px; }
+.org-dept-h { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+.org-dept-n { font-size: 16.5px; font-weight: 700; letter-spacing: -.01em; }
+.org-node { display: flex; flex-direction: column; gap: 8px; }
+.org-kids { display: flex; flex-direction: column; gap: 8px; padding-left: 14px; margin-left: 15px; border-left: 2px solid var(--bd); }
+.org-seat { display: flex; align-items: center; gap: 10px; width: 100%; min-width: 0; min-height: 52px; padding: 9px 12px; border-radius: 14px; background: var(--card); border: 1px solid var(--bd); color: var(--ink); text-align: left; font: inherit; text-decoration: none; }
+a.org-seat:hover, button.org-seat:hover { text-decoration: none; border-color: var(--mut2); }
+button.org-seat { cursor: pointer; }
+.org-seat.wide { width: min(100%, 380px); box-shadow: 0 6px 18px rgba(17,17,26,.06); }
+.org-top > .org-seat.you { width: min(100%, 300px); }
+.org-seat.open { background: transparent; border: 1.5px dashed var(--mut2); }
+.org-seat.plan { background: var(--soft); }
+.org-seat.you { background: var(--acc-soft); border-color: transparent; }
+.org-plus { background: var(--soft); color: var(--ink2); }
+.org-who { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+.org-who b { font-size: 14px; font-weight: 600; line-height: 1.25; }
+.org-who > span { font-size: 12px; color: var(--ink2); line-height: 1.35; overflow-wrap: anywhere; }
+.org-who .org-last { color: var(--mut); font-size: 11.5px; }
+.org-sheet { width: 520px; }
+.org-form { display: flex; flex-direction: column; gap: 8px; padding-top: 12px; border-top: 1px solid var(--bd); }
+.org-form .btn { align-self: flex-start; }
+.org-dept.wide { grid-column: 1 / -1; }
+.org-kids.cols { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 240px), 1fr)); gap: 12px; padding-left: 0; margin-left: 0; border-left: 0; padding-top: 4px; }

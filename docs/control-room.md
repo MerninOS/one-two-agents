@@ -8,7 +8,7 @@ A "mission control" for the agents, light and dark themes, Plus Jakarta Sans, wh
 
 - **Top bar:** "12" logo, crew rail (one round avatar per agent; 3 built, a divider, 8 planned with dashed rings), theme toggle, bell, date pill, Zak's avatar.
 - **Sidebar:** Today, Approvals, Crew, Runs, Connections, and Settings at the bottom (docs/builder-flow.md, slice 5).
-- **Screens:** Today (greeting, stat chips, "Live floor" agent map of the latest run (docs/builder-flow.md, slice 3), Needs you, Shift board, Spend by agent, Memory per agent, Joining the crew), Crew (a card per agent, New agent, and a Schedule view with the chains), Agent profile with tabs (Overview, Edit (the builder page), Memory, Runs), Run replay (dark header with scrubber, money breakdown, the agent map with the run laid over it, step timeline, gateway inspector), Runs (the run log: filters, search, totals; each row opens its replay), Connections (one page per integration: status, what agents can read, do and hand you there, and who has it), the agent builder (New agent on Crew, or an agent's Edit tab: the step-by-step flow in docs/builder-flow.md), Approvals, Settings (including the money and email caps). A confirm modal and a toast are shared.
+- **Screens:** Today (greeting, stat chips, "Live floor" agent map of the latest run (docs/builder-flow.md, slice 3), Needs you, Shift board, Spend by agent, Memory per agent, Joining the crew), Crew (the Org chart: departments, seats and who sits in them, docs/org-chart.md; New agent; and a Schedule view with the chains), Agent profile with tabs (Overview, Edit (the builder page), Memory, Runs), Run replay (dark header with scrubber, money breakdown, the agent map with the run laid over it, step timeline, gateway inspector), Runs (the run log: filters, search, totals; each row opens its replay), Connections (one page per integration: status, what agents can read, do and hand you there, and who has it), the agent builder (New agent on Crew, or an agent's Edit tab: the step-by-step flow in docs/builder-flow.md), Approvals, Settings (including the money and email caps). A confirm modal and a toast are shared.
 - Agents are personas: Avery (Chief of Staff), Morgan (CFO), Rowan (Wholesale Hunter), Quinn (Bookkeeper, built 2026-11-09, off until launch); planned: Sage, Blair, Sol, Remy, Jules, Ellis (Conversion Optimizer), Kit.
 
 ## 2. What exists in the backend today, and what doesn't
@@ -16,6 +16,7 @@ A "mission control" for the agents, light and dark themes, Plus Jakarta Sans, wh
 | Design element | Backend today | Phase 1 (this PR) |
 | --- | --- | --- |
 | Crew, status, model, budget | `agents` table (enabled, daily_budget_usd, model, schedule) | Real |
+| Org chart | `departments`, `seats` (docs/org-chart.md) | Real |
 | Run log, cost, tokens, summaries, errors | `agent_runs` | Real |
 | Spend today vs budget | `agent_runs.cost_usd` since UTC midnight (same rule `withRun` uses) | Real |
 | Schedules (Shift) | `vercel.json` Vercel Schedules; on/off lives in Vercel, not the DB | Read only, from a mirror of `vercel.json` |

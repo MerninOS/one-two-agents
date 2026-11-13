@@ -18,6 +18,7 @@ import { Icon } from "@/dashboard/components/Icon";
 import { RunTable } from "@/dashboard/components/RunTable";
 import { builderMenu, mapFor } from "@/dashboard/builder";
 import { AgentTabs, Avatar, LockList, Pill, Summary } from "@/dashboard/components/ui";
+import { loadOrg, reportsTo, seatOf, seatPath } from "@/core/org";
 
 // A real Wholesale Hunter run takes a few minutes. realRun returns at once and finishes the run in after(),
 // which lives as long as this page's function allows.
@@ -45,6 +46,7 @@ export default async function AgentPage({ params, searchParams }: { params: Prom
   const books = id === "bookkeeper" ? await getBooks() : null;
   const mem = a.built && (tab === "memory" || tab === "overview") ? await getMemory(id) : null;
   const how = a.built && tab === "overview" ? await howItWorks(id) : null;
+  const place = tab === "overview" ? await placeOf(id) : null;
   const runs = f.runs.filter((r) => r.agent_id === id);
   const unseen = needs(f, f.now, parseSeen((await cookies()).get(SEEN_COOKIE)?.value)).some((n) => n.run && n.agentId === id);
 
@@ -69,7 +71,7 @@ export default async function AgentPage({ params, searchParams }: { params: Prom
           <div className="stack">
             <div className="card" style={{ gap: 0 }}>
               <span className="card-t" style={{ marginBottom: 10 }}>How {a.name} works</span>
-              {(how ?? (a.built ? [["Setup", "No saved version yet."]] : [["What it will do", a.job], ["Phase", `${a.phase} · build after launch`], ["Tier", TIERS[a.tier]], ["Intended trigger", a.trigger ?? "Set when built"]])).map(([k, v]) => <div key={k} className="kv"><span>{k}</span><span style={{ lineHeight: 1.45 }}>{v}</span></div>)}
+              {[...(place ? [place] : []), ...(how ?? (a.built ? [["Setup", "No saved version yet."]] : [["What it will do", a.job], ["Phase", `${a.phase} · build after launch`], ["Tier", TIERS[a.tier]], ["Intended trigger", a.trigger ?? "Set when built"]]))].map(([k, v]) => <div key={k} className="kv"><span>{k}</span><span style={{ lineHeight: 1.45 }}>{v}</span></div>)}
             </div>
             <Toolbelt a={a} f={f} />
           </div>
@@ -437,4 +439,15 @@ function Memory({ a, f, domains, mem }: { a: CrewMember; f: Floor; domains?: str
       </div>
     </div>
   );
+}
+
+/** Where the agent sits on the org chart and who it reports to (docs/org-chart.md), as one row. */
+async function placeOf(id: string): Promise<[string, string] | null> {
+  const org = await loadOrg();
+  if (!org) return null;
+  const seat = seatOf(org, id);
+  if (!seat) return ["Org chart", "Not on the chart yet. Put it in a seat on Crew."];
+  const up = reportsTo(org, seat);
+  const boss = !up ? "you" : up.holder === "zak" ? "you" : up.holder === "agent" && up.agentId ? (BY_ID[up.agentId]?.name ?? up.agentId) : `${up.title} (open seat)`;
+  return ["Org chart", `${seatPath(org, seat)} · reports to ${boss}`];
 }
