@@ -16,7 +16,7 @@ import { G_PER_LB, round2 } from "@/domain/coffee";
 import { db } from "@/core/db";
 import { chicagoDate } from "@/core/time";
 import {
-  agentNames, agentsIn, companyBlock, deptSpent, headOf, latestOutputs, liveAgentIds, loadOrg, monthSpendByAgent, runStats, seatOf, seatPath, teamBlock, teamOf,
+  agentNames, agentsIn, companyBlock, deptSpent, draftCode, headOf, latestOutputs, leadCheck, liveAgentIds, loadOrg, monthSpendByAgent, runStats, seatOf, seatPath, teamBlock, teamOf,
   type RunStats,
 } from "@/core/org";
 import { snapshot } from "@/agents/cfo";
@@ -25,7 +25,8 @@ import { mercuryCash, mercuryCategories, mercuryTransactions } from "@/integrati
 import { divider, h2, h3, li, notionPage, notionPageText, p as para, quote } from "@/integrations/notion";
 import { emailZak } from "@/integrations/email";
 import { ANNOTATE, DRAFT_EMAIL, DRAFT_LIMITS, TOOLS as GATEWAY_TOOLS, refuseProposal } from "@/core/gateway/policy";
-import { propose } from "@/core/gateway";
+import { draftsToCheck, leadReview, propose } from "@/core/gateway";
+import { proposeLesson } from "@/core/memory";
 import { env } from "@/core/env";
 import { domainOf, offer } from "@/agents/wholesale-hunter";
 import { syncBooks } from "@/agents/bookkeeper";
@@ -318,6 +319,55 @@ const TOOLS_LIST: ToolDef[] = [
       numbers.departments = departments.length;
       numbers.failed_runs = sum(ids, (s) => s.failed);
       return { data: { days: Number(days), departments, notInADepartment }, numbers };
+    },
+  },
+  // Slice 4 (docs/org-chart.md): a lead checks its team's drafts before Zak sees them, where the
+  // department has "Lead checks drafts first" on. Only drafts the gateway assigned to this agent
+  // come back; the draft's words are untrusted. The check is a note or one send-back, saved after
+  // the run: never an approval, a rejection or an edit.
+  {
+    id: "team_drafts", label: "Your team's drafts", detail: "Drafts from agents under its seat that wait for its check before they reach Zak (when the department has Lead checks drafts first on): who wrote each, the exact words, and whether it can still be sent back",
+    kind: "read", group: "agents", params: [], trusted: false, needs: SUPABASE, costUsd: 0, seat: "team",
+    run: async (_input, ctx) => {
+      const rows = await draftsToCheck(ctx.agentId);
+      const names = await agentNames([...new Set(rows.map((r) => r.agentId))]);
+      return {
+        data: { drafts: rows.map((r) => ({ code: draftCode(r.id), from: names[r.agentId] ?? r.agentId, title: r.title, why: r.reasoning, draft: r.preview, canSendBack: r.canSendBack, goesToZakBy: r.due })) },
+        numbers: { drafts_waiting: rows.length },
+      };
+    },
+  },
+  {
+    id: "check_team_draft", label: "Check a team draft", detail: "Hands one check per call on a draft from Your team's drafts: a note Zak sees on the card, or send it back once with the reason. Saved after a run that finishes. It can't approve, reject or change the draft",
+    kind: "report", group: "agents", trusted: false, needs: SUPABASE, costUsd: 0, seat: "team",
+    params: [
+      { name: "draft", type: "text", maxLength: 8, description: "The draft's code from Your team's drafts." },
+      { name: "verdict", type: "enum", options: ["note", "send_back"], description: "note: it goes on to Zak with your note. send_back: it goes back to the agent that wrote it, with your reason (once per draft)." },
+      { name: "note", type: "text", maxLength: 400, description: "Your note for Zak, or the reason it goes back. One or two sentences, no links." },
+    ],
+    collect: (input, held) => {
+      const code = String(input.draft).trim().toLowerCase();
+      if (!/^[0-9a-f]{8}$/.test(code)) return { problem: "draft must be a code from Your team's drafts" };
+      if (held.some((r) => r.draft === code)) return { problem: `${code} already has a check in this run` };
+      const c = leadCheck(String(input.verdict), String(input.note), true);
+      return "problem" in c ? c : { row: { draft: code, verdict: c.verdict, note: c.note } };
+    },
+    deliver: async (o, ctx) => {
+      if (!o.rows.length) return "no drafts checked";
+      // only drafts the gateway assigned to this agent and still waiting; send-back allowed once, checked again in leadReview
+      const mine = await draftsToCheck(ctx.agentId);
+      const n = { noted: 0, sent_back: 0, gone: 0 };
+      for (const r of o.rows) {
+        const d = mine.find((x) => draftCode(x.id) === r.draft);
+        if (!d) { n.gone++; continue; }
+        const c = leadCheck(String(r.verdict), String(r.note), d.canSendBack);
+        const note = "problem" in c ? String(r.note).slice(0, 400) : c.note;
+        const got = await leadReview(d.id, ctx.agentId, "problem" in c ? "note" : c.verdict, note);
+        n[got.result]++;
+        // the reason reaches the agent that wrote it as a proposed lesson, only once Zak keeps it
+        if (got.result === "sent_back") await proposeLesson(got.agentId, d.id, got.title, note, o.agentName).catch(() => null);
+      }
+      return `${n.noted} noted, ${n.sent_back} sent back${n.gone ? `, ${n.gone} no longer waiting` : ""}`;
     },
   },
   {

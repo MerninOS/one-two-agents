@@ -21,6 +21,8 @@ export interface Department {
   monthlyBudgetUsd: number | null;
   /** Outbound emails a day from the agents seated here; null for the company cap alone. */
   maxEmailsPerDay: number | null;
+  /** Drafts from the agents seated here wait for the agent above them (slice 4) before they reach Zak. */
+  leadChecksDrafts: boolean;
 }
 export interface Seat {
   id: string;
@@ -216,3 +218,59 @@ export function departmentLines(text: string, names: readonly string[]): Record<
 
 /** A department's email cap as enforced: never above the company cap, whatever the row says. */
 export const deptEmailCap = (d: Department, companyCap: number) => (d.maxEmailsPerDay == null ? companyCap : Math.max(0, Math.min(companyCap, d.maxEmailsPerDay)));
+
+/** How long a draft waits for its lead before it goes to Zak anyway (docs/org-chart.md, slice 4). */
+export const LEAD_REVIEW_HOURS = 24;
+
+/**
+ * Who checks an agent's drafts first: the nearest seat above it held by another live agent that has
+ * Check a team draft (canCheck), inside
+ * its department, when the department has "Lead checks drafts first" on. Null otherwise (the draft
+ * goes straight to Zak). The company seat never checks drafts: Avery reports, it doesn't review.
+ */
+export function checkerOf(o: Org, agentId: string, live: ReadonlySet<string>, canCheck: ReadonlySet<string>): { reviewer: string; departmentId: string } | null {
+  const seat = seatOf(o, agentId);
+  const dept = seat?.departmentId ? o.departments.find((d) => d.id === seat.departmentId) : null;
+  if (!seat || !dept?.leadChecksDrafts) return null;
+  let cur = seat.parentId ? o.seats.find((s) => s.id === seat.parentId) : undefined;
+  for (let n = 0; cur && n <= MAX_DEPTH; n++) {
+    if (cur.holder === "agent" && cur.agentId && cur.agentId !== agentId && live.has(cur.agentId) && canCheck.has(cur.agentId)) return { reviewer: cur.agentId, departmentId: dept.id };
+    cur = cur.parentId ? o.seats.find((s) => s.id === cur!.parentId) : undefined;
+  }
+  return null;
+}
+
+/** A lead's check on a draft, as code takes it: a note, or a send-back with a reason. Untrusted words, one line, no links. */
+export function leadCheck(verdict: string, note: string, canSendBack: boolean): { verdict: "note" | "send_back"; note: string } | { problem: string } {
+  const text = note.replace(/\s+/g, " ").trim();
+  if (verdict !== "note" && verdict !== "send_back") return { problem: "verdict must be note or send_back" };
+  if (!text) return { problem: "write the note or the reason" };
+  if (text.length > 400) return { problem: "keep it under 400 characters" };
+  if (/https?:\/\/|www\./i.test(text)) return { problem: "no links in a note" };
+  if (verdict === "send_back" && !canSendBack) return { problem: "this draft was sent back once already, so it can only get a note" };
+  return { verdict, note: text };
+}
+
+/** The short code a lead names a draft by: the first 8 characters of its approval id. */
+export const draftCode = (approvalId: string) => approvalId.replace(/-/g, "").slice(0, 8).toLowerCase();
+
+/**
+ * Items grouped by the department of the agent each one is about (docs/org-chart.md, slice 4; Today's
+ * Needs you), in the chart's order; the rest (no agent, or one off the chart or in the company seat)
+ * last, as "Everything else". One group with no name when nothing is in a department.
+ */
+export function groupByDepartment<T extends { agentId?: string }>(list: T[], deptOfAgent: (agentId: string) => { id: string; name: string; sort: number } | null): { name: string | null; items: T[] }[] {
+  const groups = new Map<string, { name: string; sort: number; items: T[] }>();
+  const rest: T[] = [];
+  for (const x of list) {
+    const d = x.agentId ? deptOfAgent(x.agentId) : null;
+    if (!d) { rest.push(x); continue; }
+    const g = groups.get(d.id) ?? { name: d.name, sort: d.sort, items: [] };
+    g.items.push(x);
+    groups.set(d.id, g);
+  }
+  if (!groups.size) return list.length ? [{ name: null, items: list }] : [];
+  const out: { name: string | null; items: T[] }[] = [...groups.values()].sort((a, b) => a.sort - b.sort).map((g) => ({ name: g.name, items: g.items }));
+  if (rest.length) out.push({ name: "Everything else", items: rest });
+  return out;
+}

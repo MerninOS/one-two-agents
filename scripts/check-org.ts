@@ -1,10 +1,11 @@
 // Checks the org chart rules (core/org-rules.ts) on a small chart: no database, no network.
 // Run: npm run check:org
 import assert from "node:assert/strict";
-import { LEAD_MIN_TEAM, agentsIn, below, companyBlock, departmentLines, seatToolBlocks, teamBlock, teamOf, deptBudgetBlock, deptBudgetChange, deptEmailCap, deptEmailChange, deptOf, deptSpent, depthOf, deptSlug, headOf, orgProblems, reportsTo, seatOf, seatPath, type Org } from "../core/org-rules";
+
+import { LEAD_MIN_TEAM, LEAD_REVIEW_HOURS, groupByDepartment, checkerOf, draftCode, leadCheck, agentsIn, below, companyBlock, departmentLines, seatToolBlocks, teamBlock, teamOf, deptBudgetBlock, deptBudgetChange, deptEmailCap, deptEmailChange, deptOf, deptSpent, depthOf, deptSlug, headOf, orgProblems, reportsTo, seatOf, seatPath, type Org } from "../core/org-rules";
 
 const org: Org = {
-  departments: [{ id: "marketing", name: "Marketing", sort: 1, monthlyBudgetUsd: 20, maxEmailsPerDay: null }],
+  departments: [{ id: "marketing", name: "Marketing", sort: 1, monthlyBudgetUsd: 20, maxEmailsPerDay: null, leadChecksDrafts: false }],
   seats: [
     { id: "c", departmentId: null, parentId: null, title: "Chief of Staff", sub: "", holder: "agent", agentId: "chief_of_staff", sort: 0 },
     { id: "h", departmentId: "marketing", parentId: null, title: "Head of marketing", sub: "", holder: "open", agentId: null, sort: 0 },
@@ -26,7 +27,7 @@ assert.deepEqual(below(org, "h").map((s) => s.id), ["l", "s"]);
 assert.equal(deptSlug("Customer care"), "customer_care");
 assert.equal(deptSlug("1 thing"), "d_1_thing");
 
-const broken: Org = { departments: [...org.departments, { id: "coffee", name: "Coffee", sort: 2, monthlyBudgetUsd: null, maxEmailsPerDay: 5 }], seats: [...org.seats, { id: "x", departmentId: "coffee", parentId: "l", title: "Stray", sub: "", holder: "open", agentId: null, sort: 0 }] };
+const broken: Org = { departments: [...org.departments, { id: "coffee", name: "Coffee", sort: 2, monthlyBudgetUsd: null, maxEmailsPerDay: 5, leadChecksDrafts: false }], seats: [...org.seats, { id: "x", departmentId: "coffee", parentId: "l", title: "Stray", sub: "", holder: "open", agentId: null, sort: 0 }] };
 const p = orgProblems(broken);
 assert.ok(p.some((t) => t.includes("another department")));
 assert.ok(p.some((t) => t.includes("Coffee has no head")));
@@ -97,5 +98,33 @@ assert.deepEqual(
 );
 assert.equal(departmentLines(`Marketing: ${"x".repeat(400)}`, ["Marketing"]).Marketing.length, 300);
 assert.deepEqual(departmentLines("", ["Marketing"]), {});
+
+
+// Slice 4: the lead checks drafts first, only where the department has it on
+const on: Org = { ...team, departments: [{ ...mk, leadChecksDrafts: true }] };
+const checkers = new Set(["b_head", "b_lead"]);
+assert.equal(checkerOf(team, "b_sub", live, checkers), null, "off by default: drafts go straight to Zak");
+assert.deepEqual(checkerOf(on, "b_sub", live, checkers), { reviewer: "b_lead", departmentId: "marketing" }, "the nearest agent above");
+assert.deepEqual(checkerOf(on, "b_sub", live, new Set(["b_head"])), { reviewer: "b_head", departmentId: "marketing" }, "skips an agent above that can't check drafts");
+assert.deepEqual(checkerOf(on, "b_sub", new Set(["b_sub", "b_head"]), checkers), { reviewer: "b_head", departmentId: "marketing" }, "skips an agent that isn't live");
+assert.equal(checkerOf(on, "b_head", live, checkers), null, "a head's own drafts go to Zak: the company seat never checks");
+assert.equal(checkerOf(on, "chief_of_staff", live, checkers), null);
+assert.equal(checkerOf(on, "nobody", live, checkers), null);
+assert.equal(LEAD_REVIEW_HOURS, 24);
+assert.deepEqual(leadCheck("note", "  Check the  price. ", true), { verdict: "note", note: "Check the price." });
+assert.deepEqual(leadCheck("send_back", "Wrong lead.", true), { verdict: "send_back", note: "Wrong lead." });
+assert.ok("problem" in leadCheck("send_back", "Wrong lead.", false), "only once");
+assert.ok("problem" in leadCheck("approve", "ok", true), "a lead can't approve");
+assert.ok("problem" in leadCheck("note", "see https://x.co", true), "no links");
+assert.ok("problem" in leadCheck("note", " ", true));
+assert.equal(draftCode("3F2A9C1B-0000-4000-8000-000000000000"), "3f2a9c1b");
+
+
+// Today: Needs you grouped by department, the rest last
+const need = (title: string, agentId?: string) => ({ pri: "High" as const, title, sub: "", href: "/", agentId });
+const dOf = (id: string) => (id === "b_sub" ? { id: "marketing", name: "Marketing", sort: 1 } : id === "cfo" ? { id: "finance", name: "Finance", sort: 0 } : null);
+assert.deepEqual(groupByDepartment([need("a", "b_sub"), need("b"), need("c", "cfo")], dOf).map((g) => [g.name, g.items.map((x) => x.title)]), [["Finance", ["c"]], ["Marketing", ["a"]], ["Everything else", ["b"]]]);
+assert.deepEqual(groupByDepartment([need("b")], dOf), [{ name: null, items: [need("b")] }], "no departments: one plain list");
+assert.deepEqual(groupByDepartment([], dOf), []);
 
 console.log("check-org: all passed");

@@ -3,7 +3,7 @@ import { previewChain, rollBackFlow, runChainNow, saveCrewFlow } from "@/dashboa
 import { listBuilt } from "@/dashboard/builder";
 import { getCrewCanvas, getFloor } from "@/dashboard/data";
 import { deptExtras, orgView } from "@/dashboard/org";
-import { orgAddDepartment, orgAddDeptRule, orgAddSeat, orgEditDeptRule, orgEditSeat, orgForgetDeptRule, orgRemoveDepartment, orgRemoveSeat, orgRenameDepartment, orgSetDeptBudget, orgSetDeptEmails, orgSetHolder } from "@/dashboard/orgActions";
+import { orgAddDepartment, orgAddDeptRule, orgAddSeat, orgEditDeptRule, orgEditSeat, orgForgetDeptRule, orgRemoveDepartment, orgRemoveSeat, orgRenameDepartment, orgSetDeptBudget, orgSetDeptEmails, orgSetHolder, orgSetLeadChecks } from "@/dashboard/orgActions";
 import { controlsOn } from "@/dashboard/session";
 import { loadOrg } from "@/core/org";
 import { CrewCanvas } from "@/dashboard/components/CrewCanvas";
@@ -47,7 +47,7 @@ async function Chart({ f }: { f: Awaited<ReturnType<typeof getFloor>> }) {
       controls={controlsOn()}
       actions={{
         addDept: orgAddDepartment, renameDept: orgRenameDepartment, removeDept: orgRemoveDepartment, addSeat: orgAddSeat, editSeat: orgEditSeat, removeSeat: orgRemoveSeat, setHolder: orgSetHolder,
-        setBudget: orgSetDeptBudget, setEmails: orgSetDeptEmails, addRule: orgAddDeptRule, editRule: orgEditDeptRule, forgetRule: orgForgetDeptRule,
+        setBudget: orgSetDeptBudget, setEmails: orgSetDeptEmails, addRule: orgAddDeptRule, editRule: orgEditDeptRule, forgetRule: orgForgetDeptRule, setLeadChecks: orgSetLeadChecks,
       }}
     />
   );

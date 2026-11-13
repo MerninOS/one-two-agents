@@ -80,7 +80,7 @@ export function Flow(p: FlowProps) {
   const seatBlock = (t: Tool) => (!t.seat || !p.seatBlocks ? null : (p.seatBlocks[seat ?? ""] ?? p.seatBlocks[""])?.[t.seat] ?? null);
   const problems = [
     ...problemsOf(d, p.menu),
-    ...p.menu.tools.filter((t) => d.tools.includes(t.id) && seatBlock(t)).map((t) => ({ step: "connections" as StepKey, text: `untick ${t.label}: ${seatBlock(t)}` })),
+    ...p.menu.tools.filter((t) => d.tools.includes(t.id) && seatBlock(t)).map((t) => ({ step: (abilityOf(t) === "hands" ? "hands" : "connections") as StepKey, text: `untick ${t.label}: ${seatBlock(t)}` })),
   ];
   const stepProblems = problems.filter((x) => x.step === step);
 
@@ -176,7 +176,7 @@ export function Flow(p: FlowProps) {
 
             {step === "job" && <JobStep d={d} change={change} p={p} from={from} setFrom={setFrom} act={act} busy={busy} seat={seat} setSeat={setSeat} />}
             {step === "connections" && <ConnStep d={d} change={change} p={p} setToast={setToast} act={act} busy={busy} seatBlock={seatBlock} />}
-            {step === "hands" && <HandsStep d={d} change={change} p={p} setToast={setToast} />}
+            {step === "hands" && <HandsStep d={d} change={change} p={p} setToast={setToast} seatBlock={seatBlock} />}
             {step === "brain" && <BrainStep d={d} change={change} p={p} />}
 
             {stepProblems.length > 0 && (touched || p.agentId) && <div className="ted-warn">Before you save: {stepProblems.map((x) => x.text).join("; ")}.</div>}
@@ -387,7 +387,7 @@ function ConnStep({ d, change, p, setToast, act, busy, seatBlock }: StepProps & 
   );
 }
 
-function HandsStep({ d, change, p, setToast }: StepProps & { setToast: (r: ActionResult) => void }) {
+function HandsStep({ d, change, p, setToast, seatBlock }: StepProps & { setToast: (r: ActionResult) => void; seatBlock: (t: Tool) => string | null }) {
   const reports = p.menu.tools.filter((t) => t.grantable && t.kind === "report");
   const [link, setLink] = useState(""), [label, setLabel] = useState("");
   const toggle = (id: string) => change({ tools: d.tools.includes(id) ? d.tools.filter((x) => x !== id) : [...d.tools, id] });
@@ -403,9 +403,9 @@ function HandsStep({ d, change, p, setToast }: StepProps & { setToast: (r: Actio
       {reports.map((t) => (
         <div key={t.id} className={`bf-big${d.tools.includes(t.id) ? " on" : ""}`}>
           <label className="row" style={{ gap: 14, cursor: "pointer", alignItems: "flex-start" }}>
-            <input type="checkbox" checked={d.tools.includes(t.id)} onChange={() => toggle(t.id)} style={{ marginTop: 10 }} />
+            <input type="checkbox" checked={d.tools.includes(t.id)} disabled={!!seatBlock(t) && !d.tools.includes(t.id)} onChange={() => toggle(t.id)} style={{ marginTop: 10 }} />
             <span className="bf-ico" style={{ background: CONN_TINT[t.conn] }}><Icon name={icon(t)} size={17} /></span>
-            <span className="bf-opt-t"><b style={{ fontSize: 15 }}>{t.label}</b><span className="ink2" style={{ display: "block", fontSize: 13, lineHeight: 1.5 }}>{t.detail}</span></span>
+            <span className="bf-opt-t"><b style={{ fontSize: 15 }}>{t.label}</b><span className="ink2" style={{ display: "block", fontSize: 13, lineHeight: 1.5 }}>{t.detail}</span>{seatBlock(t) && <span className="bf-opt-why">{seatBlock(t)}</span>}</span>
             {!t.connected && <span className="pill sm" style={{ background: "var(--red-soft)", color: "var(--red-ink)" }}>Not set up</span>}
           </label>
           {t.id === "report_notion_page" && d.tools.includes(t.id) && (

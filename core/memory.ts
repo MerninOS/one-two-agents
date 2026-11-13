@@ -381,11 +381,11 @@ export async function addDepartmentRule(deptId: string, raw: string) {
 // (no model call, so $0). A lesson is loaded only after Zak taps Keep.
 
 /** Proposes a lesson from a rejection. Returns false when there is nothing to learn (no reason given). */
-export async function proposeLesson(agentId: string, approvalId: string, title: string, reason: string) {
+export async function proposeLesson(agentId: string, approvalId: string, title: string, reason: string, sentBackBy?: string) {
   safeId(agentId);
   const why = reason.replace(/\s+/g, " ").trim();
   if (!why) return false;
-  const head = `Zak said no to "${title.replace(/\s+/g, " ").trim()}": `;
+  const head = sentBackBy ? `${sentBackBy} sent back "${title.replace(/\s+/g, " ").trim()}": ` : `Zak said no to "${title.replace(/\s+/g, " ").trim()}": `;
   let text = `${head}${why}`;
   if (text.length > MAX_LINE) text = why.length <= MAX_LINE ? why : `${why.slice(0, MAX_LINE - 1)}…`;
   const { data, error } = await db().from("agent_memory").insert({

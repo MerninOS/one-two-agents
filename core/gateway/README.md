@@ -85,3 +85,7 @@ The fences the payment and email action types will have to pass. Neither action 
 
 Not built yet: the Notion approvals database, Act tier and promotion, circuit breakers,
 an Undo button, and Edit on an approval (reject it instead).
+
+## Lead checks (departments slice 4)
+
+When an agent's department has "Lead checks drafts first" on, `propose` tags the approval with the agent above it on the org chart (`reviewer_agent_id`, `review_status = 'waiting'`, `review_due` a day out). `leadReview` takes that agent's check after its run: a note, or one send-back (`sent_back` on the approval and the action, not a decision of Zak's). `releaseOverdueChecks` moves unchecked drafts to Zak. A lead never approves, rejects or edits; `decide` is still the only approval. See docs/org-chart.md, slice 4.

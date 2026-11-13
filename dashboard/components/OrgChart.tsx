@@ -8,7 +8,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
-import { DEPT_BUDGET_CEILING, deptBudgetChange, deptEmailChange } from "@/core/org-rules";
+import { DEPT_BUDGET_CEILING, LEAD_REVIEW_HOURS, deptBudgetChange, deptEmailChange } from "@/core/org-rules";
 import type { ActionResult } from "../actions";
 import type { DeptView, OrgView, SeatAgent, SeatView } from "../org";
 import { Modal, Toast, type Confirm } from "./client";
@@ -30,6 +30,8 @@ export interface OrgActions {
   addRule: Act<[string, string]>;
   editRule: Act<[string, string]>;
   forgetRule: Act<[string]>;
+  /** Department id, on or off. */
+  setLeadChecks: Act<[string, boolean]>;
 }
 
 type Open = { kind: "seat"; seat: SeatView; head: boolean; company: boolean } | { kind: "dept"; dept: DeptView } | null;
@@ -295,6 +297,10 @@ function DeptEditor({ d, controls, busy, run, actions, close }: { d: DeptView; c
           check={(n) => deptEmailChange(d.emails, n, d.companyEmails)} save={(v, c) => actions.setEmails(d.id, v, c)}
           confirmFor={(n) => ({ title: `Let ${d.name} send more?`, body: `Its agents can send more emails a day, still never past the company cap.`, lines: [{ k: "Now", v: fmtE(d.emails) }, { k: "New", v: fmtE(n) }], confirmLabel: "Save", kind: "dark" })}
         />
+        <label className={`bf-opt${d.leadChecks ? " on" : ""}`}>
+          <input type="checkbox" checked={d.leadChecks} disabled={busy} onChange={() => run(() => actions.setLeadChecks(d.id, !d.leadChecks))} />
+          <span className="bf-opt-t"><b>Lead checks drafts first</b><span className="muted"> · A draft from an agent in {d.name} waits up to {LEAD_REVIEW_HOURS} hours for the agent above it, which adds a note or sends it back once. That agent needs Your team’s drafts and Check a team draft (builder step 2). Only your tap approves.</span></span>
+        </label>
         <div className="org-form">
           <span className="bf-k">Department rules</span>
           <span className="sub">Every agent in {d.name} loads these from its next run, next to its own standing orders. A rule can add a do or don’t, never raise a cap or grant access.</span>

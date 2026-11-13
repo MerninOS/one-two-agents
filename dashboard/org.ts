@@ -41,6 +41,8 @@ export interface DeptView {
   emails: number | null; companyEmails: number;
   /** Department rules, loaded by every agent seated in it. */
   rules: { id: string; text: string }[];
+  /** Drafts from its agents wait for the agent above them first (slice 4). */
+  leadChecks: boolean;
 }
 /** What the department cards need besides the chart: spend this month per agent, department rules, the company email cap. */
 export interface DeptExtras { spend: Record<string, number>; rules: { id: string; departmentId: string; text: string }[]; companyEmails: number }
@@ -89,6 +91,7 @@ export function orgView(f: Floor, org: Org, built: BuiltRow[], x: DeptExtras): O
       id: d.id, name: d.name, head, seats: seats.length, filled: seats.filter((s) => s.holder !== "open" && !s.agent?.planned).length, planned: seats.filter((s) => s.agent?.planned).length, open: seats.filter((s) => s.holder === "open").length,
       budget: d.monthlyBudgetUsd, spent: deptSpent(org, d.id, x.spend), emails: d.maxEmailsPerDay, companyEmails: x.companyEmails,
       rules: x.rules.filter((r) => r.departmentId === d.id).map((r) => ({ id: r.id, text: r.text })),
+      leadChecks: d.leadChecksDrafts,
     }];
   });
   const top = companySeat(org);

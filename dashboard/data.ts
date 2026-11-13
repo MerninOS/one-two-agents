@@ -8,6 +8,7 @@ import { db } from "@/core/db";
 import { env } from "@/core/env";
 import { DEFAULT_BUDGET, MEMORY_AGENTS, loadMemory, memoryView, proposedLessons, readPages, type MemoryEvent, type MemoryLoad, type MemoryRow, type PageLoad } from "@/core/memory";
 import { AGENTS } from "@/agents/registry";
+import { agentNames, loadOrg } from "@/core/org";
 import { APPROVAL_LABELS, APPROVAL_TOOLS, BUTTON_ONLY, MAX_CHAINS, MAX_STEPS, METRICS, TAKES_HANDOFF, listFlowVersions, loadFlow, nextFirings } from "@/core/flow";
 import { BUILT, BY_ID, type IntegrationId } from "./crew";
 import type { CrewAgent, CrewCanvasData } from "./components/CrewCanvas";
@@ -99,7 +100,9 @@ export const getFloor = cache(async (): Promise<Floor> => {
     db().from("agents").select("id, name, model, schedule, enabled, daily_budget_usd"),
     db().from("agent_runs").select(RUN_COLS).gte("started_at", since).order("started_at", { ascending: false }).limit(1000),
     db().from("expense_docs").select("id", { count: "exact", head: true }).eq("status", "needs_photo"),
-    db().from("approvals").select("id", { count: "exact", head: true }).eq("status", "pending"),
+    // drafts still with their lead (slice 4) aren't waiting on Zak yet; the older shape until that migration is applied
+    db().from("approvals").select("id", { count: "exact", head: true }).eq("status", "pending").or("review_status.is.null,review_status.neq.waiting")
+      .then((x) => (x.error ? db().from("approvals").select("id", { count: "exact", head: true }).eq("status", "pending") : x)),
     proposedLessons(),
     db().from("agent_defs").select("agent_id, version, spec").eq("active", true),
   ]);
@@ -210,21 +213,44 @@ export interface ApprovalItem {
   receipt_url: string | null;
   action_status: string;
   action_reason: string | null;
+  /** The department the agent sat in when it drafted this (slice 4); null off the chart or before the migration. */
+  department_id: string | null;
+  /** The lead that checks it first, and how that went: waiting, noted, sent_back, or skipped (not checked in time). */
+  reviewer_agent_id: string | null;
+  review_status: string | null;
+  review_note: string | null;
+  review_due: string | null;
 }
 export interface GatewayAction { id: string; agent_id: string; tool: string; action_type: string; target: string; status: string; reason: string | null; created_at: string; executed_at: string | null; run_id: string | null; exec_run_id: string | null }
-export interface ApprovalsView { pending: ApprovalItem[]; waiting: ApprovalItem[]; decided: ApprovalItem[]; log: GatewayAction[]; staleHours: number }
+export interface ApprovalsView {
+  pending: ApprovalItem[];
+  /** Pending, still waiting for the lead's check (Zak can decide them anyway). */
+  withLead: ApprovalItem[];
+  waiting: ApprovalItem[]; decided: ApprovalItem[]; log: GatewayAction[]; staleHours: number;
+  /** Names of the agents on these cards that the crew list doesn't know (agents built in the app, leads). */
+  names: Record<string, string>;
+  /** Departments on the chart, for the tag and the filter. */
+  departments: { id: string; name: string }[];
+}
 
 /** The approvals queue, approved changes waiting to be applied, recent decisions and the gateway log. Null until the tables exist. */
+const AP_COLS = "id, action_id, agent_id, title, reasoning, status, created_at, decided_at, preview, agent_actions(status, reason, tool)";
+const AP_REVIEW = "department_id, reviewer_agent_id, review_status, review_note, review_due";
+type ApRow = Pick<ApprovalItem, "id" | "action_id" | "agent_id" | "title" | "reasoning" | "status" | "created_at" | "decided_at"> & { preview: unknown; agent_actions: unknown } & Partial<Pick<ApprovalItem, "department_id" | "reviewer_agent_id" | "review_status" | "review_note" | "review_due">>;
+
 export async function getApprovals(): Promise<ApprovalsView | null> {
   await requireSession();
   if (!health().supabase) return null;
   const [ap, log, pol] = await Promise.all([
-    db().from("approvals").select("id, action_id, agent_id, title, reasoning, status, created_at, decided_at, preview, agent_actions(status, reason, tool)").order("created_at", { ascending: false }).limit(200),
+    // the slice 4 columns, or the older shape until that migration is applied
+    db().from("approvals").select(`${AP_COLS}, ${AP_REVIEW}`).order("created_at", { ascending: false }).limit(200)
+      .then((r) => (r.error ? db().from("approvals").select(AP_COLS).order("created_at", { ascending: false }).limit(200) : r)),
     db().from("agent_actions").select("id, agent_id, tool, action_type, target, status, reason, created_at, executed_at, run_id, exec_run_id").order("created_at", { ascending: false }).limit(60),
     db().from("policies").select("value_json").eq("key", "approval_expiry_hours").maybeSingle(),
   ]);
   if (ap.error || log.error) return null;
-  const items: ApprovalItem[] = await Promise.all((ap.data ?? []).map(async (r) => {
+  const org = await loadOrg().catch(() => null);
+  const items: ApprovalItem[] = await Promise.all(((ap.data ?? []) as unknown as ApRow[]).map(async (r) => {
     const act = (Array.isArray(r.agent_actions) ? r.agent_actions[0] : r.agent_actions) as { status: string; reason: string | null; tool: string } | null;
     const preview = (r.preview ?? {}) as ApprovalItem["preview"];
     let receipt_url: string | null = null;
@@ -232,14 +258,18 @@ export async function getApprovals(): Promise<ApprovalsView | null> {
       const { data } = await db().storage.from("receipts").createSignedUrl(preview.receipt_path, 600);
       receipt_url = data?.signedUrl ?? null;
     }
-    return { id: r.id, action_id: r.action_id, agent_id: r.agent_id, title: r.title, reasoning: r.reasoning, status: r.status, created_at: r.created_at, decided_at: r.decided_at, preview, receipt_url, action_status: act?.status ?? "?", action_reason: act?.reason ?? null, tool: act?.tool ?? "" };
+    return { id: r.id, action_id: r.action_id, agent_id: r.agent_id, title: r.title, reasoning: r.reasoning, status: r.status, created_at: r.created_at, decided_at: r.decided_at, preview, receipt_url, action_status: act?.status ?? "?", action_reason: act?.reason ?? null, tool: act?.tool ?? "",
+      department_id: r.department_id ?? null, reviewer_agent_id: r.reviewer_agent_id ?? null, review_status: r.review_status ?? null, review_note: r.review_note ?? null, review_due: r.review_due ?? null };
   }));
   return {
-    pending: items.filter((i) => i.status === "pending").reverse(), // oldest first
+    pending: items.filter((i) => i.status === "pending" && i.review_status !== "waiting").reverse(), // oldest first
+    withLead: items.filter((i) => i.status === "pending" && i.review_status === "waiting").reverse(),
     waiting: items.filter((i) => i.status === "approved" && ["approved", "executing", "failed"].includes(i.action_status)),
     decided: items.filter((i) => i.status !== "pending" && !(i.status === "approved" && ["approved", "executing", "failed"].includes(i.action_status))).slice(0, 30),
     log: (log.data ?? []) as GatewayAction[],
     staleHours: Number(pol.data?.value_json) || 72,
+    departments: (org?.departments ?? []).map((d) => ({ id: d.id, name: d.name })),
+    names: await agentNames([...new Set(items.flatMap((i) => [i.agent_id, i.reviewer_agent_id ?? ""]).filter((id) => id && !BY_ID[id]))]).catch(() => ({})),
   };
 }
 

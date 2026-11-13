@@ -7,7 +7,7 @@ import { revalidatePath } from "next/cache";
 import { db } from "@/core/db";
 import { loadCaps } from "@/core/gateway";
 import { addDepartmentRule, editMemory, forgetMemory } from "@/core/memory";
-import { addDepartment, addSeat, deptBudgetChange, deptEmailChange, editSeat, loadOrg, removeDepartment, removeSeat, renameDepartment, setDeptBudget, setDeptEmailCap, setHolder, unseat } from "@/core/org";
+import { addDepartment, addSeat, deptBudgetChange, deptEmailChange, editSeat, loadOrg, removeDepartment, removeSeat, renameDepartment, setDeptBudget, setDeptEmailCap, setHolder, setLeadChecks, unseat } from "@/core/org";
 import type { ActionResult } from "./actions";
 import { BY_ID } from "./crew";
 import { requireSession } from "./data";
@@ -158,4 +158,14 @@ export async function orgEditDeptRule(ruleId: string, text: string): Promise<Act
 export async function orgForgetDeptRule(ruleId: string): Promise<ActionResult> {
   await requireSession();
   try { await deptRule(String(ruleId)); await forgetMemory(ruleId); return done("Forgotten. It stays on each agent’s memory timeline."); } catch (e) { return fail(e); }
+}
+
+/** "Lead checks drafts first" on or off. Neither way loosens a cap: Zak's tap stays the only approval. */
+export async function orgSetLeadChecks(id: string, on: boolean): Promise<ActionResult> {
+  await requireSession();
+  try {
+    const d = await dept(String(id));
+    await setLeadChecks(d.id, !!on);
+    return done(on ? `${d.name}: drafts go to the agent above them first, for up to a day.` : `${d.name}: drafts come straight to you.`);
+  } catch (e) { return fail(e); }
 }
