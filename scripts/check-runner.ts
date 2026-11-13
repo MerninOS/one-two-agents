@@ -2,7 +2,7 @@
 // Run: npm run check:runner
 import assert from "node:assert/strict";
 import { checkInput } from "../core/tools/types";
-import { readSpec } from "../core/agent-spec";
+import { readSpec, specLooser } from "../core/agent-spec";
 import { runExplore } from "../core/runner";
 
 type Block = { type: "text"; text: string } | { type: "tool_use"; id: string; name: string; input: unknown };
@@ -29,6 +29,13 @@ async function main() {
   assert.equal(bad.spec.limits.maxSteps, 12);
   assert.equal(bad.problems.length, 4);
   const { spec } = readSpec({ name: "t", directive: "Check things.", model: "claude-haiku-5-5", effort: "low", tools: ["mercury_balances"], limits: { maxSteps: 3, maxCostUsd: 0.5 } });
+  assert.equal(spec.outputName, "result");
+
+  // versions: only a higher cost or step limit counts as spending more
+  assert.deepEqual(specLooser(spec, { ...spec, limits: { maxSteps: 2, maxCostUsd: 0.4 } }), []);
+  assert.equal(specLooser(spec, { ...spec, limits: { maxSteps: 3, maxCostUsd: 0.6 } }).length, 1);
+  assert.equal(specLooser(spec, { ...spec, limits: { maxSteps: 9, maxCostUsd: 2 } }).length, 2);
+  assert.deepEqual(specLooser(null, spec), []);
 
   // finishes: a tool the agent doesn't have is refused, then finish ends the run
   const r1 = await runExplore(spec, { agentId: "scratch", client: fake((t, body) => {

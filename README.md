@@ -58,7 +58,7 @@ matrix and integrations, built from the Claude Design file "Agent Control Room".
   Approving writes to Mercury only when `MERCURY_WRITE_TOKEN` is set, `DASHBOARD_CONTROLS=on` and
   Quinn is on duty; otherwise the approval is kept and applied later. See `core/gateway/README.md`.
 - Setup (`?tab=setup` on a profile): the agent canvas. Replay shows the latest run; Edit shows every value behind each box (Trigger, Reads, Memory, Thinking, Guardrails, Writes) and where it lives. Avery's model, effort, instructions and low-green warning come from its setup (`agent_setup`), picked from its menu in code. Read-only for now. Spec: `docs/agent-setup.md`.
-- Runner test (`/lab`): agent builder slice 1. Agents built in the app are saved specs run by one shared runner (`core/runner.ts`) that lets the model pick tools from the tool list in code (`core/tools/`), with hard limits on tool calls and cost. Only a scratch agent so far; Preview needs `DASHBOARD_CONTROLS=on`. Spec: `docs/agent-builder.md`.
+- Agent builder (`/build`): build an agent from scratch in eight parts (Trigger, Sources, Standards, Directive, Thinking, Actions, Guardrails, Output), saved as versioned specs and run by one shared runner (`core/runner.ts`) that lets the model pick tools from the tool list in code (`core/tools/`), with hard limits on tool calls and cost. New agents start off duty and run only by hand; Preview needs `DASHBOARD_CONTROLS=on`. Spec: `docs/agent-builder.md`.
 - Memory (`?tab=memory` on a profile): what each agent carries into its runs, with Teach, Edit and Forget. Avery, Rowan and Quinn load memory; the CFO snapshot uses no model. Spec: `docs/agent-memory.md`.
 
 ## Layout

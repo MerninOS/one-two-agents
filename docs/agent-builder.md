@@ -47,16 +47,45 @@ from the tools the spec grants, code runs them, hard limits stop it.
 - **Runner test page** (`/lab`, System, Runner test): the scratch agent's spec and tools (Connected
   or Missing key), a free tool check (each tool once with default inputs, no model, nothing
   written), Preview (a real explore run, needs `DASHBOARD_CONTROLS=on`, logged as trigger
-  `preview`, counts against the daily budget) and the latest runs step by step. The builder screen
-  replaces it in slice 2.
+  `preview`, counts against the daily budget) and the latest runs step by step. Replaced by the
+  builder screen in slice 2 (`/lab` now redirects to `/build`).
 - Lint: `core/gateway` and `integrations/` may not import `core/agent-spec` or `core/runner`.
 - `npm run check:runner` tests limits and refusals with a stand-in model (no network, no cost).
 - "Pause all agents" now takes every agent off duty, including ones built in the app.
 
+## Slice 2: the builder screen (built)
+
+- **Agent builder** (`/build`, Crew menu): every agent built in the app, and **New agent** (a name,
+  one line on its job, and Blank or a copy of another built agent). A new agent gets an id
+  `b_<name>`, is off duty with no schedule and $1 a day, and its spec is saved as v1. No migration:
+  it uses the slice 1 tables.
+- **Builder screen** (`/build/<id>`, `app/(room)/build/[id]`, `dashboard/components/Builder.tsx`):
+  the eight parts as one draft.
+  1. Trigger: By hand only. After another agent and On a schedule are shown but locked until the
+     first playbook is approved (slice 4).
+  2. Sources: the Read and Calculate tools grouped by integration, with Untrusted and Missing key
+     labels; Notion pages that `notion_read_page` may open, added by link (stored by id).
+  3. Standards: the agent's standing orders and the crew rules from the memory store. Adding or
+     forgetting a standing order saves straight away (same store and rules as the Memory tab).
+  4. Directive: directive, what a good result looks like, the locked safety block.
+  5. Thinking: Claude models only, effort.
+  6. Actions: none grantable yet (slice 5); says so.
+  7. Guardrails: tool calls and cost per run (ceilings 30 and $2), daily budget (ceiling $50, saved
+     straight away), the locked crew hard rules.
+  8. Output: the output name other agents will see (`outputName` in the spec, used in slice 3).
+- Side panel: an explore-run estimate from model prices and ticked tools (capped at the cost limit),
+  a free **Tool check** of the draft, **Preview** of the draft (a real explore run, needs
+  `DASHBOARD_CONTROLS=on`, logged as `preview`), and **Save as vN** with a note.
+- **Versions**: saving adds the next version and makes it active (`saveSpecVersion`); any earlier
+  version can be made active again (`activateSpecVersion`). A version that raises the cost or step
+  limit (`specLooser`) needs a confirm and `DASHBOARD_CONTROLS=on`; lowering never does. The
+  agents row's name and model follow the active version.
+- Latest runs step by step, as on the old test page (`dashboard/components/RunSteps.tsx`).
+
 ## Slices
 
 1. Tool list and runner (built).
-2. Builder screen: New agent, the eight sections, Preview, versions.
+2. Builder screen: New agent, the eight sections, Preview, versions (built).
 3. Outputs as sources: every run saves one named output; numbers must trace to a tool result.
 4. Playbooks: explore, approve, follow, fall back, auto-update, drop back, Re-explore.
 5. Report and Action tools, actions only through `core/gateway`.

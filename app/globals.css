@@ -341,3 +341,8 @@ h1, h2, h3, p { margin: 0; }
 /* Guardrails box (agent canvas, slice 6) */
 .guard-rules { margin: 0; padding-left: 20px; display: flex; flex-direction: column; gap: 4px; font-size: 13px; line-height: 1.5; color: var(--ink2); }
 .guard-cap { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; padding: 12px 0; border-top: 1px solid var(--bd); }
+
+/* agent builder (slice 2): eight sections, with the estimate and buttons beside them on wide screens */
+.builder { display: grid; grid-template-columns: minmax(0, 1fr) 300px; gap: 16px; align-items: start; }
+.builder-side { position: sticky; top: 16px; min-width: 0; }
+@media (max-width: 980px) { .builder { grid-template-columns: minmax(0, 1fr); } .builder-side { position: static; } }

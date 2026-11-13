@@ -30,6 +30,8 @@ export interface AgentSpec {
   /** Pages notion_read_page may open, picked in the app from pages the Notion integration can see. */
   notionPages: { id: string; label: string }[];
   limits: { maxSteps: number; maxCostUsd: number };
+  /** What each run's result is called when other agents read it (outputs as sources, slice 3). */
+  outputName: string;
 }
 
 export const MAX_DIRECTIVE = 4000;
@@ -75,7 +77,7 @@ export function readSpec(raw: unknown): { spec: AgentSpec; problems: string[] } 
     return k === "maxSteps" ? Math.floor(v) : v;
   };
   return {
-    spec: { name, mandate: str(r.mandate, 200), directive, goodResult: str(r.goodResult, 1000), model, effort, tools, notionPages, limits: { maxSteps: limit("maxSteps"), maxCostUsd: limit("maxCostUsd") } },
+    spec: { name, mandate: str(r.mandate, 200), directive, goodResult: str(r.goodResult, 1000), model, effort, tools, notionPages, limits: { maxSteps: limit("maxSteps"), maxCostUsd: limit("maxCostUsd") }, outputName: str(r.outputName, 60) || "result" },
     problems,
   };
 }
@@ -89,4 +91,80 @@ export async function loadSpec(agentId: string): Promise<SpecVersion | null> {
   if (!data) return null;
   const { spec, problems } = readSpec(data.spec);
   return { agentId, version: data.version, spec, problems, note: data.note, createdAt: data.created_at };
+}
+
+// ---- Versions (builder screen, slice 2). Saving never edits a version: it adds the next one and
+// makes it active, so every run can be traced to the exact spec it used, and any version can be
+// made active again.
+
+/** Daily budget ceiling for any agent, the same as setBudget for the hand-built agents. */
+export const BUDGET_CEILING = 50;
+
+/** Every version of a built agent's spec, newest first. */
+export async function listSpecVersions(agentId: string): Promise<(SpecVersion & { active: boolean; createdBy: string })[]> {
+  const { data, error } = await db().from("agent_defs").select("version, spec, note, created_by, created_at, active").eq("agent_id", agentId).order("version", { ascending: false }).limit(50);
+  if (error) throw new Error(`Agent specs: ${error.message}`);
+  return (data ?? []).map((d) => ({ agentId, version: d.version, ...readSpec(d.spec), note: d.note, createdAt: d.created_at, active: d.active, createdBy: d.created_by }));
+}
+
+/** Plain-words list of what lets `next` spend more per run than `now`. Empty when it can't. */
+export function specLooser(now: AgentSpec | null, next: AgentSpec): string[] {
+  if (!now) return [];
+  const out: string[] = [];
+  if (next.limits.maxCostUsd > now.limits.maxCostUsd) out.push(`cost per run goes from $${now.limits.maxCostUsd.toFixed(2)} to $${next.limits.maxCostUsd.toFixed(2)}`);
+  if (next.limits.maxSteps > now.limits.maxSteps) out.push(`steps per run go from ${now.limits.maxSteps} to ${next.limits.maxSteps}`);
+  return out;
+}
+
+async function activate(agentId: string, version: number) {
+  // the partial unique index allows one active row, so the old one goes off first
+  const off = await db().from("agent_defs").update({ active: false }).eq("agent_id", agentId).eq("active", true).neq("version", version);
+  if (off.error) throw new Error(off.error.message);
+  const on = await db().from("agent_defs").update({ active: true }).eq("agent_id", agentId).eq("version", version);
+  if (on.error) throw new Error(on.error.message);
+}
+
+/** Saves a checked spec as the next version and makes it active. Returns the new version number. */
+export async function saveSpecVersion(agentId: string, spec: AgentSpec, note: string, by: string): Promise<number> {
+  const { data: top, error } = await db().from("agent_defs").select("version").eq("agent_id", agentId).order("version", { ascending: false }).limit(1).maybeSingle();
+  if (error) throw new Error(error.message);
+  const version = (top?.version ?? 0) + 1;
+  const ins = await db().from("agent_defs").insert({ agent_id: agentId, version, spec, note: note || null, created_by: by, active: false });
+  if (ins.error) throw new Error(ins.error.message);
+  await activate(agentId, version);
+  // the agents row keeps a readable name and model for the run log
+  await db().from("agents").update({ name: spec.name, model: spec.model }).eq("id", agentId);
+  return version;
+}
+
+/** Makes an earlier version active again. */
+export async function activateSpecVersion(agentId: string, version: number) {
+  const { data, error } = await db().from("agent_defs").select("version, spec").eq("agent_id", agentId).eq("version", version).maybeSingle();
+  if (error) throw new Error(error.message);
+  if (!data) throw new Error(`There is no v${version}.`);
+  await activate(agentId, version);
+  const { spec } = readSpec(data.spec);
+  await db().from("agents").update({ name: spec.name, model: spec.model }).eq("id", agentId);
+}
+
+/** A new agent id from its name: "b_" and lowercase words joined by underscores, never one already taken. */
+export async function newAgentId(name: string): Promise<string> {
+  const words = name.toLowerCase().normalize("NFKD").replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "");
+  const base = `b_${words || "agent"}`.slice(0, 40).replace(/_+$/, "");
+  const { data, error } = await db().from("agents").select("id").like("id", `${base}%`);
+  if (error) throw new Error(error.message);
+  const taken = new Set((data ?? []).map((r) => r.id as string));
+  if (!taken.has(base)) return base;
+  for (let i = 2; i < 100; i++) if (!taken.has(`${base}_${i}`)) return `${base}_${i}`;
+  throw new Error("Too many agents with that name.");
+}
+
+/** Creates a built agent: off duty, $1 a day, no schedule, with the given spec as v1. */
+export async function createBuiltAgent(spec: AgentSpec, by: string): Promise<string> {
+  const id = await newAgentId(spec.name);
+  const a = await db().from("agents").insert({ id, name: spec.name, model: spec.model, schedule: null, enabled: false, daily_budget_usd: 1 });
+  if (a.error) throw new Error(a.error.message);
+  const d = await db().from("agent_defs").insert({ agent_id: id, version: 1, spec, note: "Created in the builder", created_by: by, active: true });
+  if (d.error) throw new Error(`The agent was created but its spec wasn’t saved: ${d.error.message}`);
+  return id;
 }
