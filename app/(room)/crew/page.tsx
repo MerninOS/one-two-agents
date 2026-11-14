@@ -1,6 +1,5 @@
 import Link from "next/link";
 import { previewChain, rollBackFlow, runChainNow, saveCrewFlow } from "@/dashboard/actions";
-import { listBuilt } from "@/dashboard/builder";
 import { getCrewCanvas, getFloor } from "@/dashboard/data";
 import { deptExtras, orgView } from "@/dashboard/org";
 import { orgAddDepartment, orgAddDeptRule, orgAddSeat, orgEditDeptRule, orgEditSeat, orgForgetDeptRule, orgRemoveDepartment, orgRemoveSeat, orgRenameDepartment, orgSetDeptBudget, orgSetDeptEmails, orgSetHolder, orgSetLeadChecks } from "@/dashboard/orgActions";
@@ -39,11 +38,11 @@ export default async function Crew({ searchParams }: { searchParams: Promise<{ v
 }
 
 async function Chart({ f }: { f: Awaited<ReturnType<typeof getFloor>> }) {
-  const [org, built] = await Promise.all([loadOrg(), listBuilt()]);
+  const org = await loadOrg();
   if (!org) return <div className="card"><span className="sub">The org chart tables aren’t up to date: apply the org chart migrations (20261115090000_org_chart.sql, 20261116090000_department_budgets.sql).</span></div>;
   return (
     <OrgChart
-      v={orgView(f, org, built ?? [], await deptExtras(org))}
+      v={orgView(f, org, await deptExtras(org))}
       controls={controlsOn()}
       actions={{
         addDept: orgAddDepartment, renameDept: orgRenameDepartment, removeDept: orgRemoveDepartment, addSeat: orgAddSeat, editSeat: orgEditSeat, removeSeat: orgRemoveSeat, setHolder: orgSetHolder,

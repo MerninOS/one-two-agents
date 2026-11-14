@@ -5,7 +5,7 @@ import { db } from "@/core/db";
 import { env } from "@/core/env";
 import { agentDepartment, claimBudgetAlert, deptBudgetBlock } from "@/core/org";
 import { emailZak, hasEmail } from "@/integrations/email";
-import { MEMORY_AGENTS, afterLoad, loadMemory, loadSummary, saveWorking, type MemoryLoad } from "@/core/memory";
+import { afterLoad, loadMemory, loadSummary, saveWorking, type MemoryLoad } from "@/core/memory";
 
 /** Vercel Cron sends `Authorization: Bearer $CRON_SECRET`; manual runs use the same header. */
 export const cronAuthorized = (req: Request) => !!env.cronSecret && req.headers.get("authorization") === `Bearer ${env.cronSecret}`;
@@ -65,7 +65,7 @@ async function deptBlocked(agentId: string): Promise<string | null> {
 
 /**
  * Run one agent job with a row in agent_runs around it; a failure is recorded, then rethrown.
- * Agents in MEMORY_AGENTS get their memory loaded after the on-duty and budget check (a skipped
+ * Every agent gets its memory loaded after the on-duty and budget check (a skipped
  * run loads nothing) and leave working memory when the run finishes. A memory store that can't
  * be read never stops the run: the job gets null and the summary says so.
  * Trigger "preview" (a try from the builder) loads none: the job reads memory itself without
@@ -84,7 +84,7 @@ export async function withRun(agentId: string, trigger: string, job: (runId: str
     const agentRun = !blocked && (trigger === "cron" || trigger === "manual" || trigger === "chain");
     // only agent runs load memory; a gateway apply run (trigger "approval") is not the agent thinking,
     // and a Preview reads memory itself without counting anything down
-    if (agentRun && MEMORY_AGENTS.has(agentId)) {
+    if (agentRun) {
       try { memory = await loadMemory(agentId); }
       catch (e) { memoryNote += ` (memory not loaded: ${(e instanceof Error ? e.message : String(e)).slice(0, 100)})`; }
     }

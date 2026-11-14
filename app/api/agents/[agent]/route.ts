@@ -1,9 +1,10 @@
 import { NextResponse, after } from "next/server";
-import { AGENTS, resolveAgent } from "@/agents/registry";
+import { resolveAgent } from "@/agents/registry";
 import { continueChain, handoffFrom, readCtx } from "@/core/chain";
-import { TAKES_HANDOFF, loadFlow } from "@/core/flow";
+import { loadFlow, type Crew } from "@/core/flow";
 import { db } from "@/core/db";
-import { cronAuthorized, withRun } from "@/core/runs";
+import { cronAuthorized, withRun, type RunResult } from "@/core/runs";
+import type { JobOpts } from "@/agents/registry";
 
 export const maxDuration = 300;
 
@@ -14,22 +15,24 @@ export const maxDuration = 300;
 // saved crew flow with this agent, and when the run ends the next step starts as its own request.
 export async function GET(req: Request, { params }: { params: Promise<{ agent: string }> }) {
   if (!cronAuthorized(req)) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  const found = resolveAgent((await params).agent);
+  let found;
+  try { found = await resolveAgent((await params).agent); }
+  catch (e) { return NextResponse.json({ error: `Agents can't be read: ${e instanceof Error ? e.message : e}` }, { status: 500 }); }
   if (!found) return NextResponse.json({ error: "Unknown agent" }, { status: 404 });
-  const { id, def } = found;
+  const { id, job, manualOnly, crew } = found;
   const url = new URL(req.url);
   const asked = url.searchParams.get("trigger");
   const trigger = asked === "manual" ? "manual" : asked === "chain" ? "chain" : "cron";
   const dryRun = ["1", "true"].includes(url.searchParams.get("dryRun") ?? "");
-  if (trigger === "chain") return chainStep(req, id);
+  if (trigger === "chain") return chainStep(req, id, crew, job, manualOnly);
 
   // Manual-only agents have no schedule; refuse anything that isn't an explicit manual run.
-  if (def.manualOnly && !dryRun && trigger !== "manual") {
+  if (manualOnly && !dryRun && trigger !== "manual") {
     return NextResponse.json({ status: "skipped", summary: "This agent runs only by hand: add ?trigger=manual." });
   }
   try {
-    if (dryRun) return NextResponse.json({ dryRun: true, ...(await def.job({ dryRun })) });
-    return NextResponse.json(await withRun(id, trigger, (runId, memory) => def.job({ runId, memory })));
+    if (dryRun) return NextResponse.json({ dryRun: true, ...(await job({ dryRun })) });
+    return NextResponse.json(await withRun(id, trigger, (runId, memory) => job({ runId, memory })));
   } catch (e) {
     console.error(`[agents/${id}]`, e);
     return NextResponse.json({ error: e instanceof Error ? e.message : "Run failed" }, { status: 500 });
@@ -41,23 +44,23 @@ export async function GET(req: Request, { params }: { params: Promise<{ agent: s
  * the request only names them, and the agent must be the one the flow has at that step. A chain
  * that is off runs only when it was started with the Run chain button.
  */
-async function chainStep(req: Request, id: string) {
+async function chainStep(req: Request, id: string, crew: Crew, job: (o: JobOpts) => Promise<RunResult>, manualOnly: boolean) {
   const url = new URL(req.url);
   const ctx = readCtx(url);
   if (!ctx) return NextResponse.json({ error: "Bad chain step" }, { status: 400 });
   let flow;
-  try { flow = await loadFlow(Object.keys(AGENTS)); }
+  try { flow = await loadFlow(crew); }
   catch (e) { return NextResponse.json({ error: `Crew flow can't be read: ${e instanceof Error ? e.message : e}` }, { status: 500 }); }
   const c = flow.flow.chains.find((x) => x.key === ctx.key);
   const step = c?.steps[ctx.step];
   if (!c || !step || step.agent !== id) return NextResponse.json({ status: "skipped", summary: "That step isn't in the saved crew flow." });
   if (!c.on && !ctx.manual) return NextResponse.json({ status: "skipped", summary: `The ${c.name} chain is off.` });
   // a manual-only agent runs in a chain only when Zak pressed Run chain
-  if (AGENTS[id].manualOnly && !ctx.manual) return NextResponse.json({ status: "skipped", summary: "This agent runs only by hand: start its chain with Run chain." });
-  const handoff = step.passAlong && TAKES_HANDOFF.has(id) ? await handoffFrom(ctx.parent) : null;
+  if (manualOnly && !ctx.manual) return NextResponse.json({ status: "skipped", summary: "This agent runs only by hand: start its chain with Run chain." });
+  const handoff = step.passAlong ? await handoffFrom(ctx.parent) : null;
   const origin = url.origin;
   try {
-    const res = await withRun(id, "chain", (runId, memory) => AGENTS[id].job({ runId, memory, handoff }), { chain: { chainId: ctx.chainId, key: ctx.key, step: ctx.step, parent: ctx.parent } });
+    const res = await withRun(id, "chain", (runId, memory) => job({ runId, memory, handoff }), { chain: { chainId: ctx.chainId, key: ctx.key, step: ctx.step, parent: ctx.parent } });
     // the next step is its own request; this one answers now
     after(() => continueChain(origin, c, ctx, res.runId, { status: res.status, metrics: res.metrics }).then((w) => console.log(`[chain ${c.key}] ${w}`), (e) => console.error(`[chain ${c.key}]`, e)));
     return NextResponse.json(res);

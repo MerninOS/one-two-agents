@@ -34,7 +34,7 @@ so he teaches an agent once instead of rewriting its prompt.
 
 ## A run
 
-1. `withRun` checks on duty and budget, then (for agents in `MEMORY_AGENTS`, cron or manual
+1. `withRun` checks on duty and budget, then (for every agent, cron or manual
    runs only) calls `loadMemory`: kept rows for the agent plus crew rows and its department's rules, expired ones left out.
 2. Tokens are counted in code (characters ÷ 3.5, rounded up). Over budget, lines go in this
    order, oldest first: working memory, lessons, notes. Crew memory and standing orders are

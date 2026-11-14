@@ -1,6 +1,5 @@
 import { cookies } from "next/headers";
 import { addVendor, logout, pauseAll, setCap, suppressEmail } from "@/dashboard/actions";
-import { BUILT } from "@/dashboard/crew";
 import { getFloor, getVendorsAndSuppressions } from "@/dashboard/data";
 import { capLines } from "@/dashboard/guardrails";
 import { controlsOn } from "@/dashboard/session";
@@ -10,7 +9,7 @@ import { CapForm, SuppressForm, VendorForm } from "@/dashboard/components/settin
 export default async function Settings() {
   const [f, caps, lists] = await Promise.all([getFloor(), capLines(), getVendorsAndSuppressions()]);
   const theme = (await cookies()).get("cr_theme")?.value === "dark" ? "dark" : "light";
-  const on = BUILT.filter((a) => f.agents[a.id]?.enabled);
+  const on = f.built.filter((a) => f.agents[a.id]?.enabled);
   const line = (k: React.ReactNode, v: React.ReactNode, first?: boolean) => <div className={"row" + (first ? "" : " rule")} style={{ justifyContent: "space-between", padding: "14px 0", fontSize: 14, gap: 16 }}><span style={{ display: "flex", flexDirection: "column", gap: 2 }}>{k}</span>{v}</div>;
   return (
     <div className="stack" style={{ maxWidth: 760 }}>

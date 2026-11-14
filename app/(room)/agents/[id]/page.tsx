@@ -3,11 +3,11 @@ import { needs } from "@/dashboard/needs";
 import { SEEN_COOKIE, parseSeen } from "@/dashboard/seen";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { discardLessonLine, dryRun, editMemoryLine, forgetMemoryLine, keepLessonLine, realRun, setEnabled, teach } from "@/dashboard/actions";
-import { BY_ID, HARD_RULES, TIERS, type CrewMember } from "@/dashboard/crew";
+import { discardLessonLine, dryRun, editMemoryLine, forgetMemoryLine, keepLessonLine, realRun, setEnabled, setManualOnly, teach } from "@/dashboard/actions";
+import { HARD_RULES, TIERS, type CrewMember } from "@/dashboard/crew";
 import { ABILITY_WORD, isSetUp, reachOf } from "@/dashboard/connections";
 import { getBooks, getFloor, getMemory, getPipeline, type Books, type Floor } from "@/dashboard/data";
-import { KEEPS_WORKING, type MemoryRow, type PageLoad } from "@/core/memory";
+import type { MemoryRow, PageLoad } from "@/core/memory";
 import { MemoryLine, TeachForm, type LineView } from "@/dashboard/components/memory";
 import { budget, dur, hm, m2, m4, md, num, when } from "@/dashboard/format";
 import { nextRuns, schedWords } from "@/dashboard/schedule";
@@ -34,19 +34,22 @@ const STAGE_COLORS: Record<string, string> = { new: "var(--mut2)", drafted: "var
 
 export default async function AgentPage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ tab?: string }> }) {
   const { id } = await params;
-  const a = BY_ID[id];
+  // every agent with a live version, the same whether it started in code or the app (docs/agent-roster.md)
+  const f = await getFloor();
+  const a = f.byId[id];
   if (!a) notFound();
   const tabParam = (await searchParams).tab;
   const tab: Tab = TABS.find((k) => k === tabParam) ?? "overview";
-  const f = await getFloor();
   const row = f.agents[id];
   const st = stateOf(a, row, f.runs, f.spentToday[id] ?? 0);
   const controls = controlsOn();
-  const pipeline = id === "wholesale_hunter" ? await getPipeline() : null;
-  const books = id === "bookkeeper" ? await getBooks() : null;
+  // cards that belong to a tool, not to an agent: any agent whose live version has it gets the card
+  const has = (tool: string) => (f.grants[id] ?? []).includes(tool);
+  const pipeline = has("report_leads") ? await getPipeline() : null;
+  const books = has("report_books_sync") ? await getBooks() : null;
   const mem = a.built && (tab === "memory" || tab === "overview") ? await getMemory(id) : null;
   const how = a.built && tab === "overview" ? await howItWorks(id) : null;
-  const place = tab === "overview" ? await placeOf(id) : null;
+  const place = tab === "overview" ? await placeOf(id, f) : null;
   const runs = f.runs.filter((r) => r.agent_id === id);
   const unseen = needs(f, f.now, parseSeen((await cookies()).get(SEEN_COOKIE)?.value)).some((n) => n.run && n.agentId === id);
 
@@ -62,7 +65,7 @@ export default async function AgentPage({ params, searchParams }: { params: Prom
         </div>
       )}
 
-      {a.built && tab === "overview" && <Stats a={a} f={f} pipelineTotal={pipeline?.total} books={books} />}
+      {a.built && tab === "overview" && <Stats a={a} f={f} pipelineTotal={has("report_leads") ? pipeline?.total ?? null : undefined} books={has("report_books_sync") ? books : undefined} />}
 
       <AgentTabs id={id} on={tab} editable={id in f.grants} />
 
@@ -77,7 +80,7 @@ export default async function AgentPage({ params, searchParams }: { params: Prom
           </div>
           <div className="stack">
             <Journal a={a} f={f} mem={mem} />
-            {id === "bookkeeper" && <BooksCard books={books} />}
+            {has("report_books_sync") && <BooksCard books={books} />}
             {pipeline && (
               <div className="card" style={{ gap: 12 }}>
                 <div className="card-h"><span className="card-t">Pipeline</span><span className="sub">{pipeline.total} businesses</span></div>
@@ -129,10 +132,22 @@ function crewSwitch(a: CrewMember, f: Floor, controls: boolean) {
   );
 }
 
+/** Runs only by hand (agents.manual_only). Turning it on always works; letting it run on a schedule needs Controls. */
+function manualSwitch(a: CrewMember, controls: boolean) {
+  const on = !!a.manualOnly;
+  return (
+    <SwitchButton on={on} title="Runs only by hand" disabled={on && !controls}
+      action={setManualOnly.bind(null, a.id, !on, true)}
+      confirm={on
+        ? { title: `Let ${a.name} run on a schedule?`, body: `Nothing changes until you add ${a.name} to a chain that is on, on Crew > Schedule. Each run still needs ${a.name} on duty and inside its budget.`, lines: [{ k: "Cost a run", v: a.estCostLabel ?? "?" }], confirmLabel: "Allow schedules" }
+        : { title: `Make ${a.name} run only by hand?`, body: "It runs only when you press Run, or in a chain you start with Run chain. If a chain that starts on its own has it, take it out on Crew > Schedule first.", confirmLabel: "By hand only" }} />
+  );
+}
+
 function HeroFull({ a, f, controls }: { a: CrewMember; f: Floor; controls: boolean }) {
   const row = f.agents[a.id];
   const st = stateOf(a, row, f.runs, f.spentToday[a.id] ?? 0);
-  const realLabel = `Real run · ${a.estCostLabel === "About $1" ? "~$1" : a.estCostLabel === "$0" ? "$0" : a.estCostLabel === "A few cents" ? "~$0.05" : "~$0.003"}`;
+  const realLabel = `Real run · ${a.estCostLabel ?? "cost unknown"}`;
   return (
     <div className="card hero" style={{ padding: 28, borderRadius: 24, display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))", gap: 28 }}>
       <div className="row hero-id" style={{ gap: 22, alignItems: "flex-start", minWidth: 0 }}>
@@ -149,7 +164,6 @@ function HeroFull({ a, f, controls }: { a: CrewMember; f: Floor; controls: boole
             <span className="pill" style={{ background: "var(--soft)", fontWeight: 500 }}><span className="muted">Model</span>{row?.model ?? "Set when built"}</span>
             <span className="pill" style={{ background: "var(--soft)", fontWeight: 500 }}><span className="muted">Budget</span>{row ? `${budget(row.daily_budget_usd)} a day` : "Set when built"}</span>
             {f.liveVersion[a.id] != null && <Link href={`/build/${a.id}`} className="pill" style={{ background: "var(--soft)", fontWeight: 500, color: "var(--ink)" }}><span className="muted">Live version</span>v{f.liveVersion[a.id]}</Link>}
-            {a.works && <span className="pill" style={{ background: "var(--soft)", fontWeight: 500, whiteSpace: "normal", borderRadius: 14 }}><span className="muted">Works with</span>{a.works}</span>}
           </div>
         </div>
       </div>
@@ -160,7 +174,7 @@ function HeroFull({ a, f, controls }: { a: CrewMember; f: Floor; controls: boole
               <DryRun action={dryRun.bind(null, a.id)} />
               <ActionButton className="btn dark" action={realRun.bind(null, a.id)} disabled={!controls || !row || st === "running"} busyLabel="Starting…"
                 title={!controls ? "Real runs need DASHBOARD_CONTROLS=on" : st === "running" ? `${a.name} is working. One run at a time.` : undefined}
-                confirm={{ title: `Run ${a.name} for real?`, body: row?.enabled ? `${a.name} reads real data and writes: ${a.writes}. Shows in Runs.` : `${a.name} is off duty, so this run is logged as skipped at $0.`, lines: [{ k: "Expected cost", v: row?.enabled ? a.estCostLabel ?? "?" : "$0" }, { k: "Spent today", v: `${m4(f.spentToday[a.id] ?? 0)} of ${m2(row?.daily_budget_usd ?? 0)}` }, ...(a.id === "wholesale_hunter" && !f.health.gmail ? [{ k: "Note", v: "Gmail isn’t connected, so drafts land in Notion only." }] : [])], confirmLabel: "Run for real", kind: "dark" }}>
+                confirm={{ title: `Run ${a.name} for real?`, body: row?.enabled ? `${a.name} reads real data and writes: ${a.writes}. Shows in Runs.` : `${a.name} is off duty, so this run is logged as skipped at $0.`, lines: [{ k: "Expected cost", v: row?.enabled ? a.estCostLabel ?? "?" : "$0" }, { k: "Spent today", v: `${m4(f.spentToday[a.id] ?? 0)} of ${m2(row?.daily_budget_usd ?? 0)}` }, ...((f.grants[a.id] ?? []).includes("gmail_draft_lead") && !f.health.gmail ? [{ k: "Note", v: "Gmail isn’t connected, so drafts land in Notion only." }] : [])], confirmLabel: "Run for real", kind: "dark" }}>
                 {st === "running" ? <><span className="dot pulse" style={{ background: "var(--acc)" }} />Working…</> : realLabel}
               </ActionButton>
             </div>
@@ -173,6 +187,10 @@ function HeroFull({ a, f, controls }: { a: CrewMember; f: Floor; controls: boole
                 <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 2, minWidth: 0 }}><span style={{ fontSize: 13.5, fontWeight: 600 }}>Schedule</span><span className="muted" style={{ fontSize: 11.5 }}>{schedWords(a.schedule)}{a.schedule?.chain ? ` · ${a.schedule.chain} chain` : ""}</span></div>
                 <Icon name="chevron-right" size={15} style={{ opacity: 0.5 }} />
               </Link>
+            </div>
+            <div className="soft-box">
+              <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 2, minWidth: 0 }}><span style={{ fontSize: 13.5, fontWeight: 600 }}>Runs only by hand</span><span className="muted" style={{ fontSize: 11.5 }}>{a.manualOnly ? "Only when you press Run, or in a chain you start with Run chain" : "Can run on a schedule when it is in a chain that is on"}</span></div>
+              {manualSwitch(a, controls)}
             </div>
             <span style={{ fontSize: 12.5 }} className="ink2">{combined(a, row)}</span>
             {!controls && <span className="sub">Real runs and putting an agent back on the crew are off here until DASHBOARD_CONTROLS=on. Dry runs and taking agents off duty always work.</span>}
@@ -192,7 +210,7 @@ function HeroFull({ a, f, controls }: { a: CrewMember; f: Floor; controls: boole
   );
 }
 
-function Stats({ a, f, pipelineTotal, books }: { a: CrewMember; f: Floor; pipelineTotal?: number; books?: Books | null }) {
+function Stats({ a, f, pipelineTotal, books }: { a: CrewMember; f: Floor; pipelineTotal?: number | null; books?: Books | null }) {
   const runs = f.runs.filter((r) => r.agent_id === a.id);
   const ok = runs.filter((r) => r.status === "ok").length, fl = runs.filter((r) => r.status === "failed").length, sk = runs.filter((r) => r.status === "skipped").length;
   const spend30 = runs.filter((r) => f.now - Date.parse(r.started_at) < 30 * 864e5).reduce((s, r) => s + r.cost_usd, 0);
@@ -200,9 +218,9 @@ function Stats({ a, f, pipelineTotal, books }: { a: CrewMember; f: Floor; pipeli
   const b = f.agents[a.id]?.daily_budget_usd ?? 0;
   const stats: [string, string, string][] = [
     ["Runs", String(runs.length), `${ok} OK · ${fl} failed · ${sk} skipped`],
-    a.id === "wholesale_hunter" ? ["Leads in pipeline", pipelineTotal == null ? "—" : String(pipelineTotal), "in wholesale_leads"]
-      : a.id === "bookkeeper" ? ["Receipt coverage", books?.coverage == null ? "—" : `${books.coverage}%`, books ? `${books.total} charges in expense_docs · target 95%` : "expense_docs not there yet"]
-      : [a.id === "cfo" ? "Snapshots written" : "Briefs posted", String(ok), "last 60 days"],
+    pipelineTotal !== undefined ? ["Leads in pipeline", pipelineTotal == null ? "—" : String(pipelineTotal), "in wholesale_leads"]
+      : books !== undefined ? ["Receipt coverage", books?.coverage == null ? "—" : `${books.coverage}%`, books ? `${books.total} charges in expense_docs · target 95%` : "expense_docs not there yet"]
+      : ["Runs that finished", String(ok), "last 60 days"],
     ["Skipped while off duty", String(sk), "logged at $0"],
     ["30-day spend", m4(spend30), `of ${m2(b * 30)} budget`],
     ["Last real run", last ? md(last.started_at) : "—", last ? `${hm(last.started_at)} CT · ${dur(last.started_at, last.ended_at)} · ${m4(last.cost_usd)}` : "none yet"],
@@ -360,13 +378,13 @@ function Memory({ a, f, domains, mem }: { a: CrewMember; f: Floor; domains?: str
       <>{lines("note")}{!mine("note").length && <span className="muted" style={{ fontSize: 13 }}>Nothing yet. Notes can be for the next run, 30 days or for good.</span>}</>
     ) },
     { n: 5, title: "Working memory", color: "var(--peach)", meta: "Where it left off, rewritten at the end of each run. At most 5 short lines, no addresses or links.", body: (
-      <>{lines("working")}{!mine("working").length && <span className="muted" style={{ fontSize: 13 }}>{!KEEPS_WORKING.has(a.id) ? `${a.name} only uses memory to pick categories, so it keeps no working memory.` : tab?.loads ? `Empty until the next real run.${a.id === "wholesale_hunter" ? " Rowan reads the web, so its lines are kept as data." : ""}` : `${a.name} doesn’t keep working memory.`}</span>}</>
+      <>{lines("working")}{!mine("working").length && <span className="muted" style={{ fontSize: 13 }}>{`${a.name} doesn’t leave itself working memory. Anything it should keep, teach it as a note or a standing order.`}</span>}</>
     ) },
-    a.id === "wholesale_hunter"
+    (f.grants[a.id] ?? []).includes("report_leads")
       ? { n: 6, title: "Don’t repeat", color: "var(--ink2)", meta: "Businesses already in the pipeline, by domain. Real, from wholesale_leads.", body: <div className="row wrap" style={{ gap: 6 }}>{(domains ?? []).slice(0, 60).map((c) => <span key={c} className="pill sm" style={{ background: "var(--soft)", fontWeight: 500 }}>{c}</span>)}{!domains?.length && <span className="muted" style={{ fontSize: 13 }}>No leads yet.</span>}</div> }
-      : a.id === "bookkeeper"
+      : (f.grants[a.id] ?? []).includes("report_books_sync")
         ? { n: 6, title: "Don’t repeat", color: "var(--ink2)", meta: "Worked out from expense_docs each run", body: <span className="ink2" style={{ fontSize: 13, lineHeight: 1.45 }}>Charges it has already handled, receipts already searched for (up to 3 times each) and categories already suggested are skipped. Nothing here is stored as memory.</span> }
-        : { n: 6, title: "Don’t repeat", color: "var(--ink2)", meta: "Worked out from its own tables each run", body: <span className="muted" style={{ fontSize: 13 }}>Nothing to avoid. Each brief starts from today’s numbers.</span> },
+        : { n: 6, title: "Don’t repeat", color: "var(--ink2)", meta: "Worked out from its own tables each run", body: <span className="muted" style={{ fontSize: 13 }}>Nothing to avoid. Each run starts from what its tools read today.</span> },
   ];
   const pageLoad = (load?.pages ?? []).filter((p) => p.tokens > 0);
   const seg = load ? [
@@ -449,12 +467,12 @@ function Memory({ a, f, domains, mem }: { a: CrewMember; f: Floor; domains?: str
 }
 
 /** Where the agent sits on the org chart and who it reports to (docs/org-chart.md), as one row. */
-async function placeOf(id: string): Promise<[string, string] | null> {
+async function placeOf(id: string, f: Floor): Promise<[string, string] | null> {
   const org = await loadOrg();
   if (!org) return null;
   const seat = seatOf(org, id);
   if (!seat) return ["Org chart", "Not on the chart yet. Put it in a seat on Crew."];
   const up = reportsTo(org, seat);
-  const boss = !up ? "you" : up.holder === "zak" ? "you" : up.holder === "agent" && up.agentId ? (BY_ID[up.agentId]?.name ?? up.agentId) : `${up.title} (open seat)`;
+  const boss = !up ? "you" : up.holder === "zak" ? "you" : up.holder === "agent" && up.agentId ? (f.byId[up.agentId]?.name ?? up.agentId) : `${up.title} (open seat)`;
   return ["Org chart", `${seatPath(org, seat)} · reports to ${boss}`];
 }

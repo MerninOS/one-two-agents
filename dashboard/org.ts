@@ -7,8 +7,6 @@ import { CAPS } from "@/core/gateway/policy";
 import { departmentRules } from "@/core/memory";
 import { agentNames, companySeat, deptSpent, headOf, childrenOf, liveAgentIds, monthSpendByAgent, orgProblems, reportsTo, seatOf, seatPath, seatTeam, seatToolBlocks, type Org, type Seat } from "@/core/org";
 import type { MapOrg } from "./agentMap";
-import type { BuiltRow } from "./builder";
-import { BY_ID, CREW } from "./crew";
 import type { Floor } from "./data";
 import { when } from "./format";
 import { STATE_LOOK, stateOf, type Look } from "./status";
@@ -57,24 +55,18 @@ export interface OrgView {
 }
 
 const OFF_LOOK: Look = { label: "Off duty", dot: "var(--mut)", bg: "var(--soft)", fg: "var(--ink2)" };
-const ON_LOOK: Look = { label: "On duty", dot: "var(--mint)", bg: "var(--mint-soft)", fg: "var(--mint-ink)" };
 
-/** Every agent the chart knows: the crew in code (built and planned), then agents built in the app. */
-function agentsOf(f: Floor, built: BuiltRow[]): SeatAgent[] {
-  const crew = CREW.map((a): SeatAgent => {
+/** Every agent the chart knows: each agent with a live version, then the planned seats (dashboard/roster.ts). */
+function agentsOf(f: Floor): SeatAgent[] {
+  return f.crew.map((a): SeatAgent => {
     const st = stateOf(a, f.agents[a.id], f.runs, f.spentToday[a.id] ?? 0);
     const last = f.runs.find((r) => r.agent_id === a.id && r.status !== "skipped");
     return { id: a.id, name: a.name, role: a.role, href: `/agents/${a.id}`, icon: a.icon, hue: a.built ? a.hue ?? null : null, planned: !a.built, look: STATE_LOOK[st], last: !a.built ? `Phase ${a.phase}` : last ? `Last ran ${when(last.started_at)}` : "Never run" };
   });
-  const own = built.filter((b) => !BY_ID[b.id]).map((b): SeatAgent => ({
-    id: b.id, name: b.name, role: b.mandate || "Built in the app", href: `/build/${b.id}`, icon: "cpu", hue: null, planned: false,
-    look: b.enabled ? ON_LOOK : OFF_LOOK, last: b.lastRun ? `Last ran ${when(b.lastRun.at)}` : "Never run",
-  }));
-  return [...crew, ...own];
 }
 
-export function orgView(f: Floor, org: Org, built: BuiltRow[], x: DeptExtras): OrgView {
-  const all = agentsOf(f, built);
+export function orgView(f: Floor, org: Org, x: DeptExtras): OrgView {
+  const all = agentsOf(f);
   const byId = new Map(all.map((a) => [a.id, a]));
   const view = (s: Seat, depth: number): SeatView => ({
     id: s.id, title: s.title, sub: s.sub, holder: s.holder,
@@ -145,7 +137,7 @@ export async function mapOrgOf(org: Org | null, agentId: string): Promise<MapOrg
   const team = seatTeam(org, seat, live).agents;
   const up = reportsTo(org, seat);
   const names = await agentNames([...team, ...(up?.agentId ? [up.agentId] : [])]).catch(() => ({} as Record<string, string>));
-  const name = (id: string) => names[id] ?? BY_ID[id]?.name ?? id;
+  const name = (id: string) => names[id] ?? id;
   const box: MapOrg["reportsTo"] = !up
     ? { title: "Zak", sub: "The company seat reports to you, in the morning brief", agentId: null, open: false }
     : up.holder === "agent" && up.agentId ? { title: name(up.agentId), sub: seatPath(org, up), agentId: up.agentId, open: false }

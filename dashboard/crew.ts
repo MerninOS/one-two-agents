@@ -1,6 +1,7 @@
-// The crew as the Control Room shows them: personas, mandates and the hard rules.
-// Names are placeholders Zak can rename here. What each agent can reach comes from its saved
-// setup (dashboard/connections.ts); the live switches (enabled, budget) come from Supabase.
+// How the Control Room shows an agent, the planned seats that have no agent yet, and the hard rules.
+// Every agent that exists comes from the database (dashboard/roster.ts: its agents row, live saved
+// version, runs, seat and schedule), whether it started in code or was built in the app. Only the
+// planned roster below is written here, until each one is built (docs/agent-roster.md).
 
 export type Tier = "Report" | "Draft" | "Act";
 export type IntegrationId = "shopify" | "mercury" | "notion" | "email" | "gmail" | "gmail_read" | "claude" | "web" | "supabase" | "github";
@@ -9,7 +10,6 @@ export interface Schedule {
   kind: "manual" | "daily" | "weekdays";
   /** "HH:MM" in Central Time */
   time?: string;
-  /** Vercel Schedule name in vercel.json */
   /** The crew flow chain (core/flow.ts) that runs it on this schedule. Off until Zak turns the chain on. */
   chain?: string;
 }
@@ -22,52 +22,25 @@ export interface CrewMember {
   tier: Tier;
   mandate: string;
   job: string;
-  /** Built and in the `agents` table. */
+  /** In the `agents` table with a live version. False for the planned roster. */
   built: boolean;
   phase?: number;
   hue?: string;
+  /** When it joined, "Oct 29" (agents.created_at). */
   since?: string;
-  /** Rough cost of one real run, for confirm dialogs. Computed cost is always read from agent_runs. */
+  /** What a real run costs, from its recent runs (or its cap per run before it has any). */
   estCostLabel?: string;
+  /** What a real run writes or hands you, from its live version. */
   writes?: string;
-  works?: string;
+  /** Its chain on Crew > Schedule, when it is in one with a schedule. */
   schedule?: Schedule;
+  /** Runs only by hand (agents.manual_only). */
+  manualOnly?: boolean;
   trigger?: string;
 }
 
-export const CREW: CrewMember[] = [
-  {
-    id: "chief_of_staff", name: "Avery", role: "Chief of Staff", hue: "#F2884B", icon: "clipboard-list", built: true, tier: "Report",
-    since: "Oct 29", estCostLabel: "About $0.003", writes: "1 email to you, 1 row in the Briefs database",
-    mandate: "I read every other agent’s runs and your numbers, and email you one morning brief before you start the day.",
-    job: "Morning brief emailed to you, with a copy in Notion: today’s focus, what’s waiting on you, numbers, watch list.",
-    works: "Reads every run from Morgan and Rowan for the morning brief.",
-    schedule: { kind: "weekdays", time: "06:45", chain: "morning" },
-  },
-  {
-    id: "cfo", name: "Morgan", role: "CFO", hue: "#6CC69A", icon: "calculator", built: true, tier: "Report",
-    since: "Oct 29", estCostLabel: "$0", writes: "1 row in kpi_snapshots",
-    mandate: "I count yesterday’s revenue, orders, margin and cash in code and write them down. I never estimate a number.",
-    job: "Daily snapshot: yesterday’s revenue, orders, AOV, repeat rate, green coffee cost and margin from Shopify, cash from Mercury.",
-    works: "Avery reads my snapshot every morning.",
-    schedule: { kind: "daily", time: "05:30", chain: "morning" },
-  },
-  {
-    id: "wholesale_hunter", name: "Rowan", role: "Wholesale Hunter", hue: "#F5D35C", icon: "compass", built: true, tier: "Draft",
-    since: "Oct 29", estCostLabel: "About $1", writes: "wholesale_leads, 1 Notion page, Gmail drafts if set up",
-    mandate: "I find cafés, restaurants and offices around Austin that would pour One Two, and write the first hello. You approve every first email before it goes out.",
-    job: "Finds a few new wholesale prospects in Austin, Lakeway and Bee Cave, scores fit, writes a first-touch email as a draft. First emails always wait for your approval.",
-    works: "You review and send every draft. Avery reads each run.",
-    schedule: { kind: "manual" },
-  },
-  {
-    id: "bookkeeper", name: "Quinn", role: "Bookkeeper", hue: "#F6B8C9", icon: "receipt", built: true, tier: "Draft",
-    since: "Nov 9", estCostLabel: "A few cents", writes: "expense_docs rows, receipt files, 1 Notion page when something changed",
-    mandate: "I find the receipt behind every business charge, suggest a category, and ask you for a photo only when it matters. I never change Mercury myself: you approve every entry.",
-    job: "Pulls business charges from Mercury, finds receipts in Gmail, suggests categories from Mercury’s own list, lists charges that need a photo, and closes each month on the 3rd.",
-    works: "You approve every Mercury change. Morgan reads my categories once I ship.",
-    schedule: { kind: "manual" },
-  },
+/** Seats on the plan that have no agent yet. Each leaves this list when it is built in the app. */
+export const PLANNED: CrewMember[] = [
   { id: "blend_coach", name: "Sage", role: "Blend Coach", icon: "sliders-horizontal", built: false, phase: 3, tier: "Draft", trigger: "When a Shopify order is fulfilled + 5 days",
     job: "Post-purchase check-ins, blend ratio tweaks, reorder timing.",
     mandate: "I’ll check in after a bag lands, suggest blend tweaks and time the reorder. You approve what goes out." },
@@ -91,10 +64,6 @@ export const CREW: CrewMember[] = [
     job: "Social content research, weekly ideas, creator briefs.",
     mandate: "I’ll research social content and bring you weekly ideas and creator briefs." },
 ];
-
-export const BY_ID: Record<string, CrewMember> = Object.fromEntries(CREW.map((a) => [a.id, a]));
-export const BUILT = CREW.filter((a) => a.built);
-export const PLANNED = CREW.filter((a) => !a.built);
 
 export const TIERS: Record<Tier, string> = {
   Report: "Report: reads only, writes a report.",

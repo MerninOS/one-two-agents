@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { BY_ID, HARD_RULES } from "@/dashboard/crew";
+import { HARD_RULES } from "@/dashboard/crew";
 import { getFloor, type Floor } from "@/dashboard/data";
 import { BEHIND_THE_SCENES, CONNECTIONS, CONN_BY_ID, isSetUp, toolsOf, usersOf, type ConnId, type Connection } from "@/dashboard/connections";
 import type { ToolDef } from "@/core/tools/types";
@@ -10,10 +10,10 @@ import { Avatar, LockList } from "@/dashboard/components/ui";
 // and which agents have each of those in their saved setup. Shown here, granted in the builder.
 
 function Who({ id, f }: { id: string; f: Floor }) {
-  const a = BY_ID[id];
-  const name = a?.name ?? f.setupNames[id] ?? id;
+  const a = f.byId[id];
+  const name = a?.name ?? id;
   return (
-    <Link href={a ? `/agents/${id}` : `/build/${id}`} className="row" title={name} style={{ gap: 6, fontSize: 12, fontWeight: 600, color: "var(--ink)", textDecoration: "none", padding: "3px 10px 3px 3px", borderRadius: 999, background: "var(--soft)" }}>
+    <Link href={`/agents/${id}`} className="row" title={name} style={{ gap: 6, fontSize: 12, fontWeight: 600, color: "var(--ink)", textDecoration: "none", padding: "3px 10px 3px 3px", borderRadius: 999, background: "var(--soft)" }}>
       {a ? <Avatar a={a} size={22} /> : <span className="av" style={{ width: 22, height: 22, fontSize: 11 }}>{name.slice(0, 1)}</span>}
       {name}
     </Link>
@@ -41,7 +41,7 @@ function Tile({ c, f, on }: { c: Connection; f: Floor; on: boolean }) {
 
 function ToolRow({ t, f, locked }: { t: ToolDef; f: Floor; locked?: boolean }) {
   const has = Object.keys(f.grants).filter((a) => f.grants[a].includes(t.id));
-  const only = t.agents?.length ? t.agents.map((id) => BY_ID[id]?.name ?? id) : null;
+  const only = t.agents?.length ? t.agents.map((id) => f.byId[id]?.name ?? id) : null;
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 6, padding: "12px 14px", borderRadius: 14, background: "var(--soft)", border: locked ? "1px dashed var(--mut2)" : undefined }}>
       <span className="row" style={{ gap: 8, alignItems: "flex-start" }}>

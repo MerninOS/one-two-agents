@@ -1,6 +1,5 @@
 import Link from "next/link";
 import { cookies } from "next/headers";
-import { BUILT, BY_ID, CREW, PLANNED } from "@/dashboard/crew";
 import { CONNECTIONS, isSetUp } from "@/dashboard/connections";
 import { getFloor } from "@/dashboard/data";
 import { longDay } from "@/dashboard/format";
@@ -16,19 +15,19 @@ export default async function RoomLayout({ children }: { children: React.ReactNo
   const theme = jar.get("cr_theme")?.value === "dark" ? "dark" : "light";
   const open = needs(floor, floor.now, parseSeen(jar.get(SEEN_COOKIE)?.value));
   const notSetUp = CONNECTIONS.filter((c) => !c.builtIn && !isSetUp(c, floor.health)).length;
-  const rail = CREW.map((a) => {
+  const rail = floor.crew.map((a) => {
     const st = stateOf(a, floor.agents[a.id], floor.runs, floor.spentToday[a.id] ?? 0);
     return { a, st, badge: open.filter((n) => n.agentId === a.id).length };
   });
   // runs from the last 10 minutes, so the refresher can poll while one is live and say when it ends
   const recent: RecentRun[] = floor.runs
     .filter((r) => floor.now - Date.parse(r.started_at) < 10 * 6e4)
-    .map((r) => ({ id: r.id, name: BY_ID[r.agent_id]?.name ?? r.agent_id, status: r.status, live: isLive(r, floor.now) }));
+    .map((r) => ({ id: r.id, name: floor.byId[r.agent_id]?.name ?? r.agent_id, status: r.status, live: isLive(r, floor.now) }));
   // six places (docs/builder-flow.md, slice 5): Settings sits apart at the bottom of the sidebar
   const nav = [
     { href: "/", match: "/", icon: "layout-dashboard", label: "Today" },
     { href: "/approvals", match: "/approvals", icon: "inbox", label: "Approvals", count: floor.approvalsPending ? String(floor.approvalsPending) : undefined },
-    { href: "/crew", match: ["/crew", "/agents/*", "/build*"], icon: "users", label: "Crew", count: `${BUILT.length} + ${PLANNED.length}` },
+    { href: "/crew", match: ["/crew", "/agents/*", "/build*"], icon: "users", label: "Crew", count: `${floor.built.length} + ${floor.planned.length}` },
     { href: "/runs", match: "/runs*", icon: "history", label: "Runs" },
     { href: "/connections", match: "/connections", icon: "plug", label: "Connections", note: notSetUp ? `${notSetUp} to fix` : undefined, noteColor: "var(--red-ink)" },
   ];

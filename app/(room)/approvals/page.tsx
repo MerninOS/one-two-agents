@@ -1,6 +1,5 @@
 import Link from "next/link";
 import { applyWaiting, approve, approveAll, queueQuinn, reject, retryAction } from "@/dashboard/actions";
-import { BY_ID } from "@/dashboard/crew";
 import { getApprovals, getFloor, type ApprovalItem, type ApprovalsView } from "@/dashboard/data";
 import { m2, md, when } from "@/dashboard/format";
 import { controlsOn } from "@/dashboard/session";
@@ -51,7 +50,7 @@ function Change({ i }: { i: ApprovalItem }) {
 
 /** The department a card's agent sat in, and the lead's check (slice 4): a note, or that it wasn't checked in time. */
 function LeadBits({ i, view }: { i: ApprovalItem; view: ApprovalsView }) {
-  const lead = i.reviewer_agent_id ? BY_ID[i.reviewer_agent_id]?.name ?? view.names[i.reviewer_agent_id] ?? i.reviewer_agent_id : null;
+  const lead = i.reviewer_agent_id ? view.names[i.reviewer_agent_id] ?? i.reviewer_agent_id : null;
   if (!lead || !i.review_status) return null;
   if (i.review_status === "waiting") return <span className="sub">{lead} checks this first. It comes to you by {i.review_due ? when(i.review_due) : "tomorrow"}; you can decide it now anyway.</span>;
   if (i.review_status === "skipped") return <span className="sub">{lead} didn’t check this in time, so it came straight to you.</span>;
@@ -81,7 +80,7 @@ export default async function Approvals({ searchParams }: { searchParams: Promis
   const quinnOn = !!f.agents.bookkeeper?.enabled;
   const live = !blocker && quinnOn;
   const card = (i: ApprovalItem) => {
-    const a = BY_ID[i.agent_id];
+    const a = f.byId[i.agent_id];
     const name = a?.name ?? view?.names[i.agent_id] ?? i.agent_id;
     return (
       <div key={i.id} className="card" style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: 22, padding: 22 }}>
@@ -185,7 +184,7 @@ export default async function Approvals({ searchParams }: { searchParams: Promis
             {view.log.map((g) => (
               <div key={g.id} className="row rule wrap" style={{ gap: 12, padding: "9px 0", fontSize: 12.5 }}>
                 <span style={{ width: 110 }} className="muted">{when(g.created_at)}</span>
-                <span style={{ width: 70 }}>{BY_ID[g.agent_id]?.name ?? g.agent_id}</span>
+                <span style={{ width: 70 }}>{f.byId[g.agent_id]?.name ?? g.agent_id}</span>
                 <span style={{ flex: 1, minWidth: 180 }}><code>{g.tool}</code> · {g.action_type}{g.reason && <span className="muted"> · {g.reason}</span>}</span>
                 <Tag s={g.status} />
                 {g.exec_run_id && <Link href={`/runs/${g.exec_run_id}`} style={{ fontSize: 12 }}>run</Link>}

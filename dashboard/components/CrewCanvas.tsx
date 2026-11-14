@@ -17,7 +17,7 @@ import { Summary } from "./ui";
 
 export interface CrewAgent {
   id: string; name: string; role: string; hue: string; icon: string;
-  enabled: boolean; buttonOnly: boolean; takesHandoff: boolean;
+  enabled: boolean; buttonOnly: boolean;
   metrics: { key: string; label: string }[];
   /** Average cost of its last real runs (up to 10); null before any. */
   avgCost: number | null; runs: number;
@@ -104,7 +104,7 @@ export function CrewCanvas({ d, actions }: { d: CrewCanvasData; actions: CrewAct
   const [confirm, setConfirm] = useState<(Confirm & { go: () => void }) | null>(null);
   const [preview, setPreview] = useState<{ key: string; text: string; steps: ChainPreviewStep[] } | null>(null);
   const [busy, start] = useTransition();
-  const agents = useMemo(() => d.palette.map((a) => a.id), [d.palette]);
+  const agents = useMemo(() => ({ ids: d.palette.map((a) => a.id), manualOnly: new Set(d.palette.filter((a) => a.buttonOnly).map((a) => a.id)) }), [d.palette]);
   const byId = useMemo(() => Object.fromEntries(d.palette.map((a) => [a.id, a])), [d.palette]);
   const name = (id: string) => byId[id]?.name ?? id;
 
@@ -303,7 +303,7 @@ export function CrewCanvas({ d, actions }: { d: CrewCanvasData; actions: CrewAct
                       <span className="muted">not before</span>
                       <select className="input sel-auto" value={st.notBefore ?? ""} aria-label="Not before" onChange={(e) => setStep(k, { ...st, notBefore: e.target.value || undefined })}><option value="">no wait</option>{QUARTERS.map((q) => <option key={q} value={q}>{clock(q)}</option>)}</select>
                     </>}
-                    {k > 0 && a?.takesHandoff && <label className="row" style={{ gap: 6 }}><input type="checkbox" checked={!!st.passAlong} onChange={(e) => setStep(k, { ...st, passAlong: e.target.checked || undefined })} />Pass {prev?.name ?? "the step before"}’s summary along</label>}
+                    {k > 0 && a && <label className="row" style={{ gap: 6 }}><input type="checkbox" checked={!!st.passAlong} onChange={(e) => setStep(k, { ...st, passAlong: e.target.checked || undefined })} />Pass {prev?.name ?? "the step before"}’s summary along</label>}
                   </div>
                   {a && !a.enabled && <span className="sub">{a.name} is off duty, so this step is skipped and the chain stops here until you turn {a.name} on.</span>}
                 </div>
