@@ -43,6 +43,9 @@ export function OrgChart({ v, actions, controls }: { v: OrgView; actions: OrgAct
   const [toast, setToast] = useState<ActionResult | null>(null);
   const [busy, start] = useTransition();
   const [dept, setDept] = useState("");
+  // On a phone each department folds to a summary card until tapped (desktop ignores this).
+  const [unfolded, setUnfolded] = useState<Set<string>>(() => new Set());
+  const toggle = (id: string) => setUnfolded((u) => { const n = new Set(u); if (n.has(id)) n.delete(id); else n.add(id); return n; });
   const run = (f: () => Promise<ActionResult>, after?: (r: ActionResult) => void) => start(async () => {
     let r: ActionResult;
     try { r = await f(); } catch (e) { r = { ok: false, text: e instanceof Error ? e.message : "Something went wrong." }; }
@@ -71,23 +74,36 @@ export function OrgChart({ v, actions, controls }: { v: OrgView; actions: OrgAct
       </div>
 
       <div className="org-depts">
-        {v.departments.map((d) => (
-          <section key={d.id} className={`card org-dept${wideDept(d) ? " wide" : ""}`} aria-label={`${d.name} department`}>
-            <div className="org-dept-h">
-              <span className="org-dept-n">{d.name}</span>
-              <span className="muted" style={{ fontSize: 12 }}>{d.seats} seat{d.seats === 1 ? "" : "s"}{d.planned ? ` · ${d.planned} planned` : ""}{d.open ? ` · ${d.open} open` : ""}</span>
-              {editing && <button type="button" className="btn ghost xs" style={{ marginLeft: "auto" }} onClick={() => setOpen({ kind: "dept", dept: d })}>Edit</button>}
-            </div>
-            <DeptLimits d={d} />
-            {d.rules.length > 0 && (
-              <details className="org-rules">
-                <summary>{d.rules.length} department rule{d.rules.length === 1 ? "" : "s"}</summary>
-                <ul>{d.rules.map((r) => <li key={r.id}>{r.text}</li>)}</ul>
-              </details>
-            )}
-            <Tree s={d.head} editing={editing} onPick={pick} head cols={wideDept(d)} />
-          </section>
-        ))}
+        {v.departments.map((d) => {
+          const folded = !editing && !unfolded.has(d.id);
+          return (
+            <section key={d.id} className={`card org-dept${wideDept(d) ? " wide" : ""}${folded ? " folded" : ""}`} aria-label={`${d.name} department`}>
+              {!editing && (
+                <button type="button" className="org-fold" aria-expanded={!folded} onClick={() => toggle(d.id)}>
+                  <span className="org-dept-n" style={{ flex: 1 }}>{d.name}</span>
+                  <span className="muted" style={{ fontSize: 12 }}>{deptCounts(d)}</span>
+                  <Icon name={folded ? "chevron-right" : "chevron-down"} size={18} style={{ flex: "none", opacity: 0.6 }} />
+                </button>
+              )}
+              {folded && <DeptSummary d={d} />}
+              <div className={`org-dept-h${editing ? "" : " wide-only"}`}>
+                <span className="org-dept-n">{d.name}</span>
+                <span className="muted" style={{ fontSize: 12 }}>{deptCounts(d)}</span>
+                {editing && <button type="button" className="btn ghost xs" style={{ marginLeft: "auto" }} onClick={() => setOpen({ kind: "dept", dept: d })}>Edit</button>}
+              </div>
+              <div className="org-body">
+                <DeptLimits d={d} />
+                {d.rules.length > 0 && (
+                  <details className="org-rules">
+                    <summary>{d.rules.length} department rule{d.rules.length === 1 ? "" : "s"}</summary>
+                    <ul>{d.rules.map((r) => <li key={r.id}>{r.text}</li>)}</ul>
+                  </details>
+                )}
+                <Tree s={d.head} editing={editing} onPick={pick} head cols={wideDept(d)} />
+              </div>
+            </section>
+          );
+        })}
         {editing && (
           <section className="card dashed org-dept" aria-label="Add a department">
             <span className="org-dept-n">New department</span>
@@ -119,16 +135,58 @@ export function OrgChart({ v, actions, controls }: { v: OrgView; actions: OrgAct
 const wideDept = (d: DeptView) => d.head.kids.length >= 3 && d.head.kids.some((k) => k.kids.length > 0);
 
 function Tree({ s, editing, onPick, head, cols }: { s: SeatView; editing: boolean; onPick: (s: SeatView, head?: boolean) => void; head?: boolean; cols?: boolean }) {
+  // On a phone a lead's team folds behind a count until tapped; the head's own seats always show.
+  const [shown, setShown] = useState(false);
+  const folds = !head && !editing && s.kids.length > 0;
   return (
-    <div className="org-node">
-      <SeatCard s={s} editing={editing} onPick={() => onPick(s, head)} head={head} />
+    <div className={`org-node${folds && !shown ? " folded" : ""}`}>
+      <div className="org-row">
+        <SeatCard s={s} editing={editing} onPick={() => onPick(s, head)} head={head} />
+        {folds && (
+          <button type="button" className="org-team" aria-expanded={shown} onClick={() => setShown((x) => !x)} aria-label={`${shown ? "Hide" : "Show"} the ${s.kids.length} seats under ${s.title}`}>
+            <span>{teamCounts(s)}</span>
+            <Icon name={shown ? "chevron-up" : "chevron-down"} size={15} style={{ flex: "none" }} />
+          </button>
+        )}
+      </div>
       {s.kids.length > 0 && <div className={`org-kids${cols ? " cols" : ""}`}>{s.kids.map((k) => <Tree key={k.id} s={k} editing={editing} onPick={onPick} />)}</div>}
     </div>
   );
 }
 
-function Face({ a }: { a: SeatAgent }) {
-  return <span className={`av${a.planned ? " planned" : ""}`} style={{ width: 32, height: 32, background: a.hue ?? undefined }}><Icon name={a.icon} size={15} style={a.hue ? undefined : { opacity: 0.6 }} /></span>;
+const plural = (n: number, w: string) => `${n} ${w}${n === 1 ? "" : "s"}`;
+const deptCounts = (d: DeptView) => `${plural(d.seats, "seat")}${d.planned ? ` · ${d.planned} planned` : ""}${d.open ? ` · ${d.open} open` : ""}`;
+const allSeats = (s: SeatView): SeatView[] => [s, ...s.kids.flatMap(allSeats)];
+/** What sits under a lead, counted in code: "1 planned · 2 open". */
+function teamCounts(s: SeatView) {
+  const team = s.kids.flatMap(allSeats);
+  const open = team.filter((k) => k.holder === "open").length;
+  const planned = team.filter((k) => k.agent?.planned).length;
+  const filled = team.length - open - planned;
+  return [filled && `${filled} filled`, planned && `${planned} planned`, open && `${open} open`].filter(Boolean).join(" · ");
+}
+
+/** A folded department on a phone: a face per seat (filled first, open last) and who heads it. */
+function DeptSummary({ d }: { d: DeptView }) {
+  const seats = allSeats(d.head);
+  const rank = (s: SeatView) => (s.holder === "open" ? 2 : s.agent?.planned ? 1 : 0);
+  const faces = [...seats].sort((a, b) => rank(a) - rank(b));
+  const shown = faces.slice(0, 7);
+  const leads = d.head.kids.filter((k) => k.kids.length > 0).length;
+  const head = d.head.agent ? d.head.agent.name : d.head.holder === "zak" ? "you" : "open seat";
+  return (
+    <div className="org-sum">
+      <span className="org-faces" aria-hidden="true">
+        {shown.map((s) => s.agent ? <Face key={s.id} a={s.agent} size={24} /> : s.holder === "zak" ? <span key={s.id} className="av org-z" style={{ width: 24, height: 24 }}>Z</span> : <span key={s.id} className="av planned" style={{ width: 24, height: 24 }} />)}
+        {faces.length > shown.length && <span className="org-more">+{faces.length - shown.length}</span>}
+      </span>
+      <span className="ink2" style={{ fontSize: 12.5, flex: 1, textAlign: "right" }}>Head: {head}{leads ? ` · ${plural(leads, "lead")}` : ""}</span>
+    </div>
+  );
+}
+
+function Face({ a, size = 32 }: { a: SeatAgent; size?: number }) {
+  return <span className={`av${a.planned ? " planned" : ""}`} style={{ width: size, height: size, background: a.hue ?? undefined }}><Icon name={a.icon} size={Math.round(size * 0.47)} style={a.hue ? undefined : { opacity: 0.6 }} /></span>;
 }
 
 function SeatCard({ s, editing, onPick, head, wide }: { s: SeatView; editing: boolean; onPick: () => void; head?: boolean; wide?: boolean }) {
