@@ -11,16 +11,10 @@ import { TOOL_LIST, TOOLS } from "@/core/tools/catalog";
 import { MODEL_LIST } from "@/integrations/models";
 import { env } from "@/core/env";
 import { when } from "@/dashboard/format";
-import { CREW } from "@/dashboard/crew";
 import { activePlaybook, listPlaybooks, pendingPlaybook, playbookHold, stepLabel } from "@/core/playbook";
 import { CONNECTIONS, connOf, isSetUp, type ConnId } from "@/dashboard/connections";
 import { health } from "@/dashboard/data";
 
-export interface BuildStep {
-  idx: number; kind: "model" | "tool" | "stop"; tool: string | null; toolLabel: string | null; input: unknown; output: string | null;
-  ok: boolean; numbers: Record<string, number> | null; tokens_in: number; tokens_out: number; cost_usd: number; ms: number;
-}
-export interface BuildRun { id: string; trigger: string; mode: string | null; started_at: string; ended_at: string | null; status: string; summary: string | null; error: string | null; cost_usd: number; steps: BuildStep[] }
 export interface BuildTool { id: string; label: string; detail: string; kind: string; group: string; conn: ConnId; trusted: boolean; connected: boolean; needs: string[]; grantable: boolean; agents: string[] | null; seat: "team" | "company" | null }
 /** A connection as the flow shows it: plain data, set up or not (no values of keys). */
 export interface FlowConn { id: ConnId; name: string; sub: string; icon: string; builtIn: boolean; about: string; setUp: boolean }
@@ -57,11 +51,12 @@ export async function listBuilt(): Promise<BuiltRow[] | null> {
 }
 
 /** The pick-lists the builder offers, all from code. */
-export function builderMenu() {
+/** What the builder offers. `crew` names the agents (the Floor's roster) where a rule names one by id. */
+export function builderMenu(crew: readonly { id: string; name: string }[] = []) {
   const h = health();
   return {
     tools: TOOL_LIST.map((t): BuildTool => ({ id: t.id, label: t.label, detail: t.detail, kind: t.kind, group: t.group, conn: connOf(t), trusted: t.trusted, needs: [...t.needs], connected: t.needs.every((k) => !!SETTING[k]), grantable: GRANTABLE.has(t.kind), agents: t.agents ? [...t.agents] : null, seat: t.seat ?? null })),
-    agentNames: Object.fromEntries(CREW.map((a) => [a.id, `${a.name} (${a.id})`])) as Record<string, string>,
+    agentNames: Object.fromEntries(crew.map((a) => [a.id, `${a.name} (${a.id})`])) as Record<string, string>,
     models: MODEL_LIST.filter((m) => m.route === "anthropic").map((m): BuildModel => ({ id: m.id, label: m.label, in: m.in, out: m.out })),
     efforts: [...EFFORTS],
     limits: RUN_LIMITS,
@@ -156,21 +151,10 @@ async function standards(agentId: string): Promise<Standard[]> {
   return (data ?? []).map((r) => ({ id: r.id, grp: r.grp, text: r.text, notionPageId: r.notion_page_id }));
 }
 
-async function runs(agentId: string): Promise<BuildRun[]> {
-  const { data: rs } = await db().from("agent_runs").select("id, trigger, started_at, ended_at, status, summary, error, cost_usd, metrics").eq("agent_id", agentId).order("started_at", { ascending: false }).limit(5);
-  const runIds = (rs ?? []).map((r) => r.id);
-  const { data: steps } = runIds.length ? await db().from("run_steps").select("run_id, idx, kind, tool, input, output, ok, numbers, tokens_in, tokens_out, cost_usd, ms").in("run_id", runIds).order("idx") : { data: [] };
-  return (rs ?? []).map(({ metrics, ...r }) => ({
-    ...r, cost_usd: Number(r.cost_usd),
-    mode: (() => { const m = (metrics ?? {}) as Record<string, number>; return m.playbook ? "followed playbook" : m.fell_back ? "fell back to exploring" : "finished" in m ? "explored" : null; })(),
-    steps: (steps ?? []).filter((s) => s.run_id === r.id).map((s) => ({ ...s, cost_usd: Number(s.cost_usd), toolLabel: s.tool ? TOOLS[s.tool]?.label ?? s.tool : null })) as BuildStep[],
-  }));
-}
-
 export interface BuilderData {
   id: string; enabled: boolean; budget: number; active: SpecVersion | null;
   versions: (SpecVersion & { active: boolean; createdBy: string })[];
-  standards: Standard[]; runs: BuildRun[]; spentToday: number;
+  standards: Standard[]; spentToday: number;
   others: { id: string; name: string; outputName: string; hasOutput: boolean }[];
   usedBy: { id: string; name: string }[];
   /** The newest version when it is newer than the live one: what Try it and Go live work on. */
@@ -203,8 +187,8 @@ export async function getBuilder(agentId: string): Promise<BuilderData | null> {
   const versions = await listSpecVersions(agentId);
   if (!versions.length) return null;
   const since = new Date(Date.now() - 864e5).toISOString();
-  const [active, st, rs, spent, defs, outs, playbooks] = await Promise.all([
-    loadSpec(agentId), standards(agentId), runs(agentId),
+  const [active, st, spent, defs, outs, playbooks] = await Promise.all([
+    loadSpec(agentId), standards(agentId),
     db().from("agent_runs").select("cost_usd").eq("agent_id", agentId).gte("started_at", since),
     db().from("agent_defs").select("agent_id, spec").eq("active", true).neq("agent_id", agentId),
     db().from("agent_outputs").select("agent_id, name, summary, numbers, created_at, finished").order("created_at", { ascending: false }).limit(200),
@@ -219,7 +203,7 @@ export async function getBuilder(agentId: string): Promise<BuilderData | null> {
   const outRows = outs.error ? [] : outs.data ?? [];
   const mine = outRows.find((o) => o.agent_id === agentId);
   return {
-    id: a.id, enabled: a.enabled, budget: Number(a.daily_budget_usd), active, versions, standards: st, runs: rs,
+    id: a.id, enabled: a.enabled, budget: Number(a.daily_budget_usd), active, versions, standards: st,
     spentToday: (spent.data ?? []).reduce((s, r) => s + Number(r.cost_usd), 0),
     others: (defs.data ?? []).map((d) => {
       const sp = (d.spec ?? {}) as Partial<AgentSpec>;

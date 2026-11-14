@@ -56,7 +56,7 @@ Lowering or setting a limit applies straight away. Raising or removing one needs
 
 **Data.** Migration `20261116090000_department_budgets.sql`: `departments.monthly_budget_usd`, `max_emails_per_day`, `budget_alerted`; `agent_memory.department_id` and the `department` group (the owner check now says crew rows have no agent or department, department rows a department and no agent, the rest an agent); `memory_events.department_id`.
 
-**Not in this slice.** Memory is still loaded only for agents in `MEMORY_AGENTS` (Avery, Rowan, Quinn), so a department rule reaches the other agents' runs once Build Board Order 57 gives app-built agents memory. Leads and heads reporting up is slice 3.
+**Not in this slice.** Memory was loaded only for Avery, Rowan and Quinn until Build Board card 57 (docs/agent-roster.md), which loads it for every agent. Leads and heads reporting up is slice 3.
 
 **Checks.** `npm run check`, `npm run check:org`, `npm run check:policy`, `npm run build`. Apply the migration once merged. Until then the Crew page can't read the new columns and shows the "not applied" note, and runs skip the department check (no department is found).
 

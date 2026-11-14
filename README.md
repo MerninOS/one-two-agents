@@ -53,7 +53,7 @@ matrix and integrations, built from the Claude Design file "Agent Control Room".
   taking an agent off duty and "Pause all agents".
 - Real runs, putting an agent back on the crew and raising a budget need
   `DASHBOARD_CONTROLS=on`. Real runs go through `withRun`, so they respect `enabled` and budgets.
-- Agent names (Avery, Morgan, Rowan…) and mandates live in `dashboard/crew.ts`.
+- Every agent is data: a row in `agents` (role, avatar, runs only by hand) and its live saved version (see docs/agent-roster.md). `dashboard/crew.ts` holds only the planned seats and the hard rules.
 - Approvals (`/approvals`): Quinn's proposed Mercury changes, one card per charge, plus the gateway log.
   Approving writes to Mercury only when `MERCURY_WRITE_TOKEN` is set, `DASHBOARD_CONTROLS=on` and
   Quinn is on duty; otherwise the approval is kept and applied later. See `core/gateway/README.md`.
@@ -68,7 +68,7 @@ app/(room)/                Control Room pages (login in app/login, guarded by pr
 app/api/agents/[agent]/   one route for every agent: auth, trigger, run log
 app/api/health/           settings present + Supabase reachable
 dashboard/                Control Room data, actions, session and components
-agents/                   registry.ts (which agents can run on a schedule) and the code the engine's tools call (see agents/README.md)
+agents/                   registry.ts (every agent with a live version can run) and the code the engine's tools call (see agents/README.md)
 core/                     the runner and agent specs for agents built in the app, the tool list (core/tools), env, Supabase client, withRun (log, enabled flag, budget, memory), agent memory, time helpers, the tool gateway
 integrations/             Shopify (read-only), Mercury (read-only; mercury-write.ts is gateway-only), Notion, Gmail (drafts only; receipts read-only), Anthropic
 domain/                   coffee constants and green math (copied from the storefront), bookkeeping rules (books.ts)

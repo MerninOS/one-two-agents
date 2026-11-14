@@ -1,6 +1,6 @@
 import { createBuilt } from "@/dashboard/actions";
 import { builderMenu, listBuilt, listOthers, listTemplates } from "@/dashboard/builder";
-import { requireSession } from "@/dashboard/data";
+import { getFloor, requireSession } from "@/dashboard/data";
 import { controlsOn } from "@/dashboard/session";
 import { Flow } from "@/dashboard/components/Flow";
 import { seatChoices, seatToolChoices } from "@/dashboard/org";
@@ -23,7 +23,7 @@ export default async function NewAgent({ searchParams }: { searchParams: Promise
       agentId={null}
       saved={null}
       nextVersion={1}
-      menu={builderMenu()}
+      menu={builderMenu((await getFloor()).built)}
       step={sp.step}
       controls={controlsOn()}
       templates={templates}

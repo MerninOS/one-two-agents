@@ -2,16 +2,14 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { addStandard, dryRunBuilt, forgetMemoryLine, goBack, goLive, saveSpec, setBuiltBudget, tryBuilt } from "@/dashboard/actions";
 import { builderMenu, getBuilder } from "@/dashboard/builder";
-import { requireSession } from "@/dashboard/data";
+import { getFloor, requireSession } from "@/dashboard/data";
 import { controlsOn } from "@/dashboard/session";
-import { m4, when } from "@/dashboard/format";
+import { when } from "@/dashboard/format";
 import { specLooser } from "@/core/agent-spec";
 import { TryLive } from "@/dashboard/components/TryLive";
 import { estimate } from "@/dashboard/flowSteps";
 import { Flow } from "@/dashboard/components/Flow";
-import { BY_ID } from "@/dashboard/crew";
 import { schedSentence, schedWords } from "@/dashboard/schedule";
-import { RunSteps } from "@/dashboard/components/RunSteps";
 import { AgentTabs } from "@/dashboard/components/ui";
 import { placeAgent } from "@/dashboard/orgActions";
 import { mapOrgOf, seatChoices, seatToolChoices } from "@/dashboard/org";
@@ -29,7 +27,8 @@ export default async function BuildAgent({ params, searchParams }: { params: Pro
   if (!/^[a-z0-9_]{1,60}$/.test(id)) notFound();
   const b = await getBuilder(id);
   if (!b) notFound();
-  const menu = builderMenu();
+  const f = await getFloor();
+  const menu = builderMenu(f.built);
   const controls = controlsOn();
   const live = b.active;
   const working = b.draft ?? (live ? { ...live, active: true } : null);
@@ -65,8 +64,7 @@ export default async function BuildAgent({ params, searchParams }: { params: Pro
   }
 
   const mapOrg = await mapOrgOf(await loadOrg(), id);
-  const crew = !!BY_ID[id];
-  const sch = BY_ID[id]?.schedule;
+  const sch = f.byId[id]?.schedule;
   const saved = sp.saved != null;
   return (
     <div className="stack" style={{ maxWidth: 1180 }}>
@@ -84,7 +82,7 @@ export default async function BuildAgent({ params, searchParams }: { params: Pro
         </div>
         <Link href={`/build/${id}?edit=1`} className="btn dark">Edit {s.name}</Link>
       </div>
-      {crew && <AgentTabs id={id} on="edit" editable />}
+      <AgentTabs id={id} on="edit" editable />
 
       <TryLive
         key={`${working?.version ?? 0}-${b.playbooks?.pending?.id ?? 0}`}
@@ -117,25 +115,7 @@ export default async function BuildAgent({ params, searchParams }: { params: Pro
         ) : <span className="sub">Nothing saved for other agents yet. Live runs save their result; tries don’t.</span>}
       </div>
 
-      {/* the crew in code have a Runs tab with replays; agents built in the app get theirs in slice 6 */}
-      {crew ? <span className="sub"><Link href={`/agents/${id}?tab=runs`}>All of {s.name}’s runs</Link>, each with a replay.</span> : <div className="card" style={{ gap: 10 }}>
-        <span className="card-t">Latest runs</span>
-        {!b.runs.length && <span className="sub">None yet.</span>}
-        {b.runs.map((r, i) => (
-          <details key={r.id} open={i === 0} className={i ? "rule" : undefined} style={{ paddingTop: i ? 10 : 0 }}>
-            <summary style={{ cursor: "pointer", fontSize: 14, display: "flex", gap: 10, flexWrap: "wrap" }}>
-              <span style={{ fontWeight: 600 }}>{when(r.started_at)}</span>
-              <span className="muted">{r.trigger}{r.mode ? ` · ${r.mode}` : ""}</span>
-              <span className="muted">{r.status}</span>
-              <span className="muted">{r.steps.filter((x) => x.kind === "tool").length} tool calls · {m4(r.cost_usd)}</span>
-            </summary>
-            <div className="stack" style={{ gap: 8, paddingTop: 10 }}>
-              <span style={{ fontSize: 14, lineHeight: 1.5, whiteSpace: "pre-wrap" }}>{r.error ?? r.summary}</span>
-              <RunSteps run={r} />
-            </div>
-          </details>
-        ))}
-      </div>}
+      <span className="sub"><Link href={`/agents/${id}?tab=runs`}>All of {s.name}’s runs</Link>, each with a replay.</span>
     </div>
   );
 }

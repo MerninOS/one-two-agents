@@ -34,12 +34,6 @@ export interface MemoryRow {
 
 export interface MemoryEvent { id: string; memory_id: string | null; agent_id: string | null; department_id: string | null; kind: string; before: string | null; after: string | null; by: string; at: string }
 
-/** Agents whose runs load memory. Others (the CFO snapshot has no model) load nothing. */
-export const MEMORY_AGENTS = new Set(["chief_of_staff", "wholesale_hunter", "bookkeeper"]);
-/** Agents whose model leaves itself working memory. Quinn only picks categories, so it keeps none. */
-export const KEEPS_WORKING = new Set(["chief_of_staff", "wholesale_hunter"]);
-/** Agents that read web pages or inbound email: whatever they write to memory is stored as data, not notes. */
-const READS_OUTSIDE = new Set(["wholesale_hunter", "bookkeeper"]);
 
 export const MAX_LINE = 280;
 export const MAX_WORKING_LINE = 200;
@@ -273,7 +267,8 @@ export async function saveWorking(agentId: string, runId: string, lines: unknown
   if (kept.length) {
     const { error } = await db().from("agent_memory").insert(kept.map((text) => ({
       agent_id: agentId, grp: "working", text, source: "agent", source_tag: `run:${runId}`,
-      trust: READS_OUTSIDE.has(agentId) ? "data" : "note", keep: "always", tokens: countTokens(text),
+      // a run may have read web pages, leads or other agents' words: what it leaves is data, never notes
+      trust: "data", keep: "always", tokens: countTokens(text),
     })));
     if (error) return ` Working memory not saved: ${error.message}.`;
   }

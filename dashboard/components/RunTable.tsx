@@ -1,11 +1,12 @@
 import Link from "next/link";
-import { BY_ID } from "../crew";
+import type { CrewMember } from "../crew";
 import type { Run } from "../data";
 import { dur, m4, utcStr, when } from "../format";
 import { RUN_LOOK } from "../status";
 import { Avatar, Pill, Summary } from "./ui";
 
-export function RunTable({ runs, showAgent = true, foot }: { runs: Run[]; showAgent?: boolean; foot?: React.ReactNode }) {
+/** `who`: the Floor's roster (byId), for each run's avatar and name. */
+export function RunTable({ runs, who = {}, showAgent = true, foot }: { runs: Run[]; who?: Record<string, CrewMember>; showAgent?: boolean; foot?: React.ReactNode }) {
   const cols = showAgent ? undefined : { gridTemplateColumns: "110px 90px 120px 70px 80px minmax(0,1fr) 80px" };
   return (
     <div className="tbl">
@@ -13,7 +14,7 @@ export function RunTable({ runs, showAgent = true, foot }: { runs: Run[]; showAg
         <span>Status</span>{showAgent && <span>Agent</span>}<span>Trigger</span><span>Started (CT)</span><span>Duration</span><span>Cost</span><span>Summary</span><span />
       </div>
       {runs.map((r) => {
-        const a = BY_ID[r.agent_id];
+        const a = who[r.agent_id];
         const trig = r.trigger === "cron" ? "Schedule" : r.trigger === "manual" ? "Manual" : r.trigger === "approval" ? "Approval" : r.trigger === "chain" ? "Chain" : r.trigger;
         return (
           <div key={r.id} className={"tbl-row" + (r.status === "failed" ? " fail" : "") + (showAgent ? "" : " no-agent")} style={cols}>

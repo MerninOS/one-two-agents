@@ -113,7 +113,7 @@ Flow feel: a card per step that slides in, a 6-segment progress bar that fills a
 
 **What it replaces.** The Floor / Crew / Trust menu groups, the Run replay item and `/runs/latest`, the Run log and Crew canvas names, the Memory and Crew profiles items, the Agent builder item and its list page (`/build` now redirects to Crew), the agent Shift tab (the schedule shows on Overview and in Go live, and is edited in Crew > Schedule), the agent Settings tab and `setBudget` (the daily budget is in step 4, `setBuiltBudget`; the read-only facts are on Overview), and the "Edit in the builder" button. The budget alert in Needs you opens step 4.
 
-**Note.** Agents built in the app (not in `dashboard/crew.ts`) open straight on their builder page, which keeps its own latest runs list. Giving them the same profile, Memory tab and replay as the crew in code is a follow-up card, not part of this epic.
+**Note.** Agents built in the app (not in `dashboard/crew.ts`) open straight on their builder page, which keeps its own latest runs list. Card 57 gave them the same profile, Memory tab and replay (docs/agent-roster.md).
 
 **Checks.** `npm run check`, `npm run build`. No migration.
 

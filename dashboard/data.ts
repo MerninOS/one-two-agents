@@ -6,11 +6,12 @@ import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { db } from "@/core/db";
 import { env } from "@/core/env";
-import { DEFAULT_BUDGET, MEMORY_AGENTS, loadMemory, memoryView, proposedLessons, readPages, type MemoryEvent, type MemoryLoad, type MemoryRow, type PageLoad } from "@/core/memory";
-import { AGENTS } from "@/agents/registry";
+import { DEFAULT_BUDGET, loadMemory, memoryView, proposedLessons, readPages, type MemoryEvent, type MemoryLoad, type MemoryRow, type PageLoad } from "@/core/memory";
 import { agentNames, loadOrg } from "@/core/org";
-import { APPROVAL_LABELS, APPROVAL_TOOLS, BUTTON_ONLY, MAX_CHAINS, MAX_STEPS, METRICS, TAKES_HANDOFF, listFlowVersions, loadFlow, nextFirings } from "@/core/flow";
-import { BUILT, BY_ID, type IntegrationId } from "./crew";
+import { APPROVAL_LABELS, APPROVAL_TOOLS, MAX_CHAINS, MAX_STEPS, METRICS, listFlowVersions, loadFlow, nextFirings, readFlow, type Chain, type Crew } from "@/core/flow";
+import { TOOLS } from "@/core/tools/catalog";
+import type { CrewMember, IntegrationId } from "./crew";
+import { avgCostOf, buildCrew, memberOf, type RosterRow, type RosterSpec } from "./roster";
 import type { CrewAgent, CrewCanvasData } from "./components/CrewCanvas";
 import { SESSION_COOKIE, controlsOn, validSessionToken } from "./session";
 
@@ -59,10 +60,15 @@ export interface Floor {
   lessonsWaiting: Record<string, number>;
   /** Tool ids in each agent's active saved setup (agent_defs), by agent id; empty before the runner migration. */
   grants: Record<string, string[]>;
-  /** Names from saved setups, for agents built in the app that aren't in dashboard/crew.ts. */
-  setupNames: Record<string, string>;
   /** The live (active) saved-setup version of each agent, by agent id. */
   liveVersion: Record<string, number>;
+  /** Every agent with a live version (oldest first), then the planned seats (dashboard/roster.ts). */
+  crew: CrewMember[];
+  built: CrewMember[];
+  planned: CrewMember[];
+  byId: Record<string, CrewMember>;
+  /** The agents a chain may pick, for Crew > Schedule and the chain actions. */
+  palette: Crew;
 }
 
 const RUN_COLS = "id, agent_id, trigger, started_at, ended_at, status, tokens_in, tokens_out, cost_usd, summary, error, memory_json";
@@ -93,11 +99,13 @@ export const getFloor = cache(async (): Promise<Floor> => {
   await requireSession();
   const h = health();
   const now = Date.now();
-  const empty: Floor = { ok: false, now, agents: {}, runs: [], spentToday: {}, health: h, photosWaiting: null, approvalsPending: null, lessonsWaiting: {}, grants: {}, setupNames: {}, liveVersion: {} };
+  const empty: Floor = { ok: false, now, agents: {}, runs: [], spentToday: {}, health: h, photosWaiting: null, approvalsPending: null, lessonsWaiting: {}, grants: {}, liveVersion: {}, ...buildCrew([]), palette: { ids: [], manualOnly: new Set() } };
   if (!h.supabase) return { ...empty, problem: "SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY are not set, so there is nothing to show yet." };
   const since = new Date(now - 60 * 864e5).toISOString();
-  const [a, r, ph, ap, lessonsWaiting, defs] = await Promise.all([
-    db().from("agents").select("id, name, model, schedule, enabled, daily_budget_usd"),
+  const [a, r, ph, ap, lessonsWaiting, defs, flowRow, org] = await Promise.all([
+    // role, icon, hue, manual_only and created_at come with the roster migration; the older shape until then
+    db().from("agents").select("id, name, model, schedule, enabled, daily_budget_usd, role, icon, hue, manual_only, created_at")
+      .then((x) => (x.error ? db().from("agents").select("id, name, model, schedule, enabled, daily_budget_usd") : x)),
     db().from("agent_runs").select(RUN_COLS).gte("started_at", since).order("started_at", { ascending: false }).limit(1000),
     db().from("expense_docs").select("id", { count: "exact", head: true }).eq("status", "needs_photo"),
     // drafts still with their lead (slice 4) aren't waiting on Zak yet; the older shape until that migration is applied
@@ -105,24 +113,34 @@ export const getFloor = cache(async (): Promise<Floor> => {
       .then((x) => (x.error ? db().from("approvals").select("id", { count: "exact", head: true }).eq("status", "pending") : x)),
     proposedLessons(),
     db().from("agent_defs").select("agent_id, version, spec").eq("active", true),
+    db().from("crew_flow").select("flow").eq("active", true).maybeSingle(),
+    loadOrg().catch(() => null),
   ]);
   if (a.error || r.error) return { ...empty, problem: `Supabase: ${(a.error ?? r.error)?.message}` };
-  const agents = Object.fromEntries((a.data ?? []).map((x) => [x.id, { ...x, daily_budget_usd: Number(x.daily_budget_usd) } as AgentRow]));
+  const rows = (a.data ?? []) as (AgentRow & RosterRow)[];
+  const agents = Object.fromEntries(rows.map((x) => [x.id, { id: x.id, name: x.name, model: x.model, schedule: x.schedule, enabled: x.enabled, daily_budget_usd: Number(x.daily_budget_usd) } as AgentRow]));
   const all = (r.data ?? []).map(toRun);
   // a Preview is not a run of the agent: it stays out of the floor, the run log
   // and Replay, but its cost counts toward today's spend, the same as withRun's budget check
   const runs = all.filter((x) => x.trigger !== "preview");
   const d0 = budgetDayStart(new Date(now)).getTime();
-  const spentToday: Record<string, number> = Object.fromEntries(BUILT.map((b) => [b.id, 0]));
+  const spentToday: Record<string, number> = Object.fromEntries(rows.map((b) => [b.id, 0]));
   for (const run of all) if (Date.parse(run.started_at) >= d0) spentToday[run.agent_id] = (spentToday[run.agent_id] ?? 0) + run.cost_usd;
-  const grants: Record<string, string[]> = {}, setupNames: Record<string, string> = {}, liveVersion: Record<string, number> = {};
+  const grants: Record<string, string[]> = {}, liveVersion: Record<string, number> = {}, specs: Record<string, RosterSpec> = {};
   for (const d of defs.error ? [] : defs.data ?? []) {
-    const spec = (d.spec ?? {}) as { tools?: unknown; name?: unknown };
+    const spec = (d.spec ?? {}) as { tools?: unknown; name?: unknown; mandate?: unknown; limits?: { maxCostUsd?: unknown } };
     grants[d.agent_id] = Array.isArray(spec.tools) ? spec.tools.filter((t): t is string => typeof t === "string") : [];
-    if (typeof spec.name === "string" && spec.name) setupNames[d.agent_id] = spec.name;
     liveVersion[d.agent_id] = Number(d.version);
+    specs[d.agent_id] = { name: typeof spec.name === "string" ? spec.name : undefined, mandate: typeof spec.mandate === "string" ? spec.mandate : "", tools: grants[d.agent_id], maxCostUsd: Number(spec.limits?.maxCostUsd) || undefined };
   }
-  return { ok: true, now, agents, runs, spentToday, health: h, photosWaiting: ph.error ? null : ph.count ?? 0, approvalsPending: ap.error ? null : ap.count ?? 0, lessonsWaiting, grants, setupNames, liveVersion };
+  // the roster (docs/agent-roster.md): every agent with a live version, the same whether it started in code or the app
+  const live = rows.filter((x) => specs[x.id]).sort((x, y) => (x.created_at ?? "").localeCompare(y.created_at ?? "") || x.id.localeCompare(y.id));
+  const palette: Crew = { ids: live.map((x) => x.id).sort(), manualOnly: new Set(live.filter((x) => x.manual_only !== false).map((x) => x.id)) };
+  const chains: Chain[] = flowRow.error || !flowRow.data ? [] : readFlow(flowRow.data.flow, palette).flow.chains;
+  const tools = Object.fromEntries(Object.values(TOOLS).map((t) => [t.id, { label: t.label, kind: t.kind }]));
+  const seatTitle = (id: string) => org?.seats.find((x) => x.holder === "agent" && x.agentId === id)?.title ?? null;
+  const roster = buildCrew(live.map((x) => memberOf(x, specs[x.id], { tools, avgCost: avgCostOf(runs, x.id), seatTitle: seatTitle(x.id), chains })));
+  return { ok: true, now, agents, runs, spentToday, health: h, photosWaiting: ph.error ? null : ph.count ?? 0, approvalsPending: ap.error ? null : ap.count ?? 0, lessonsWaiting, grants, liveVersion, ...roster, palette };
 });
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -141,7 +159,7 @@ export async function getMemoryMeters(): Promise<Record<string, { tokens: number
   await requireSession();
   if (!health().supabase) return null;
   try {
-    const ids = [...MEMORY_AGENTS];
+    const ids = (await getFloor()).built.map((a) => a.id);
     const loads = await Promise.all(ids.map((id) => loadMemory(id, Date.now(), { pages: false })));
     return Object.fromEntries(loads.map((m) => [m.agentId, {
       tokens: m.tokens, budget: m.budget, lines: m.rows.length, groups: m.groups,
@@ -269,7 +287,7 @@ export async function getApprovals(): Promise<ApprovalsView | null> {
     log: (log.data ?? []) as GatewayAction[],
     staleHours: Number(pol.data?.value_json) || 72,
     departments: (org?.departments ?? []).map((d) => ({ id: d.id, name: d.name })),
-    names: await agentNames([...new Set(items.flatMap((i) => [i.agent_id, i.reviewer_agent_id ?? ""]).filter((id) => id && !BY_ID[id]))]).catch(() => ({})),
+    names: await agentNames([...new Set(items.flatMap((i) => [i.agent_id, i.reviewer_agent_id ?? ""]).filter(Boolean))]).catch(() => ({})),
   };
 }
 
@@ -282,7 +300,8 @@ export async function getMemory(agentId: string): Promise<{ tab: MemoryTab | nul
   await requireSession();
   if (!health().supabase) return { tab: null, problem: "Supabase isn’t set up." };
   try {
-    const loads = MEMORY_AGENTS.has(agentId);
+    // every agent with a live version loads its memory (docs/agent-roster.md)
+    const loads = !!(await getFloor()).byId[agentId]?.built;
     const [view, load] = await Promise.all([memoryView(agentId), loads ? loadMemory(agentId) : Promise.resolve(null)]);
     // an agent that doesn't load memory yet still shows whether its linked pages can be read
     const pages = load?.pages ?? await readPages(view.rows.filter((r) => r.agent_id === agentId && r.state === "kept"), DEFAULT_BUDGET);
@@ -302,20 +321,20 @@ export async function getMemory(agentId: string): Promise<{ tab: MemoryTab | nul
  */
 export async function getCrewCanvas(f: Floor): Promise<CrewCanvasData> {
   await requireSession();
-  const ids = Object.keys(AGENTS);
-  const palette: CrewAgent[] = ids.map((id) => {
-    const a = BY_ID[id];
+  // every agent with a live version, the same whether it started in code or was built in the app
+  const palette: CrewAgent[] = f.palette.ids.map((id) => {
+    const a = f.byId[id];
     const real = f.runs.filter((r) => r.agent_id === id && r.status === "ok" && r.trigger !== "preview").slice(0, 10);
     return {
-      id, name: a?.name ?? id, role: a?.role ?? "", hue: a?.hue ?? "#999", icon: a?.icon ?? "bot",
-      enabled: !!f.agents[id]?.enabled, buttonOnly: BUTTON_ONLY.has(id), takesHandoff: TAKES_HANDOFF.has(id),
-      metrics: METRICS[id] ?? [], avgCost: real.length ? real.reduce((s, r) => s + r.cost_usd, 0) / real.length : null, runs: real.length,
+      id, name: a?.name ?? id, role: a?.role ?? "", hue: a?.hue ?? "#999", icon: a?.icon ?? "cpu",
+      enabled: !!f.agents[id]?.enabled, buttonOnly: f.palette.manualOnly.has(id),
+      metrics: METRICS[id] ?? [], avgCost: avgCostOf(f.runs, id), runs: real.length,
     };
   });
   const base = { palette, approvalTools: APPROVAL_TOOLS.map((t) => ({ id: t, label: APPROVAL_LABELS[t] ?? t })), controls: controlsOn(), maxSteps: MAX_STEPS, maxChains: MAX_CHAINS, now: f.now };
   if (!health().supabase) return { ...base, version: 0, note: null, flow: { chains: [] }, problems: [], versions: [], next: {}, problem: "Supabase isn’t set up, so there is no flow to show." };
   try {
-    const [active, all] = await Promise.all([loadFlow(ids), listFlowVersions(ids)]);
+    const [active, all] = await Promise.all([loadFlow(f.palette), listFlowVersions(f.palette)]);
     const next = Object.fromEntries(active.flow.chains.map((c) => [c.key, nextFirings(c, f.now, 3).map((t) => new Date(t).toISOString())]));
     return {
       ...base, version: active.version, note: active.note, flow: active.flow, problems: active.problems, next,
@@ -338,7 +357,7 @@ export async function getChainRuns(runId: string): Promise<{ chainId: string; ke
   const { data } = await db().from("agent_runs").select("id, agent_id, chain_step, status, started_at, ended_at, cost_usd, summary, error").eq("chain_id", me.chain_id).order("chain_step").order("started_at");
   let name = me.chain_key as string, steps: string[] = [];
   try {
-    const flow = await loadFlow(Object.keys(AGENTS));
+    const flow = await loadFlow((await getFloor()).palette);
     const c = flow.flow.chains.find((x) => x.key === me.chain_key);
     if (c) { name = c.name; steps = c.steps.map((s) => s.agent); }
   } catch { /* the flow can't be read: show the runs alone */ }

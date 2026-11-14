@@ -15,8 +15,7 @@ import { getInventoryLots } from "@/integrations/shopify/lots";
 import { getBoardOrders, greenLedger } from "@/integrations/shopify/orders";
 import { getRoastLoss } from "@/integrations/shopify/settings";
 import { fetchStockCoffees } from "@/integrations/shopify/stock";
-import { BY_ID } from "@/dashboard/crew";
-import { agentsIn, companySeat, departmentLines, loadOrg, seatOf } from "@/core/org";
+import { agentNames, agentsIn, companySeat, departmentLines, loadOrg, seatOf } from "@/core/org";
 import { SECTIONS, briefEmail, deptLine, type BriefDept, type BriefView, type Kpi } from "./email";
 
 /** depts: Avery's line for each department, by name, written from the head's report. */
@@ -83,6 +82,8 @@ async function facts() {
     approvals: { pending: pending?.length ?? 0, oldestHours: pending?.length ? (Date.now() - Date.parse(pending[0].created_at)) / 36e5 : null },
     newDrafts: newDrafts ?? 0,
     neverDeducted: green.ledger.filter((r) => r.state === "missing").map((r) => r.name),
+    // each agent's name from its live version, whether it started in code or the app
+    names: await agentNames([...new Set((runs ?? []).map((r) => r.agent_id as string))]).catch(() => ({} as Record<string, string>)),
   };
 }
 type Facts = Awaited<ReturnType<typeof facts>>;
@@ -180,7 +181,7 @@ const briefView = (f: Facts, j: Judgment, sections: readonly string[], notionUrl
   focus: j.focus,
   dashboardUrl: env.dashboardUrl,
   notionUrl,
-  names: Object.fromEntries(Object.values(BY_ID).map((a) => [a.id, a.name])),
+  names: f.names,
   sections,
 });
 

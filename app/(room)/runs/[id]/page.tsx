@@ -6,7 +6,6 @@ import { notFound } from "next/navigation";
 import { costUsd, MODELS } from "@/integrations/anthropic";
 import { MODEL_LIST } from "@/integrations/models";
 import { dryRun } from "@/dashboard/actions";
-import { BY_ID } from "@/dashboard/crew";
 import { getChainRuns, getFloor, getRun, leadsForRun } from "@/dashboard/data";
 import { dur, m4, num, utcStr, when } from "@/dashboard/format";
 import { RUN_LOOK } from "@/dashboard/status";
@@ -21,13 +20,14 @@ export default async function Replay({ params }: { params: Promise<{ id: string 
   const { id } = await params;
   const run = await getRun(id);
   if (!run) notFound();
-  const a = BY_ID[run.agent_id];
-  if (!a) notFound();
   const f = await getFloor();
+  const a = f.byId[run.agent_id];
+  if (!a) notFound();
   const unseen = needs(f, f.now, parseSeen((await cookies()).get(SEEN_COOKIE)?.value)).some((n) => n.run && n.agentId === a.id);
   const others = f.runs.filter((r) => r.agent_id === a.id && r.status !== "skipped" && r.id !== run.id).slice(0, 6);
-  const [leads, mf, steps] = await Promise.all([a.id === "wholesale_hunter" ? leadsForRun(run.id) : null, mapFor(a.id), mapSteps(run.id)]);
-  const map = mf && mapOf({ agentId: a.id, spec: mf.spec, menu: builderMenu(), schedule: null, chain: null, usedBy: mf.usedBy, edit: null, run: mapRunOf(run, steps) });
+  const has = (tool: string) => (f.grants[a.id] ?? []).includes(tool);
+  const [leads, mf, steps] = await Promise.all([has("report_leads") ? leadsForRun(run.id) : null, mapFor(a.id), mapSteps(run.id)]);
+  const map = mf && mapOf({ agentId: a.id, spec: mf.spec, menu: builderMenu(f.built), schedule: null, chain: null, usedBy: mf.usedBy, edit: null, run: mapRunOf(run, steps) });
   const chain = run.trigger === "chain" ? await getChainRuns(run.id) : null;
   const look = RUN_LOOK[run.status];
 
@@ -35,14 +35,14 @@ export default async function Replay({ params }: { params: Promise<{ id: string 
   // a version can pick another model, so use the priced model whose prices give this run's cost, the live version's first
   const usual = Object.values(MODELS).find((m) => f.agents[a.id]?.model?.startsWith(m));
   const fits = (m: string) => Math.abs(costUsd(m, run.tokens_in, run.tokens_out) - run.cost_usd) <= 0.0002;
-  const model = usual && (fits(usual) || a.id === "wholesale_hunter") ? usual : MODEL_LIST.find((m) => fits(m.id))?.id ?? usual;
+  const model = usual && (fits(usual) || has("web_search")) ? usual : MODEL_LIST.find((m) => fits(m.id))?.id ?? usual;
   const inUsd = model ? costUsd(model, run.tokens_in, 0) : 0;
   const outUsd = model ? costUsd(model, 0, run.tokens_out) : 0;
   const rest = Math.max(0, Number((run.cost_usd - inUsd - outUsd).toFixed(4)));
   const money = [
     { label: "Input: prompt and pages read", amount: inUsd, sub: `${num(run.tokens_in)} tokens`, color: "var(--acc)" },
     { label: "Output", amount: outUsd, sub: `${num(run.tokens_out)} tokens`, color: "var(--mint)" },
-    { label: a.id === "wholesale_hunter" ? "Web searches" : "Other", amount: rest, sub: a.id === "wholesale_hunter" ? `about ${Math.round(rest / 0.01)} at $0.01` : "", color: "var(--ink2)" },
+    { label: has("web_search") ? "Web searches" : "Other", amount: rest, sub: has("web_search") ? `about ${Math.round(rest / 0.01)} at $0.01` : "", color: "var(--ink2)" },
   ];
 
   const title = run.status === "skipped" ? `Skipped · ${when(run.started_at)}` : run.status === "failed" ? `Failed · ${when(run.started_at)}` : `${run.trigger === "manual" ? "Manual" : run.trigger === "approval" ? "Approval" : run.trigger === "chain" ? "Chain" : run.trigger === "preview" ? "Try" : "Scheduled"} run · ${when(run.started_at)}`;
@@ -90,7 +90,7 @@ export default async function Replay({ params }: { params: Promise<{ id: string 
           <div className="chain-steps">
             {(chain.steps.length ? chain.steps : chain.runs.map((r) => r.agentId)).map((agentId, k) => {
               const r = chain.runs.find((x) => x.step === k);
-              const who = BY_ID[agentId];
+              const who = f.byId[agentId];
               const l = r ? RUN_LOOK[r.status] : null;
               const body = (
                 <>

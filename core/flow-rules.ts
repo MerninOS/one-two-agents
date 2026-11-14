@@ -47,13 +47,12 @@ export interface Flow { chains: Chain[] }
 export const METRICS: Record<string, { key: string; label: string }[]> = {
   cfo: [{ key: "orders", label: "Orders yesterday" }],
 };
-/** Agents that read a hand-off (JobOpts.handoff) as facts. The rest ignore it, so the palette doesn't offer it. */
-export const TAKES_HANDOFF = new Set(["chief_of_staff"]);
 /**
- * Agents that run only by hand (agents/registry.ts manualOnly: Rowan costs about $1 a run, Quinn
- * proposes Mercury changes). They may only be in a chain started with the Run chain button.
+ * The agents a flow may pick: every agent that can run (agents/registry.ts loadCrew), and those that
+ * run only by hand (agents.manual_only), which may only be in a chain started with the Run chain
+ * button. Every agent on the engine can read a hand-off from the step before.
  */
-export const BUTTON_ONLY = new Set(["wholesale_hunter", "bookkeeper"]);
+export interface Crew { ids: readonly string[]; manualOnly: ReadonlySet<string> }
 /** Gateway action types an approval start may name (core/gateway/policy.ts TOOLS). */
 export const APPROVAL_TOOLS = ["mercury.annotate_transaction"];
 export const APPROVAL_LABELS: Record<string, string> = { "mercury.annotate_transaction": "Quinn’s receipt, category and memo changes" };
@@ -61,10 +60,10 @@ const OPS: Op[] = [">=", ">", "<=", "<", "="];
 const TIME = /^([01]\d|2[0-3]):[0-5]\d$/;
 
 /**
- * Why a flow can't be saved, one line per problem; [] when it is fine. `agents` is the list of
- * agent ids the app can run (agents/registry.ts).
+ * Why a flow can't be saved, one line per problem; [] when it is fine. `crew` is the agents the
+ * app can run (agents/registry.ts loadCrew).
  */
-export function flowProblems(f: unknown, agents: readonly string[]): string[] {
+export function flowProblems(f: unknown, crew: Crew): string[] {
   const out: string[] = [];
   const x = (f ?? {}) as { chains?: unknown };
   if (!Array.isArray(x.chains)) return ["The flow has no chain list."];
@@ -91,14 +90,13 @@ export function flowProblems(f: unknown, agents: readonly string[]): string[] {
     const seen = new Set<string>();
     c.steps.forEach((st: Step, k: number) => {
       const sat = `${at}, step ${k + 1}`;
-      if (!st || !agents.includes(st.agent)) { out.push(`${sat}: unknown agent.`); return; }
+      if (!st || !crew.ids.includes(st.agent)) { out.push(`${sat}: unknown agent.`); return; }
       if (seen.has(st.agent)) out.push(`${sat}: ${st.agent} is already in this chain. No loops.`); seen.add(st.agent);
-      if (BUTTON_ONLY.has(st.agent) && s?.type !== "button") out.push(`${sat}: ${st.agent} runs only by hand, so it can only be in a chain started with the Run chain button.`);
+      if (crew.manualOnly.has(st.agent) && s?.type !== "button") out.push(`${sat}: ${st.agent} runs only by hand, so it can only be in a chain started with the Run chain button.`);
       if (st.when !== undefined && !["ok", "failed", "any"].includes(st.when)) out.push(`${sat}: when must be ok, failed or any.`);
       if (st.days !== undefined && st.days !== "daily" && st.days !== "weekdays") out.push(`${sat}: days must be daily or weekdays.`);
       if (st.notBefore !== undefined && (typeof st.notBefore !== "string" || !TIME.test(st.notBefore) || Number(st.notBefore.slice(3)) % 15)) out.push(`${sat}: not before must be HH:MM on a quarter hour.`);
       if (st.passAlong !== undefined && typeof st.passAlong !== "boolean") out.push(`${sat}: pass along must be true or false.`);
-      if (st.passAlong && !TAKES_HANDOFF.has(st.agent)) out.push(`${sat}: ${st.agent} can't read a hand-off yet.`);
       if (st.check !== undefined) {
         const prev = k > 0 ? c.steps[k - 1]?.agent : undefined;
         if (k === 0) out.push(`${sat}: the first step has nothing before it to check.`);
@@ -111,11 +109,11 @@ export function flowProblems(f: unknown, agents: readonly string[]): string[] {
 }
 
 /** A flow from the database, with anything malformed dropped (and said so) rather than run. */
-export function readFlow(raw: unknown, agents: readonly string[]): { flow: Flow; problems: string[] } {
+export function readFlow(raw: unknown, crew: Crew): { flow: Flow; problems: string[] } {
   const chains = Array.isArray((raw as Flow)?.chains) ? (raw as Flow).chains : [];
   const ok: Chain[] = [], problems: string[] = [];
   for (const c of chains) {
-    const p = flowProblems({ chains: [c] }, agents);
+    const p = flowProblems({ chains: [c] }, crew);
     if (p.length) problems.push(...p); else ok.push(c);
   }
   return { flow: { chains: ok }, problems };

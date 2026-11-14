@@ -2,7 +2,6 @@ import { cookies } from "next/headers";
 import { SEEN_COOKIE, parseSeen } from "@/dashboard/seen";
 import Link from "next/link";
 import { chicagoDate } from "@/core/time";
-import { BUILT, BY_ID, PLANNED } from "@/dashboard/crew";
 import { CONNECTIONS, isSetUp } from "@/dashboard/connections";
 import { getFloor, getMemoryMeters, getPipeline, leadsForRun } from "@/dashboard/data";
 import { dow, dur, hm, longDay, m2, m4, num, shortHm, when } from "@/dashboard/format";
@@ -24,28 +23,28 @@ export default async function MissionControl() {
   const todayRuns = f.runs.filter((r) => chicagoDate(0, new Date(r.started_at)) === today);
   const ok = todayRuns.filter((r) => r.status === "ok").length, sk = todayRuns.filter((r) => r.status === "skipped").length, fl = todayRuns.filter((r) => r.status === "failed").length;
   const spend = Object.values(f.spentToday).reduce((s, v) => s + v, 0);
-  const budgetSum = BUILT.reduce((s, a) => s + (f.agents[a.id]?.daily_budget_usd ?? 0), 0);
+  const budgetSum = f.built.reduce((s, a) => s + (f.agents[a.id]?.daily_budget_usd ?? 0), 0);
   const outside = CONNECTIONS.filter((c) => !c.builtIn);
   const systems = outside.filter((c) => isSetUp(c, f.health)).length;
   const [pipeline, meters, org] = await Promise.all([getPipeline(), getMemoryMeters(), loadOrg().catch(() => null)]);
   // Needs you, grouped by the department of the agent each one is about (docs/org-chart.md, slice 4)
   const groups = groupByDepartment(open, (id) => (org ? deptOf(org, id) : null));
 
-  const latest = f.runs.find((r) => r.status !== "skipped" && BY_ID[r.agent_id]?.built) ?? null;
-  const floorAgent = latest ? BY_ID[latest.agent_id] : BY_ID.wholesale_hunter;
+  const latest = f.runs.find((r) => r.status !== "skipped" && f.byId[r.agent_id]?.built) ?? null;
+  const floorAgent = (latest ? f.byId[latest.agent_id] : f.built[0]) ?? { id: "", name: "No agent" };
   const [leads, mf, steps] = await Promise.all([
-    latest?.agent_id === "wholesale_hunter" ? leadsForRun(latest.id) : null,
-    mapFor(floorAgent.id),
+    latest && (f.grants[latest.agent_id] ?? []).includes("report_leads") ? leadsForRun(latest.id) : null,
+    floorAgent.id ? mapFor(floorAgent.id) : null,
     latest ? mapSteps(latest.id) : [],
   ]);
-  const floorMap = mf && mapOf({ agentId: floorAgent.id, spec: mf.spec, menu: builderMenu(), schedule: null, chain: null, usedBy: mf.usedBy, edit: null, run: latest && mapRunOf(latest, steps) });
+  const floorMap = mf && mapOf({ agentId: floorAgent.id, spec: mf.spec, menu: builderMenu(f.built), schedule: null, chain: null, usedBy: mf.usedBy, edit: null, run: latest && mapRunOf(latest, steps) });
 
-  const states = BUILT.map((a) => ({ a, st: stateOf(a, f.agents[a.id], f.runs, f.spentToday[a.id] ?? 0) }));
+  const states = f.built.map((a) => ({ a, st: stateOf(a, f.agents[a.id], f.runs, f.spentToday[a.id] ?? 0) }));
   const off = states.filter((s) => s.st === "paused").map((s) => s.a.name);
   const others = states.filter((s) => s.st !== "paused").map((s) => `${s.a.name} is ${STATE_LOOK[s.st].label.toLowerCase()}`);
   const n = open.length;
   const greeting = n ? `${n === 1 ? "One thing needs" : `${n} things need`} you.` : "Quiet floor. Nothing needs you.";
-  const greetingSub = [off.length ? `${off.join(" and ")} ${off.length > 1 ? "are" : "is"} off duty${STATE_LOOK.paused.label.endsWith("launch") ? " until launch" : ""}.` : "", others.length ? others.join(", ") + "." : "", `${PLANNED.length} more join after launch.`].filter(Boolean).join(" ");
+  const greetingSub = [off.length ? `${off.join(" and ")} ${off.length > 1 ? "are" : "is"} off duty${STATE_LOOK.paused.label.endsWith("launch") ? " until launch" : ""}.` : "", others.length ? others.join(", ") + "." : "", `${f.planned.length} more join after launch.`].filter(Boolean).join(" ");
 
   const segs = (["High", "Medium", "Low"] as const).map((p) => ({ p, count: open.filter((x) => x.pri === p).length }));
   const days = weekFrom(now);
@@ -133,7 +132,7 @@ export default async function MissionControl() {
                 <span />
                 {days.map((d, i) => <span key={d} style={{ fontSize: 12, textAlign: "center", color: i === 0 ? "var(--acc-ink)" : "var(--mut)", fontWeight: i === 0 ? 700 : 500 }}>{dow(`${d}T18:00:00Z`)} {Number(d.slice(8))}</span>)}
               </div>
-              {BUILT.map((a) => {
+              {f.built.map((a) => {
                 const row = f.agents[a.id];
                 return (
                   <div key={a.id} className="shift-grid rule" style={{ padding: "6px 0", marginTop: 6 }}>
@@ -163,15 +162,15 @@ export default async function MissionControl() {
           <div className="card" style={{ gap: 12 }}>
             <span className="card-t">Spend by agent</span>
             <div style={{ display: "flex", flexDirection: "column", gap: 2 }}><span style={{ fontSize: 26, fontWeight: 600, letterSpacing: "-.02em" }}>{m4(spend)}</span><span className="muted" style={{ fontSize: 12 }}>of {m2(budgetSum)} in daily budgets</span></div>
-            <div className="bar" style={{ height: 10, borderRadius: 999, gap: 3 }}>{BUILT.map((a) => <span key={a.id} style={{ width: `${budgetSum ? ((f.spentToday[a.id] ?? 0) / budgetSum) * 100 : 0}%`, background: a.hue }} />)}</div>
-            {BUILT.map((a) => (
+            <div className="bar" style={{ height: 10, borderRadius: 999, gap: 3 }}>{f.built.map((a) => <span key={a.id} style={{ width: `${budgetSum ? ((f.spentToday[a.id] ?? 0) / budgetSum) * 100 : 0}%`, background: a.hue }} />)}</div>
+            {f.built.map((a) => (
               <div key={a.id} className="row" style={{ gap: 8, fontSize: 12.5 }}><span className="dot" style={{ background: a.hue }} /><span style={{ flex: 1 }}>{a.name}</span><b style={{ fontWeight: 600 }}>{m4(f.spentToday[a.id] ?? 0)}</b><span className="muted">/ {m2(f.agents[a.id]?.daily_budget_usd ?? 0)}</span></div>
             ))}
             <span className="muted" style={{ fontSize: 11.5 }}>Budget day resets at midnight UTC, the same rule the agents use.</span>
           </div>
           <div className="card" style={{ gap: 12 }}>
             <span className="card-t">Memory per agent</span>
-            {meters ? BUILT.filter((a) => meters[a.id]).map((a) => {
+            {meters ? f.built.filter((a) => meters[a.id]).map((a) => {
               const m = meters[a.id];
               return (
                 <Link key={a.id} href={`/agents/${a.id}?tab=memory`} style={{ display: "flex", flexDirection: "column", gap: 6, color: "var(--ink)", textDecoration: "none" }}>
@@ -187,9 +186,9 @@ export default async function MissionControl() {
       </div>
 
       <div className="card">
-        <div className="row" style={{ alignItems: "baseline" }}><span style={{ fontSize: 15, fontWeight: 600 }}>Joining the crew</span><span className="sub">{PLANNED.length} planned · after launch</span></div>
+        <div className="row" style={{ alignItems: "baseline" }}><span style={{ fontSize: 15, fontWeight: 600 }}>Joining the crew</span><span className="sub">{f.planned.length} planned · after launch</span></div>
         <div className="row wrap" style={{ gap: 8 }}>
-          {PLANNED.map((a) => (
+          {f.planned.map((a) => (
             <Link key={a.id} href={`/agents/${a.id}`} className="row" style={{ padding: "8px 16px 8px 8px", borderRadius: 999, background: "var(--soft)", color: "var(--ink)", whiteSpace: "nowrap", textDecoration: "none" }}>
               <Avatar a={a} size={34} />
               <span style={{ display: "flex", flexDirection: "column" }}><span style={{ fontSize: 13, fontWeight: 600 }}>{a.name}</span><span className="muted" style={{ fontSize: 11.5 }}>{a.role} · Phase {a.phase}</span></span>

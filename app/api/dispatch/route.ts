@@ -1,5 +1,5 @@
 import { NextResponse, after } from "next/server";
-import { AGENTS } from "@/agents/registry";
+import { loadCrew } from "@/agents/registry";
 import { claimDueWaits, claimFiring, startStep } from "@/core/chain";
 import { firingsBetween, loadFlow } from "@/core/flow";
 import { cronAuthorized } from "@/core/runs";
@@ -17,7 +17,7 @@ export async function GET(req: Request) {
   const now = Date.now();
   const started: string[] = [];
   let flow;
-  try { flow = await loadFlow(Object.keys(AGENTS)); }
+  try { flow = await loadFlow(await loadCrew()); }
   catch (e) { return NextResponse.json({ error: `Crew flow can't be read: ${e instanceof Error ? e.message : e}` }, { status: 500 }); }
 
   for (const c of flow.flow.chains) {

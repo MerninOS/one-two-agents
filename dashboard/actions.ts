@@ -5,7 +5,7 @@ import { cookies, headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { after } from "next/server";
-import { AGENTS } from "@/agents/registry";
+import { jobOf, loadCrew } from "@/agents/registry";
 import { db } from "@/core/db";
 import { withRun } from "@/core/runs";
 import { discardLesson, editMemory, forgetMemory, keepLesson, proposeLesson, teach as teachMemory, type Keep } from "@/core/memory";
@@ -22,14 +22,16 @@ import { lastTry } from "./builder";
 import { activePlaybook, afterRun, approvePlaybook, holdAfterRejection, listPlaybooks, pendingPlaybook } from "@/core/playbook";
 import { loadMemory } from "@/core/memory";
 import { loadOrg, seatPath, setHolder } from "@/core/org";
-import { BY_ID } from "./crew";
-import { requireSession } from "./data";
+import { getFloor, requireSession } from "./data";
 import { SESSION_COOKIE, SESSION_DAYS, checkPassword, controlsOn, newSessionToken } from "./session";
 
 export interface ActionResult { ok: boolean; text: string }
 
 const CONTROLS_OFF = "Controls are off. Set DASHBOARD_CONTROLS=on in Vercel to allow this.";
-const known = (id: string) => !!AGENTS[id] && !!BY_ID[id];
+/** An agent with a live version, as the Control Room shows it (docs/agent-roster.md); null otherwise. */
+const crewAgent = async (id: string) => { const a = (await getFloor()).byId[id]; return a?.built ? a : null; };
+/** An agent's name, or its id when it isn't on the roster. */
+const nameOf = async (id: string) => (await getFloor()).byId[id]?.name ?? id;
 const fail = (e: unknown): ActionResult => ({ ok: false, text: e instanceof Error ? e.message : String(e) });
 
 export async function login(_: { error?: string } | undefined, form: FormData) {
@@ -49,9 +51,9 @@ export async function logout() {
 /** Reads real data, writes nothing, calls no model, logs nothing. */
 export async function dryRun(agentId: string): Promise<ActionResult> {
   await requireSession();
-  if (!known(agentId)) return { ok: false, text: "Unknown agent." };
+  if (!(await crewAgent(agentId))) return { ok: false, text: "Unknown agent." };
   try {
-    const res = await AGENTS[agentId].job({ dryRun: true });
+    const res = await jobOf(agentId)({ dryRun: true });
     return { ok: true, text: res.summary };
   } catch (e) { return fail(e); }
 }
@@ -64,15 +66,16 @@ export async function dryRun(agentId: string): Promise<ActionResult> {
 export async function realRun(agentId: string): Promise<ActionResult> {
   await requireSession();
   if (!controlsOn()) return { ok: false, text: CONTROLS_OFF };
-  if (!known(agentId)) return { ok: false, text: "Unknown agent." };
-  const name = BY_ID[agentId].name;
+  const who = await crewAgent(agentId);
+  if (!who) return { ok: false, text: "Unknown agent." };
+  const name = who.name;
   // one at a time: a row still "running" inside the 6 minute window means a run is going
   const { data: going } = await db().from("agent_runs").select("id").eq("agent_id", agentId).eq("status", "running").gte("started_at", new Date(Date.now() - 6 * 6e4).toISOString()).limit(1);
   if (going?.length) return { ok: false, text: `${name} is already working. Wait for that run to finish.` };
 
   let markStarted: () => void = () => {};
   const started = new Promise<null>((resolve) => { markStarted = () => resolve(null); });
-  const run = withRun(agentId, "manual", (runId, memory) => { markStarted(); return AGENTS[agentId].job({ runId, memory }); })
+  const run = withRun(agentId, "manual", (runId, memory) => { markStarted(); return jobOf(agentId)({ runId, memory }); })
     .then((res) => ({ res }), (err: unknown) => { console.error(`[control-room] ${agentId} run failed`, err); return { err }; });
   after(run);
   const first = await Promise.race([started, run]);
@@ -84,13 +87,37 @@ export async function realRun(agentId: string): Promise<ActionResult> {
 
 export async function setEnabled(agentId: string, on: boolean): Promise<ActionResult> {
   await requireSession();
-  if (!known(agentId)) return { ok: false, text: "Unknown agent." };
+  const who = await crewAgent(agentId);
+  if (!who) return { ok: false, text: "Unknown agent." };
   if (on && !controlsOn()) return { ok: false, text: CONTROLS_OFF };
   const { error } = await db().from("agents").update({ enabled: on }).eq("id", agentId);
   if (error) return fail(error.message);
   revalidatePath("/", "layout");
-  const name = BY_ID[agentId].name;
+  const name = who.name;
   return { ok: true, text: on ? `${name} is back on the crew.` : `${name} is off duty. Every run is skipped at $0.` };
+}
+
+/**
+ * Runs only by hand (agents.manual_only): only the Run button, or a chain started with Run chain.
+ * Turning it on applies at once; letting an agent run on a schedule needs Controls on and a confirm,
+ * and still only happens once Zak puts it in a chain that is on (Crew > Schedule).
+ */
+export async function setManualOnly(agentId: string, on: boolean, confirmed = false): Promise<ActionResult> {
+  await requireSession();
+  const who = await crewAgent(agentId);
+  if (!who) return { ok: false, text: "Unknown agent." };
+  if (!on && !controlsOn()) return { ok: false, text: CONTROLS_OFF };
+  if (!on && !confirmed) return { ok: false, text: `Confirm first: ${who.name} could then run on a schedule.` };
+  if (on) {
+    // a chain with a schedule or an approval start would no longer be valid with it in: say so first
+    const flow = await loadFlow(await loadCrew());
+    const used = flow.flow.chains.filter((c) => c.start.type !== "button" && c.steps.some((x) => x.agent === agentId));
+    if (used.length) return { ok: false, text: `${who.name} is in ${used.map((c) => c.name).join(", ")}, which starts on its own. Take it out on Crew > Schedule first.` };
+  }
+  const { error } = await db().from("agents").update({ manual_only: on }).eq("id", agentId);
+  if (error) return fail(/manual_only/.test(error.message) ? "Apply the agent roster migration (20261119090000_agent_roster.sql) first." : error.message);
+  revalidatePath("/", "layout");
+  return { ok: true, text: on ? `${who.name} runs only when you press Run, or in a chain you start with Run chain.` : `${who.name} can run on a schedule now: add it to a chain on Crew > Schedule.` };
 }
 
 export async function pauseAll(): Promise<ActionResult> {
@@ -124,7 +151,7 @@ async function fireApprovalChains(decision: "approve" | "reject") {
   if (!origin) return;
   after(async () => {
     try {
-      const flow = await loadFlow(Object.keys(AGENTS));
+      const flow = await loadFlow(await loadCrew());
       const started = await approvalDecided(origin, flow.flow, ANNOTATE, decision);
       if (started.length) console.log(`[chains] approval ${decision} started ${started.join(", ")}`);
     } catch (e) { console.error("[chains] approval", e); }
@@ -166,7 +193,7 @@ export async function reject(approvalId: string, reason?: string): Promise<Actio
     if (why) {
       try {
         const { data: ap } = await db().from("approvals").select("agent_id, title").eq("id", approvalId).single();
-        if (ap && await proposeLesson(ap.agent_id, approvalId, ap.title, why)) lesson = ` A lesson is waiting on ${BY_ID[ap.agent_id]?.name ?? "the agent"}’s Memory tab for your Keep.`;
+        if (ap && await proposeLesson(ap.agent_id, approvalId, ap.title, why)) lesson = ` A lesson is waiting on ${await nameOf(ap.agent_id)}’s Memory tab for your Keep.`;
       } catch (e) { lesson = ` The lesson couldn’t be saved: ${e instanceof Error ? e.message : String(e)}.`; }
     }
     // an agent on a playbook that proposed this goes back to needing approval for its next playbook
@@ -227,13 +254,14 @@ const FORGET: Keep[] = ["next_run", "days_30", "always"];
 
 export async function teach(agentId: string, text: string, keepAs: string, forget: string, notionLink = ""): Promise<ActionResult> {
   await requireSession();
-  if (!known(agentId)) return { ok: false, text: "Unknown agent." };
+  const who = await crewAgent(agentId);
+  if (!who) return { ok: false, text: "Unknown agent." };
   if (!KEEP_AS.includes(keepAs as (typeof KEEP_AS)[number]) || !FORGET.includes(forget as Keep)) return { ok: false, text: "Pick how long to keep it." };
   try {
     const link = keepAs === "standing_order" ? String(notionLink ?? "").slice(0, 500) : "";
     await teachMemory({ agentId, text: String(text), keepAs: keepAs as (typeof KEEP_AS)[number], forget: forget as Keep, notionLink: link });
     revalidatePath("/", "layout");
-    const name = BY_ID[agentId].name;
+    const name = who.name;
     const how = keepAs === "crew" ? "Every agent will load it from its next run." : keepAs === "standing_order" ? `${name} follows it from the next run${link ? " and reads the linked page each time. Share that page with the agents’ Notion integration in Notion if you haven’t" : ""}.` : forget === "next_run" ? `${name} reads it on the next run, then forgets it.` : forget === "days_30" ? `${name} keeps it for 30 days.` : `${name} keeps it until you forget it.`;
     return { ok: true, text: `Saved. ${how}` };
   } catch (e) { return fail(e); }
@@ -266,8 +294,8 @@ export async function discardLessonLine(memoryId: string): Promise<ActionResult>
 // ---- Crew flow (docs/agent-setup.md, slice 5): chains of agents on the Crew canvas
 
 /** A flow from the browser, checked against the palette before anything is saved or run. */
-function cleanFlow(f: unknown): { flow: Flow } | { problems: string[] } {
-  const problems = flowProblems(f, Object.keys(AGENTS));
+async function cleanFlow(f: unknown): Promise<{ flow: Flow } | { problems: string[] }> {
+  const problems = flowProblems(f, await loadCrew());
   return problems.length ? { problems } : { flow: f as Flow };
 }
 
@@ -280,10 +308,10 @@ export async function saveCrewFlow(flow: unknown, note: string, confirmed: boole
   await requireSession();
   const why = String(note ?? "").trim().slice(0, 300);
   if (!why) return { ok: false, text: "Add a short note saying why, so the version list makes sense later." };
-  const got = cleanFlow(flow);
+  const got = await cleanFlow(flow);
   if ("problems" in got) return { ok: false, text: `Not saved: ${got.problems.slice(0, 5).join(" ")}` };
   try {
-    const now = await loadFlow(Object.keys(AGENTS));
+    const now = await loadFlow(await loadCrew());
     if (JSON.stringify(now.flow) === JSON.stringify(got.flow)) return { ok: false, text: "Nothing changed from the saved flow." };
     const looser = flowLooser(now.flow, got.flow);
     if (looser.length && !controlsOn()) return { ok: false, text: `${CONTROLS_OFF} ${looser.join("; ")}.` };
@@ -298,8 +326,8 @@ export async function rollBackFlow(version: number, confirmed: boolean): Promise
   await requireSession();
   if (!Number.isInteger(version) || version < 1) return { ok: false, text: "Unknown version." };
   try {
-    const agents = Object.keys(AGENTS);
-    const [now, all] = await Promise.all([loadFlow(agents), listFlowVersions(agents)]);
+    const crew = await loadCrew();
+    const [now, all] = await Promise.all([loadFlow(crew), listFlowVersions(crew)]);
     const target = all.find((v) => v.version === version);
     if (!target) return { ok: false, text: `There is no flow v${version}.` };
     if (target.version === now.version) return { ok: false, text: `v${version} is already active.` };
@@ -320,7 +348,7 @@ export async function runChainNow(key: string): Promise<ActionResult> {
   await requireSession();
   if (!controlsOn()) return { ok: false, text: CONTROLS_OFF };
   try {
-    const flow = await loadFlow(Object.keys(AGENTS));
+    const flow = await loadFlow(await loadCrew());
     const c = flow.flow.chains.find((x) => x.key === key);
     if (!c) return { ok: false, text: "That chain isn’t in the saved flow. Save first." };
     const origin = await selfOrigin();
@@ -328,7 +356,8 @@ export async function runChainNow(key: string): Promise<ActionResult> {
     const chainId = crypto.randomUUID();
     after(() => startStep(origin, c, { chainId, key: c.key, step: 0, manual: true }));
     revalidatePath("/", "layout");
-    return { ok: true, text: `${c.name} started: ${c.steps.map((s) => BY_ID[s.agent]?.name ?? s.agent).join(", then ")}. An agent that is off duty is skipped and the chain stops there. Runs shows each step.` };
+    const names = await Promise.all(c.steps.map((s) => nameOf(s.agent)));
+    return { ok: true, text: `${c.name} started: ${names.join(", then ")}. An agent that is off duty is skipped and the chain stops there. Runs shows each step.` };
   } catch (e) { return fail(e); }
 }
 
@@ -341,20 +370,20 @@ export interface ChainPreviewStep { agent: string; name: string; summary: string
  */
 export async function previewChain(flow: unknown, key: string): Promise<ActionResult & { steps?: ChainPreviewStep[] }> {
   await requireSession();
-  const got = cleanFlow(flow);
+  const got = await cleanFlow(flow);
   if ("problems" in got) return { ok: false, text: got.problems.slice(0, 5).join(" ") };
   const c = got.flow.chains.find((x) => x.key === key);
   if (!c) return { ok: false, text: "Unknown chain." };
   const steps: ChainPreviewStep[] = [];
   for (let k = 0; k < c.steps.length; k++) {
-    const s = c.steps[k], name = BY_ID[s.agent]?.name ?? s.agent;
+    const s = c.steps[k], name = await nameOf(s.agent);
     let summary: string, status: "ok" | "failed" = "ok";
-    try { summary = (await AGENTS[s.agent].job({ dryRun: true })).summary; }
+    try { summary = (await jobOf(s.agent)({ dryRun: true })).summary; }
     catch (e) { status = "failed"; summary = `Dry run failed: ${e instanceof Error ? e.message : String(e)}`; }
     const nxt = c.steps[k + 1];
     let next = "End of the chain.";
     if (nxt) {
-      const nn = BY_ID[nxt.agent]?.name ?? nxt.agent;
+      const nn = await nameOf(nxt.agent);
       const when = nxt.when ?? "ok";
       const goes = when === "any" || (when === "ok" ? status === "ok" : status === "failed");
       next = !goes ? `${nn} would not run (${when === "ok" ? "only after a step that worked" : "only after a failure"}).`

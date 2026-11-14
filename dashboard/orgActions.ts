@@ -9,18 +9,18 @@ import { loadCaps } from "@/core/gateway";
 import { addDepartmentRule, editMemory, forgetMemory } from "@/core/memory";
 import { addDepartment, addSeat, deptBudgetChange, deptEmailChange, editSeat, loadOrg, removeDepartment, removeSeat, renameDepartment, setDeptBudget, setDeptEmailCap, setHolder, setLeadChecks, unseat } from "@/core/org";
 import type { ActionResult } from "./actions";
-import { BY_ID } from "./crew";
-import { requireSession } from "./data";
+import { PLANNED } from "./crew";
+import { getFloor, requireSession } from "./data";
 import { controlsOn } from "./session";
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const fail = (e: unknown): ActionResult => ({ ok: false, text: e instanceof Error ? e.message : String(e) });
 const done = (text: string): ActionResult => { revalidatePath("/", "layout"); return { ok: true, text }; };
 
-/** One of the crew in code (built or planned) or an agent built in the app. */
+/** An agent in the agents table, or a planned seat's agent (dashboard/crew.ts). */
 async function knownAgent(id: string): Promise<boolean> {
   if (!/^[a-z][a-z0-9_]{1,62}$/.test(id)) return false;
-  if (BY_ID[id]) return true;
+  if (PLANNED.some((p) => p.id === id)) return true;
   const { data } = await db().from("agents").select("id").eq("id", id).maybeSingle();
   return !!data;
 }
@@ -68,7 +68,7 @@ export async function orgSetHolder(seatId: string, who: string): Promise<ActionR
     const id = w.startsWith("agent:") ? w.slice(6) : "";
     if (!(await knownAgent(id))) return { ok: false, text: "Unknown agent." };
     await setHolder(seatId, "agent", id);
-    return done(`${BY_ID[id]?.name ?? "The agent"} sits there now. Its old seat, if it had one, is open.`);
+    return done(`${(await getFloor()).byId[id]?.name ?? "The agent"} sits there now. Its old seat, if it had one, is open.`);
   } catch (e) { return fail(e); }
 }
 

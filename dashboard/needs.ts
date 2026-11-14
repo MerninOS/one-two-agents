@@ -1,5 +1,4 @@
 // "Needs you": things on the floor that want Zak, worked out from real runs and settings.
-import { BUILT, BY_ID } from "./crew";
 import { CONNECTIONS, usersOfCheck } from "./connections";
 import type { Floor } from "./data";
 import type { Seen } from "./seen";
@@ -19,7 +18,7 @@ export function needs(f: Floor, now = Date.now(), seen: Seen = {}): Need[] {
   }
   if (!f.ok) out.push({ pri: "High", title: "Can’t read the agent database", sub: f.problem ?? "", href: "/connections" });
   for (const r of f.runs) {
-    const a = BY_ID[r.agent_id];
+    const a = f.byId[r.agent_id];
     if (!a) continue;
     const at = Date.parse(r.started_at);
     const age = now - at;
@@ -27,13 +26,12 @@ export function needs(f: Floor, now = Date.now(), seen: Seen = {}): Need[] {
     if (r.status === "failed" && age < 864e5) out.push({ pri: "High", title: `${a.name}’s run failed`, sub: r.error ?? r.summary ?? "", href: `/runs/${r.id}`, agentId: a.id, run: true });
     if (r.status === "running" && age > 6 * 6e4 && age < 7 * 864e5) out.push({ pri: "Medium", title: `${a.name}’s run never finished`, sub: "It passed the 5 minute limit without writing a result.", href: `/runs/${r.id}`, agentId: a.id, run: true });
   }
-  for (const a of BUILT) {
+  for (const a of f.built) {
     if (f.ok && stateOf(a, f.agents[a.id], f.runs, f.spentToday[a.id] ?? 0) === "over") out.push({ pri: "High", title: `${a.name} reached today’s budget`, sub: "Further runs today are skipped.", href: `/build/${a.id}?edit=1&step=brain`, agentId: a.id });
-    if (f.ok && !f.agents[a.id]) out.push({ pri: "High", title: `${a.name} isn’t in the agents table`, sub: "Apply the migrations to the one-two-agents Supabase project.", href: `/agents/${a.id}`, agentId: a.id });
   }
   if (f.approvalsPending) out.push({ pri: "High", title: `${f.approvalsPending} Mercury change${f.approvalsPending === 1 ? "" : "s"} waiting for your OK`, sub: "Quinn’s matched receipts and category suggestions. Nothing goes to Mercury until you approve.", href: "/approvals", agentId: "bookkeeper" });
   for (const [agentId, n] of Object.entries(f.lessonsWaiting)) {
-    const a = BY_ID[agentId];
+    const a = f.byId[agentId];
     if (a && n) out.push({ pri: "Low", title: `Review ${n} lesson${n === 1 ? "" : "s"} for ${a.name}`, sub: "Proposed from your rejections. Keep, edit or discard each one.", href: `/agents/${agentId}?tab=memory`, agentId });
   }
   if (f.photosWaiting) out.push({ pri: "Medium", title: `${f.photosWaiting} charge${f.photosWaiting === 1 ? "" : "s"} need a receipt photo`, sub: "Quinn couldn’t find a receipt. The list is on Quinn’s profile and the latest Books page in Notion.", href: "/agents/bookkeeper", agentId: "bookkeeper" });
@@ -42,7 +40,7 @@ export function needs(f: Floor, now = Date.now(), seen: Seen = {}): Need[] {
       if (f.health[k.key] || k.key === "supabase") continue;
       const users = usersOfCheck(c, k, f.grants);
       if (!users.length) continue;
-      const names = users.map((u) => BY_ID[u]?.name ?? f.setupNames[u] ?? u);
+      const names = users.map((u) => f.byId[u]?.name ?? u);
       const what = c.checks.length > 1 ? `${c.name} ${k.label.toLowerCase()}` : c.name;
       out.push({
         pri: c.id === "gmail" || c.id === "email" ? "Low" : "Medium",
