@@ -7,6 +7,7 @@ import { CONNECTIONS, isSetUp } from "@/dashboard/connections";
 import { getFloor, getMemoryMeters, getPipeline, leadsForRun } from "@/dashboard/data";
 import { dow, dur, hm, longDay, m2, m4, num, shortHm, when } from "@/dashboard/format";
 import { PRI_COLOR, needs } from "@/dashboard/needs";
+import { deptOf, groupByDepartment, loadOrg } from "@/core/org";
 import { firingOn, schedWords, weekFrom } from "@/dashboard/schedule";
 import { RUN_LOOK, STATE_LOOK, stateOf } from "@/dashboard/status";
 import { Icon } from "@/dashboard/components/Icon";
@@ -26,7 +27,9 @@ export default async function MissionControl() {
   const budgetSum = BUILT.reduce((s, a) => s + (f.agents[a.id]?.daily_budget_usd ?? 0), 0);
   const outside = CONNECTIONS.filter((c) => !c.builtIn);
   const systems = outside.filter((c) => isSetUp(c, f.health)).length;
-  const [pipeline, meters] = await Promise.all([getPipeline(), getMemoryMeters()]);
+  const [pipeline, meters, org] = await Promise.all([getPipeline(), getMemoryMeters(), loadOrg().catch(() => null)]);
+  // Needs you, grouped by the department of the agent each one is about (docs/org-chart.md, slice 4)
+  const groups = groupByDepartment(open, (id) => (org ? deptOf(org, id) : null));
 
   const latest = f.runs.find((r) => r.status !== "skipped" && BY_ID[r.agent_id]?.built) ?? null;
   const floorAgent = latest ? BY_ID[latest.agent_id] : BY_ID.wholesale_hunter;
@@ -102,12 +105,17 @@ export default async function MissionControl() {
             </div>
           )}
           <div className="stack" style={{ gap: 4 }}>
-            {open.map((x, i) => (
-              <Link key={i} href={x.href} className="row" style={{ padding: 10, borderRadius: 14, background: "var(--soft)", color: "var(--ink)", textDecoration: "none" }}>
-                <span className="dot" style={{ width: 8, height: 8, background: PRI_COLOR[x.pri] }} />
-                <span style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", gap: 2 }}><span style={{ fontSize: 13.5, fontWeight: 600 }}>{x.title}</span><span className="clip muted" style={{ fontSize: 12 }}>{x.sub}</span></span>
-                <Icon name="chevron-right" size={15} style={{ opacity: 0.5 }} />
-              </Link>
+            {groups.map((g) => (
+              <div key={g.name ?? "all"} className="stack" style={{ gap: 4 }}>
+                {g.name && <span className="ted-k" style={{ padding: "6px 2px 0" }}>{g.name}</span>}
+                {g.items.map((x, i) => (
+                  <Link key={i} href={x.href} className="row" style={{ padding: 10, borderRadius: 14, background: "var(--soft)", color: "var(--ink)", textDecoration: "none" }}>
+                    <span className="dot" style={{ width: 8, height: 8, background: PRI_COLOR[x.pri] }} />
+                    <span style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", gap: 2 }}><span style={{ fontSize: 13.5, fontWeight: 600 }}>{x.title}</span><span className="clip muted" style={{ fontSize: 12 }}>{x.sub}</span></span>
+                    <Icon name="chevron-right" size={15} style={{ opacity: 0.5 }} />
+                  </Link>
+                ))}
+              </div>
             ))}
             {!n && <span style={{ fontSize: 14, padding: "8px 0" }} className="muted">Nothing needs you.</span>}
           </div>

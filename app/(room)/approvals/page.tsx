@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { applyWaiting, approve, approveAll, queueQuinn, reject, retryAction } from "@/dashboard/actions";
 import { BY_ID } from "@/dashboard/crew";
-import { getApprovals, getFloor, type ApprovalItem } from "@/dashboard/data";
+import { getApprovals, getFloor, type ApprovalItem, type ApprovalsView } from "@/dashboard/data";
 import { m2, md, when } from "@/dashboard/format";
 import { controlsOn } from "@/dashboard/session";
 import { ActionButton, RejectButton } from "@/dashboard/components/client";
@@ -15,6 +15,7 @@ const ACTION_LOOK: Record<string, [string, string]> = {
   proposed: ["Waiting on you", "var(--yel)"], approved: ["Approved, not applied", "var(--acc)"], executing: ["Applying", "var(--acc)"],
   applied: ["Applied", "var(--mint)"], partial: ["Partly applied", "var(--mint)"], failed: ["Failed", "var(--red)"],
   rejected: ["Rejected", "var(--mut2)"], expired: ["Expired (stale)", "var(--mut2)"], refused: ["Refused by the gateway", "var(--red)"],
+  sent_back: ["Sent back by its lead", "var(--mut2)"],
 };
 const Tag = ({ s }: { s: string }) => {
   const [l, c] = ACTION_LOOK[s] ?? [s, "var(--mut2)"];
@@ -48,12 +49,56 @@ function Change({ i }: { i: ApprovalItem }) {
   );
 }
 
-export default async function Approvals() {
-  const [f, view] = await Promise.all([getFloor(), getApprovals()]);
+/** The department a card's agent sat in, and the lead's check (slice 4): a note, or that it wasn't checked in time. */
+function LeadBits({ i, view }: { i: ApprovalItem; view: ApprovalsView }) {
+  const lead = i.reviewer_agent_id ? BY_ID[i.reviewer_agent_id]?.name ?? view.names[i.reviewer_agent_id] ?? i.reviewer_agent_id : null;
+  if (!lead || !i.review_status) return null;
+  if (i.review_status === "waiting") return <span className="sub">{lead} checks this first. It comes to you by {i.review_due ? when(i.review_due) : "tomorrow"}; you can decide it now anyway.</span>;
+  if (i.review_status === "skipped") return <span className="sub">{lead} didn’t check this in time, so it came straight to you.</span>;
+  if (i.review_status === "noted") return (
+    <div className="soft-box" style={{ flexDirection: "column", alignItems: "stretch", gap: 4, borderLeft: "3px solid var(--acc)" }}>
+      <span className="ted-k">{lead}’s note · their words, not an approval</span>
+      <span style={{ fontSize: 13.5, lineHeight: 1.5 }}>{i.review_note}</span>
+    </div>
+  );
+  return null;
+}
+
+function DeptTag({ i, view }: { i: ApprovalItem; view: ApprovalsView }) {
+  const d = view.departments.find((x) => x.id === i.department_id);
+  return d ? <span className="pill sm" style={{ background: "var(--soft)", color: "var(--ink2)" }}>{d.name}</span> : null;
+}
+
+export default async function Approvals({ searchParams }: { searchParams: Promise<{ dept?: string }> }) {
+  const sp = await searchParams;
+  const [f, all] = await Promise.all([getFloor(), getApprovals()]);
+  // the department filter: one department, the ones off the chart ("none"), or everything
+  const dept = all?.departments.some((d) => d.id === sp.dept) || sp.dept === "none" ? sp.dept : undefined;
+  const inDept = (i: ApprovalItem) => !dept || (dept === "none" ? !i.department_id : i.department_id === dept);
+  const view = all && { ...all, pending: all.pending.filter(inDept), withLead: all.withLead.filter(inDept), waiting: all.waiting.filter(inDept), decided: all.decided.filter(inDept) };
   const controls = controlsOn();
   const blocker = !controls ? "DASHBOARD_CONTROLS is off" : writeBlocker();
   const quinnOn = !!f.agents.bookkeeper?.enabled;
   const live = !blocker && quinnOn;
+  const card = (i: ApprovalItem) => {
+    const a = BY_ID[i.agent_id];
+    const name = a?.name ?? view?.names[i.agent_id] ?? i.agent_id;
+    return (
+      <div key={i.id} className="card" style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: 22, padding: 22 }}>
+        <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+          <div className="row wrap">{a && <Avatar a={a} size={32} />}<span style={{ fontSize: 13.5, fontWeight: 600, flex: 1 }}>{name} · {i.tool === DRAFT_EMAIL ? "Gmail draft" : "Mercury change"}</span>{view && <DeptTag i={i} view={view} />}<span className="muted" style={{ fontSize: 12 }}>{when(i.created_at)}</span></div>
+          <span style={{ fontSize: 17, fontWeight: 600 }}>{i.title}</span>
+          {i.reasoning && <span style={{ fontSize: 13, lineHeight: 1.5 }} className="ink2">{i.reasoning}</span>}
+          {view && <LeadBits i={i} view={view} />}
+          <div className="row" style={{ gap: 8, marginTop: 6 }}>
+            <ActionButton className="btn primary" action={approve.bind(null, i.id)}>Approve</ActionButton>
+            <RejectButton reject={reject.bind(null, i.id)} agentName={name} />
+          </div>
+        </div>
+        <Change i={i} />
+      </div>
+    );
+  };
 
   return (
     <>
@@ -75,6 +120,13 @@ export default async function Approvals() {
         <Empty title="The approvals tables aren’t there yet">Apply the gateway migration (supabase/migrations/20261110120000_gateway.sql) to the one-two-agents Supabase project.</Empty>
       ) : (
         <>
+          {view.departments.length > 0 && (
+            <nav className="seg" aria-label="Department" style={{ flexWrap: "wrap" }}>
+              <Link href="/approvals" className={!dept ? "on" : ""} aria-current={!dept ? "page" : undefined}>All</Link>
+              {view.departments.map((d) => <Link key={d.id} href={`/approvals?dept=${d.id}`} className={dept === d.id ? "on" : ""} aria-current={dept === d.id ? "page" : undefined}>{d.name}</Link>)}
+              <Link href="/approvals?dept=none" className={dept === "none" ? "on" : ""} aria-current={dept === "none" ? "page" : undefined}>Not in a department</Link>
+            </nav>
+          )}
           <div className="row wrap" style={{ gap: 10 }}>
             <span className="card-t">Waiting on you ({view.pending.length})</span>
             {view.pending.length > 1 && (
@@ -84,24 +136,18 @@ export default async function Approvals() {
               </ActionButton>
             )}
           </div>
-          {!view.pending.length && <Empty title="Nothing waiting on you.">Quinn’s matched receipts and category suggestions land here, one card per charge, after each real run.</Empty>}
-          {view.pending.map((i) => {
-            const a = BY_ID[i.agent_id];
-            return (
-              <div key={i.id} className="card" style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: 22, padding: 22 }}>
-                <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-                  <div className="row">{a && <Avatar a={a} size={32} />}<span style={{ fontSize: 13.5, fontWeight: 600, flex: 1 }}>{a?.name ?? i.agent_id} · {i.tool === DRAFT_EMAIL ? "Gmail draft" : "Mercury change"}</span><span className="muted" style={{ fontSize: 12 }}>{when(i.created_at)}</span></div>
-                  <span style={{ fontSize: 17, fontWeight: 600 }}>{i.title}</span>
-                  {i.reasoning && <span style={{ fontSize: 13, lineHeight: 1.5 }} className="ink2">{i.reasoning}</span>}
-                  <div className="row" style={{ gap: 8, marginTop: 6 }}>
-                    <ActionButton className="btn primary" action={approve.bind(null, i.id)}>Approve</ActionButton>
-                    <RejectButton reject={reject.bind(null, i.id)} agentName={a?.name ?? "the agent"} />
-                  </div>
-                </div>
-                <Change i={i} />
+          {!view.pending.length && <Empty title="Nothing waiting on you.">{dept ? "Nothing from this department right now." : "Quinn’s matched receipts and category suggestions land here, one card per charge, after each real run."}</Empty>}
+          {view.pending.map(card)}
+
+          {view.withLead.length > 0 && (
+            <>
+              <div className="stack" style={{ gap: 2 }}>
+                <span className="card-t">With the lead first ({view.withLead.length})</span>
+                <span className="sub">Departments with “Lead checks drafts first” on. The lead adds a note or sends a draft back once; only your tap approves.</span>
               </div>
-            );
-          })}
+              {view.withLead.map(card)}
+            </>
+          )}
 
           {view.waiting.length > 0 && (
             <div className="card" style={{ gap: 10 }}>

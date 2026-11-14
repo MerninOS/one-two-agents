@@ -7,6 +7,7 @@ import "server-only";
 // refused or applied, is a row in agent_actions.
 import { db } from "@/core/db";
 import { withRun } from "@/core/runs";
+import { LEAD_REVIEW_HOURS, draftChecker, draftDepartment } from "@/core/org";
 import { hasMercury, mercuryCategories, mercuryTransaction } from "@/integrations/mercury";
 import { attachReceipt, hasMercuryWrite, patchTransaction } from "@/integrations/mercury-write";
 import { chicagoDate, offsetOn } from "@/core/time";
@@ -45,9 +46,15 @@ export async function propose(p: Proposal): Promise<{ status: "queued" | "refuse
   const { data: action, error } = await db().from("agent_actions").insert({ ...base, status: "proposed" }).select("id").single();
   if (error?.code === "23505") return { status: "duplicate" };
   if (error || !action) throw new Error(`Gateway: could not record the action: ${error?.message}`);
-  // Draft tier: always an approval.
+  // Draft tier: always an approval. Tagged with the agent's department; when that department has
+  // "Lead checks drafts first" on, it waits for the agent above it for up to LEAD_REVIEW_HOURS.
   if (TOOLS[p.tool].tier === "Draft") {
-    const { error: e2 } = await db().from("approvals").insert({ action_id: action.id, agent_id: p.agentId, title: p.title, reasoning: p.reasoning ?? null, preview: p.preview ?? {} });
+    const [departmentId, checker] = await Promise.all([draftDepartment(p.agentId), draftChecker(p.agentId)]);
+    const review = checker ? { reviewer_agent_id: checker.reviewer, review_status: "waiting", review_due: new Date(Date.now() + LEAD_REVIEW_HOURS * 36e5).toISOString() } : {};
+    const card = { action_id: action.id, agent_id: p.agentId, title: p.title, reasoning: p.reasoning ?? null, preview: p.preview ?? {} };
+    let { error: e2 } = await db().from("approvals").insert({ ...card, department_id: departmentId, ...review });
+    // before the slice 4 migration the columns aren't there: the card goes straight to Zak, as before
+    if (e2?.code === "42703" || e2?.code === "PGRST204") ({ error: e2 } = await db().from("approvals").insert(card));
     if (e2) { await db().from("agent_actions").delete().eq("id", action.id); throw new Error(`Gateway: could not queue the approval: ${e2.message}`); }
   }
   return { status: "queued", actionId: action.id };
@@ -119,8 +126,64 @@ export async function queueBookkeeperProposals(runId?: string | null) {
 
 // ---- Decisions
 
+/** Drafts a lead didn't check in time go to Zak, saying so. */
+export async function releaseOverdueChecks(now = new Date()) {
+  const { data } = await db().from("approvals").select("id, reviewer_agent_id").eq("status", "pending").eq("review_status", "waiting").lt("review_due", now.toISOString());
+  for (const r of data ?? []) {
+    await db().from("approvals").update({ review_status: "skipped", review_at: now.toISOString(), review_note: `Not checked within ${LEAD_REVIEW_HOURS} hours.` })
+      .eq("id", r.id).eq("review_status", "waiting");
+  }
+  return (data ?? []).length;
+}
+
+/** Drafts waiting for this agent's check, oldest first, with whether each may still be sent back. */
+export async function draftsToCheck(reviewer: string) {
+  await releaseOverdueChecks();
+  const { data, error } = await db().from("approvals").select("id, agent_id, title, reasoning, preview, created_at, review_due, agent_actions(tool, target)")
+    .eq("status", "pending").eq("reviewer_agent_id", reviewer).eq("review_status", "waiting").order("created_at", { ascending: true }).limit(20);
+  if (error) throw new Error(error.message);
+  const rows = (data ?? []).map((r) => {
+    const act = (Array.isArray(r.agent_actions) ? r.agent_actions[0] : r.agent_actions) as { tool: string; target: string } | null;
+    return { id: r.id as string, agentId: r.agent_id as string, title: r.title as string, reasoning: r.reasoning as string | null, preview: r.preview as Record<string, unknown>, createdAt: r.created_at as string, due: r.review_due as string, tool: act?.tool ?? "", target: act?.target ?? "" };
+  });
+  const sentBack = await sentBackBefore(rows.map((r) => ({ tool: r.tool, target: r.target })));
+  return rows.map((r) => ({ ...r, canSendBack: !sentBack.has(`${r.tool}|${r.target}`) }));
+}
+
+/** Tool and target pairs a lead already sent back once: the next draft for them can only get a note. */
+async function sentBackBefore(pairs: { tool: string; target: string }[]) {
+  if (!pairs.length) return new Set<string>();
+  const { data } = await db().from("agent_actions").select("tool, target").eq("status", "sent_back").in("target", [...new Set(pairs.map((p) => p.target))]);
+  return new Set((data ?? []).map((r) => `${r.tool}|${r.target}`));
+}
+
+/**
+ * A lead's check on one draft (docs/org-chart.md, slice 4), saved after the lead's run finishes. A note
+ * stays on the card for Zak. A send-back closes the draft without counting as Zak's decision, and
+ * the caller proposes a lesson for the agent that wrote it (Zak keeps or discards it). A lead never approves,
+ * rejects or edits: the draft's words and target stay exactly as they were.
+ */
+export async function leadReview(approvalId: string, reviewer: string, verdict: "note" | "send_back", note: string): Promise<{ result: "noted" | "gone" } | { result: "sent_back"; agentId: string; title: string }> {
+  const now = new Date().toISOString();
+  const { data: ap } = await db().from("approvals").select("id, action_id, agent_id, title, agent_actions(tool, target)")
+    .eq("id", approvalId).eq("status", "pending").eq("reviewer_agent_id", reviewer).eq("review_status", "waiting").maybeSingle();
+  if (!ap) return { result: "gone" };
+  const act = (Array.isArray(ap.agent_actions) ? ap.agent_actions[0] : ap.agent_actions) as { tool: string; target: string } | null;
+  const once = act ? (await sentBackBefore([act])).has(`${act.tool}|${act.target}`) : true;
+  if (verdict === "note" || once) {
+    const { data } = await db().from("approvals").update({ review_status: "noted", review_note: note, review_at: now }).eq("id", approvalId).eq("review_status", "waiting").select("id").maybeSingle();
+    return { result: data ? "noted" : "gone" };
+  }
+  const { data } = await db().from("approvals").update({ status: "sent_back", review_status: "sent_back", review_note: note, review_at: now, decided_at: now, decided_by: `${reviewer} (lead)`, reject_reason: note })
+    .eq("id", approvalId).eq("status", "pending").eq("review_status", "waiting").select("id").maybeSingle();
+  if (!data) return { result: "gone" };
+  await db().from("agent_actions").update({ status: "sent_back", decided_at: now, reason: `Sent back by its lead: ${note}` }).eq("id", ap.action_id).eq("status", "proposed");
+  return { result: "sent_back", agentId: ap.agent_id as string, title: ap.title as string };
+}
+
 /** Pending items older than approval_expiry_hours expire, so nothing is applied from an old view of the world. */
 export async function expireStale() {
+  await releaseOverdueChecks();
   const hours = await numPolicy("approval_expiry_hours", 72);
   const cutoff = new Date(Date.now() - hours * 36e5).toISOString();
   const { data } = await db().from("approvals").update({ status: "expired", decided_at: new Date().toISOString(), reject_reason: "stale" })

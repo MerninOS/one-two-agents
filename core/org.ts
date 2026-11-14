@@ -5,22 +5,24 @@ import "server-only";
 import { db } from "@/core/db";
 import { chicagoDate, offsetOn } from "@/core/time";
 import {
-  MAX_DEPARTMENTS, MAX_DEPTH, MAX_SEATS, agentsIn, childrenOf, cleanSub, cleanTitle, deptBudgetChange, deptEmailChange, depthOf, deptOf, deptSlug, headOf,
+  MAX_DEPARTMENTS, MAX_DEPTH, checkerOf, MAX_SEATS, agentsIn, childrenOf, cleanSub, cleanTitle, deptBudgetChange, deptEmailChange, depthOf, deptOf, deptSlug, headOf,
   type Department, type Holder, type Org, type Seat,
 } from "@/core/org-rules";
 
 export * from "@/core/org-rules";
 
-interface DeptRow { id: string; name: string; sort: number; monthly_budget_usd: number | string | null; max_emails_per_day: number | null }
+interface DeptRow { id: string; name: string; sort: number; monthly_budget_usd: number | string | null; max_emails_per_day: number | null; lead_checks_drafts: boolean | null }
 interface SeatRow { id: string; department_id: string | null; parent_id: string | null; title: string; sub: string; holder: Holder; agent_id: string | null; sort: number }
 
-const toDept = (r: DeptRow): Department => ({ id: r.id, name: r.name, sort: r.sort, monthlyBudgetUsd: r.monthly_budget_usd == null ? null : Number(r.monthly_budget_usd), maxEmailsPerDay: r.max_emails_per_day });
+const toDept = (r: DeptRow): Department => ({ id: r.id, name: r.name, sort: r.sort, monthlyBudgetUsd: r.monthly_budget_usd == null ? null : Number(r.monthly_budget_usd), maxEmailsPerDay: r.max_emails_per_day, leadChecksDrafts: !!r.lead_checks_drafts });
 const toSeat = (r: SeatRow): Seat => ({ id: r.id, departmentId: r.department_id, parentId: r.parent_id, title: r.title, sub: r.sub ?? "", holder: r.holder, agentId: r.agent_id, sort: r.sort });
 
 /** The chart. Null when the org chart migration isn't applied yet. */
 export async function loadOrg(): Promise<Org | null> {
   const [d, s] = await Promise.all([
-    db().from("departments").select("id, name, sort, monthly_budget_usd, max_emails_per_day").order("sort"),
+    // lead_checks_drafts is slice 4; until that migration is applied the chart loads without it (off)
+    db().from("departments").select("id, name, sort, monthly_budget_usd, max_emails_per_day, lead_checks_drafts").order("sort")
+      .then((r) => (r.error ? db().from("departments").select("id, name, sort, monthly_budget_usd, max_emails_per_day").order("sort") : r)),
     db().from("seats").select("id, department_id, parent_id, title, sub, holder, agent_id, sort").order("sort"),
   ]);
   if (d.error || s.error) return null;
@@ -270,4 +272,27 @@ export async function setDeptEmailCap(id: string, next: number | null, companyCa
   if ("refuse" in ch) throw new Error(ch.refuse);
   const { error } = await db().from("departments").update({ max_emails_per_day: next }).eq("id", id);
   if (error) throw new Error(error.message);
+}
+
+/** Turns "Lead checks drafts first" on or off for a department. Either way Zak's tap is the only approval. */
+export async function setLeadChecks(id: string, on: boolean) {
+  const o = await mustLoad();
+  if (!o.departments.some((x) => x.id === id)) throw new Error("That department isn’t on the chart any more.");
+  const { error } = await db().from("departments").update({ lead_checks_drafts: on }).eq("id", id);
+  if (error) throw new Error(error.message);
+}
+
+/** Who checks this agent's next draft first, read fresh from the chart; null when nobody does (or the chart can't be read). */
+export async function draftChecker(agentId: string): Promise<{ reviewer: string; departmentId: string } | null> {
+  const o = await loadOrg().catch(() => null);
+  if (!o) return null;
+  const live = await liveAgentIds().catch(() => new Set<string>());
+  const { data } = await db().from("agent_defs").select("agent_id").eq("active", true).contains("spec", { tools: ["check_team_draft"] });
+  return checkerOf(o, agentId, live, new Set((data ?? []).map((r) => r.agent_id as string)));
+}
+
+/** The department an agent's draft is tagged with on Approvals: the one its seat is in now. */
+export async function draftDepartment(agentId: string): Promise<string | null> {
+  const o = await loadOrg().catch(() => null);
+  return o ? deptOf(o, agentId)?.id ?? null : null;
 }

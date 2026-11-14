@@ -18,7 +18,7 @@ Zak, Nov 13: agents organised like a company, with departments, heads, leads and
 | 1 | The org chart: departments and seats on Crew | The Crew Agents card grid |
 | 2 | Department budgets and rules (monthly AI budget checked in `withRun`, email cap under the company cap, department rules in memory) | |
 | 3 | Leads watch, heads report up (Team connection, team and department reports, Avery reads heads, "Reports to" on the agent map) | Avery reading every agent's runs one by one (`agent_runs_recent` retired) |
-| 4 | Lead checks drafts, approvals by department | |
+| 4 | Lead checks drafts, approvals by department (department switch, Your team's drafts + Check a team draft, department tag and filter on Approvals, Today grouped by department) | Today's flat Needs you list |
 
 ## Slice 1: The org chart
 
@@ -75,3 +75,18 @@ Lowering or setting a limit applies straight away. Raising or removing one needs
 **Data.** Migration `20261117090000_avery_reads_departments.sql`: Avery's spec gets a new version (copied from the live one, so its model and limits stay) with `agent_runs_recent` swapped for `department_reports` and the directive asking for one line per department; its approved playbook is replaced by one with the same swap (an update after Zak's first approval applies on its own, with what changed shown). It raises a notice if any other active spec still names the retired tool (none did on 2026-11-13).
 
 **Checks.** `npm run check`, `npm run check:org` (team, blocks, department lines), `npm run check:runner` (department line format), `npm run build`. Apply the migration once merged: until then Avery's live spec asks for a tool code no longer offers and the run is refused with that reason.
+
+## Slice 4: Lead checks drafts, approvals by department
+
+**What Zak sees.**
+
+- **Crew > Org chart > Edit chart > Edit on a department: "Lead checks drafts first".** Off by default. When on, a draft from an agent in that department (any approval card the gateway queues: a Mercury change, a Gmail draft) waits for the nearest agent above it on the chart for up to 24 hours (`LEAD_REVIEW_HOURS`). That agent must be live and have **Check a team draft** ticked in its builder (step 3, Hands you, next to **Your team's drafts** in step 2, Your other agents); otherwise the next agent up checks, and if nobody can, the draft comes straight to Zak. The company seat never checks drafts, so a head's own drafts go to Zak.
+- **The lead's check.** In its run the lead reads Your team's drafts (exact words, untrusted) and hands one check per draft: a **note** Zak sees on the card ("Morgan's note · their words, not an approval"), or **send back** with a reason, once per draft (per tool and target). Checks are saved after a run that finishes, never during a try. A send-back closes the draft (status `sent_back`, not Zak's decision, so it never counts toward or against promotion) and proposes a lesson for the agent that wrote it ("Morgan sent back …"), which reaches it only once Zak keeps it on its Memory tab. A draft sent back once can only get a note the next time. The lead can't approve, reject or edit: the draft's words and target never change.
+- **Approvals.** Each card shows its department. A filter row: All, each department, Not in a department. Drafts still with the lead sit in "With the lead first", saying who checks and when it comes to Zak anyway; Zak can approve or reject them right away. A draft not checked in time moves to Waiting on you with "didn't check this in time". The Needs you count and the sidebar badge leave out drafts still with the lead.
+- **Today.** Needs you is grouped by the department of the agent each item is about, in chart order, then "Everything else".
+
+**Rules that hold.** Only Zak's tap approves; only his decisions are decisions (`decide` is unchanged). A lead's words are untrusted data: one line, no links, up to 400 characters (`leadCheck`). Which drafts a lead may check comes from the gateway's assignment (`approvals.reviewer_agent_id`), never from the model: the lead names a draft by its 8-character code, and code accepts only codes of drafts assigned to it and still waiting.
+
+**Data.** Migration `20261118090000_lead_checks_drafts.sql`: `departments.lead_checks_drafts`; `approvals.department_id`, `reviewer_agent_id`, `review_status` (waiting, noted, sent_back, skipped), `review_note`, `review_at`, `review_due`; `sent_back` added to approval and action statuses. Until it is applied, the chart loads with the switch off, cards queue as before, and Approvals reads the older columns.
+
+**Checks.** `npm run check`, `npm run check:org` (who checks, the check's rules, draft codes, Today's grouping), `npm run build`.
