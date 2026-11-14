@@ -90,3 +90,18 @@ Lowering or setting a limit applies straight away. Raising or removing one needs
 **Data.** Migration `20261118090000_lead_checks_drafts.sql`: `departments.lead_checks_drafts`; `approvals.department_id`, `reviewer_agent_id`, `review_status` (waiting, noted, sent_back, skipped), `review_note`, `review_at`, `review_due`; `sent_back` added to approval and action statuses. Until it is applied, the chart loads with the switch off, cards queue as before, and Approvals reads the older columns.
 
 **Checks.** `npm run check`, `npm run check:org` (who checks, the check's rules, draft codes, Today's grouping), `npm run build`.
+
+## On a phone
+
+Desktop is unchanged. Under 760px wide (Zak picked option B of the phone mockups, 2026-11-14):
+
+- Each department folds to a summary card: name, seat counts, a face per seat (filled first, open last)
+  and who heads it. Tapping the card opens it in place; the budget line, rules and seats show as on
+  desktop.
+- Inside an open department, a lead's team folds behind a count ("1 planned · 2 open"), computed in
+  code from the seats. The head's own seats always show.
+- Seat rows drop the status line and get less padding, so each is one short row.
+- Edit chart unfolds everything, so every seat and department can be tapped to edit.
+
+The fold state lives in the page (`unfolded` in `OrgChart`, `shown` in `Tree`) and resets on reload.
+Desktop ignores it: `.org-body` and `.org-row` are `display: contents` there.
