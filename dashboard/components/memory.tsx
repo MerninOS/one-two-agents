@@ -1,5 +1,6 @@
 "use client";
-// The interactive parts of the Memory tab: Teach, and Edit / Forget on each line.
+// The interactive parts of the Memory tab: Edit / Forget on each line, Keep / Discard on a proposed lesson.
+// Teaching happens where the work is (dashboard/components/react.tsx).
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 import type { ActionResult } from "../actions";
@@ -7,61 +8,6 @@ import { ActionButton, Toast } from "./client";
 import { Icon } from "./Icon";
 
 const MAX = 280;
-type KeepAs = "note" | "standing_order" | "crew";
-type Forget = "next_run" | "days_30" | "always";
-
-export function TeachForm({ name, enabled, why, teach, compact }: { name: string; enabled: boolean; why?: string; teach: (text: string, keepAs: KeepAs, forget: Forget, notionLink: string) => Promise<ActionResult>; compact?: boolean }) {
-  const [text, setText] = useState("");
-  const [link, setLink] = useState("");
-  const [keepAs, setKeepAs] = useState<KeepAs>("note");
-  const [forget, setForget] = useState<Forget>("always");
-  const [toast, setToast] = useState<ActionResult | null>(null);
-  const [busy, start] = useTransition();
-  const router = useRouter();
-  const left = MAX - text.trim().length;
-  const go = () => start(async () => {
-    let r: ActionResult;
-    try { r = await teach(text, keepAs, forget, keepAs === "standing_order" ? link : ""); } catch (e) { r = { ok: false, text: e instanceof Error ? e.message : "Couldn’t save that." }; }
-    setToast(r);
-    if (r.ok) { setText(""); setLink(""); router.refresh(); }
-  });
-  const sel = { height: 38, borderRadius: 999, border: 0, background: "var(--soft)", padding: "0 12px", fontSize: 12.5 } as const;
-  return (
-    <div className="stack" style={{ gap: 10 }}>
-      <textarea className="input" rows={compact ? 2 : 3} maxLength={MAX + 40} disabled={!enabled || busy} value={text} onChange={(e) => setText(e.target.value)}
-        placeholder={enabled ? `Tell ${name} something to remember` : why} aria-label={`Teach ${name} something`}
-        style={{ height: "auto", borderRadius: 18, padding: "12px 16px", resize: "vertical", lineHeight: 1.45 }} />
-      <div className="row wrap" style={{ gap: 8 }}>
-        <label className="row" style={{ gap: 6, fontSize: 12 }}><span className="muted">Keep it as</span>
-          <select style={sel} value={keepAs} disabled={!enabled || busy} onChange={(e) => setKeepAs(e.target.value as KeepAs)}>
-            <option value="note">A note for {name}</option>
-            <option value="standing_order">A standing order</option>
-            <option value="crew">Shared crew memory</option>
-          </select>
-        </label>
-        <label className="row" style={{ gap: 6, fontSize: 12 }}><span className="muted">Forget after</span>
-          <select style={sel} value={keepAs === "note" ? forget : "always"} disabled={!enabled || busy || keepAs !== "note"} onChange={(e) => setForget(e.target.value as Forget)}>
-            <option value="next_run">1 run</option>
-            <option value="days_30">30 days</option>
-            <option value="always">Never</option>
-          </select>
-        </label>
-        <span style={{ flex: 1 }} />
-        <span className="muted" style={{ fontSize: 11.5, color: left < 0 ? "var(--red-ink)" : undefined }}>{left}</span>
-      </div>
-      {keepAs === "standing_order" && (
-        <label className="stack" style={{ gap: 4 }}>
-          <input className="input" type="url" value={link} disabled={!enabled || busy} onChange={(e) => setLink(e.target.value)} maxLength={500}
-            placeholder="Optional: a Notion page to read each run" aria-label="Notion page link" style={{ height: 38, fontSize: 13 }} />
-          <span className="muted" style={{ fontSize: 11.5 }}>In Notion: Share, then Copy link. The page must be shared with the agents’ Notion integration. Read fresh each run, up to 1,500 tokens.</span>
-        </label>
-      )}
-      <button className="btn primary" style={{ height: 42 }} disabled={!enabled || busy || !text.trim() || left < 0} onClick={go}>{busy ? "Saving…" : keepAs === "crew" ? "Teach the crew" : `Teach ${name}`}</button>
-      <Toast t={toast} onDone={() => setToast(null)} />
-    </div>
-  );
-}
-
 export interface LineView { id: string; text: string; meta: string; data?: boolean; /** A Notion page this standing order links, and whether a run can read it. */ page?: { title: string; href: string; note: string; bad?: boolean } }
 
 /** One memory line with Edit (inline) and Forget. Read-only when no actions are passed. */

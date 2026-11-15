@@ -1,9 +1,10 @@
 import Link from "next/link";
 import { applyWaiting, approve, approveAll, queueQuinn, reject, retryAction } from "@/dashboard/actions";
-import { getApprovals, getFloor, type ApprovalItem, type ApprovalsView } from "@/dashboard/data";
+import { getApprovals, getFloor, getReactRules, type ApprovalItem, type ApprovalsView, type ReactRules } from "@/dashboard/data";
 import { m2, md, when } from "@/dashboard/format";
 import { controlsOn } from "@/dashboard/session";
-import { ActionButton, RejectButton } from "@/dashboard/components/client";
+import { ActionButton } from "@/dashboard/components/client";
+import { RejectButton } from "@/dashboard/components/react";
 import { Avatar, Empty } from "@/dashboard/components/ui";
 import { DRAFT_EMAIL, writeBlocker } from "@/core/gateway";
 
@@ -79,6 +80,11 @@ export default async function Approvals({ searchParams }: { searchParams: Promis
   const blocker = !controls ? "DASHBOARD_CONTROLS is off" : writeBlocker();
   const quinnOn = !!f.agents.bookkeeper?.enabled;
   const live = !blocker && quinnOn;
+  // what a Reject with words can save to or replace, per agent with a card waiting
+  const open = view ? [...view.pending, ...view.withLead] : [];
+  const ruleIds = [...new Set(open.map((i) => i.agent_id))];
+  const rules: Record<string, ReactRules> = Object.fromEntries(await Promise.all(ruleIds.map(async (id) => [id, await getReactRules(id)] as const)));
+  const noRules: ReactRules = { deptName: null, agent: [], department: [], crew: [] };
   const card = (i: ApprovalItem) => {
     const a = f.byId[i.agent_id];
     const name = a?.name ?? view?.names[i.agent_id] ?? i.agent_id;
@@ -91,7 +97,7 @@ export default async function Approvals({ searchParams }: { searchParams: Promis
           {view && <LeadBits i={i} view={view} />}
           <div className="row" style={{ gap: 8, marginTop: 6 }}>
             <ActionButton className="btn primary" action={approve.bind(null, i.id)}>Approve</ActionButton>
-            <RejectButton reject={reject.bind(null, i.id)} agentName={name} />
+            <RejectButton reject={reject.bind(null, i.id)} agentName={name} rules={rules[i.agent_id] ?? noRules} />
           </div>
         </div>
         <Change i={i} />

@@ -27,6 +27,7 @@ import { emailZak } from "@/integrations/email";
 import { ANNOTATE, DRAFT_EMAIL, DRAFT_LIMITS, TOOLS as GATEWAY_TOOLS, refuseProposal } from "@/core/gateway/policy";
 import { draftsToCheck, leadReview, propose } from "@/core/gateway";
 import { proposeLesson } from "@/core/memory";
+import { reactionTally } from "@/core/reactions";
 import { env } from "@/core/env";
 import { domainOf, offer } from "@/agents/wholesale-hunter";
 import { syncBooks } from "@/agents/bookkeeper";
@@ -249,7 +250,7 @@ const TOOLS_LIST: ToolDef[] = [
   // checked again on every call; the model never picks it. Teammates' words are untrusted; run
   // counts and spend are added up here in code.
   {
-    id: "team_report", label: "Your team", detail: "For an agent with live agents under its seat on the org chart: each one's latest finished result and how its runs went (failures, cost against its budget). The team comes from the chart",
+    id: "team_report", label: "Your team", detail: "For an agent with live agents under its seat on the org chart: each one's latest finished result, how its runs went (failures, cost against its budget) and what Zak said about its work (Good / Not this). The team comes from the chart",
     kind: "read", group: "agents", params: [daysParam(1, 7, "How many days of runs to look at.")], trusted: false, needs: SUPABASE, costUsd: 0, seat: "team",
     run: async ({ days }, ctx) => {
       const [o, live] = await Promise.all([loadOrg(), liveAgentIds()]);
@@ -258,20 +259,25 @@ const TOOLS_LIST: ToolDef[] = [
       if (why) throw new Error(why);
       const t = teamOf(o, ctx.agentId, live)!;
       const since = new Date(Date.now() - Number(days) * 864e5).toISOString();
-      const [stats, outs, names, { data: budgets }] = await Promise.all([
+      const [stats, outs, names, { data: budgets }, zak] = await Promise.all([
         runStats(t.agents, since), latestOutputs(t.agents), agentNames(t.agents),
         db().from("agents").select("id, daily_budget_usd").in("id", t.agents),
+        reactionTally(t.agents, since),
       ]);
       const budget = new Map((budgets ?? []).map((b) => [b.id as string, Number(b.daily_budget_usd)]));
       const numbers: Record<string, number> = {};
       const team = t.agents.map((id, i) => {
         const s = stats[id], out = outs[id], k = `a${i + 1}`;
+        const z = zak[id];
         numbers[`${k}_runs`] = s.runs; numbers[`${k}_failed`] = s.failed; numbers[`${k}_cost_usd`] = s.costUsd;
+        numbers[`${k}_zak_good`] = z?.good ?? 0; numbers[`${k}_zak_not`] = z?.not ?? 0;
         out?.numbers.forEach((n, j) => { numbers[`${k}_n${j + 1}`] = n.value; });
         return {
           key: k, agent: names[id], seat: seatOf(o, id)?.title ?? "",
           latest: out ? { output: out.name, at: out.at, summary: out.summary, numbers: out.numbers.map((n, j) => ({ key: `${k}_n${j + 1}`, label: n.label, value: n.value })) } : null,
           runs: s.runs, failed: s.failed, skipped: s.skipped, costUsd: s.costUsd, budgetUsd: Math.round((budget.get(id) ?? 0) * Number(days) * 100) / 100, lastError: s.lastError,
+          // Zak's reactions to its work (Good / Not this), and his latest words, already saved as its rules
+          fromZak: { good: z?.good ?? 0, notThis: z?.not ?? 0, said: z?.said ?? [] },
         };
       });
       numbers.team_agents = team.length;
@@ -466,7 +472,7 @@ const TOOLS_LIST: ToolDef[] = [
   {
     id: "report_morning_brief", label: "Send the morning brief", detail: "Avery's brief email and Briefs row: the Focus line and watch lines from the result, every number worked out again in code from today's facts. Only to BRIEF_TO and the Briefs target",
     kind: "report", group: "email", params: [], trusted: true, needs: EMAIL, costUsd: 0,
-    deliver: async (o) => deliverBrief(o.summary),
+    deliver: async (o, ctx) => deliverBrief(o.summary, ctx.runId ?? null),
   },
 
   {

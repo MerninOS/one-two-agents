@@ -26,6 +26,8 @@ export interface BriefView {
   focus: { action: string; reason: string };
   /** Control Room base URL without a trailing slash, when known */
   dashboardUrl?: string;
+  /** Avery's run that wrote this brief, so "Tell Avery" opens Good / Not this on it */
+  runId?: string;
   /** The Notion archive page, when one was written */
   notionUrl?: string;
   /** Persona names by agent id, for failed runs */
@@ -102,6 +104,9 @@ export function deptLine(d: BriefDept) {
 }
 const NO_DEPTS = "No departments on the org chart yet.";
 
+/** Where "Not right? Tell Avery" goes: Good / Not this on the run that wrote the brief (docs/company-mode.md). */
+export const replyUrl = (v: Pick<BriefView, "dashboardUrl" | "runId">) => (v.dashboardUrl && v.runId ? `${v.dashboardUrl}/runs/${v.runId}#react` : undefined);
+
 export function briefSubject(v: BriefView) {
   const action = oneLine(v.focus.action).slice(0, 80);
   const rev = v.yesterday ? ` · ${usd(v.yesterday.revenue)} ${isYesterday(v) ? "yesterday" : `on ${shortDay(v.yesterday.date)}`}` : "";
@@ -129,6 +134,8 @@ export function briefEmail(v: BriefView): { subject: string; html: string; text:
   const subject = briefSubject(v);
   const action = oneLine(v.focus.action), reason = oneLine(v.focus.reason);
   const order = (v.sections ?? SECTIONS).filter((id) => (SECTIONS as readonly string[]).includes(id));
+  const reply = replyUrl(v);
+  const tell = reply ? `<p style="margin:8px 0 0;font:13px/18px ${FONT}"><a href="${esc(reply)}" style="color:${C.ink2}">Not right? Tell Avery</a></p>` : "";
 
   const html: Record<string, () => string> = {
     focus: () => `<table role="presentation" cellpadding="0" cellspacing="0" width="100%" style="margin-top:14px"><tr><td style="padding:20px;border:1px solid ${C.line};border-left:4px solid ${C.acc};border-radius:14px">` +
@@ -136,7 +143,7 @@ export function briefEmail(v: BriefView): { subject: string; html: string; text:
       `<div style="margin-top:10px;font:700 21px/27px ${FONT};color:${C.ink}">${esc(action)}</div>` +
       `<div style="margin-top:6px;font:15px/22px ${FONT};color:${C.ink2}">${esc(reason)}</div>` +
       (v.dashboardUrl ? `<div style="margin-top:16px"><a href="${esc(v.dashboardUrl)}" style="display:inline-block;padding:10px 16px;border-radius:999px;background:${C.ink};color:#FFFFFF;font:600 14px/18px ${FONT};text-decoration:none">Open the Control Room</a></div>` : "") +
-      `</td></tr></table>`,
+      `</td></tr></table>` + tell,
     waiting: () => label("Waiting on you") +
       (todo.length ? rows(todo) : `<p style="margin:0;font:15px/22px ${FONT};color:${C.ink2}">Nothing is waiting on you.</p>`),
     numbers: () => label(y ? `Numbers · ${isYesterday(v) ? weekday(y.date, "long") : `${shortDay(y.date)}, the latest snapshot`}` : "Numbers") +
@@ -149,7 +156,7 @@ export function briefEmail(v: BriefView): { subject: string; html: string; text:
           `<p style="margin:10px 0 0;font:13px/18px ${FONT};color:${C.ink2}">Repeat rate ${pct(y.repeat_rate)} &middot; green margin ${pct(y.green_margin)}</p>`
         : `<p style="margin:0;font:15px/22px ${FONT};color:${C.ink2}">No snapshot yet. Morgan runs at 5:30 AM CT.</p>`),
     watch: () => label("Watch") +
-      (v.watch.length ? rows(v.watch.slice(0, 5).map((t) => ({ text: oneLine(t) }))) : `<p style="margin:0;font:15px/22px ${FONT};color:${C.ink2}">Nothing flagged.</p>`),
+      (v.watch.length ? rows(v.watch.slice(0, 5).map((t) => ({ text: oneLine(t) }))) : `<p style="margin:0;font:15px/22px ${FONT};color:${C.ink2}">Nothing flagged.</p>`) + tell,
     departments: () => label("Departments") +
       (v.departments.length ? rows(v.departments.map((d) => ({ text: deptLine(d) }))) : `<p style="margin:0;font:15px/22px ${FONT};color:${C.ink2}">${NO_DEPTS}</p>`) +
       (v.dashboardUrl && v.runs.length ? `<p style="margin:8px 0 0;font:13px/18px ${FONT}"><a href="${esc(v.dashboardUrl)}/runs" style="color:${C.ink2}">See the runs</a></p>` : ""),
@@ -167,7 +174,7 @@ export function briefEmail(v: BriefView): { subject: string; html: string; text:
     `</p></td></tr></table></td></tr></table></body></html>`;
 
   const text: Record<string, () => string[]> = {
-    focus: () => ["TODAY'S FOCUS", `${action}. ${reason}`, ...(v.dashboardUrl ? [`Control Room: ${v.dashboardUrl}`] : [])],
+    focus: () => ["TODAY'S FOCUS", `${action}. ${reason}`, ...(v.dashboardUrl ? [`Control Room: ${v.dashboardUrl}`] : []), ...(reply ? [`Not right? Tell Avery: ${reply}`] : [])],
     waiting: () => ["WAITING ON YOU", ...(todo.length ? todo.map((i) => `- ${i.text}${i.href ? ` (${i.href})` : ""}`) : ["Nothing is waiting on you."])],
     numbers: () => [
       y && !isYesterday(v) ? `NUMBERS (${shortDay(y.date)}, the latest snapshot)` : "NUMBERS",

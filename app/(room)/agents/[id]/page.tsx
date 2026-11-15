@@ -3,12 +3,14 @@ import { needs } from "@/dashboard/needs";
 import { SEEN_COOKIE, parseSeen } from "@/dashboard/seen";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { discardLessonLine, dryRun, editMemoryLine, forgetMemoryLine, keepLessonLine, realRun, setEnabled, setManualOnly, teach } from "@/dashboard/actions";
+import { discardLessonLine, dryRun, editMemoryLine, forgetMemoryLine, keepLessonLine, realRun, setEnabled, setManualOnly } from "@/dashboard/actions";
 import { HARD_RULES, TIERS, type CrewMember } from "@/dashboard/crew";
 import { ABILITY_WORD, isSetUp, reachOf } from "@/dashboard/connections";
-import { getBooks, getFloor, getMemory, getPipeline, type Books, type Floor } from "@/dashboard/data";
+import { getBooks, getFloor, getMemory, getPipeline, getReactionsFor, type Books, type Floor } from "@/dashboard/data";
+import { tallyWords } from "@/core/reaction-rules";
+import type { Reaction } from "@/core/reactions";
 import type { MemoryRow, PageLoad } from "@/core/memory";
-import { MemoryLine, TeachForm, type LineView } from "@/dashboard/components/memory";
+import { MemoryLine, type LineView } from "@/dashboard/components/memory";
 import { budget, dur, hm, m2, m4, md, num, when } from "@/dashboard/format";
 import { nextRuns, schedWords } from "@/dashboard/schedule";
 import { controlsOn } from "@/dashboard/session";
@@ -50,6 +52,8 @@ export default async function AgentPage({ params, searchParams }: { params: Prom
   const mem = a.built && (tab === "memory" || tab === "overview") ? await getMemory(id) : null;
   const how = a.built && tab === "overview" ? await howItWorks(id) : null;
   const place = tab === "overview" ? await placeOf(id, f) : null;
+  const reactions = a.built && tab === "overview" ? await getReactionsFor(id) : null;
+  const score = tallyWords(reactions?.tally);
   const runs = f.runs.filter((r) => r.agent_id === id);
   const unseen = needs(f, f.now, parseSeen((await cookies()).get(SEEN_COOKIE)?.value)).some((n) => n.run && n.agentId === id);
 
@@ -74,12 +78,12 @@ export default async function AgentPage({ params, searchParams }: { params: Prom
           <div className="stack">
             <div className="card" style={{ gap: 0 }}>
               <span className="card-t" style={{ marginBottom: 10 }}>How {a.name} works</span>
-              {[...(place ? [place] : []), ...(how ?? (a.built ? [["Setup", "No saved version yet."]] : [["What it will do", a.job], ["Phase", `${a.phase} · build after launch`], ["Tier", TIERS[a.tier]], ["Intended trigger", a.trigger ?? "Set when built"]]))].map(([k, v]) => <div key={k} className="kv"><span>{k}</span><span style={{ lineHeight: 1.45 }}>{v}</span></div>)}
+              {[...(place ? [place] : []), ...(a.built ? [["From you, last 30 days", score ?? "No reactions yet. Say Good or Not this on any of its runs."] as [string, string]] : []), ...(how ?? (a.built ? [["Setup", "No saved version yet."]] : [["What it will do", a.job], ["Phase", `${a.phase} · build after launch`], ["Tier", TIERS[a.tier]], ["Intended trigger", a.trigger ?? "Set when built"]]))].map(([k, v]) => <div key={k} className="kv"><span>{k}</span><span style={{ lineHeight: 1.45 }}>{v}</span></div>)}
             </div>
             <Toolbelt a={a} f={f} />
           </div>
           <div className="stack">
-            <Journal a={a} f={f} mem={mem} />
+            <Journal a={a} f={f} mem={mem} reactions={reactions?.latest ?? []} />
             {has("report_books_sync") && <BooksCard books={books} />}
             {pipeline && (
               <div className="card" style={{ gap: 12 }}>
@@ -287,26 +291,26 @@ function Toolbelt({ a, f, title = "Toolbelt", noRules }: { a: CrewMember; f: Flo
   );
 }
 
-function Journal({ a, f, mem }: { a: CrewMember; f: Floor; mem: Awaited<ReturnType<typeof getMemory>> | null }) {
+function Journal({ a, f, mem, reactions }: { a: CrewMember; f: Floor; mem: Awaited<ReturnType<typeof getMemory>> | null; reactions: Reaction[] }) {
   const runs = f.runs.filter((r) => r.agent_id === a.id);
   const taught = (mem?.tab?.rows ?? []).filter((r) => r.agent_id === a.id && r.state === "kept" && (r.grp === "note" || r.grp === "standing_order" || r.grp === "lesson")).slice(0, 8);
   const real = runs.filter((r) => r.status !== "skipped").slice(0, 12);
   const skipped = runs.filter((r) => r.status === "skipped");
   const items = [
     ...real.map((r) => ({ key: r.id, t: Date.parse(r.started_at), icon: r.status === "failed" ? "circle-alert" : "play", color: r.status === "failed" ? "var(--red)" : r.status === "running" ? "var(--acc)" : "var(--mint)", title: r.status === "failed" ? "Run failed" : r.status === "running" ? "Working now" : `Real run · ${r.trigger === "cron" ? "on schedule" : "manual"}`, text: r.error ?? r.summary, meta: `${dur(r.started_at, r.ended_at)} · ${m4(r.cost_usd)}`, href: `/runs/${r.id}` })),
-    ...taught.map((r) => ({ key: r.id, t: Date.parse(r.created_at), icon: r.grp === "lesson" ? "brain" : "pencil", color: GROUP_COLOR[r.grp], title: r.grp === "lesson" ? "Lesson kept" : r.grp === "standing_order" ? "Standing order from you" : "Note from you", text: r.text, meta: keepWords(r), href: `/agents/${a.id}?tab=memory` })),
+    ...reactions.map((r) => ({ key: `re-${r.id}`, t: Date.parse(r.created_at), icon: r.verdict === "good" ? "thumbs-up" : "thumbs-down", color: r.verdict === "good" ? "var(--mint)" : "var(--yel)", title: `You said ${r.verdict === "good" ? "good" : "not this"}${r.item_label ? ` to ${r.item_label}` : r.approval_id ? " on an approval card" : " to a run"}`, text: r.text ?? (r.verdict === "good" ? "Counts on its scorecard." : "No words, so no rule."), meta: r.memory_id ? "Saved as a rule in your words" : "A signal only", href: r.run_id ? `/runs/${r.run_id}#react` : "/approvals" })),
+    ...taught.filter((r) => !reactions.some((x) => x.memory_id === r.id)).map((r) => ({ key: r.id, t: Date.parse(r.created_at), icon: r.grp === "lesson" ? "brain" : "pencil", color: GROUP_COLOR[r.grp], title: r.grp === "lesson" ? "Lesson kept" : r.grp === "standing_order" ? "Standing order from you" : "Note from you", text: r.text, meta: keepWords(r), href: `/agents/${a.id}?tab=memory` })),
     ...(skipped.length ? [{ key: "skipped", t: Date.parse(skipped[0].started_at), icon: "clock", color: "var(--mut2)", title: `${skipped.length} runs skipped while off duty`, text: "Every skipped run is logged at $0.", meta: `Latest ${when(skipped[0].started_at)}`, href: `/runs?agent=${a.id}&status=skipped` }] : []),
   ].sort((x, y) => y.t - x.t);
   return (
     <div className="card">
       <div className="card-h"><span className="card-t">Journal</span><span className="muted" style={{ fontSize: 12 }}>Newest first</span></div>
-      {a.built && <TeachForm name={a.name} compact enabled={!!mem?.tab} why={`Tell ${a.name} something for next time (needs the memory tables)`} teach={teach.bind(null, a.id)} />}
       <div>
         {items.map((j) => (
           <div key={j.key} className="rule" style={{ display: "grid", gridTemplateColumns: "32px minmax(0,1fr) auto", gap: 12, padding: "12px 0" }}>
             <span style={{ width: 32, height: 32, borderRadius: 999, background: "var(--soft)", display: "grid", placeItems: "center", position: "relative" }}><Icon name={j.icon} size={14} /><span style={{ position: "absolute", right: -1, bottom: -1, width: 9, height: 9, borderRadius: 999, background: j.color, border: "2px solid var(--card)" }} /></span>
             <span style={{ display: "flex", flexDirection: "column", gap: 3, minWidth: 0 }}><span style={{ fontSize: 13.5, fontWeight: 600 }}>{j.title}</span><span style={{ fontSize: 13, lineHeight: 1.45, overflowWrap: "anywhere" }} className="ink2"><Summary text={j.text} /></span><span className="muted" style={{ fontSize: 11.5 }}>{j.meta}</span></span>
-            <span style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 6 }}><span className="muted" style={{ fontSize: 11.5, whiteSpace: "nowrap" }}>{when(j.t)}</span><Link href={j.href} className="btn outline xs">{j.key === "skipped" ? "See all" : j.href.includes("tab=memory") ? "Memory" : "Replay"}</Link></span>
+            <span style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 6 }}><span className="muted" style={{ fontSize: 11.5, whiteSpace: "nowrap" }}>{when(j.t)}</span><Link href={j.href} className="btn outline xs">{j.key === "skipped" ? "See all" : j.href.includes("tab=memory") ? "Memory" : j.href === "/approvals" ? "Approvals" : "Replay"}</Link></span>
           </div>
         ))}
         {a.built && (
@@ -326,7 +330,7 @@ const GROUP_NAME: Record<string, string> = { crew: "Crew", department: "Departme
 
 function keepWords(r: MemoryRow) {
   if (r.grp === "working") return `Left by the agent · ${when(r.created_at)}`;
-  const by = r.source === "approval" ? "From an approval" : r.source === "agent" ? "Agent" : "You";
+  const by = r.source === "approval" ? "From an approval" : r.source === "agent" ? "Agent" : r.source_tag?.startsWith("run:") ? "Your reaction to a run" : r.source_tag?.startsWith("approval:") ? "Your reason for a Reject" : "You";
   const life = r.keep === "next_run" ? "forgets after the next run" : r.keep === "days_30" && r.expires_at ? `forgets ${md(r.expires_at)}` : "kept until you forget it";
   return `${by} · ${when(r.created_at)} · ${life}`;
 }
@@ -358,27 +362,27 @@ function Memory({ a, f, domains, mem }: { a: CrewMember; f: Floor; domains?: str
     { n: 1, title: "Standing orders", color: "var(--acc)", meta: "Yours, kept until you forget them. An order can link a Notion page, read fresh each run. Its base instructions are its job line (see Edit).", body: (
       <>
         {lines("standing_order")}
-        {!mine("standing_order").length && <span className="muted" style={{ fontSize: 13 }}>None yet. Use Teach and pick “A standing order”, with a Notion page if it should read one.</span>}
+        {!mine("standing_order").length && <span className="muted" style={{ fontSize: 13 }}>None yet. Say Not this on one of its runs, or add one under Rules it always follows (with a Notion page if it should read one).</span>}
       </>
     ) },
     { n: 2, title: "Facts it may claim", color: "var(--mint)", meta: "Read fresh every run, never from the model", body: (
       <>{reads.map((r) => <div key={r.conn.id} className="row rule" style={{ alignItems: "flex-start", padding: "10px 0", fontSize: 13.5, lineHeight: 1.45 }}><span className="dot" style={{ width: 6, height: 6, marginTop: 7, background: "var(--mint)" }} />{r.conn.name}: {(r.by.read ?? []).join(", ")}</div>)}{!reads.length && <span className="muted" style={{ fontSize: 13 }}>Reads nothing.</span>}</>
     ) },
-    { n: 3, title: "Lessons", color: "var(--yel)", meta: "Proposed when you reject an approval and say why. Nothing sticks until you tap Keep.", body: (
+    { n: 3, title: "Lessons", color: "var(--yel)", meta: "Proposed when the agent above it sends back one of its drafts. Nothing sticks until you tap Keep.", body: (
       <>
         {proposed.map((r) => (
           <MemoryLine key={r.id} line={{ ...toLine(r), meta: `Proposed · ${when(r.created_at)} · waiting for your Keep` }} color="var(--yel)"
             edit={editMemoryLine.bind(null, r.id)} keep={keepLessonLine.bind(null, r.id, false)} keepCrew={keepLessonLine.bind(null, r.id, true)} discard={discardLessonLine.bind(null, r.id)} />
         ))}
         {lines("lesson")}
-        {!mine("lesson").length && !proposed.length && <span className="muted" style={{ fontSize: 13 }}>No lessons yet. When you reject an approval and say why, the reason lands here as a proposed lesson.</span>}
+        {!mine("lesson").length && !proposed.length && <span className="muted" style={{ fontSize: 13 }}>No lessons yet. When a lead or head sends back one of its drafts, the reason lands here as a proposed lesson.</span>}
       </>
     ) },
     { n: 4, title: "Your notes", color: "var(--pink)", meta: "Things you told the agent directly", body: (
-      <>{lines("note")}{!mine("note").length && <span className="muted" style={{ fontSize: 13 }}>Nothing yet. Notes can be for the next run, 30 days or for good.</span>}</>
+      <>{lines("note")}{!mine("note").length && <span className="muted" style={{ fontSize: 13 }}>Nothing yet. Not this with “Next run” or “30 days” lands here.</span>}</>
     ) },
     { n: 5, title: "Working memory", color: "var(--peach)", meta: "Where it left off, rewritten at the end of each run. At most 5 short lines, no addresses or links.", body: (
-      <>{lines("working")}{!mine("working").length && <span className="muted" style={{ fontSize: 13 }}>{`${a.name} doesn’t leave itself working memory. Anything it should keep, teach it as a note or a standing order.`}</span>}</>
+      <>{lines("working")}{!mine("working").length && <span className="muted" style={{ fontSize: 13 }}>{`${a.name} doesn’t leave itself working memory. Anything it should keep, tell it with Not this on a run.`}</span>}</>
     ) },
     (f.grants[a.id] ?? []).includes("report_leads")
       ? { n: 6, title: "Don’t repeat", color: "var(--ink2)", meta: "Businesses already in the pipeline, by domain. Real, from wholesale_leads.", body: <div className="row wrap" style={{ gap: 6 }}>{(domains ?? []).slice(0, 60).map((c) => <span key={c} className="pill sm" style={{ background: "var(--soft)", fontWeight: 500 }}>{c}</span>)}{!domains?.length && <span className="muted" style={{ fontSize: 13 }}>No leads yet.</span>}</div> }
@@ -411,8 +415,12 @@ function Memory({ a, f, domains, mem }: { a: CrewMember; f: Floor; domains?: str
           )}
         </div>
         <div className="card" style={{ gap: 12 }}>
-          <span className="card-t">Teach {a.name} something</span>
-          <TeachForm name={a.name} enabled={!!tab} why="Needs the memory tables (see the PR)" teach={teach.bind(null, a.id)} />
+          <span className="card-t">Teach {a.name}</span>
+          <span style={{ fontSize: 13.5, lineHeight: 1.5 }} className="ink2">React to its work where you see it. Say Good or Not this on any run (and on each lead it finds), or Reject an approval card and say why. Your words are saved here as a rule straight away.</span>
+          <div className="row wrap" style={{ gap: 8 }}>
+            {(() => { const r = f.runs.find((r) => r.agent_id === a.id && (r.status === "ok" || r.status === "failed")); return r ? <Link href={`/runs/${r.id}#react`} className="btn primary sm">React to its latest run</Link> : <span className="muted" style={{ fontSize: 12.5 }}>No finished run to react to yet.</span>; })()}
+            <Link href={`/build/${a.id}?edit`} className="btn outline sm">Rules it always follows</Link>
+          </div>
           <span className="row ink2" style={{ gap: 8, fontSize: 12, lineHeight: 1.45, alignItems: "flex-start" }}><Icon name="lock" size={13} style={{ marginTop: 2, flex: "none" }} />Memory can’t widen access, switch off a hard rule or add a recipient. Only Zak writes rules.</span>
         </div>
       </div>
@@ -433,7 +441,7 @@ function Memory({ a, f, domains, mem }: { a: CrewMember; f: Floor; domains?: str
           <div className="card-h"><span className="card-t">Shared crew memory</span><span className="tag">LOADED BY EVERY AGENT</span></div>
           <span className="muted" style={{ fontSize: 12 }}>Voice and brand facts you teach the whole crew, then the hard rules, which live in code.</span>
           <div>{lines("crew")}</div>
-          {!mine("crew").length && <span className="muted" style={{ fontSize: 13, padding: "4px 0 8px" }}>No crew notes yet. Use Teach and pick “Shared crew memory”.</span>}
+          {!mine("crew").length && <span className="muted" style={{ fontSize: 13, padding: "4px 0 8px" }}>No crew notes yet. Pick “Everyone” when you say Not this.</span>}
           {tab?.dept && (
             <>
               <div className="card-h" style={{ paddingTop: 10 }}><span className="card-t">{tab.dept.name} department rules</span><span className="tag">EVERY AGENT IN {tab.dept.name.toUpperCase()}</span></div>
