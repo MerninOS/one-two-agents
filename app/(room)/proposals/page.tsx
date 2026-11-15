@@ -51,6 +51,7 @@ export default async function Proposals() {
             <div key={p.id} className="card row wrap" style={{ gap: 10 }}>
               <Link href={`/proposals/${p.id}`} style={{ flex: 1, minWidth: 0 }}>{p.title.replace(/^New tool: /, "")}</Link>
               <span className="muted" style={{ fontSize: 12 }}>from {from(p)}</span>
+              {p.result_ref && <a href={p.result_ref} target="_blank" rel="noreferrer" className="btn outline sm">Card</a>}
               <ActionButton className="btn outline sm" action={proposalBuilt.bind(null, p.id)}>Mark built</ActionButton>
             </div>
           ))}

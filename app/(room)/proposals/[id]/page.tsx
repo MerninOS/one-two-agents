@@ -31,7 +31,7 @@ function yesDoes(p: Proposal["payload"]): { label: string; does: string } {
   switch (p.kind) {
     case "hire": return { label: `Hire ${p.name}, off duty`, does: `Creates ${p.name} as v1, off duty, with only the read tools above, ${p.seatId ? `in the open ${p.seat} seat` : `in a new ${p.seat} seat`}. Nothing runs until you Try it and Go live.` };
     case "grant_tool": return { label: `Give ${p.agent} ${toolLabel(p.tool)}`, does: `Saves a draft version of ${p.agent} with ${toolLabel(p.tool)} added. What runs today doesn’t change until you Try it and Go live.` };
-    case "new_tool": return { label: "Put it on the build list", does: "Adds it to the build list. A tool is code, so Claude builds it as a pull request you merge." };
+    case "new_tool": return { label: "Put it on the build list", does: "Adds it to the build list and a card in Up next on the Build Board. A tool is code, so Claude builds it as a pull request you merge." };
     case "retire": return p.agentId
       ? { label: `Retire ${p.agent}`, does: `Takes ${p.agent} off duty and opens its seat. Its versions, runs and memory stay, and you can turn it back on.` }
       : { label: `Close the ${p.seat} seat`, does: `Removes the empty ${p.seat} seat from the chart.` };
@@ -113,7 +113,8 @@ export default async function ProposalPage({ params }: { params: Promise<{ id: s
             <>
               <span className="card-t">Decided</span>
               <span style={{ fontSize: 13.5, lineHeight: 1.55 }}>{pr.outcome ?? pr.state}</span>
-              {pr.result_ref && <Link href={pr.kind === "retire" ? `/agents/${pr.result_ref}` : `/build/${pr.result_ref}`}>Open {names[pr.result_ref] ?? "the agent"} ›</Link>}
+              {pr.result_ref && pr.kind === "new_tool" && <a href={pr.result_ref} target="_blank" rel="noreferrer">Open the Build Board card ›</a>}
+              {pr.result_ref && pr.kind !== "new_tool" && <Link href={pr.kind === "retire" ? `/agents/${pr.result_ref}` : `/build/${pr.result_ref}`}>Open {names[pr.result_ref] ?? "the agent"} ›</Link>}
               {pr.kind === "new_tool" && pr.state === "accepted" && <div className="row"><ActionButton className="btn outline sm" action={proposalBuilt.bind(null, pr.id)}>Mark built</ActionButton></div>}
             </>
           )}

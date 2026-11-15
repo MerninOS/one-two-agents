@@ -10,7 +10,9 @@ import { createBuiltAgent, draftOf, listSpecVersions, readSpec, saveSpecVersion 
 import { teach } from "@/core/memory";
 import { addSeat, agentNames, below, headOf, liveAgentIds, loadOrg, removeSeat, seatOf, setHolder, unseat, type Org, type Seat } from "@/core/org";
 import { TOOLS } from "@/core/tools/catalog";
-import { hireSpec, planProposal, proposalTitle, toolInfoOf, type ProposalKind, type ProposalPlan } from "@/core/proposal-rules";
+import { env } from "@/core/env";
+import { h2, li, notionRow, notionUpdateRow, prop } from "@/integrations/notion";
+import { BOARD_CARD, boardCard, notionPageId, hireSpec, planProposal, proposalTitle, toolInfoOf, type ProposalKind, type ProposalPlan } from "@/core/proposal-rules";
 
 export type ProposalState = "pending" | "accepted" | "declined" | "built" | "failed";
 export interface Proposal {
@@ -186,8 +188,13 @@ export async function acceptProposal(id: string, opts: { agentFromBuilder?: stri
       return { text: `Saved as draft v${v} with ${t.label}. Try it, then Go live; what runs today hasn’t changed.`, href: `/build/${p.agentId}` };
     }
     if (p.kind === "new_tool") {
-      await close(id, "accepted", "On the build list.");
-      return { text: "On the build list. A tool is code, so it comes as a pull request.", href: "/proposals" };
+      const card = await addBoardCard(pr, p, org);
+      if ("url" in card) {
+        await close(id, "accepted", "On the build list, with a card in Up next on the Build Board.", card.url);
+        return { text: "On the build list, with a card in Up next on the Build Board. A tool is code, so it comes as a pull request.", href: "/proposals" };
+      }
+      await close(id, "accepted", `On the build list. No Build Board card: ${card.problem}`);
+      return { text: `On the build list. No Build Board card: ${card.problem}`, href: "/proposals" };
     }
     // retire
     if (p.agentId) {
@@ -206,6 +213,30 @@ export async function acceptProposal(id: string, opts: { agentFromBuilder?: stri
     return { text: `The ${s.title} seat is closed.`, href: "/crew" };
   } catch (e) {
     throw e instanceof Error ? e : new Error(String(e));
+  }
+}
+
+/**
+ * The Build Board card for a new tool Zak said yes to. Never stops the yes: a missing setting or a
+ * Notion error comes back as words for the outcome.
+ */
+async function addBoardCard(pr: Proposal, p: Extract<Resolved, { kind: "new_tool" }>, org: Org): Promise<{ url: string } | { problem: string }> {
+  if (!env.notionToken || !env.notionBuildBoardDb) return { problem: "NOTION_BUILD_BOARD_DB_ID isn't set in Vercel." };
+  try {
+    const asker = pr.from_agent ? (await agentNames([pr.from_agent]).catch(() => ({} as Record<string, string>)))[pr.from_agent] ?? pr.from_agent
+      : pr.source === "claude" ? "Claude" : "Zak";
+    const c = boardCard({
+      what: p.what, why: pr.why, asker,
+      dept: org.departments.find((d) => d.id === pr.department_id)?.name ?? null,
+      date: new Date().toLocaleDateString("en-US", { timeZone: "America/Chicago", month: "long", day: "numeric", year: "numeric" }),
+      link: env.dashboardUrl ? `${env.dashboardUrl}/proposals/${pr.id}` : null,
+    });
+    const row = await notionRow(env.notionBuildBoardDb, {
+      Name: prop.title(c.name), Status: prop.status(BOARD_CARD.status), Owner: prop.select(BOARD_CARD.owner), Track: prop.select(BOARD_CARD.track),
+    }, c.sections.flatMap((s) => [h2(s.heading), ...s.lines.map(li)]));
+    return { url: row.url };
+  } catch (e) {
+    return { problem: (e instanceof Error ? e.message : String(e)).slice(0, 200) };
   }
 }
 
@@ -231,6 +262,9 @@ export async function markBuilt(id: string): Promise<void> {
   if (!pr || pr.kind !== "new_tool" || pr.state !== "accepted") throw new Error("That isn't on the build list.");
   const { error } = await db().from("proposals").update({ state: "built", outcome: "Built.", decided_at: new Date().toISOString() }).eq("id", id);
   if (error) throw new Error(error.message);
+  // its Build Board card moves to Done too (best effort: the board can be moved by hand)
+  const page = notionPageId(pr.result_ref);
+  if (page && env.notionToken) await notionUpdateRow(page, { Status: prop.status("Done") }).catch(() => undefined);
 }
 
 /** Pending proposals per seat, for the org chart: a hire on its seat (or the seat it goes under), a retirement on its seat. */

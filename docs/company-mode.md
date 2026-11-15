@@ -163,7 +163,8 @@ out of the tool list so the tools and the measures share one copy), `agents/cfo`
   Approvals item in the sidebar counts proposals too, and the Approvals page leads with a card for
   them when any wait.
 - **Proposals** (`/proposals`): Waiting on you, the **Build list** (new tools he said yes to, each
-  with **Mark built**), and Decided lately with what each yes or no did.
+  with a link to its Build Board card and **Mark built**), and Decided lately with what each yes or
+  no did.
 - **A proposal's page** (`/proposals/[id]`, the Hire artboard): from whom, the department and when;
   **Why** in the head's words; the job (for a hire: seat, job, each run, good result, brain, reads,
   hands you) or what it asks; **What your yes does**; for a hire, the cost cap per run and what the
@@ -191,8 +192,16 @@ in step 2, or slice 4 adds it to the heads' review runs.
 |---|---|---|
 | hire | name, seat (open, or new under the head), job, each run, good result, read tools (up to 8), brain | creates the agent off duty as v1 (`createBuiltAgent`, like New agent), seats it |
 | grant_tool | teammate, one read tool | saves a draft version with the tool added; it runs only after Try it and Go live |
-| new_tool | what to read and from where | puts it on the build list (a tool is code: it comes as a PR) |
+| new_tool | what to read and from where | puts it on the build list and adds a card in Up next on the Build Board (a tool is code: it comes as a PR) |
 | retire | teammate, or an empty seat | takes the agent off duty and opens its seat; or removes the empty seat |
+
+**The Build Board card.** A yes on a new tool also adds a row to the Notion "One Two Agents: Build
+Board" (`NOTION_BUILD_BOARD_DB_ID`, shared with the integration): Status Up next, Owner Claude,
+Track Agent builder, and a body in the board's card shape (Why with who asked, Where things stand
+today with a link to the proposal, What to build, Rules that apply, Needs from Zak, Done when,
+Before you start; `boardCard` in `core/proposal-rules.ts`), so any Claude thread can pick it up
+cold. The card's URL is the proposal's `result_ref`. **Mark built** moves the card to Done. A
+missing setting or a Notion error never stops the yes: the outcome says why there's no card.
 
 Brains are Claude only: **quick** (Haiku, low effort, $0.10 cap a run) unless the job needs
 judgment, **thinking** (Sonnet, medium, $0.25). A hire gets 12 steps.

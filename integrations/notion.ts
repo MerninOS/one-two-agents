@@ -41,12 +41,17 @@ export const prop = {
   num: (n: number | string | null | undefined) => ({ number: n == null || n === "" || !Number.isFinite(Number(n)) ? null : Number(n) }),
   date: (d: string | null | undefined) => ({ date: d ? { start: d } : null }),
   check: (b: boolean) => ({ checkbox: b }),
+  status: (name: string) => ({ status: { name } }),
+  select: (name: string) => ({ select: { name } }),
 };
 export interface Row { id: string; url: string; properties: Record<string, { checkbox?: boolean }> }
 
 /** Adds a row to a database, with the page body, and returns it. */
 export const notionRow = (databaseId: string, properties: Props, children: Block[]) =>
   notion<Row>("POST", "pages", { parent: { database_id: databaseId }, properties, children: children.slice(0, 100) });
+
+/** Changes properties on an existing row (e.g. a Build Board card's Status). */
+export const notionUpdateRow = (pageId: string, properties: Props) => notion<Row>("PATCH", `pages/${pageId}`, { properties });
 
 /** The newest row whose date property is exactly this day, or null. */
 export async function notionRowOn(databaseId: string, dateProp: string, date: string) {

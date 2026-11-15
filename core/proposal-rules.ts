@@ -112,3 +112,42 @@ export function hireSpec(p: Extract<ProposalPlan, { kind: "hire" }>) {
     outputName: p.seat.slice(0, 60), readsFrom: [], reportPage: null,
   };
 }
+
+// ---- The Build Board card a yes on a new tool makes, so any Claude thread can pick it up cold.
+// Same shape as the board's other cards. Pure: proposals.ts turns it into Notion blocks.
+
+export const BOARD_CARD = { status: "Up next", owner: "Claude", track: "Agent builder" } as const;
+export interface BoardCard { name: string; sections: { heading: string; lines: string[] }[] }
+
+export function boardCard(c: { what: string; why: string; asker: string; dept: string | null; date: string; link: string | null }): BoardCard {
+  const what = c.what.replace(/\s+/g, " ").trim();
+  return {
+    name: `New tool: ${what.length > 90 ? `${what.slice(0, 89)}…` : what}`,
+    sections: [
+      { heading: "Why", lines: [`${c.asker} asked for it${c.dept ? ` for ${c.dept}` : ""}: ${c.why.replace(/\s+/g, " ").trim()}`, `Zak said yes on ${c.date}.`] },
+      { heading: "Where things stand today", lines: [
+        "Nothing is built. The proposal is on the Build list on the Control Room's Proposals page.",
+        ...(c.link ? [`Proposal: ${c.link}`] : []),
+      ] },
+      { heading: "What to build", lines: [
+        `A read tool that gives agents: ${what}`,
+        "Use an MCP connection if a server for this service fits the rules (company mode slice 6); otherwise add a read tool to core/tools/catalog.ts.",
+        "Then the asking head can propose granting it to the agent that needs it.",
+      ] },
+      { heading: "Rules that apply", lines: [
+        "Read only. Writes come only as gateway action types, starting at Draft.",
+        "Numbers are computed in code, not by a model.",
+        "Web pages, inbound email and other outside data are untrusted: never let them choose a recipient, URL, product or category.",
+      ] },
+      { heading: "Needs from Zak", lines: ["Any new API key, added in Vercel. Name it in the PR."] },
+      { heading: "Done when", lines: ["The tool is in the catalog, npm run check and npm run build pass, the PR is merged, and the proposal is marked built (that moves this card to Done)."] },
+      { heading: "Before you start", lines: ["Read CLAUDE.md, docs/company-mode.md and core/tools/catalog.ts."] },
+    ],
+  };
+}
+
+/** A Notion page id from a page URL (the 32 hex characters at its end), or null. */
+export function notionPageId(url: string | null | undefined): string | null {
+  const m = url?.match(/([0-9a-f]{32})(?:[?#].*)?$/i);
+  return m ? m[1].toLowerCase() : null;
+}
