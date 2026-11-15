@@ -213,7 +213,8 @@ function SeatCard({ s, editing, onPick, head, wide }: { s: SeatView; editing: bo
         <b>{s.agent ? s.agent.name : s.holder === "zak" ? "You" : s.title}</b>
         <span>{s.agent || s.holder === "zak" ? [s.title, s.sub].filter(Boolean).join(" · ") : s.sub || "Open seat"}</span>
         {s.agent && !s.agent.planned && <span className="org-last">{s.agent.look.label} · {s.agent.last}</span>}
-        {s.holder === "open" && !editing && <span className="org-last">Open · build an agent for it</span>}
+        {s.holder === "open" && !editing && !s.proposals.length && <span className="org-last">Open · build an agent for it</span>}
+        {!editing && s.proposals.map((p) => <span key={p.id} className="org-last" style={{ color: "var(--acc)" }}>Proposal · {p.text}</span>)}
       </span>
       {head && <span className="tag" style={{ flex: "none" }}>HEAD</span>}
       {s.agent?.planned && <span className="tag" style={{ flex: "none" }}>PLANNED</span>}
@@ -222,7 +223,7 @@ function SeatCard({ s, editing, onPick, head, wide }: { s: SeatView; editing: bo
   );
   if (editing) return <button type="button" className={cls} onClick={onPick} aria-label={`Edit seat ${s.title}`}>{inner}</button>;
   if (s.agent) return <Link href={s.agent.href} className={cls}>{inner}</Link>;
-  if (s.holder === "open") return <Link href={`/build/new?seat=${s.id}`} className={cls}>{inner}</Link>;
+  if (s.holder === "open") return <Link href={s.proposals.length ? `/proposals/${s.proposals[0].id}` : `/build/new?seat=${s.id}`} className={cls}>{inner}</Link>;
   return <div className={cls}>{inner}</div>;
 }
 

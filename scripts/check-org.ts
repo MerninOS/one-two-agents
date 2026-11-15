@@ -2,7 +2,7 @@
 // Run: npm run check:org
 import assert from "node:assert/strict";
 
-import { LEAD_MIN_TEAM, LEAD_REVIEW_HOURS, groupByDepartment, checkerOf, draftCode, leadCheck, agentsIn, below, companyBlock, departmentLines, seatToolBlocks, teamBlock, teamOf, deptBudgetBlock, deptBudgetChange, deptEmailCap, deptEmailChange, deptOf, deptSpent, depthOf, deptSlug, headOf, orgProblems, reportsTo, seatOf, seatPath, type Org } from "../core/org-rules";
+import { LEAD_MIN_TEAM, LEAD_REVIEW_HOURS, groupByDepartment, checkerOf, draftCode, leadCheck, agentsIn, below, companyBlock, headBlock, departmentLines, seatToolBlocks, teamBlock, teamOf, deptBudgetBlock, deptBudgetChange, deptEmailCap, deptEmailChange, deptOf, deptSpent, depthOf, deptSlug, headOf, orgProblems, reportsTo, seatOf, seatPath, type Org } from "../core/org-rules";
 
 const org: Org = {
   departments: [{ id: "marketing", name: "Marketing", sort: 1, monthlyBudgetUsd: 20, maxEmailsPerDay: null, leadChecksDrafts: false }],
@@ -88,7 +88,12 @@ assert.ok(teamBlock(team, null, live)?.includes("org chart"), "a new agent with 
 assert.equal(companyBlock(team, "chief_of_staff"), null);
 assert.ok(companyBlock(team, "b_head"));
 assert.ok(companyBlock(team, null));
-assert.deepEqual(seatToolBlocks(team, "l", live), { team: null, company: companyBlock(team, "b_head") }, "a new agent picking the lead seat gets the same answer");
+assert.deepEqual(seatToolBlocks(team, "l", live), { team: null, company: companyBlock(team, "b_head"), head: headBlock(team, "b_lead") }, "a new agent picking the lead seat gets the same answer");
+// company mode slice 3: only heads and the company seat file proposals
+assert.equal(headBlock(team, "b_head"), null);
+assert.equal(headBlock(team, "chief_of_staff"), null);
+assert.ok(headBlock(team, "b_lead"), "a lead doesn't propose");
+assert.ok(headBlock(team, null), "nor an agent off the chart");
 assert.equal(seatToolBlocks(team, "nope", live).team, teamBlock(team, null, live));
 
 // Avery's department lines are matched to chart names in code; anything else is ignored

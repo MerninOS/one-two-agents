@@ -23,10 +23,12 @@ export default async function RoomLayout({ children }: { children: React.ReactNo
   const recent: RecentRun[] = floor.runs
     .filter((r) => floor.now - Date.parse(r.started_at) < 10 * 6e4)
     .map((r) => ({ id: r.id, name: floor.byId[r.agent_id]?.name ?? r.agent_id, status: r.status, live: isLive(r, floor.now) }));
+  // approval cards and proposals both wait on Zak (company mode slice 3)
+  const waiting = (floor.approvalsPending ?? 0) + (floor.proposalsPending ?? 0);
   // six places (docs/builder-flow.md, slice 5): Settings sits apart at the bottom of the sidebar
   const nav = [
     { href: "/", match: "/", icon: "layout-dashboard", label: "Today" },
-    { href: "/approvals", match: "/approvals", icon: "inbox", label: "Approvals", count: floor.approvalsPending ? String(floor.approvalsPending) : undefined },
+    { href: "/approvals", match: ["/approvals", "/proposals*"], icon: "inbox", label: "Approvals", count: waiting ? String(waiting) : undefined },
     { href: "/crew", match: ["/crew", "/agents/*", "/build*"], icon: "users", label: "Crew", count: `${floor.built.length} + ${floor.planned.length}` },
     { href: "/runs", match: "/runs*", icon: "history", label: "Runs" },
     { href: "/connections", match: "/connections", icon: "plug", label: "Connections", note: notSetUp ? `${notSetUp} to fix` : undefined, noteColor: "var(--red-ink)" },
@@ -53,7 +55,7 @@ export default async function RoomLayout({ children }: { children: React.ReactNo
             </Link>
             <span className="date-pill"><Icon name="calendar" size={16} />{longDay(floor.now).replace(/^(\w{3})\w*/, "$1")}</span>
             <span className="me" title="Zak">Z</span>
-            <MobileMenu alert={!!floor.approvalsPending}>
+            <MobileMenu alert={!!waiting}>
               <div className="sheet-group">
                 {nav.map((it) => <SideLink key={it.label} {...it} />)}
               </div>

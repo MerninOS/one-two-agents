@@ -30,6 +30,7 @@ export function needs(f: Floor, now = Date.now(), seen: Seen = {}): Need[] {
     if (f.ok && stateOf(a, f.agents[a.id], f.runs, f.spentToday[a.id] ?? 0) === "over") out.push({ pri: "High", title: `${a.name} reached today’s budget`, sub: "Further runs today are skipped.", href: `/build/${a.id}?edit=1&step=brain`, agentId: a.id });
   }
   if (f.approvalsPending) out.push({ pri: "High", title: `${f.approvalsPending} Mercury change${f.approvalsPending === 1 ? "" : "s"} waiting for your OK`, sub: "Quinn’s matched receipts and category suggestions. Nothing goes to Mercury until you approve.", href: "/approvals", agentId: "bookkeeper" });
+  if (f.proposalsPending) out.push({ pri: "Medium", title: `${f.proposalsPending} proposal${f.proposalsPending === 1 ? "" : "s"} from your heads`, sub: "Hires, tools and retirements they’d like. Nothing happens until you say yes.", href: "/proposals" });
   for (const [agentId, n] of Object.entries(f.lessonsWaiting)) {
     const a = f.byId[agentId];
     if (a && n) out.push({ pri: "Low", title: `Review ${n} lesson${n === 1 ? "" : "s"} for ${a.name}`, sub: "Proposed from your rejections. Keep, edit or discard each one.", href: `/agents/${agentId}?tab=memory`, agentId });

@@ -112,6 +112,13 @@ export default async function Approvals({ searchParams }: { searchParams: Promis
         <ActionButton className="btn ghost sm" action={queueQuinn} title="Turns Quinn’s saved proposals into approvals. Writes nothing to Mercury.">Check for Quinn’s proposals</ActionButton>
       </div>
 
+      {!!f.proposalsPending && (
+        <Link href="/proposals" className="card row wrap" style={{ gap: 10, borderLeft: "4px solid var(--acc)", textDecoration: "none", color: "inherit" }}>
+          <span style={{ fontSize: 14.5, fontWeight: 600, flex: 1 }}>{f.proposalsPending} proposal{f.proposalsPending === 1 ? "" : "s"} from your heads</span>
+          <span className="sub">Hires, tools and retirements. Open them ›</span>
+        </Link>
+      )}
+
       <div className="card" style={{ gap: 8, borderLeft: `4px solid ${live ? "var(--mint)" : "var(--yel)"}` }}>
         <span style={{ fontSize: 14.5, fontWeight: 600 }}>{live ? "Approving writes to Mercury right away." : "Approving records your decision. Nothing is written to Mercury yet."}</span>
         <span style={{ fontSize: 13, lineHeight: 1.55 }} className="ink2">
