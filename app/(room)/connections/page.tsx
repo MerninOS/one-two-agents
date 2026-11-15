@@ -5,6 +5,54 @@ import { BEHIND_THE_SCENES, CONNECTIONS, CONN_BY_ID, isSetUp, toolsOf, usersOf, 
 import type { ToolDef } from "@/core/tools/types";
 import { Icon } from "@/dashboard/components/Icon";
 import { Avatar, LockList } from "@/dashboard/components/ui";
+import { ActionButton } from "@/dashboard/components/client";
+import { MCP_SERVERS } from "@/core/mcp-rules";
+import { MCP_MISSING, mcpStatus, type McpStatus } from "@/integrations/mcp";
+import { klaviyoLists } from "@/integrations/klaviyo";
+import { klaviyoPickList, mcpDisconnect } from "@/dashboard/connectionActions";
+import { when } from "@/dashboard/format";
+
+/** An MCP connection's state for its panel: signed in or not, and Klaviyo's lists to pick the counted one from. */
+interface McpView { status: McpStatus | null; lists: { id: string; name: string }[] | null; listsProblem: string | null }
+
+function McpPanel({ c, v }: { c: Connection; v: McpView }) {
+  const s = v.status;
+  if (!s) return <span className="soft-box" style={{ fontSize: 12.5, lineHeight: 1.45 }}>{MCP_MISSING}</span>;
+  const id = c.mcp!;
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+      <span className="ink2" style={{ fontSize: 12.5, lineHeight: 1.5 }}>Code may call only these {MCP_SERVERS[id].name} tools: {MCP_SERVERS[id].readTools.join(", ")}. A tool the server adds later does nothing until it is named in code.</span>
+      {s.connected ? (
+        <>
+          <span style={{ fontSize: 13 }}>Signed in{s.connectedAt ? ` ${when(s.connectedAt)}` : ""}.{s.lastError ? ` Last problem: ${s.lastError}` : ""}</span>
+          <span className="row wrap" style={{ gap: 8 }}>
+            <a className="btn outline sm" href={`/connections/${id}/connect`}>Sign in again</a>
+            <ActionButton className="btn outline sm" action={mcpDisconnect.bind(null, id)} confirm={{ title: `Disconnect ${c.name}?`, body: "The token is forgotten here. Agents that read it get an error until you connect again. To remove the app on Klaviyo’s side too, do that in Klaviyo’s settings.", confirmLabel: "Disconnect", kind: "danger" }}>Disconnect</ActionButton>
+          </span>
+          {id === "klaviyo" && (
+            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+              <span style={{ display: "flex", flexDirection: "column", gap: 2 }}><span style={{ fontSize: 15, fontWeight: 700 }}>The email list a goal counts</span><span className="muted" style={{ fontSize: 12.5 }}>Email list size counts the profiles on this list.</span></span>
+              {v.listsProblem && <span className="soft-box" style={{ fontSize: 12.5 }}>Couldn’t read the lists: {v.listsProblem}</span>}
+              {(v.lists ?? []).map((l) => (
+                <span key={l.id} className="row" style={{ gap: 10, padding: "8px 12px", borderRadius: 12, background: "var(--soft)" }}>
+                  <span style={{ flex: 1, fontSize: 13.5, fontWeight: 600 }}>{l.name || l.id}</span>
+                  {s.settings.emailListId === l.id
+                    ? <span className="pill sm" style={{ background: "var(--mint-soft)", color: "var(--mint-ink)" }}>Counted</span>
+                    : <ActionButton className="btn outline sm" action={klaviyoPickList.bind(null, l.id)}>Count this one</ActionButton>}
+                </span>
+              ))}
+            </div>
+          )}
+        </>
+      ) : (
+        <span className="row wrap" style={{ gap: 8, alignItems: "center" }}>
+          <a className="btn dark sm" href={`/connections/${id}/connect`}>Connect {c.name}</a>
+          <span className="muted" style={{ fontSize: 12 }}>Opens {c.name}’s own sign-in page. Sign in as an Owner, Admin or Manager.</span>
+        </span>
+      )}
+    </div>
+  );
+}
 
 // One page for every integration: is it set up, what can an agent read, do and hand you there,
 // and which agents have each of those in their saved setup. Shown here, granted in the builder.
@@ -59,7 +107,7 @@ function ToolRow({ t, f, locked }: { t: ToolDef; f: Floor; locked?: boolean }) {
   );
 }
 
-function Detail({ c, f }: { c: Connection; f: Floor }) {
+function Detail({ c, f, mcp, note }: { c: Connection; f: Floor; mcp: McpView | null; note: { ok: boolean; text: string } | null }) {
   const t = toolsOf(c.id);
   const missing = c.checks.filter((k) => !f.health[k.key]);
   const section = (title: string, sub: string, list: ToolDef[], empty: string, locked?: boolean) => (
@@ -77,8 +125,10 @@ function Detail({ c, f }: { c: Connection; f: Floor }) {
         <Status c={c} f={f} />
       </span>
       <span className="ink2" style={{ fontSize: 13.5, lineHeight: 1.55 }}>{c.about}</span>
+      {note && <span className="soft-box" style={{ fontSize: 12.5, lineHeight: 1.45, background: note.ok ? "var(--mint-soft)" : "var(--red-soft)", color: note.ok ? "var(--mint-ink)" : "var(--red-ink)" }}>{note.text}</span>}
+      {c.mcp && mcp && <McpPanel c={c} v={mcp} />}
       {c.checks.length > 1 && <span className="row wrap" style={{ gap: 6 }}>{c.checks.map((k) => <span key={k.key} className="pill sm" style={{ background: f.health[k.key] ? "var(--mint-soft)" : "var(--red-soft)", color: f.health[k.key] ? "var(--mint-ink)" : "var(--red-ink)" }}>{k.label}: {f.health[k.key] ? "set up" : "not set up"}</span>)}</span>}
-      {missing.map((k) => <span key={k.key} className="soft-box" style={{ fontSize: 12.5, lineHeight: 1.45 }}>{c.checks.length > 1 ? `${k.label}: ` : ""}{k.setup}</span>)}
+      {!c.mcp && missing.map((k) => <span key={k.key} className="soft-box" style={{ fontSize: 12.5, lineHeight: 1.45 }}>{c.checks.length > 1 ? `${k.label}: ` : ""}{k.setup}</span>)}
       {section("Can read", "Looks only. Nothing changes.", t.read, `Agents can’t read anything from ${c.name}.`)}
       {section("Can do", "Each one becomes a card on Approvals. Nothing happens until you tap Approve.", t.do, c.id === "shopify" ? "Nothing. Shopify is read-only here." : "Nothing yet.", true)}
       {section("Hands you", "Delivered by code after a run finishes. Never during a try.", t.hands, "Nothing.")}
@@ -86,10 +136,21 @@ function Detail({ c, f }: { c: Connection; f: Floor }) {
   );
 }
 
-export default async function Connections({ searchParams }: { searchParams: Promise<{ c?: string }> }) {
+export default async function Connections({ searchParams }: { searchParams: Promise<{ c?: string; problem?: string; connected?: string }> }) {
   const f = await getFloor();
-  const pick = (await searchParams).c;
+  const sp = await searchParams;
+  const pick = sp.c;
   const sel = pick && pick in CONN_BY_ID ? CONN_BY_ID[pick as ConnId] : null;
+  const note = sp.problem ? { ok: false, text: sp.problem.slice(0, 300) } : sp.connected ? { ok: true, text: `Connected. Give an agent its read tools in the builder${sel?.mcp === "klaviyo" ? ", and pick the list Email list size counts below" : ""}.` } : null;
+  let mcp: McpView | null = null;
+  if (sel?.mcp) {
+    const status = await mcpStatus(sel.mcp);
+    let lists: McpView["lists"] = null, listsProblem: string | null = null;
+    if (status?.connected && sel.mcp === "klaviyo") {
+      try { lists = await klaviyoLists(); } catch (e) { listsProblem = (e instanceof Error ? e.message : String(e)).slice(0, 200); }
+    }
+    mcp = { status, lists, listsProblem };
+  }
   const outside = CONNECTIONS.filter((c) => !c.builtIn);
   const ok = outside.filter((c) => isSetUp(c, f.health)).length;
   const grid = (list: Connection[]) => <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(190px, 1fr))", gap: 12 }}>{list.map((c) => <Tile key={c.id} c={c} f={f} on={sel?.id === c.id} />)}</div>;
@@ -105,7 +166,7 @@ export default async function Connections({ searchParams }: { searchParams: Prom
           <span className="side-label" style={{ padding: "4px 2px 0" }}>Built in</span>
           {grid(CONNECTIONS.filter((c) => c.builtIn))}
         </div>
-        {sel && <div className="conn-detail"><Detail c={sel} f={f} /></div>}
+        {sel && <div className="conn-detail"><Detail c={sel} f={f} mcp={mcp} note={note} /></div>}
       </div>
       <div className="card dark" style={{ gap: 10 }}>
         <span className="row" style={{ gap: 8, fontSize: 15, fontWeight: 600 }}><Icon name="lock" size={15} />Always on, for every agent</span>

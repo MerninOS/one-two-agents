@@ -38,11 +38,15 @@ import { env } from "@/core/env";
 import { domainOf, offer } from "@/agents/wholesale-hunter";
 import { syncBooks } from "@/agents/bookkeeper";
 import { hasGmail } from "@/integrations/gmail";
+import { klaviyoListSize, klaviyoLists, klaviyoReport } from "@/integrations/klaviyo";
+import { REPORT_PERIODS } from "@/core/mcp-rules";
 import { getInventoryLots } from "@/integrations/shopify/lots";
 import { getBoardOrders } from "@/integrations/shopify/orders";
 import type { Param, Pick, ReportInput, ToolDef } from "./types";
 
 const SHOPIFY = ["SHOPIFY_STORE_DOMAIN"], MERCURY = ["MERCURY_API_TOKEN"], NOTION = ["NOTION_TOKEN"], SUPABASE = ["SUPABASE_URL", "SUPABASE_SERVICE_ROLE_KEY"], EMAIL = ["RESEND_API_KEY", "BRIEF_FROM", "BRIEF_TO"], GMAIL = ["GMAIL_CLIENT_ID", "GMAIL_CLIENT_SECRET", "GMAIL_REFRESH_TOKEN"];
+/** Not a setting: Klaviyo is signed in on Connections (mcp_connections), so the builder checks that row. */
+const KLAVIYO = ["KLAVIYO_CONNECTED"];
 const LEAD_TYPES = ["cafe", "restaurant", "office", "grocery", "other"] as const;
 const usd = (n: number) => `${n < 0 ? "-" : ""}$${Math.abs(n).toFixed(2)}`;
 const html = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
@@ -174,6 +178,37 @@ const TOOLS_LIST: ToolDef[] = [
   },
 
   // ---- Wholesale (slice 7): what Rowan may claim, and who is already on the leads list
+  // Klaviyo over its MCP server (company mode slice 6): read tools only, each one a named server
+  // tool in core/mcp-rules.ts. Counts and rates are added up in code from the raw reply. Names in
+  // Klaviyo are One Two's own, but the reply comes from outside, so it is shown as untrusted data.
+  {
+    id: "klaviyo_lists", label: "Email lists", detail: "Every list in One Two's Klaviyo: its id and name. Use an id with Email list size",
+    kind: "read", group: "klaviyo", params: [], trusted: false, needs: KLAVIYO, costUsd: 0,
+    run: async () => { const lists = await klaviyoLists(); return { data: { lists }, numbers: { lists: lists.length } }; },
+  },
+  {
+    id: "klaviyo_list_size", label: "Email list size", detail: "How many profiles are on one Klaviyo list, counted by Klaviyo and read in code",
+    kind: "read", group: "klaviyo", trusted: false, needs: KLAVIYO, costUsd: 0,
+    params: [{ name: "list_id", type: "text", maxLength: 40, description: "A list id from Email lists." }],
+    run: async (p) => {
+      const id = String(p.list_id);
+      if (!/^[A-Za-z0-9]{3,40}$/.test(id)) return { data: { problem: "That isn't a Klaviyo list id. Read Email lists first." } };
+      const r = await klaviyoListSize(id);
+      return { data: r, numbers: { profiles: r.profiles } };
+    },
+  },
+  {
+    id: "klaviyo_campaigns", label: "Campaign results", detail: "Klaviyo campaigns sent in a period (email and SMS): recipients, opens, clicks, orders, revenue and unsubscribes per campaign, with totals and rates worked out in code",
+    kind: "read", group: "klaviyo", trusted: false, needs: KLAVIYO, costUsd: 0,
+    params: [{ name: "period", type: "enum", options: REPORT_PERIODS, default: "last_30_days", description: "How far back to look." }],
+    run: async (p) => { const r = await klaviyoReport("campaign", String(p.period)); return { data: r, numbers: r.totals }; },
+  },
+  {
+    id: "klaviyo_flows", label: "Flow results", detail: "Klaviyo flows (welcome, abandoned cart and the rest) over a period: each message's recipients, opens, clicks, orders, revenue and unsubscribes, with totals and rates worked out in code",
+    kind: "read", group: "klaviyo", trusted: false, needs: KLAVIYO, costUsd: 0,
+    params: [{ name: "period", type: "enum", options: REPORT_PERIODS, default: "last_30_days", description: "How far back to look." }],
+    run: async (p) => { const r = await klaviyoReport("flow", String(p.period)); return { data: r, numbers: r.totals }; },
+  },
   {
     id: "wholesale_offer", label: "Wholesale offer", detail: "What One Two offers a wholesale customer, from Shopify: private label minimum, bags and packaging, our coffees and green lots with wholesale prices per lb. The only facts an outreach email may claim",
     kind: "read", group: "shopify", params: [], trusted: true, needs: SHOPIFY, costUsd: 0,

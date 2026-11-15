@@ -21,9 +21,10 @@ assert.deepEqual(ok(planGoal({ title: "Sell more", measure: "revenue_month", tar
   { title: "Sell more", measure: "revenue_month", target: 3000.46, dueOn: null });
 // a floor goal: a date is optional
 assert.equal(ok(planGoal({ title: "Never run out", measure: "lowest_cover_days", target: 45 }, today)).dueOn, null);
-// a measure code can't count yet: kept, with no target
-assert.deepEqual(ok(planGoal({ title: "Grow the list", measure: "email_list_size", target: "1000" }, today)),
-  { title: "Grow the list", measure: "email_list_size", target: null, dueOn: null });
+// Email list size (Klaviyo, slice 6) counts now: a total, so it needs a target and a date
+assert.deepEqual(ok(planGoal({ title: "Grow the list", measure: "email_list_size", target: "1000", dueOn: "2027-01-01" }, today)),
+  { title: "Grow the list", measure: "email_list_size", target: 1000, dueOn: "2027-01-01" });
+assert.ok("error" in planGoal({ title: "Grow the list", measure: "email_list_size", target: "1000" }, today), "a total needs a date");
 // no measure at all is allowed (it shows No measure yet)
 assert.equal(ok(planGoal({ title: "Be loved", measure: "" }, today)).measure, null);
 
@@ -76,7 +77,6 @@ assert.equal(progress(runway, { value: 0, unbounded: true }, today).status, "on_
 // no measure yet
 p = progress({ ...won(), measure: "email_list_size", target: null }, null, today);
 assert.equal(p.status, "no_measure");
-assert.match(p.line, /Klaviyo/);
 assert.equal(progress({ ...won(), measure: null, target: null }, null, today).status, "no_measure");
 
 // formatting

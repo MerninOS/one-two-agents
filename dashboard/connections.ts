@@ -7,8 +7,9 @@ import "server-only";
 import { TOOL_LIST } from "@/core/tools/catalog";
 import type { ToolDef, ToolGroup } from "@/core/tools/types";
 import type { IntegrationId } from "./crew";
+import type { McpId } from "@/core/mcp-rules";
 
-export type ConnId = "shopify" | "mercury" | "gmail" | "notion" | "email" | "web" | "agents" | "control_room" | "math";
+export type ConnId = "shopify" | "mercury" | "gmail" | "notion" | "klaviyo" | "email" | "web" | "agents" | "control_room" | "math";
 
 /** One settings check. `tools` names the tools that need it when that isn't simply every tool of the connection. */
 export interface Check { key: IntegrationId; label: string; setup: string; tools?: string[] }
@@ -24,6 +25,8 @@ export interface Connection {
   about: string;
   /** The settings checks behind it (dashboard/data.ts health), each with a label when there is more than one. */
   checks: Check[];
+  /** An MCP server (core/mcp-rules.ts): signed in with Connect on this page, not with a setting. */
+  mcp?: McpId;
 }
 
 export const CONNECTIONS: Connection[] = [
@@ -49,6 +52,11 @@ export const CONNECTIONS: Connection[] = [
     id: "notion", name: "Notion", sub: "Pages and the Briefs database", icon: "file-text", builtIn: false,
     about: "Reads pages you link and writes pages under a page you pick, plus rows in Briefs. Nothing else in the workspace.",
     checks: [{ key: "notion", label: "Workspace", setup: "Needs NOTION_TOKEN and NOTION_BRIEF_PARENT_ID, with the page shared with the integration. Set NOTION_BRIEFS_DB_ID too for brief rows, and NOTION_BUILD_BOARD_DB_ID for a Build Board card when you say yes to a new tool." }],
+  },
+  {
+    id: "klaviyo", name: "Klaviyo", sub: "Email lists, campaigns, flows", icon: "send", builtIn: false, mcp: "klaviyo",
+    about: "Klaviyo’s own MCP server, called by our runner with the server’s read-only switch on. Code may call only the read tools named in code (lists, a list’s size, campaign and flow results); nothing here can change Klaviyo. Counts and rates are added up in code.",
+    checks: [{ key: "klaviyo", label: "Account", setup: "Tap Connect and sign in to Klaviyo as an Owner, Admin or Manager. Klaviyo signs in with its own page, so there is no key to paste." }],
   },
   {
     id: "email", name: "Email to you", sub: "Briefs and alerts", icon: "inbox", builtIn: false,
@@ -81,7 +89,7 @@ export const CONN_BY_ID = Object.fromEntries(CONNECTIONS.map((c) => [c.id, c])) 
 
 /** Which connection each tool group belongs to. */
 const GROUP_CONN: Record<ToolGroup, ConnId> = {
-  shopify: "shopify", mercury: "mercury", gmail: "gmail", notion: "notion", email: "email", web: "web", agents: "agents", supabase: "control_room", calculate: "math",
+  shopify: "shopify", mercury: "mercury", gmail: "gmail", klaviyo: "klaviyo", notion: "notion", email: "email", web: "web", agents: "agents", supabase: "control_room", calculate: "math",
 };
 export const connOf = (t: ToolDef): ConnId => GROUP_CONN[t.group];
 
