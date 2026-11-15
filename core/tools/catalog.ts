@@ -12,7 +12,7 @@ import "server-only";
 // - Inputs are small, checked values (whole numbers in a range, a choice from a fixed list, a row
 //   a tool returned in the same run, or short text with no links). No tool takes a URL, an
 //   address or a recipient from the model.
-import { G_PER_LB, round2 } from "@/domain/coffee";
+import { round2 } from "@/domain/coffee";
 import { db } from "@/core/db";
 import { chicagoDate } from "@/core/time";
 import {
@@ -20,6 +20,9 @@ import {
   type RunStats,
 } from "@/core/org";
 import { snapshot } from "@/agents/cfo";
+import { cover, greenUse, lb } from "@/core/green";
+import { burnRate } from "@/core/money";
+import { goalProgress } from "@/core/goals";
 import { deliverBrief } from "@/agents/chief-of-staff";
 import { mercuryCash, mercuryCategories, mercuryTransactions } from "@/integrations/mercury";
 import { divider, h2, h3, li, notionPage, notionPageText, p as para, quote } from "@/integrations/notion";
@@ -33,9 +36,7 @@ import { domainOf, offer } from "@/agents/wholesale-hunter";
 import { syncBooks } from "@/agents/bookkeeper";
 import { hasGmail } from "@/integrations/gmail";
 import { getInventoryLots } from "@/integrations/shopify/lots";
-import { getBoardOrders, greenLedger } from "@/integrations/shopify/orders";
-import { getRoastLoss } from "@/integrations/shopify/settings";
-import { fetchStockCoffees } from "@/integrations/shopify/stock";
+import { getBoardOrders } from "@/integrations/shopify/orders";
 import type { Param, Pick, ReportInput, ToolDef } from "./types";
 
 const SHOPIFY = ["SHOPIFY_STORE_DOMAIN"], MERCURY = ["MERCURY_API_TOKEN"], NOTION = ["NOTION_TOKEN"], SUPABASE = ["SUPABASE_URL", "SUPABASE_SERVICE_ROLE_KEY"], EMAIL = ["RESEND_API_KEY", "BRIEF_FROM", "BRIEF_TO"], GMAIL = ["GMAIL_CLIENT_ID", "GMAIL_CLIENT_SECRET", "GMAIL_REFRESH_TOKEN"];
@@ -44,25 +45,6 @@ const usd = (n: number) => `${n < 0 ? "-" : ""}$${Math.abs(n).toFixed(2)}`;
 const html = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 const reportTitle = (o: ReportInput) => `${o.agentName}: ${o.outputName} · ${o.date}`;
 const daysParam = (def: number, max: number, what: string): Param => ({ name: "days", type: "int", min: 1, max, default: def, description: what });
-const lb = (g: number) => Math.round((g / G_PER_LB) * 10) / 10;
-
-/** Green used per lot over a window, from orders that had green deducted (the same ledger Avery's brief uses). */
-async function greenUse(days: number) {
-  const [lots, stock, loss] = await Promise.all([getInventoryLots(), fetchStockCoffees(), getRoastLoss()]);
-  const ledger = await greenLedger({ stock, lots, loss }, days);
-  const used = new Map<string, number>();
-  for (const r of ledger) if (r.state === "deducted") for (const l of r.lots) used.set(l.id, (used.get(l.id) ?? 0) + l.g);
-  return { lots, used, neverDeducted: ledger.filter((r) => r.state === "missing").length };
-}
-
-/** Days of cover for each listed lot: grams on hand divided by grams used per day over the window. */
-async function cover(days: number) {
-  const { lots, used } = await greenUse(days);
-  return lots.filter((l) => l.listed).map((l) => {
-    const perDay = (used.get(l.id) ?? 0) / days;
-    return { id: l.id, lot: l.name, onHandLb: lb(l.availG), usedPerWeekLb: lb(perDay * 7), daysOfCover: perDay > 0 ? Math.round(l.availG / perDay) : null, perDayG: perDay, onHandG: l.availG, priceUsdPerLb: l.price };
-  });
-}
 
 const TOOLS_LIST: ToolDef[] = [
   // ---- Shopify (read-only app "One Two Agents (read)")
@@ -141,19 +123,11 @@ const TOOLS_LIST: ToolDef[] = [
     id: "calc_burn_rate", label: "Burn rate and runway", detail: "From Mercury: money out and in per 30 days over a window, net burn, and months of cash left at that rate",
     kind: "calculate", group: "calculate", params: [daysParam(90, 180, "How many days of Mercury history to average over.")], trusted: true, needs: MERCURY, costUsd: 0,
     run: async ({ days }) => {
-      const d = Number(days);
-      const [txns, cash] = await Promise.all([mercuryTransactions(chicagoDate(d), chicagoDate(0)), mercuryCash()]);
-      // money moving between One Two's own accounts is neither spend nor income
-      const real = txns.filter((t) => !/internal|treasury/i.test(t.kind ?? ""));
-      const out = real.filter((t) => t.amount < 0).reduce((s, t) => s - t.amount, 0);
-      const inn = real.filter((t) => t.amount > 0).reduce((s, t) => s + t.amount, 0);
-      const per30 = (x: number) => round2((x / d) * 30);
-      const net = per30(out - inn);
-      const runway = cash != null && net > 0 ? Math.round((cash / net) * 10) / 10 : null;
-      const numbers: Record<string, number> = { spend_per_30d_usd: per30(out), income_per_30d_usd: per30(inn), net_burn_per_30d_usd: net };
-      if (cash != null) numbers.cash_usd = cash;
-      if (runway != null) numbers.runway_months = runway;
-      return { data: { windowDays: d, transactions: real.length, spendPer30dUsd: per30(out), incomePer30dUsd: per30(inn), netBurnPer30dUsd: net, cashUsd: cash, runwayMonths: runway, note: runway == null ? (cash == null ? "Cash isn't set up (MERCURY_ACCOUNT_IDS), so no runway." : "Not burning cash over this window, so no runway limit.") : undefined }, numbers };
+      const b = await burnRate(Number(days));
+      const numbers: Record<string, number> = { spend_per_30d_usd: b.spendPer30dUsd, income_per_30d_usd: b.incomePer30dUsd, net_burn_per_30d_usd: b.netBurnPer30dUsd };
+      if (b.cashUsd != null) numbers.cash_usd = b.cashUsd;
+      if (b.runwayMonths != null) numbers.runway_months = b.runwayMonths;
+      return { data: { ...b, note: b.runwayMonths == null ? (b.cashUsd == null ? "Cash isn't set up (MERCURY_ACCOUNT_IDS), so no runway." : "Not burning cash over this window, so no runway limit.") : undefined }, numbers };
     },
   },
 
@@ -326,6 +300,13 @@ const TOOLS_LIST: ToolDef[] = [
       numbers.failed_runs = sum(ids, (s) => s.failed);
       return { data: { days: Number(days), departments, notInADepartment }, numbers };
     },
+  },
+  // Company mode slice 2 (docs/company-mode.md): the department's goals, counted in code. The
+  // department comes from the chart on every call (the company seat reads every department).
+  {
+    id: "goal_progress", label: "Goal progress", detail: "The goals Zak set for its department (every department for the company seat): each goal, its measure counted in code, the target and date, and whether it's on pace. The department comes from the chart",
+    kind: "read", group: "agents", params: [], trusted: true, needs: SUPABASE, costUsd: 0,
+    run: async (_p, ctx) => goalProgress(ctx.agentId),
   },
   // Slice 4 (docs/org-chart.md): a lead checks its team's drafts before Zak sees them, where the
   // department has "Lead checks drafts first" on. Only drafts the gateway assigned to this agent

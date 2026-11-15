@@ -38,9 +38,9 @@ type OrderNode = {
   lineItems: OrderLines;
 };
 
-async function ordersOn(date: string) {
-  const end = nextDay(date);
-  const query = `created_at:>='${date}T00:00:00${offsetOn(date)}' created_at:<'${end}T00:00:00${offsetOn(end)}'`;
+/** Orders created from one Chicago day up to (not including) another, cancelled ones left out. */
+export async function ordersBetween(start: string, endExclusive: string) {
+  const query = `created_at:>='${start}T00:00:00${offsetOn(start)}' created_at:<'${endExclusive}T00:00:00${offsetOn(endExclusive)}'`;
   const out: OrderNode[] = [];
   let after: string | null = null, pages = 0;
   do {
@@ -51,6 +51,7 @@ async function ordersOn(date: string) {
   } while (after && ++pages < 20);
   return out.filter((o) => !o.cancelledAt);
 }
+const ordersOn = (date: string) => ordersBetween(date, nextDay(date));
 
 export async function snapshot(date = chicagoDate(1), opts: { dryRun?: boolean } = {}) {
   const [orders, stock, lots, loss] = await Promise.all([ordersOn(date), fetchStockCoffees(), getInventoryLots(), getRoastLoss()]);

@@ -1,0 +1,36 @@
+"use server";
+// Goal actions (docs/company-mode.md, slice 2). Each checks the login again. Goals need no Controls:
+// a goal is what Zak wants, never something an agent may do, and nothing here runs, sends or spends.
+import { revalidatePath } from "next/cache";
+import { createGoal, editGoal, setGoalState } from "@/core/goals";
+import type { GoalState } from "@/core/goal-rules";
+import type { ActionResult } from "./actions";
+import { requireSession } from "./data";
+
+const fail = (e: unknown): ActionResult => ({ ok: false, text: e instanceof Error ? e.message : String(e) });
+const done = (text: string, id?: string): ActionResult & { id?: string } => { revalidatePath("/", "layout"); return { ok: true, text, ...(id ? { id } : {}) }; };
+const DEPT = /^[a-z][a-z0-9_]{1,39}$/;
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const STATES: GoalState[] = ["active", "paused", "done", "dropped"];
+
+export interface GoalForm { title: string; measure: string; target: string; dueOn: string }
+
+export async function goalCreate(deptId: string, f: GoalForm): Promise<ActionResult & { id?: string }> {
+  await requireSession();
+  if (!DEPT.test(String(deptId))) return { ok: false, text: "Pick a department." };
+  try { return done("Goal set. Code counts it from now.", await createGoal(deptId, f)); } catch (e) { return fail(e); }
+}
+
+/** `_dept` is unused: it keeps the same shape as goalCreate for the form. */
+export async function goalEdit(id: string, _dept: string, f: GoalForm): Promise<ActionResult> {
+  await requireSession();
+  if (!UUID.test(String(id))) return { ok: false, text: "Unknown goal." };
+  try { await editGoal(id, f); return done("Goal saved."); } catch (e) { return fail(e); }
+}
+
+export async function goalSetState(id: string, state: GoalState): Promise<ActionResult> {
+  await requireSession();
+  if (!UUID.test(String(id)) || !STATES.includes(state)) return { ok: false, text: "Unknown goal." };
+  const words: Record<GoalState, string> = { active: "Goal is back on.", paused: "Goal paused. It stays on the chart, greyed.", done: "Marked done.", dropped: "Goal removed." };
+  try { await setGoalState(id, state); return done(words[state]); } catch (e) { return fail(e); }
+}
