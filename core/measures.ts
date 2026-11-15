@@ -1,6 +1,6 @@
 import "server-only";
 // The goal measures (core/goal-rules.ts MEASURES), counted in code from our own tables, Shopify
-// (read-only) and Mercury (read-only). A model never supplies a number here. Each read gives up
+// (read-only), Mercury (read-only) and Klaviyo (its MCP server, read-only). A model never supplies a number here. Each read gives up
 // after a while and says why, so a slow service shows "Couldn't read" instead of hanging a page.
 import { round2 } from "@/domain/coffee";
 import { db } from "@/core/db";
@@ -9,6 +9,8 @@ import { ordersBetween } from "@/agents/cfo";
 import { cover } from "@/core/green";
 import { burnRate } from "@/core/money";
 import { measureOf, type MeasureKey, type Reading } from "@/core/goal-rules";
+import { mcpStatus } from "@/integrations/mcp";
+import { klaviyoListSize } from "@/integrations/klaviyo";
 
 /** The leads list by stage, in funnel order (wholesale_leads.stage). */
 export const FUNNEL = ["new", "drafted", "contacted", "replied", "tasting", "won"] as const;
@@ -54,8 +56,13 @@ async function readOne(key: MeasureKey, today: string, shared: { month?: ReturnT
       if (b.runwayMonths == null) return { reading: { value: 0, unbounded: true }, detail: null };
       return { reading: { value: b.runwayMonths }, detail: null };
     }
-    case "email_list_size":
-      return { reading: { error: "there's no Klaviyo read yet" }, detail: null };
+    case "email_list_size": {
+      const k = await mcpStatus("klaviyo");
+      if (!k?.connected) return { reading: { error: "Klaviyo isn't connected (Connections › Klaviyo)" }, detail: null };
+      const list = k.settings.emailListId;
+      if (!list) return { reading: { error: "pick the email list on Connections › Klaviyo" }, detail: null };
+      return { reading: { value: (await klaviyoListSize(list)).profiles }, detail: null };
+    }
   }
 }
 

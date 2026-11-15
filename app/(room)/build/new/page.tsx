@@ -22,13 +22,14 @@ export default async function NewAgent({ searchParams }: { searchParams: Promise
   const seats = org ? seatChoices(org, null).filter((x) => x.free) : undefined;
   const seat = org?.seats.find((x) => x.id === (hire ? hire.seatId : sp.seat) && x.holder === "open") ?? null;
   const seatBlocks = await seatToolChoices(org);
+  const floor = await getFloor();
   if (built == null) return <div className="card"><span className="sub">The runner migration (20261113120000_agent_builder_runner.sql) isn’t applied yet.</span></div>;
   return (
     <Flow
       agentId={null}
       saved={null}
       nextVersion={1}
-      menu={builderMenu((await getFloor()).built)}
+      menu={builderMenu(floor.built, floor.health)}
       step={sp.step}
       controls={controlsOn()}
       templates={templates}

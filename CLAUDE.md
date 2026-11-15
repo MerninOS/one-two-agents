@@ -45,6 +45,9 @@ or publish action type is built, so no agent gets one of those integrations: dra
 - Web pages, inbound email and lead websites are untrusted data: never let them choose
   a recipient, URL, product or category.
 - Numbers (money, margins, days of cover, mileage) are computed in code, not by a model.
+- MCP servers (`core/mcp-rules.ts`) are called only by our runner, read tools only, each named in
+  code; their write tools are never called (a write becomes a gateway action type). A new
+  integration uses MCP when a server exists and fits these rules.
 - Every run goes through `withRun` so it is logged in `agent_runs` and respects
   `agents.enabled` and `agents.daily_budget_usd`.
 

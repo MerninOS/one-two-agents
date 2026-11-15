@@ -13,6 +13,7 @@ import { reactionTally, reactionsOf, reactionsOnRun, type Reaction } from "@/cor
 import type { Tally } from "@/core/reaction-rules";
 import { APPROVAL_LABELS, APPROVAL_TOOLS, MAX_CHAINS, MAX_STEPS, METRICS, listFlowVersions, loadFlow, nextFirings, readFlow, type Chain, type Crew } from "@/core/flow";
 import { TOOLS } from "@/core/tools/catalog";
+import { mcpStatus } from "@/integrations/mcp";
 import type { CrewMember, IntegrationId } from "./crew";
 import { avgCostOf, buildCrew, memberOf, type RosterRow, type RosterSpec } from "./roster";
 import type { CrewAgent, CrewCanvasData } from "./components/CrewCanvas";
@@ -98,6 +99,8 @@ export function health(): Record<IntegrationId, boolean> {
     web: !!process.env.ANTHROPIC_API_KEY,
     // planned for the Conversion Optimizer; nothing uses it yet
     github: false,
+    // signed in on Connections, not a setting: getFloor reads mcp_connections
+    klaviyo: false,
   };
 }
 
@@ -109,7 +112,7 @@ export const getFloor = cache(async (): Promise<Floor> => {
   const empty: Floor = { ok: false, now, agents: {}, runs: [], spentToday: {}, health: h, photosWaiting: null, approvalsPending: null, proposalsPending: null, jobsForYou: [], lessonsWaiting: {}, grants: {}, liveVersion: {}, ...buildCrew([]), palette: { ids: [], manualOnly: new Set() } };
   if (!h.supabase) return { ...empty, problem: "SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY are not set, so there is nothing to show yet." };
   const since = new Date(now - 60 * 864e5).toISOString();
-  const [a, r, ph, ap, pp, jobsForYou, lessonsWaiting, defs, flowRow, org] = await Promise.all([
+  const [a, r, ph, ap, pp, jobsForYou, lessonsWaiting, defs, flowRow, org, klaviyo] = await Promise.all([
     // role, icon, hue, manual_only and created_at come with the roster migration; the older shape until then
     db().from("agents").select("id, name, model, schedule, enabled, daily_budget_usd, role, icon, hue, manual_only, created_at")
       .then((x) => (x.error ? db().from("agents").select("id, name, model, schedule, enabled, daily_budget_usd") : x)),
@@ -124,7 +127,9 @@ export const getFloor = cache(async (): Promise<Floor> => {
     db().from("agent_defs").select("agent_id, version, spec").eq("active", true),
     db().from("crew_flow").select("flow").eq("active", true).maybeSingle(),
     loadOrg().catch(() => null),
+    mcpStatus("klaviyo"),
   ]);
+  if (klaviyo?.connected) h.klaviyo = true;
   if (a.error || r.error) return { ...empty, problem: `Supabase: ${(a.error ?? r.error)?.message}` };
   const rows = (a.data ?? []) as (AgentRow & RosterRow)[];
   const agents = Object.fromEntries(rows.map((x) => [x.id, { id: x.id, name: x.name, model: x.model, schedule: x.schedule, enabled: x.enabled, daily_budget_usd: Number(x.daily_budget_usd) } as AgentRow]));

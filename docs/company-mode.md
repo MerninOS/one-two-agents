@@ -123,7 +123,7 @@ reaction). `proposeLesson` stays for a lead's or head's send-back.
 | Orders this month | month | the same orders, counted |
 | Lowest days of green cover | floor | each listed lot: on hand ÷ use per day over 30 days (`core/green.ts`) |
 | Months of runway | floor | Mercury cash ÷ net burn per 30 days over 90 days (`core/money.ts`) |
-| Email list size | (can't count yet) | needs a Klaviyo read, slice 6 |
+| Email list size | total, by a date | profiles on the list picked on Connections › Klaviyo, read over Klaviyo's MCP server (slice 6) |
 
 - **total:** pace counts from where the measure stood when the goal was set (`start_value`, read in
   code on save) to the target by the date. On track when the count is at or above that line,
@@ -356,3 +356,57 @@ skill retires: hiring is a proposal from Avery (or a head), and New agent on Cre
 The skill lives in Zak's Claude account, so he deletes it there.
 
 **Checks.** `npm run check`, `npm run check:chat`, `npm run check:runner`, `npm run build`.
+
+## Slice 6: MCP connections, Klaviyo first
+
+**What it does.** The runner can now call an MCP server itself, through the same gate as every
+other tool. Klaviyo is the first. Zak taps **Connect Klaviyo** on Connections, says yes on
+Klaviyo's own sign-in page, and four read tools become available in the builder: **Email lists**,
+**Email list size**, **Campaign results** and **Flow results**. The **Email list size** goal measure
+turns on: Zak picks the list it counts on the Klaviyo panel.
+
+**Why our runner calls the server, not the model provider.** Calls made from our code pass the gate:
+the agent's saved tools, the run log, the budget and the untrusted label. A provider-side connector
+would call the server where our gate can't see each call, and only for one model.
+
+**The rules.**
+- Read tools only, named one by one in `core/mcp-rules.ts` (`MCP_SERVERS.klaviyo.readTools`:
+  `get_lists`, `get_list`, `get_metrics`, `get_campaign_report`, `get_flow_report`). `callMcpTool`
+  refuses anything else before a request is made. A tool the server adds later does nothing until
+  it is named there in a pull request.
+- The server's own switches are on too: `read-only=true` (no tool that can change the account) and
+  `disable-tools-with-user-generated-content=true`.
+- A server's write tools are never called. A write would become a gateway action type that starts
+  at Draft, like every action.
+- Replies are untrusted data. Each catalog tool turns the reply into rows and adds counts and rates
+  up in code (`reportRows`, `reportTotals`, `listSize`), so the model never supplies a number.
+- Shopify stays on our read-only app.
+
+**Signing in.** Klaviyo's remote server signs in with OAuth only (dynamic client registration), so
+there is no key to paste. Connect follows MCP's auth spec: it finds the sign-in details
+(`/.well-known/oauth-protected-resource`, then the authorization server's metadata), registers the
+Control Room as a public client, and sends Zak to the server's page with PKCE (S256), a random
+state and the `resource` the token is for. The state and verifier wait in a sealed, httpOnly cookie
+for 10 minutes. Back on `/connections/klaviyo/callback`, code checks the state, trades the code for
+tokens and keeps them in `mcp_connections`, encrypted with AES-256-GCM under a key made from the
+service role key (rotating that key just means tapping Connect again). Tokens are refreshed a minute
+before they run out and are never sent to the browser. Disconnect forgets them. Both routes check
+the login themselves as well as through the proxy. Klaviyo needs an Owner, Admin or Manager to sign
+in.
+
+**The client.** `integrations/mcp.ts`: Streamable HTTP, JSON-RPC. Each call is `initialize`,
+`notifications/initialized`, then one `tools/call` (a short session per call suits serverless). A
+reply can be JSON or an event stream (`parseRpc`); a tool result is read from `structuredContent`
+or its JSON text (`toolPayload`).
+
+**Code.** `core/mcp-rules.ts` (pure: the server list, `mayCall`, reply readers, sign-in helpers),
+`integrations/mcp.ts` (client, sign-in, encrypted store), `integrations/klaviyo.ts` (lists, list
+size, campaign and flow results), the four `klaviyo_*` tools in `core/tools/catalog.ts`, the Email
+list size measure in `core/measures.ts`, the Klaviyo connection and panel on Connections
+(`dashboard/connections.ts`, `dashboard/connectionActions.ts`, the two routes under
+`app/(room)/connections/[id]/`), and `supabase/migrations/20261125090000_mcp_connections.sql`.
+
+**Rule from here on.** A new integration uses MCP when a server exists and fits these rules.
+Hand-built tools are for math, reports and gateway actions.
+
+**Checks.** `npm run check`, `npm run check:mcp`, `npm run check:goals`, `npm run build`.

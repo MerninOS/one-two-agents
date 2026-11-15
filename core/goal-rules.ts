@@ -39,7 +39,7 @@ export const MEASURES: readonly MeasureDef[] = [
   { key: "orders_month", label: "Orders this month", how: "orders this month in Shopify (all channels, cancelled orders left out).", unit: "count", shape: "month", noun: "orders", available: true, hint: "sales" },
   { key: "lowest_cover_days", label: "Lowest days of green cover", how: "for each listed green lot, pounds on hand divided by what orders used per day over the last 30 days; the lowest lot counts.", unit: "days", shape: "floor", available: true, hint: "coffee" },
   { key: "runway_months", label: "Months of runway", how: "cash in Mercury divided by the net burn per 30 days over the last 90 days.", unit: "months", shape: "floor", available: true, hint: "finance" },
-  { key: "email_list_size", label: "Email list size", how: "profiles on the email list in Klaviyo.", unit: "count", shape: "total", noun: "subscribers", available: false, needs: "a Klaviyo read (the MCP connection, slice 6)", hint: "marketing" },
+  { key: "email_list_size", label: "Email list size", how: "profiles on the email list picked on Connections › Klaviyo, as Klaviyo counts them.", unit: "count", shape: "total", noun: "subscribers", available: true, hint: "marketing" },
 ];
 export const measureOf = (key: string | null | undefined): MeasureDef | null => MEASURES.find((m) => m.key === key) ?? null;
 

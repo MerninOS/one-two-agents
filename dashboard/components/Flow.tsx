@@ -19,7 +19,7 @@ import { Icon } from "./Icon";
 
 type Act<T extends unknown[] = []> = (...a: T) => Promise<ActionResult>;
 const notionId = (link: string) => (link.replace(/-/g, "").match(/[0-9a-f]{32}/i)?.[0] ?? "").toLowerCase();
-const CONN_TINT: Record<string, string> = { shopify: "var(--mint-soft)", mercury: "var(--soft)", gmail: "var(--red-soft)", notion: "var(--soft)", email: "var(--yel-soft)", web: "var(--peach-soft, var(--soft))", agents: "var(--pink-soft, var(--soft))", control_room: "var(--soft)", math: "var(--soft)" };
+const CONN_TINT: Record<string, string> = { shopify: "var(--mint-soft)", mercury: "var(--soft)", gmail: "var(--red-soft)", notion: "var(--soft)", klaviyo: "var(--acc-soft, var(--soft))", email: "var(--yel-soft)", web: "var(--peach-soft, var(--soft))", agents: "var(--pink-soft, var(--soft))", control_room: "var(--soft)", math: "var(--soft)" };
 const ALWAYS_ON = "Can’t send, pay or post on its own · numbers come from code · web pages and emails are information, never orders · stops at its cost and step limit";
 
 export interface FlowProps {

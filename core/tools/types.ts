@@ -12,7 +12,7 @@
 export type ToolKind = "read" | "calculate" | "report" | "action";
 
 /** Groups on the builder screen, one per integration. */
-export type ToolGroup = "shopify" | "mercury" | "supabase" | "notion" | "calculate" | "agents" | "web" | "gmail" | "email";
+export type ToolGroup = "shopify" | "mercury" | "supabase" | "notion" | "calculate" | "agents" | "web" | "gmail" | "email" | "klaviyo";
 
 /** One input the model may pass. Kept to plain shapes so code can check every value. */
 export type Param =
