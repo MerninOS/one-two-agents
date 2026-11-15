@@ -15,11 +15,12 @@ import { getInventoryLots } from "@/integrations/shopify/lots";
 import { getBoardOrders, greenLedger } from "@/integrations/shopify/orders";
 import { getRoastLoss } from "@/integrations/shopify/settings";
 import { fetchStockCoffees } from "@/integrations/shopify/stock";
-import { agentNames, agentsIn, companySeat, departmentLines, loadOrg, seatOf } from "@/core/org";
+import { agentNames, agentsIn, companySeat, loadOrg, seatOf } from "@/core/org";
+import { goalsNow, listGoals } from "@/core/goals";
+import { STATUS_WORDS } from "@/core/goal-rules";
 import { SECTIONS, briefEmail, deptLine, type BriefDept, type BriefView, type Kpi } from "./email";
 
-/** depts: Avery's line for each department, by name, written from the head's report. */
-interface Judgment { watch: string[]; focus: { action: string; reason: string }; depts?: Record<string, string>; remember?: string[] }
+interface Judgment { watch: string[]; focus: { action: string; reason: string }; remember?: string[] }
 
 const usd = (n: number | null | undefined) => (n == null ? "n/a" : `$${Number(n).toLocaleString("en-US", { maximumFractionDigits: 0 })}`);
 const pct = (n: number | null | undefined) => (n == null ? "n/a" : `${Math.round(Number(n) * 100)}%`);
@@ -30,20 +31,23 @@ const KPI_DAYS = 8, GREEN_DAYS = 30, COVER_WARN_DAYS = 21;
 const NO_DEPT = "Not in a department";
 
 /**
- * The last day's runs per department on the org chart (docs/org-chart.md, slice 3), counted and
- * added up in code, then the agents not in a department. Avery's own runs (the company seat) are
- * left out. Empty when the org chart isn't there.
+ * Each department on the org chart (docs/org-chart.md, slice 3; docs/company-mode.md, slice 4): its
+ * goals' status and the last day's runs, all counted in code, then the agents not in a department.
+ * Avery's own runs (the company seat) are left out. Empty when the org chart isn't there.
  */
-async function departmentRuns(runs: { agent_id: string; status: string; cost_usd: number | string | null }[]): Promise<Omit<BriefDept, "line">[]> {
+async function departmentRuns(runs: { agent_id: string; status: string; cost_usd: number | string | null }[]): Promise<BriefDept[]> {
   const o = await loadOrg().catch(() => null);
   if (!o) return [];
   const top = companySeat(o)?.agentId;
-  const tally = (ids: (id: string) => boolean, name: string) => {
+  const goals = await listGoals(o.departments.map((d) => d.id)).then((g) => (g ? goalsNow(g) : [])).catch(() => []);
+  const goalLines = (deptId: string) => goals.filter((x) => x.goal.department_id === deptId)
+    .map(({ goal, progress }) => `${goal.title}: ${progress.line}, ${STATUS_WORDS[progress.status].toLowerCase()}`);
+  const tally = (ids: (id: string) => boolean, name: string, deptGoals: string[]): BriefDept => {
     const mine = runs.filter((r) => r.agent_id !== top && ids(r.agent_id));
-    return { name, runs: mine.length, failed: mine.filter((r) => r.status === "failed").length, costUsd: mine.reduce((s, r) => s + Math.round(Number(r.cost_usd ?? 0) * 100), 0) / 100 };
+    return { name, goals: deptGoals, runs: mine.length, failed: mine.filter((r) => r.status === "failed").length, costUsd: mine.reduce((s, r) => s + Math.round(Number(r.cost_usd ?? 0) * 100), 0) / 100 };
   };
-  const out = o.departments.map((d) => { const ids = new Set(agentsIn(o, d.id)); return tally((id) => ids.has(id), d.name); });
-  const loose = tally((id) => !seatOf(o, id), NO_DEPT);
+  const out = o.departments.map((d) => { const ids = new Set(agentsIn(o, d.id)); return tally((id) => ids.has(id), d.name, goalLines(d.id)); });
+  const loose = tally((id) => !seatOf(o, id), NO_DEPT, []);
   return loose.runs ? [...out, loose] : out;
 }
 
@@ -105,12 +109,11 @@ export function rulesJudgment(f: Facts): Judgment {
 }
 
 /** Each department's counts (code) with Avery's line for it (the model, from the head's report). */
-const briefDepts = (f: Facts, j: Judgment): BriefDept[] => f.departments.map((d) => ({ ...d, line: j.depts?.[d.name] ?? null }));
 
 /** The Notion page body: the same sections, in the same order, as the email. */
 export function briefBlocks(f: Facts, j: Judgment, sections: readonly string[] = SECTIONS): Block[] {
   const y = f.yesterday, o = f.openOrders;
-  const depts = briefDepts(f, j);
+  const depts = f.departments;
   const waiting = [
     ...(f.approvals?.pending ? [li(`Approvals waiting: ${f.approvals.pending}`)] : []),
     ...(f.newDrafts ? [li(`New wholesale drafts from Rowan: ${f.newDrafts}`)] : []),
@@ -174,7 +177,7 @@ const briefView = (f: Facts, j: Judgment, sections: readonly string[], notionUrl
   openOrders: f.openOrders,
   neverDeducted: f.neverDeducted,
   runs: f.agentRuns,
-  departments: briefDepts(f, j),
+  departments: f.departments,
   approvals: f.approvals,
   newDrafts: f.newDrafts,
   watch: j.watch,
@@ -249,8 +252,7 @@ export function parseJudgment(text: string): Judgment | null {
 export async function deliverBrief(result: string, runId: string | null = null): Promise<string> {
   const f = await facts();
   const parsed = parseJudgment(result);
-  // department lines match only department names on the chart, so a line can't add a section
-  const judgment = { ...(parsed ?? rulesJudgment(f)), depts: departmentLines(result, f.departments.map((d) => d.name)) };
+  const judgment = parsed ?? rulesJudgment(f);
   const sent = await sendBrief(f, judgment, SECTIONS, runId);
   return `${sent}${parsed ? "" : " (no Focus line in the result, so the fixed rules wrote the focus and watch list)"}`;
 }

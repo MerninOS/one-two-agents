@@ -209,9 +209,10 @@ async function main() {
   assert.equal(parseJudgment("No focus here"), null);
   // slice 3 of departments: department lines have no dash, so they never become watch items; counts come from code
   assert.deepEqual(parseJudgment("Focus: Ship it. Now.\n- one\nFinance: Cash is fine.")?.watch, ["one"]);
-  assert.equal(deptLine({ name: "Finance", line: "Cash covers 14 months.", runs: 3, failed: 0, costUsd: 0.123 }), "Finance: Cash covers 14 months. 3 runs, all OK, $0.12, in the last 24 hours.");
-  assert.equal(deptLine({ name: "Sales", line: null, runs: 0, failed: 0, costUsd: 0 }), "Sales: No runs in the last 24 hours.");
-  assert.equal(deptLine({ name: "Ops", line: "", runs: 2, failed: 1, costUsd: 0.5 }), "Ops: 2 runs, 1 failed, $0.50, in the last 24 hours.");
+  // company mode slice 4: a department's line is its goals' status and its runs, all counted in code
+  assert.equal(deptLine({ name: "Finance", goals: ["Runway above 12 months: 14.3 months, at least 12 months, on track."], runs: 3, failed: 0, costUsd: 0.123 }), "Finance: Runway above 12 months: 14.3 months, at least 12 months, on track. 3 runs, all OK, $0.12, in the last 24 hours.");
+  assert.equal(deptLine({ name: "Sales", goals: [], runs: 0, failed: 0, costUsd: 0 }), "Sales: No goal set. No runs in the last 24 hours.");
+  assert.equal(deptLine({ name: "Ops", goals: ["A: 1 of 5 won, behind", "B: 2 days, at least 3 days, behind"], runs: 2, failed: 1, costUsd: 0.5 }), "Ops: A: 1 of 5 won, behind; B: 2 days, at least 3 days, behind. 2 runs, 1 failed, $0.50, in the last 24 hours.");
 
   // slice 7: multiline text keeps line breaks but no links; url and email shapes
   const body = [{ name: "body", type: "text", maxLength: 200, multiline: true, description: "" }] as const;

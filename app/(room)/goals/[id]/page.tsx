@@ -2,7 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { requireSession } from "@/dashboard/data";
 import { goalView } from "@/dashboard/goals";
-import { goalEdit, goalSetState } from "@/dashboard/goalActions";
+import { goalEdit, goalSetState, planJobDone } from "@/dashboard/goalActions";
 import { GOAL_LOOK } from "@/dashboard/components/goals";
 import { GoalForm } from "@/dashboard/components/GoalForm";
 import { ActionButton } from "@/dashboard/components/client";
@@ -10,10 +10,17 @@ import { Pill } from "@/dashboard/components/ui";
 import { getGoal, goalsNow, ownerOf } from "@/core/goals";
 import { agentNames, agentsIn, deptSpent, loadOrg, monthSpendByAgent } from "@/core/org";
 import { FUNNEL } from "@/core/measures";
+import { recentPlans, type Plan } from "@/core/plans";
+import { addDays, shortDay, weekOf } from "@/core/plan-rules";
+import { listProposals, proposalsBySeat } from "@/core/proposals";
+import { listSpecVersions } from "@/core/agent-spec";
+import { modelDef } from "@/integrations/models";
+import { TOOLS } from "@/core/tools/catalog";
+import { chicagoDate } from "@/core/time";
 
-// A goal's page (docs/company-mode.md, slice 2): where it stands, counted in code, its pace, the
-// detail behind the number, what the department spends on AI, and Change / Pause / Done / Remove.
-// The head's plan and review land here with slice 4.
+// A goal's page (docs/company-mode.md, slices 2 and 4): where it stands, counted in code, its pace,
+// the detail behind the number, the head's plan for the week and its latest review, how the head
+// works, what the department spends on AI, and Change / Pause / Done / Remove.
 
 // a measure reads Shopify or Mercury when the page opens
 export const maxDuration = 60;
@@ -29,11 +36,19 @@ export default async function GoalPage({ params }: { params: Promise<{ id: strin
   if (!g || g.state === "dropped" || !org) notFound();
   const owner = ownerOf(org, g.department_id);
   const members = agentsIn(org, g.department_id);
-  const [[now], names, spend] = await Promise.all([
+  const [[now], names, spend, plans, pending, headSpec] = await Promise.all([
     goalsNow([g]),
     agentNames([...members, ...(owner.agentId ? [owner.agentId] : [])]).catch(() => ({} as Record<string, string>)),
     monthSpendByAgent(members).catch(() => ({} as Record<string, number>)),
+    recentPlans(g.department_id, 2).catch(() => null),
+    listProposals(["pending"]).catch(() => null),
+    owner.agentId ? listSpecVersions(owner.agentId).then((v) => v.find((x) => x.active)?.spec ?? null).catch(() => null) : Promise.resolve(null),
   ]);
+  const week = weekOf(chicagoDate(0));
+  const plan = plans?.find((p) => p.week_of === week) ?? null;
+  const reviewed = plans?.find((p) => p.review) ?? null;
+  const bySeat = pending ? proposalsBySeat(org, pending) : {};
+  const headName = owner.agentId ? names[owner.agentId] ?? "The head" : null;
   const v = goalView(now, org, names);
   const dept = org.departments.find((d) => d.id === g.department_id);
   const spent = deptSpent(org, g.department_id, spend);
@@ -69,6 +84,19 @@ export default async function GoalPage({ params }: { params: Promise<{ id: strin
         <span className="muted" style={{ fontSize: 11.5 }}>Counted when this page opened. {owner.agentId ? `${names[owner.agentId] ?? "The head"} reads the same numbers with the Goal progress tool.` : "A head reads the same numbers with the Goal progress tool."}</span>
       </div>
 
+      <div className="home-grid" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 320px), 1fr))", alignItems: "start" }}>
+        <PlanCard plan={plan} plans={plans} week={week} headName={headName} bySeat={bySeat} />
+        <div className="stack" style={{ gap: 16 }}>
+          <div className="card" style={{ gap: 10 }}>
+            <span className="card-t">{headName ? `${headName}’s review` : "The head’s review"}{reviewed && reviewed.week_of !== week ? ` of the week of ${shortDay(reviewed.week_of)}` : ""}</span>
+            {reviewed?.review
+              ? <><span style={{ fontSize: 14, lineHeight: 1.55, whiteSpace: "pre-wrap" }}>{reviewed.review}</span>{reviewed.review_run_id && <Link href={`/runs/${reviewed.review_run_id}#react`} className="sub">See the run, and say Good or Not this ›</Link>}</>
+              : <span className="sub">No review yet. After its team runs, the head reviews how they did against the plan.</span>}
+          </div>
+          {headSpec && <HowHeadWorks name={headName ?? "The head"} spec={headSpec} />}
+        </div>
+      </div>
+
       <div className="home-grid" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 320px), 1fr))" }}>
         <div className="card" style={{ gap: 12 }}>
           <span className="card-t">Change the goal</span>
@@ -89,5 +117,58 @@ export default async function GoalPage({ params }: { params: Promise<{ id: strin
         </div>
       </div>
     </>
+  );
+}
+
+type Spec = NonNullable<Awaited<ReturnType<typeof listSpecVersions>>[number]["spec"]>;
+
+/** The head's plan for this week: its words and lines (a teammate's focus, a seat nobody holds yet, a job for Zak). */
+function PlanCard({ plan, plans, week, headName, bySeat }: { plan: Plan | null; plans: Plan[] | null; week: string; headName: string | null; bySeat: Record<string, { id: string; text: string }[]> }) {
+  if (plans == null) return <div className="card"><span className="sub">The plans table isn’t in Supabase yet: apply the migration 20261123090000_plans.sql.</span></div>;
+  const who = headName ?? "The head";
+  if (!plan) return (
+    <div className="card" style={{ gap: 8 }}>
+      <span className="card-t">This week’s plan</span>
+      <span className="sub">{headName ? `${who} hasn’t planned the week of ${shortDay(week)} yet. A head plans on its first run of the week (with This week and Plan and review), and reviews on the runs after.` : "Nobody holds the head seat, so nobody plans this department’s week."}</span>
+    </div>
+  );
+  return (
+    <div className="card" style={{ gap: 12 }}>
+      <div className="stack" style={{ gap: 2 }}>
+        <span className="card-t">{who}’s plan, week of {shortDay(plan.week_of)}</span>
+        <span className="muted" style={{ fontSize: 12 }}>Written {day(plan.updated_at)}{plan.run_id ? <> · <Link href={`/runs/${plan.run_id}#react`}>see the run</Link></> : null} · focus notes last until {shortDay(addDays(plan.updated_at.slice(0, 10), 7))}</span>
+      </div>
+      {plan.summary && <span style={{ fontSize: 14, lineHeight: 1.55, whiteSpace: "pre-wrap" }}>{plan.summary}</span>}
+      {plan.items.map((it) => (
+        <div key={it.n} className="soft-box" style={{ flexDirection: "column", alignItems: "stretch", gap: 6, ...(it.kind === "seat" ? { border: "1.5px dashed var(--mut2)", background: "transparent" } : {}) }}>
+          <div className="row wrap" style={{ gap: 8 }}>
+            <b style={{ fontSize: 14.5, fontWeight: 600, flex: 1, minWidth: 0 }}>{it.n}. {it.title}</b>
+            {it.kind === "zak" && <ActionButton className="btn outline xs" action={planJobDone.bind(null, plan.id, it.n, !it.doneAt)}>{it.doneAt ? "Done · undo" : "Mark done"}</ActionButton>}
+            {it.kind === "seat" && it.seatId && bySeat[it.seatId]?.[0] && <Link className="btn outline xs" href={`/proposals/${bySeat[it.seatId][0].id}`}>Hire proposal waiting</Link>}
+          </div>
+          <span className="sub">{it.kind === "agent" ? <>Focus for <b>{it.who}</b> for 7 days · a note, never authority</> : it.kind === "zak" ? <>A job for <b>you</b> · {who} only suggests</> : <>Nobody holds the <b>{it.who}</b> seat yet</>}</span>
+          <span style={{ fontSize: 13.5, lineHeight: 1.5 }} className="ink2">“{it.words}”</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/** How the head works, from its live version: brain, cap, what it reads and hands Zak. */
+function HowHeadWorks({ name, spec }: { name: string; spec: Spec }) {
+  const tools = spec.tools.map((t) => TOOLS[t]).filter(Boolean);
+  const reads = tools.filter((t) => t.kind === "read" || t.kind === "calculate").map((t) => t.label);
+  const hands = tools.filter((t) => t.kind === "report").map((t) => t.label);
+  const acts = tools.some((t) => t.kind === "action");
+  return (
+    <div className="card" style={{ gap: 8, background: "var(--soft)" }}>
+      <span className="card-t">How {name} works</span>
+      <ul style={{ margin: 0, paddingLeft: 18, fontSize: 13, lineHeight: 1.6 }} className="ink2">
+        <li>{modelDef(spec.model)?.label ?? spec.model}, {spec.effort} effort, {usd(spec.limits.maxCostUsd)} cap a run</li>
+        {reads.length > 0 && <li>Reads: {reads.join(", ")}</li>}
+        {hands.length > 0 && <li>Hands you: {hands.join(", ")}</li>}
+        <li>{acts ? "Has an action tool, so its drafts wait for your approval" : "Can’t send, pay or post"}</li>
+      </ul>
+    </div>
   );
 }

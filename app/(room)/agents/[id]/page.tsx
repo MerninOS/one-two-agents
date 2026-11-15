@@ -325,13 +325,13 @@ function Journal({ a, f, mem, reactions }: { a: CrewMember; f: Floor; mem: Await
   );
 }
 
-const GROUP_COLOR: Record<string, string> = { crew: "var(--mut2)", department: "var(--ink2)", standing_order: "var(--acc)", pages: "var(--acc-soft)", lesson: "var(--yel)", note: "var(--pink)", working: "var(--peach)" };
-const GROUP_NAME: Record<string, string> = { crew: "Crew", department: "Department rules", standing_order: "Standing orders", lesson: "Lessons", note: "Your notes", working: "Working memory", pages: "Notion pages" };
+const GROUP_COLOR: Record<string, string> = { crew: "var(--mut2)", department: "var(--ink2)", standing_order: "var(--acc)", pages: "var(--acc-soft)", lesson: "var(--yel)", note: "var(--pink)", focus: "var(--acc)", working: "var(--peach)" };
+const GROUP_NAME: Record<string, string> = { crew: "Crew", department: "Department rules", standing_order: "Standing orders", lesson: "Lessons", note: "Your notes", focus: "Focus from its head", working: "Working memory", pages: "Notion pages" };
 
 function keepWords(r: MemoryRow) {
   if (r.grp === "working") return `Left by the agent · ${when(r.created_at)}`;
-  const by = r.source === "approval" ? "From an approval" : r.source === "agent" ? "Agent" : r.source_tag?.startsWith("run:") ? "Your reaction to a run" : r.source_tag?.startsWith("approval:") ? "Your reason for a Reject" : "You";
-  const life = r.keep === "next_run" ? "forgets after the next run" : r.keep === "days_30" && r.expires_at ? `forgets ${md(r.expires_at)}` : "kept until you forget it";
+  const by = r.source === "approval" ? "From an approval" : r.grp === "focus" ? "Its head's plan" : r.source === "agent" ? "Agent" : r.source_tag?.startsWith("run:") ? "Your reaction to a run" : r.source_tag?.startsWith("approval:") ? "Your reason for a Reject" : "You";
+  const life = r.keep === "next_run" ? "forgets after the next run" : (r.keep === "days_30" || r.keep === "days_7") && r.expires_at ? `forgets ${md(r.expires_at)}` : "kept until you forget it";
   return `${by} · ${when(r.created_at)} · ${life}`;
 }
 const toLine = (r: MemoryRow, pages: PageLoad[] = []): LineView => {
@@ -378,8 +378,8 @@ function Memory({ a, f, domains, mem }: { a: CrewMember; f: Floor; domains?: str
         {!mine("lesson").length && !proposed.length && <span className="muted" style={{ fontSize: 13 }}>No lessons yet. When a lead or head sends back one of its drafts, the reason lands here as a proposed lesson.</span>}
       </>
     ) },
-    { n: 4, title: "Your notes", color: "var(--pink)", meta: "Things you told the agent directly", body: (
-      <>{lines("note")}{!mine("note").length && <span className="muted" style={{ fontSize: 13 }}>Nothing yet. Not this with “Next run” or “30 days” lands here.</span>}</>
+    { n: 4, title: "Notes and focus", color: "var(--pink)", meta: "Things you told the agent directly, and this week’s focus from its head’s plan (gone after 7 days)", body: (
+      <>{lines("focus")}{lines("note")}{!mine("note").length && !mine("focus").length && <span className="muted" style={{ fontSize: 13 }}>Nothing yet. Not this with “Next run” or “30 days” lands here, and so does its head’s weekly focus.</span>}</>
     ) },
     { n: 5, title: "Working memory", color: "var(--peach)", meta: "Where it left off, rewritten at the end of each run. At most 5 short lines, no addresses or links.", body: (
       <>{lines("working")}{!mine("working").length && <span className="muted" style={{ fontSize: 13 }}>{`${a.name} doesn’t leave itself working memory. Anything it should keep, tell it with Not this on a run.`}</span>}</>

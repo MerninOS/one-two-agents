@@ -24,6 +24,8 @@ import { cover, greenUse, lb } from "@/core/green";
 import { burnRate } from "@/core/money";
 import { goalProgress } from "@/core/goals";
 import { planProposal, proposalTitle, toolInfoOf } from "@/core/proposal-rules";
+import { MAX_PLAN_LINES, checkLine } from "@/core/plan-rules";
+import { saveReview, savePlan, weekView } from "@/core/plans";
 import { deliverBrief } from "@/agents/chief-of-staff";
 import { mercuryCash, mercuryCategories, mercuryTransactions } from "@/integrations/mercury";
 import { divider, h2, h3, li, notionPage, notionPageText, p as para, quote } from "@/integrations/notion";
@@ -308,6 +310,33 @@ const TOOLS_LIST: ToolDef[] = [
     id: "goal_progress", label: "Goal progress", detail: "The goals Zak set for its department (every department for the company seat): each goal, its measure counted in code, the target and date, and whether it's on pace. The department comes from the chart",
     kind: "read", group: "agents", params: [], trusted: true, needs: SUPABASE, costUsd: 0,
     run: async (_p, ctx) => goalProgress(ctx.agentId),
+  },
+  // Company mode slice 4 (docs/company-mode.md): a head plans its department's week and reviews
+  // its team. This week says whether this run plans or reviews; Plan and review saves it after a
+  // finished run. A teammate's line becomes a 7-day focus note, never authority.
+  {
+    id: "week_plan", label: "This week", detail: "Its department's plan for this week (if any), its team and open seats, and whether this run plans the week or reviews it. The department comes from the chart",
+    kind: "read", group: "agents", params: [], trusted: true, needs: SUPABASE, costUsd: 0, seat: "head",
+    run: async (_p, ctx) => weekView(ctx.agentId),
+  },
+  {
+    id: "plan_week", label: "Plan and review", detail: "Saves the week's plan after a run that finishes: its result is the plan, and each line it hands in names a teammate (a focus note for 7 days), an open seat, or Zak (a job for him). A run that hands in no lines while this week's plan exists saves its result as the review. It can't send, assign actions or change any agent",
+    kind: "report", group: "agents", trusted: false, needs: SUPABASE, costUsd: 0, seat: "head",
+    params: [
+      { name: "title", type: "text", maxLength: 120, description: "The job, in a few words: Find cafés that fit, not more cafés." },
+      { name: "who", type: "text", maxLength: 60, description: "A teammate under you by name, an open seat in your department by name, or Zak." },
+      { name: "words", type: "text", maxLength: 280, description: "For a teammate: its focus for the week, in a sentence or two. For Zak: what you suggest he does and why. No links or addresses." },
+    ],
+    collect: (input, held) => {
+      if (held.length >= MAX_PLAN_LINES) return { problem: `at most ${MAX_PLAN_LINES} lines in a plan` };
+      const c = checkLine(input);
+      if ("problem" in c) return c;
+      if (held.some((r) => String(r.title).toLowerCase() === c.line.title.toLowerCase())) return { problem: `${c.line.title} is already in this plan` };
+      return { row: c.line };
+    },
+    deliver: async (o, ctx) => o.rows.length
+      ? savePlan(ctx.agentId, ctx.runId ?? null, o.summary, o.rows.map((r) => ({ title: String(r.title), who: String(r.who), words: String(r.words) })))
+      : saveReview(ctx.agentId, ctx.runId ?? null, o.summary),
   },
   // Company mode slice 3 (docs/company-mode.md): a head hands Zak proposals at the end of a run.
   // Checked here like any report row, saved only after a run that finishes, checked again against

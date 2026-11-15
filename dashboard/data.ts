@@ -6,6 +6,7 @@ import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { db } from "@/core/db";
 import { env } from "@/core/env";
+import { openJobsThisWeek } from "@/core/plans";
 import { DEFAULT_BUDGET, loadMemory, memoryView, proposedLessons, readPages, type MemoryEvent, type MemoryLoad, type MemoryRow, type PageLoad } from "@/core/memory";
 import { agentDepartment, agentNames, loadOrg } from "@/core/org";
 import { reactionTally, reactionsOf, reactionsOnRun, type Reaction } from "@/core/reactions";
@@ -60,6 +61,8 @@ export interface Floor {
   approvalsPending: number | null;
   /** Proposals from heads waiting on Zak (company mode slice 3); null when the proposals table isn't there yet. */
   proposalsPending: number | null;
+  /** Person's jobs from this week's head plans that Zak hasn't marked done (slice 4). */
+  jobsForYou: { planId: string; head: string | null; title: string; href: string }[];
   /** Proposed lessons waiting for Zak's Keep, per agent; empty until the memory tables exist. */
   lessonsWaiting: Record<string, number>;
   /** Tool ids in each agent's active saved setup (agent_defs), by agent id; empty before the runner migration. */
@@ -103,10 +106,10 @@ export const getFloor = cache(async (): Promise<Floor> => {
   await requireSession();
   const h = health();
   const now = Date.now();
-  const empty: Floor = { ok: false, now, agents: {}, runs: [], spentToday: {}, health: h, photosWaiting: null, approvalsPending: null, proposalsPending: null, lessonsWaiting: {}, grants: {}, liveVersion: {}, ...buildCrew([]), palette: { ids: [], manualOnly: new Set() } };
+  const empty: Floor = { ok: false, now, agents: {}, runs: [], spentToday: {}, health: h, photosWaiting: null, approvalsPending: null, proposalsPending: null, jobsForYou: [], lessonsWaiting: {}, grants: {}, liveVersion: {}, ...buildCrew([]), palette: { ids: [], manualOnly: new Set() } };
   if (!h.supabase) return { ...empty, problem: "SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY are not set, so there is nothing to show yet." };
   const since = new Date(now - 60 * 864e5).toISOString();
-  const [a, r, ph, ap, pp, lessonsWaiting, defs, flowRow, org] = await Promise.all([
+  const [a, r, ph, ap, pp, jobsForYou, lessonsWaiting, defs, flowRow, org] = await Promise.all([
     // role, icon, hue, manual_only and created_at come with the roster migration; the older shape until then
     db().from("agents").select("id, name, model, schedule, enabled, daily_budget_usd, role, icon, hue, manual_only, created_at")
       .then((x) => (x.error ? db().from("agents").select("id, name, model, schedule, enabled, daily_budget_usd") : x)),
@@ -116,6 +119,7 @@ export const getFloor = cache(async (): Promise<Floor> => {
     db().from("approvals").select("id", { count: "exact", head: true }).eq("status", "pending").or("review_status.is.null,review_status.neq.waiting")
       .then((x) => (x.error ? db().from("approvals").select("id", { count: "exact", head: true }).eq("status", "pending") : x)),
     db().from("proposals").select("id", { count: "exact", head: true }).eq("state", "pending"),
+    openJobsThisWeek().catch(() => []),
     proposedLessons(),
     db().from("agent_defs").select("agent_id, version, spec").eq("active", true),
     db().from("crew_flow").select("flow").eq("active", true).maybeSingle(),
@@ -145,7 +149,7 @@ export const getFloor = cache(async (): Promise<Floor> => {
   const tools = Object.fromEntries(Object.values(TOOLS).map((t) => [t.id, { label: t.label, kind: t.kind }]));
   const seatTitle = (id: string) => org?.seats.find((x) => x.holder === "agent" && x.agentId === id)?.title ?? null;
   const roster = buildCrew(live.map((x) => memberOf(x, specs[x.id], { tools, avgCost: avgCostOf(runs, x.id), seatTitle: seatTitle(x.id), chains })));
-  return { ok: true, now, agents, runs, spentToday, health: h, photosWaiting: ph.error ? null : ph.count ?? 0, approvalsPending: ap.error ? null : ap.count ?? 0, proposalsPending: pp.error ? null : pp.count ?? 0, lessonsWaiting, grants, liveVersion, ...roster, palette };
+  return { ok: true, now, agents, runs, spentToday, health: h, photosWaiting: ph.error ? null : ph.count ?? 0, approvalsPending: ap.error ? null : ap.count ?? 0, proposalsPending: pp.error ? null : pp.count ?? 0, jobsForYou, lessonsWaiting, grants, liveVersion, ...roster, palette };
 });
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;

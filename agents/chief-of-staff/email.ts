@@ -5,7 +5,8 @@
 export interface Kpi { date: string; revenue: number | string; orders: number; aov: number | string | null; repeat_rate: number | string | null; green_margin: number | string | null; cash_usd: number | string | null }
 export interface BriefRun { id: string; agent_id: string; status: string; summary: string | null; error: string | null }
 /** One department on the org chart (docs/org-chart.md, slice 3): Avery's line from the head's report, and run counts worked out in code. */
-export interface BriefDept { name: string; line: string | null; runs: number; failed: number; costUsd: number }
+/** goals: each goal's status, counted in code ("Land 5 accounts: 1 of 5 won, behind"). */
+export interface BriefDept { name: string; goals: string[]; runs: number; failed: number; costUsd: number }
 export interface BriefView {
   /** Chicago date the brief is for, "2026-11-12" */
   today: string;
@@ -96,11 +97,11 @@ function waiting(v: BriefView): Item[] {
   return out;
 }
 
-/** "Finance: Cash covers 14 months. 3 runs, all OK, $0.12, in the last 24 hours." The counts are code's; the words are Avery's, from the head's report. */
+/** "Finance: Runway above 12 months: 14.3 months, at least 12 months, on track. 3 runs, all OK, $0.12, in the last 24 hours." Every part is code's: goal status and run counts. */
 export function deptLine(d: BriefDept) {
   const runs = !d.runs ? "No runs" : `${plural(d.runs, "run")}, ${d.failed ? `${d.failed} failed` : "all OK"}, $${d.costUsd.toFixed(2)},`;
-  const said = d.line ? oneLine(d.line).replace(/[.\s]*$/, ". ") : "";
-  return `${d.name}: ${said}${runs} in the last 24 hours.`;
+  const goals = d.goals.length ? `${d.goals.map((g) => oneLine(g).replace(/[.\s]*$/, "")).join("; ")}. ` : "No goal set. ";
+  return `${d.name}: ${goals}${runs} in the last 24 hours.`;
 }
 const NO_DEPTS = "No departments on the org chart yet.";
 
@@ -169,7 +170,7 @@ export function briefEmail(v: BriefView): { subject: string; html: string; text:
     `<p style="margin:0;font:13px/18px ${FONT};color:${C.mut}">Morning brief &middot; ${esc(longDay(v.today))}</p>` +
     order.map((id) => html[id]()).join("") +
     // footer
-    `<p style="margin:32px 0 0;padding-top:16px;border-top:1px solid ${C.line};font:12px/18px ${FONT};color:${C.mut}">Sent by Avery, your Chief of Staff agent, to this one fixed address. Numbers are computed in code; the focus, watch list and department lines are written by the model from those numbers and the heads' reports.` +
+    `<p style="margin:32px 0 0;padding-top:16px;border-top:1px solid ${C.line};font:12px/18px ${FONT};color:${C.mut}">Sent by Avery, your Chief of Staff agent, to this one fixed address. Numbers are computed in code; goal status is counted in code too; the focus and watch list are written by the model from those numbers.` +
     (v.notionUrl ? ` <a href="${esc(v.notionUrl)}" style="color:${C.mut}">Notion copy</a>.` : "") +
     `</p></td></tr></table></td></tr></table></body></html>`;
 

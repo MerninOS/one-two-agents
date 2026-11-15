@@ -31,6 +31,10 @@ export function needs(f: Floor, now = Date.now(), seen: Seen = {}): Need[] {
   }
   if (f.approvalsPending) out.push({ pri: "High", title: `${f.approvalsPending} Mercury change${f.approvalsPending === 1 ? "" : "s"} waiting for your OK`, sub: "Quinn’s matched receipts and category suggestions. Nothing goes to Mercury until you approve.", href: "/approvals", agentId: "bookkeeper" });
   if (f.proposalsPending) out.push({ pri: "Medium", title: `${f.proposalsPending} proposal${f.proposalsPending === 1 ? "" : "s"} from your heads`, sub: "Hires, tools and retirements they’d like. Nothing happens until you say yes.", href: "/proposals" });
+  for (const j of f.jobsForYou) {
+    const head = j.head ? f.byId[j.head]?.name ?? j.head : "A head";
+    out.push({ pri: "Low", title: j.title, sub: `A job for you in ${head}’s plan this week. Mark it done on the goal page.`, href: j.href, ...(j.head ? { agentId: j.head } : {}) });
+  }
   for (const [agentId, n] of Object.entries(f.lessonsWaiting)) {
     const a = f.byId[agentId];
     if (a && n) out.push({ pri: "Low", title: `Review ${n} lesson${n === 1 ? "" : "s"} for ${a.name}`, sub: "Proposed from your rejections. Keep, edit or discard each one.", href: `/agents/${agentId}?tab=memory`, agentId });

@@ -221,3 +221,71 @@ Proposals page says so and the tool refuses to save.
 stays the builder: it is already the blank form, and Zak's own tap needs no proposal to approve.
 
 **Checks.** `npm run check`, `npm run check:proposals`, `npm run check:org`, `npm run build`.
+
+## Slice 4: Heads plan, review and set focus
+
+**What Zak sees.**
+
+- **A goal's page** now has the head's week under the number:
+  - **"Rico's plan, week of Nov 16"**: when it was written (and the run, to react to), the head's
+    words, and its lines. A line is a teammate's **focus for 7 days** ("a note, never authority"),
+    a seat **nobody holds yet** (with **Hire proposal waiting** when the head proposed one), or a
+    **job for you** ("Rico only suggests") with **Mark done** / undo.
+  - **"Rico's review"**: the head's latest words on how the team did, with a link to the run for
+    Good / Not this.
+  - **"How Rico works"**: model, effort and cap a run, what it reads and hands you, and "Can't send,
+    pay or post", all from its live version.
+- **Needs you** lists each job for you from this week's plans that isn't done, linking to the goal.
+- **An agent's Memory tab**: "Notes and focus" shows its head's focus ("Focus from Rico, until Nov
+  23: …", gone after 7 days) above your notes.
+- **Avery's brief**: each Departments line is the department's goals with their status, counted in
+  code ("Sales: Land 5 wholesale accounts: 1 of 5 won, behind. 3 runs, all OK, $0.12, in the last
+  24 hours."), instead of a sentence Avery wrote from the head's report.
+
+**How a head plans.** Two new tools, heads only (`seat: "head"`; the company seat is refused, it
+plans no department):
+
+- **This week** (`week_plan`, read): this week's plan for its department if any, its team (live
+  agents under its seat), its open seats, and whether this run **plans** (no plan this week yet)
+  or **reviews** (the plan exists).
+- **Plan and review** (`plan_week`, report): the model hands one line per job (title, who, words),
+  at most 8, each checked in code (no links, addresses or phone numbers). Saved after a run that
+  finishes: with lines, the run's result is the plan and each line is matched to the chart (a
+  teammate under the head, an open seat in its department, or Zak; anyone else is left out and
+  the run summary says why). A teammate's line becomes a `focus` memory note for 7 days, replacing
+  its earlier focus. Planning again the same week replaces the plan. With no lines and a plan this
+  week, the result is saved as the review; with no plan yet, as the plan's words.
+
+Weeks are Chicago weeks starting Monday. Scheduling stays as it is: heads are off duty until
+launch, and the first run of a week plans whenever it happens. When heads go on duty, give each a
+Monday morning schedule and chain it after its team to get the review.
+
+**Heads to Sonnet (decision 5).** After the migration, each head (Rico, Marlow, Sloane, Morgan) gets
+a new **draft** version: Sonnet, medium effort, $0.75 cap a run, with Goal progress, This week,
+Plan and review and Propose to Zak added and a paragraph in its job on planning and reviewing. Avery
+gets a draft without the "one line per department" paragraph. Nothing changes until Zak taps Try
+it and Go live on each.
+
+**What it never does.** A plan grants nothing. A focus is a memory note: it never overrides a rule,
+adds a recipient, raises a cap or grants access, and it can't hold a link, an address or a phone
+number. A head can't give a focus to anyone outside its team, and a job for Zak is a suggestion he
+marks done. Heads still have no action tools. Nothing here runs, sends or spends.
+
+**Data.** Migration `20261123090000_plans.sql`: the `plans` table (department, head, week, words,
+lines as `items`, review, the runs that wrote them; one per department per week) and two values on
+`agent_memory`: group `focus` and keep `days_7`. Until it's applied the goal page says so, and Plan
+and review refuses to save.
+
+**Code.** `core/plan-rules.ts` (pure: weeks, `checkLine`, `resolveWho`, `planItems`, `focusText`),
+`core/plans.ts` (`savePlan`, `saveReview`, `setJobDone`, `weekView`, `openJobsThisWeek`),
+`setFocus` in `core/memory.ts`, `core/pointer.ts` (the no-address rule, shared with working
+memory), the two tools in `core/tools/catalog.ts`, the goal page, `planJobDone`, Needs you, and
+Avery's `departmentRuns` / `deptLine`.
+
+**What it replaces.** Avery's free-written department sentence and `departmentLines`, which matched
+it to the chart (deleted with their tests); her line is goal status from code. There was no
+hand-written focus in department rules to remove (none in the data on Nov 15); a head's focus now
+has its own place.
+
+**Checks.** `npm run check`, `npm run check:plans`, `npm run check:runner`, `npm run check:org`,
+`npm run build`.
