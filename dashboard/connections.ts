@@ -48,7 +48,7 @@ export const CONNECTIONS: Connection[] = [
   {
     id: "notion", name: "Notion", sub: "Pages and the Briefs database", icon: "file-text", builtIn: false,
     about: "Reads pages you link and writes pages under a page you pick, plus rows in Briefs. Nothing else in the workspace.",
-    checks: [{ key: "notion", label: "Workspace", setup: "Needs NOTION_TOKEN and NOTION_BRIEF_PARENT_ID, with the page shared with the integration. Set NOTION_BRIEFS_DB_ID too for brief rows." }],
+    checks: [{ key: "notion", label: "Workspace", setup: "Needs NOTION_TOKEN and NOTION_BRIEF_PARENT_ID, with the page shared with the integration. Set NOTION_BRIEFS_DB_ID too for brief rows, and NOTION_BUILD_BOARD_DB_ID for a Build Board card when you say yes to a new tool." }],
   },
   {
     id: "email", name: "Email to you", sub: "Briefs and alerts", icon: "inbox", builtIn: false,

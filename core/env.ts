@@ -37,6 +37,8 @@ export const env = {
   notionBooksParent: v("NOTION_BOOKS_PARENT_ID") ?? v("NOTION_BRIEF_PARENT_ID"),
   // The "Briefs" database (one row per morning brief). Blank = the brief is a page under the parent, as before.
   notionBriefsDb: v("NOTION_BRIEFS_DB_ID"),
+  // The "One Two Agents: Build Board" database. A yes on a new-tool proposal adds a card in Up next. Blank = no card.
+  notionBuildBoardDb: v("NOTION_BUILD_BOARD_DB_ID"),
 
   // Gmail for Wholesale Hunter drafts (gmail.compose scope only). Blank = drafts appear in Notion only.
   gmailClientId: v("GMAIL_CLIENT_ID"),

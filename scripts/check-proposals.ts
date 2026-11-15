@@ -3,7 +3,7 @@
 // Run: npm run check:proposals
 import assert from "node:assert/strict";
 
-import { BRAINS, HIRE_STEPS, MAX_HIRE_TOOLS, hireSpec, planProposal, proposalTitle, toolIds, toolInfoOf, type ProposalPlan } from "../core/proposal-rules";
+import { BOARD_CARD, BRAINS, boardCard, notionPageId, HIRE_STEPS, MAX_HIRE_TOOLS, hireSpec, planProposal, proposalTitle, toolIds, toolInfoOf, type ProposalPlan } from "../core/proposal-rules";
 import { readSpec } from "../core/agent-spec";
 import { TOOLS } from "../core/tools/catalog";
 import { checkInput } from "../core/tools/types";
@@ -74,5 +74,19 @@ assert.match(("problem" in t.collect!(input, ["row" in one ? one.row : {}]) ? (t
 assert.match((t.collect!(input, [{}, {}, {}]) as { problem: string }).problem, /at most 3/);
 assert.ok("problem" in t.collect!({ ...input, tools: "gmail_draft_lead" }, []));
 assert.ok("problem" in checkInput(t.params, { ...hire, why: "See https://evil.example for why" }), "no links");
+
+// a yes on a new tool makes a Build Board card in the board's shape, in Up next for Claude
+const card = boardCard({ what: "Klaviyo  flow revenue by week", why: "Sloane's goal needs it.", asker: "Sloane", dept: "Marketing", date: "November 15, 2026", link: "https://x.test/proposals/p1" });
+assert.equal(card.name, "New tool: Klaviyo flow revenue by week");
+assert.deepEqual(card.sections.map((s) => s.heading), ["Why", "Where things stand today", "What to build", "Rules that apply", "Needs from Zak", "Done when", "Before you start"]);
+assert.match(card.sections[0].lines[0], /^Sloane asked for it for Marketing: Sloane's goal needs it\.$/);
+assert.ok(card.sections[1].lines.includes("Proposal: https://x.test/proposals/p1"));
+assert.ok(!boardCard({ what: "x", why: "y", asker: "Zak", dept: null, date: "d", link: null }).sections[1].lines.some((l) => l.startsWith("Proposal:")));
+assert.ok(boardCard({ what: "a".repeat(200), why: "y", asker: "Zak", dept: null, date: "d", link: null }).name.length <= 100);
+assert.equal(BOARD_CARD.status, "Up next");
+assert.equal(notionPageId("https://www.notion.so/New-tool-Klaviyo-419de33089c1816a8003c34251e73d7a"), "419de33089c1816a8003c34251e73d7a");
+assert.equal(notionPageId("https://www.notion.so/419DE33089C1816A8003C34251E73D7A?pvs=4"), "419de33089c1816a8003c34251e73d7a");
+assert.equal(notionPageId("b_reese"), null);
+assert.equal(notionPageId(null), null);
 
 console.log("proposals: ok");
