@@ -1,201 +1,99 @@
 import { cookies } from "next/headers";
-import { SEEN_COOKIE, parseSeen } from "@/dashboard/seen";
 import Link from "next/link";
-import { chicagoDate } from "@/core/time";
-import { getFloor, getMemoryMeters, leadsForRun } from "@/dashboard/data";
+import { SEEN_COOKIE, parseSeen } from "@/dashboard/seen";
+import { getFloor } from "@/dashboard/data";
 import { goalsByDept } from "@/dashboard/goals";
 import { GOALS_MISSING } from "@/core/goals";
 import { GoalTile } from "@/dashboard/components/goals";
-import { dow, dur, hm, longDay, m2, m4, num, shortHm, when } from "@/dashboard/format";
+import { hm, longDay } from "@/dashboard/format";
 import { PRI_COLOR, needs } from "@/dashboard/needs";
-import { deptOf, groupByDepartment, loadOrg } from "@/core/org";
-import { firingOn, schedWords, weekFrom } from "@/dashboard/schedule";
-import { RUN_LOOK, STATE_LOOK, stateOf } from "@/dashboard/status";
+import { deskGreeting, deskLine, firstSentence } from "@/dashboard/desk";
+import { deptOf, groupByDepartment, headOf, latestOutputs, loadOrg } from "@/core/org";
+import { listProposals } from "@/core/proposals";
+import { KIND_WORDS } from "@/core/proposal-rules";
+import { agentNames } from "@/core/org";
 import { Icon } from "@/dashboard/components/Icon";
-import { AgentMap } from "@/dashboard/components/AgentMap";
-import { Avatar, Pill, Summary } from "@/dashboard/components/ui";
-import { mapOf, mapRunOf } from "@/dashboard/agentMap";
-import { builderMenu, mapFor, mapSteps } from "@/dashboard/builder";
 
-export default async function MissionControl() {
+// The Desk (docs/company-mode.md, slice 5): home. Goals with where each stands and its head's latest
+// word, then what needs Zak, proposals first. Avery's chat sits beside it (the layout draws it).
+// Every count and status here comes from code.
+
+const KIND_LOOK: Record<string, { bg: string; fg: string }> = {
+  hire: { bg: "var(--acc-soft)", fg: "var(--acc-ink)" },
+  grant_tool: { bg: "var(--mint-soft)", fg: "var(--mint-ink)" },
+  new_tool: { bg: "var(--yel-soft)", fg: "var(--yel-ink)" },
+  retire: { bg: "var(--red-soft)", fg: "var(--red-ink)" },
+};
+
+export default async function Desk() {
   const f = await getFloor();
   const now = f.now;
   const open = needs(f, now, parseSeen((await cookies()).get(SEEN_COOKIE)?.value));
-  const spend = Object.values(f.spentToday).reduce((s, v) => s + v, 0);
-  const budgetSum = f.built.reduce((s, a) => s + (f.agents[a.id]?.daily_budget_usd ?? 0), 0);
-  const [meters, org] = await Promise.all([getMemoryMeters(), loadOrg().catch(() => null)]);
-  // goal tiles replace the stat chips (docs/company-mode.md, slice 2)
-  const goals = await goalsByDept(org);
+  const org = await loadOrg().catch(() => null);
+  const [goals, pending] = await Promise.all([goalsByDept(org), listProposals(["pending"], 12).catch(() => null)]);
   const allGoals = org && goals ? org.departments.flatMap((d) => goals[d.id] ?? []) : [];
-  // Needs you, grouped by the department of the agent each one is about (docs/org-chart.md, slice 4)
-  const groups = groupByDepartment(open, (id) => (org ? deptOf(org, id) : null));
-
-  const latest = f.runs.find((r) => r.status !== "skipped" && f.byId[r.agent_id]?.built) ?? null;
-  const floorAgent = (latest ? f.byId[latest.agent_id] : f.built[0]) ?? { id: "", name: "No agent" };
-  const [leads, mf, steps] = await Promise.all([
-    latest && (f.grants[latest.agent_id] ?? []).includes("report_leads") ? leadsForRun(latest.id) : null,
-    floorAgent.id ? mapFor(floorAgent.id) : null,
-    latest ? mapSteps(latest.id) : [],
+  // each goal tile carries its head's latest word (the head's own report, so its words, not code's)
+  const heads = org ? org.departments.map((d) => headOf(org, d.id)).filter((s) => s?.holder === "agent" && s.agentId).map((s) => s!.agentId as string) : [];
+  const [outs, names] = await Promise.all([
+    latestOutputs(heads).catch(() => ({} as Awaited<ReturnType<typeof latestOutputs>>)),
+    agentNames([...new Set([...heads, ...(pending ?? []).map((p) => p.from_agent).filter((x): x is string => !!x)])]).catch(() => ({} as Record<string, string>)),
   ]);
-  const floorMap = mf && mapOf({ agentId: floorAgent.id, spec: mf.spec, menu: builderMenu(f.built), schedule: null, chain: null, usedBy: mf.usedBy, edit: null, run: latest && mapRunOf(latest, steps) });
-
-  const states = f.built.map((a) => ({ a, st: stateOf(a, f.agents[a.id], f.runs, f.spentToday[a.id] ?? 0) }));
-  const off = states.filter((s) => s.st === "paused").map((s) => s.a.name);
-  const others = states.filter((s) => s.st !== "paused").map((s) => `${s.a.name} is ${STATE_LOOK[s.st].label.toLowerCase()}`);
-  const n = open.length;
-  const greeting = n ? `${n === 1 ? "One thing needs" : `${n} things need`} you.` : "Quiet floor. Nothing needs you.";
-  const greetingSub = [off.length ? `${off.join(" and ")} ${off.length > 1 ? "are" : "is"} off duty${STATE_LOOK.paused.label.endsWith("launch") ? " until launch" : ""}.` : "", others.length ? others.join(", ") + "." : "", `${f.planned.length} more join after launch.`].filter(Boolean).join(" ");
-
-  const segs = (["High", "Medium", "Low"] as const).map((p) => ({ p, count: open.filter((x) => x.pri === p).length }));
-  const days = weekFrom(now);
+  const quoteOf = (deptId: string) => {
+    const h = org ? headOf(org, deptId) : null;
+    const o = h?.agentId ? outs[h.agentId] : undefined;
+    return o && h?.agentId ? { who: names[h.agentId] ?? h.agentId, text: firstSentence(o.summary) } : null;
+  };
+  // proposals show here as cards, so their summary line in Needs you goes
+  const rest = open.filter((x) => x.href !== "/proposals");
+  const groups = groupByDepartment(rest, (id) => (org ? deptOf(org, id) : null));
+  const props = pending ?? [];
 
   return (
     <>
-      <div className="row wrap" style={{ alignItems: "flex-end", gap: 24 }}>
-        <div style={{ flex: 1, minWidth: 280, display: "flex", flexDirection: "column", gap: 6 }}>
-          <span style={{ fontSize: 13 }} className="muted">{longDay(now)} · {hm(now)} CT</span>
-          <h1 style={{ fontSize: 32, lineHeight: 1.15, fontWeight: 600, letterSpacing: "-.025em", textWrap: "pretty" }}>{greeting}</h1>
-          <p style={{ fontSize: 14.5, textWrap: "pretty" }} className="ink2">{greetingSub}</p>
-        </div>
-      </div>
-
-      <div className="card" style={{ gap: 12 }}>
-        <div className="row wrap" style={{ gap: 12 }}>
-          <span className="card-t">Goals</span>
-          <Link href="/goals/new" className="btn outline sm"><Icon name="plus" size={14} />Set a goal</Link>
-        </div>
-        {goals == null ? <span className="sub">{GOALS_MISSING}</span>
-          : allGoals.length ? <div className="goal-tiles">{allGoals.map((g) => <GoalTile key={g.id} g={g} showDept />)}</div>
-          : <span className="sub">No goals yet. Give each department one, with a measure code can count, and its head plans around it.</span>}
+      <div className="stack" style={{ gap: 6 }}>
+        <span style={{ fontSize: 13 }} className="muted">{longDay(now)} · {hm(now)} CT</span>
+        <h1 style={{ fontSize: 32, lineHeight: 1.15, fontWeight: 600, letterSpacing: "-.025em" }}>{deskGreeting(now)}, Zak.</h1>
+        <p style={{ fontSize: 14.5, textWrap: "pretty" }} className="ink2">{deskLine(allGoals.map((g) => g.status), props.length, rest.length)}</p>
       </div>
 
       {!f.ok && <div className="card" style={{ background: "var(--red-soft)", color: "var(--red-ink)", borderColor: "transparent" }}>{f.problem}</div>}
 
-      <div className="card" style={{ padding: 16, borderRadius: 24 }}>
-        <div className="row" style={{ gap: 12, padding: "6px 8px 0", flexWrap: "wrap" }}>
-          <Icon name="clock" />
-          <div style={{ flex: 1, display: "flex", flexDirection: "column", minWidth: 200 }}>
-            <span style={{ fontSize: 15, fontWeight: 600 }}>Live floor</span>
-            <span className="sub">{latest ? `${floorAgent.name} · latest real run · ${when(latest.started_at)} CT` : "No real runs yet. Skipped runs while off duty don’t count."}</span>
-          </div>
-          {latest && <Pill look={RUN_LOOK[latest.status]} />}
-          {latest && <Link href={`/runs/${latest.id}`} className="btn outline" style={{ height: 38, fontSize: 13.5 }}>Replay run<Icon name="history" size={15} /></Link>}
+      <section className="card" style={{ gap: 12 }} aria-labelledby="goals-h">
+        <div className="row wrap" style={{ gap: 12 }}>
+          <h2 id="goals-h" className="card-t">Goals</h2>
+          <Link href="/goals/new" className="btn outline sm"><Icon name="plus" size={14} />Set a goal</Link>
         </div>
-        {floorMap ? (
-          <AgentMap m={floorMap} foot={latest && (
-            <div className="am-foot">
-              <span style={{ flex: "1 1 320px", minWidth: 0 }}><Summary text={(latest.error ?? latest.summary ?? (latest.status === "running" ? "Working now…" : "No summary.")).slice(0, 320)} /></span>
-              <span className="muted">{latest.status === "running" ? "Working now" : `${latest.status === "failed" ? "Failed after" : "Done in"} ${dur(latest.started_at, latest.ended_at)} · ${m4(latest.cost_usd)}`}{leads != null ? ` · ${leads} new leads` : ""}</span>
-            </div>
-          )} />
-        ) : <span className="sub" style={{ padding: "0 8px 8px" }}>{floorAgent.name} has no saved setup yet, so there is no map to draw.</span>}
-      </div>
+        {goals == null ? <span className="sub">{GOALS_MISSING}</span>
+          : allGoals.length ? <div className="goal-tiles">{allGoals.map((g) => <GoalTile key={g.id} g={g} showDept quote={quoteOf(g.deptId)} />)}</div>
+          : <span className="sub">No goals yet. Give each department one, with a measure code can count, and its head plans around it.</span>}
+      </section>
 
-      <div className="home-grid">
-        <div className="card">
-          <span className="card-t">Needs you</span>
-          <div className="row" style={{ alignItems: "baseline" }}><span className="big">{n}</span><span style={{ fontSize: 13 }} className="ink2">{n ? "open" : "all clear"}</span></div>
-          {n > 0 && (
-            <div className="stack" style={{ gap: 8 }}>
-              <div className="row" style={{ gap: 14, fontSize: 12.5 }}>
-                {segs.map((s) => <span key={s.p} className="row" style={{ gap: 6 }}><span style={{ width: 3, height: 12, borderRadius: 2, background: PRI_COLOR[s.p] }} /><b style={{ fontWeight: 600 }}>{s.count}</b> {s.p}</span>)}
-              </div>
-              <div className="bar" style={{ height: 40 }}>{segs.filter((s) => s.count).map((s) => <span key={s.p} style={{ flex: s.count, background: PRI_COLOR[s.p] }} />)}</div>
-            </div>
-          )}
-          <div className="stack" style={{ gap: 4 }}>
-            {groups.map((g) => (
-              <div key={g.name ?? "all"} className="stack" style={{ gap: 4 }}>
-                {g.name && <span className="ted-k" style={{ padding: "6px 2px 0" }}>{g.name}</span>}
-                {g.items.map((x, i) => (
-                  <Link key={i} href={x.href} className="row" style={{ padding: 10, borderRadius: 14, background: "var(--soft)", color: "var(--ink)", textDecoration: "none" }}>
-                    <span className="dot" style={{ width: 8, height: 8, background: PRI_COLOR[x.pri] }} />
-                    <span style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", gap: 2 }}><span style={{ fontSize: 13.5, fontWeight: 600 }}>{x.title}</span><span className="clip muted" style={{ fontSize: 12 }}>{x.sub}</span></span>
-                    <Icon name="chevron-right" size={15} style={{ opacity: 0.5 }} />
-                  </Link>
-                ))}
-              </div>
+      <section className="stack" style={{ gap: 12 }} aria-labelledby="needs-h">
+        <h2 id="needs-h" className="card-t">Needs you</h2>
+        {props.map((p) => (
+          <div key={p.id} className="card row wrap" style={{ flexDirection: "row", gap: 14 }}>
+            <span className="pill sm" style={{ background: KIND_LOOK[p.kind]?.bg, color: KIND_LOOK[p.kind]?.fg, textTransform: "uppercase", letterSpacing: ".05em", fontWeight: 700 }}>{KIND_WORDS[p.kind]}</span>
+            <span style={{ flex: "1 1 320px", minWidth: 0, display: "flex", flexDirection: "column", gap: 4 }}>
+              <b style={{ fontSize: 15.5, fontWeight: 600 }}>{p.title}</b>
+              <span className="ink2" style={{ fontSize: 13.5, lineHeight: 1.5 }}>From {p.from_agent ? names[p.from_agent] ?? p.from_agent : p.source === "claude" ? "Claude" : "you"}: {firstSentence(p.why, 220)}</span>
+            </span>
+            <Link href={`/proposals/${p.id}`} className="btn dark">Review</Link>
+          </div>
+        ))}
+        {groups.map((g) => (
+          <div key={g.name ?? "all"} className="stack" style={{ gap: 6 }}>
+            {g.name && <span className="ted-k" style={{ padding: "4px 2px 0" }}>{g.name}</span>}
+            {g.items.map((x, i) => (
+              <Link key={i} href={x.href} className="card row" style={{ flexDirection: "row", padding: 14, gap: 12, color: "var(--ink)", textDecoration: "none" }}>
+                <span className="dot" style={{ width: 8, height: 8, background: PRI_COLOR[x.pri] }} />
+                <span style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", gap: 2 }}><span style={{ fontSize: 14, fontWeight: 600 }}>{x.title}</span><span className="clip muted" style={{ fontSize: 12.5 }}>{x.sub}</span></span>
+                <Icon name="chevron-right" size={15} style={{ opacity: 0.5 }} />
+              </Link>
             ))}
-            {!n && <span style={{ fontSize: 14, padding: "8px 0" }} className="muted">Nothing needs you.</span>}
           </div>
-        </div>
-
-        <div className="card">
-          <div className="row wrap" style={{ gap: 12 }}>
-            <div style={{ flex: 1, display: "flex", flexDirection: "column" }}><span style={{ fontSize: 15, fontWeight: 600 }}>Shift board</span><span className="sub">This week · Central Time</span></div>
-            <span className="row" style={{ gap: 6, fontSize: 12 }}><span style={{ width: 18, height: 8, borderRadius: 999, background: "var(--acc)" }} />Runs</span>
-            <span className="row" style={{ gap: 6, fontSize: 12 }}><span style={{ width: 18, height: 8, borderRadius: 999, border: "1.5px solid var(--mut2)" }} />Will skip, off duty</span>
-          </div>
-          <div style={{ overflowX: "auto" }}>
-            <div className="shift-wrap" style={{ minWidth: 400 }}>
-              <div className="shift-grid">
-                <span />
-                {days.map((d, i) => <span key={d} style={{ fontSize: 12, textAlign: "center", color: i === 0 ? "var(--acc-ink)" : "var(--mut)", fontWeight: i === 0 ? 700 : 500 }}>{dow(`${d}T18:00:00Z`)} {Number(d.slice(8))}</span>)}
-              </div>
-              {f.built.map((a) => {
-                const row = f.agents[a.id];
-                return (
-                  <div key={a.id} className="shift-grid rule" style={{ padding: "6px 0", marginTop: 6 }}>
-                    <Link href={`/agents/${a.id}`} className="row" style={{ gap: 9, color: "var(--ink)", minWidth: 0 }}>
-                      <Avatar a={a} working={states.find((x) => x.a.id === a.id)?.st === "running"} />
-                      <span style={{ display: "flex", flexDirection: "column", minWidth: 0 }}><span style={{ fontSize: 13, fontWeight: 600 }}>{a.name}</span><span className="clip muted" style={{ fontSize: 11 }}>{schedWords(a.schedule)}{row?.enabled ? "" : " · will skip"}</span></span>
-                    </Link>
-                    {days.map((d) => {
-                      const ran = f.runs.find((r) => r.agent_id === a.id && r.status !== "skipped" && chicagoDate(0, new Date(r.started_at)) === d);
-                      if (ran) return <span key={d} className="cell" style={{ background: a.hue, borderColor: a.hue, color: "#111114" }}>{shortHm(ran.started_at)}</span>;
-                      const t = firingOn(a.schedule, d);
-                      if (!t) return <span key={d} className="cell" />;
-                      if (t < now) return <span key={d} className="cell" style={{ background: "var(--soft)", color: "var(--mut)" }}>{f.runs.some((r) => r.agent_id === a.id && r.status === "skipped" && chicagoDate(0, new Date(r.started_at)) === d) ? "Skipped" : "—"}</span>;
-                      return row?.enabled
-                        ? <span key={d} className="cell" style={{ background: a.hue, borderColor: a.hue, color: "#111114" }}>{shortHm(t)}</span>
-                        : <span key={d} className="cell" style={{ borderColor: "var(--mut2)", color: "var(--mut)" }}>{shortHm(t)}</span>;
-                    })}
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-          <span className="sub">Times mirror vercel.json. Whether each Vercel schedule is switched on lives in Vercel.</span>
-        </div>
-
-        <div className="stack">
-          <div className="card" style={{ gap: 12 }}>
-            <span className="card-t">Spend by agent</span>
-            <div style={{ display: "flex", flexDirection: "column", gap: 2 }}><span style={{ fontSize: 26, fontWeight: 600, letterSpacing: "-.02em" }}>{m4(spend)}</span><span className="muted" style={{ fontSize: 12 }}>of {m2(budgetSum)} in daily budgets</span></div>
-            <div className="bar" style={{ height: 10, borderRadius: 999, gap: 3 }}>{f.built.map((a) => <span key={a.id} style={{ width: `${budgetSum ? ((f.spentToday[a.id] ?? 0) / budgetSum) * 100 : 0}%`, background: a.hue }} />)}</div>
-            {f.built.map((a) => (
-              <div key={a.id} className="row" style={{ gap: 8, fontSize: 12.5 }}><span className="dot" style={{ background: a.hue }} /><span style={{ flex: 1 }}>{a.name}</span><b style={{ fontWeight: 600 }}>{m4(f.spentToday[a.id] ?? 0)}</b><span className="muted">/ {m2(f.agents[a.id]?.daily_budget_usd ?? 0)}</span></div>
-            ))}
-            <span className="muted" style={{ fontSize: 11.5 }}>Budget day resets at midnight UTC, the same rule the agents use.</span>
-          </div>
-          <div className="card" style={{ gap: 12 }}>
-            <span className="card-t">Memory per agent</span>
-            {meters ? f.built.filter((a) => meters[a.id]).map((a) => {
-              const m = meters[a.id];
-              return (
-                <Link key={a.id} href={`/agents/${a.id}?tab=memory`} style={{ display: "flex", flexDirection: "column", gap: 6, color: "var(--ink)", textDecoration: "none" }}>
-                  <span className="row" style={{ gap: 8, fontSize: 12.5 }}><span className="dot" style={{ background: a.hue }} /><span style={{ flex: 1 }}>{a.name}</span><b style={{ fontWeight: 600 }}>{num(m.tokens)}</b><span className="muted">/ {num(m.budget)} tok</span></span>
-                  <div className="bar" style={{ height: 6, borderRadius: 999 }}><span style={{ width: `${Math.min(100, (m.tokens / m.budget) * 100)}%`, background: a.hue }} /></div>
-                  <span className="muted" style={{ fontSize: 11.5 }}>{m.lines} line{m.lines === 1 ? "" : "s"}{m.linked ? `, plus ${m.linked} linked Notion page${m.linked === 1 ? "" : "s"} read at run time` : ""}{f.lessonsWaiting?.[a.id] ? ` · ${f.lessonsWaiting[a.id]} lesson${f.lessonsWaiting[a.id] === 1 ? "" : "s"} to review` : ""}</span>
-                </Link>
-              );
-            }) : <span style={{ fontSize: 13, lineHeight: 1.5 }} className="ink2">Couldn’t read the memory store.</span>}
-            <span className="muted" style={{ fontSize: 11.5 }}>What each agent’s next run loads, counted in code. The CFO snapshot uses no model, so it carries none.</span>
-          </div>
-        </div>
-      </div>
-
-      <div className="card">
-        <div className="row" style={{ alignItems: "baseline" }}><span style={{ fontSize: 15, fontWeight: 600 }}>Joining the crew</span><span className="sub">{f.planned.length} planned · after launch</span></div>
-        <div className="row wrap" style={{ gap: 8 }}>
-          {f.planned.map((a) => (
-            <Link key={a.id} href={`/agents/${a.id}`} className="row" style={{ padding: "8px 16px 8px 8px", borderRadius: 999, background: "var(--soft)", color: "var(--ink)", whiteSpace: "nowrap", textDecoration: "none" }}>
-              <Avatar a={a} size={34} />
-              <span style={{ display: "flex", flexDirection: "column" }}><span style={{ fontSize: 13, fontWeight: 600 }}>{a.name}</span><span className="muted" style={{ fontSize: 11.5 }}>{a.role} · Phase {a.phase}</span></span>
-            </Link>
-          ))}
-        </div>
-      </div>
+        ))}
+        {!props.length && !rest.length && <span className="sub">Nothing needs you. Ask Avery how things are going, or set a goal.</span>}
+      </section>
     </>
   );
 }

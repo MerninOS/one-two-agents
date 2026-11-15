@@ -289,3 +289,61 @@ has its own place.
 
 **Checks.** `npm run check`, `npm run check:plans`, `npm run check:runner`, `npm run check:org`,
 `npm run build`.
+
+## Slice 5: Avery, the front door, and the Desk
+
+**What Zak sees.**
+
+- **The Desk** is home (`/`, "Desk" in the sidebar). A greeting and one line counted in code ("Two
+  goals on track, one behind, one can't be measured yet. Three proposals need you."), the goal
+  tiles, each with its head's latest word (the first sentence of the head's own report), then
+  **Needs you**: proposals first as cards with Review, then everything else, grouped by department.
+- **Avery's chat on every screen.** On a wide screen it's a dark panel beside the page: open by
+  default on the Desk, a tab to open it elsewhere (the browser remembers open or closed). On a phone
+  it's a bar at the bottom ("Ask Avery, or tell her something") that opens a full sheet. Starters:
+  What needs me today?, How are the goals?, Hire someone, What are the heads planning this week?
+- **What she can do.** Answer from the company's data. **Save a rule** Zak dictates, for an agent,
+  a department or everyone, always in his own words. **File a proposal** (hire, grant a read tool,
+  new tool, retire), which waits on Proposals like a head's. Under her reply, code says what it
+  actually saved ("Saved for Rowan in your words: “Skip chains.” Undo on the Memory tab.", "Filed for
+  you to decide: Hire Tate for Follow-ups. It waits on Proposals."). Each reply links to its run.
+- **What she can't do.** Run, start, stop or change an agent; send, buy or post. If Zak asks, she
+  says where in the Control Room to do it.
+
+**How it holds.**
+
+- Each message is one run of the agent in the company seat (whoever the chart puts there, not a
+  hardcoded id) through `withRun` with trigger `chat`: logged in `agent_runs`, refused when she is
+  off duty or over her daily budget or her department's. It needs `DASHBOARD_CONTROLS=on`, like a try.
+- The run uses the shared runner with her active spec's model and cost cap (low effort, at most 8
+  steps), her read and calculate tools, Goal progress, and three chat-only tools that exist nowhere
+  in the builder's tool list: **The crew now** (seats, who's on duty, each agent's last run, this
+  week's plans, proposals waiting), **Save a rule** and **File a proposal**.
+- A rule's words are checked in code against Zak's message (`inZaksWords`: case, quotes, spacing and
+  the closing full stop don't matter; other words are refused). Who it's for is matched against
+  the chart (`resolveRuleWho`). It's saved with the same `saveRule` reactions use, so it's a memory
+  line (a note, never authority) with Undo on the Memory tab.
+- A proposal goes through `fileProposal` with the company seat's reach (any department), checked
+  again at Zak's tap. At most 3 rules and 3 proposals from one message, saved only after a run that
+  finishes.
+- Her memory (her standing orders) is loaded read-only, like a try, so chat doesn't count down
+  next-run notes. A chat reply isn't saved as her output, so no agent reads it as a report, and chat
+  runs are left out of run counts (Department reports, Your team, the brief's run lines).
+
+**Data.** Migration `20261124090000_avery_chat.sql`: the `avery_chat` table (who said it, the
+words, the run that answered, code's notes about what it saved). Until it's applied she still
+answers but the conversation isn't kept, and the panel says so.
+
+**Code.** `core/chat-rules.ts` (pure: `cleanMessage`, `inZaksWords`, `resolveRuleWho`, `deptNamed`,
+`chatPrompt`, `savedLines`), `core/avery-chat.ts` (`askAvery`, the chat tools, `chatHistory`,
+`askedIn` for the replay), `saveRule` in `core/reactions.ts`, the runner's `chat` and `prompt`
+options, `dashboard/chatActions.ts`, `dashboard/components/avery.tsx`, `dashboard/desk.ts` (the
+greeting and summary line), the Desk page and the layout.
+
+**What it replaces.** The Today page: its live floor map, shift board, spend by agent, memory per
+agent and joining the crew are gone with `getMemoryMeters`, `leadsForRun`, `weekFrom` and their
+styles (each agent's page still has its map, schedule, spend and memory). The /one-two-new-agent
+skill retires: hiring is a proposal from Avery (or a head), and New agent on Crew stays the builder.
+The skill lives in Zak's Claude account, so he deletes it there.
+
+**Checks.** `npm run check`, `npm run check:chat`, `npm run check:runner`, `npm run build`.

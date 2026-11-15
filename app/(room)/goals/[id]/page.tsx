@@ -23,7 +23,7 @@ import { chicagoDate } from "@/core/time";
 // works, what the department spends on AI, and Change / Pause / Done / Remove.
 
 // a measure reads Shopify or Mercury when the page opens
-export const maxDuration = 60;
+export const maxDuration = 120;
 
 const day = (iso: string) => new Date(iso.length === 10 ? `${iso}T12:00:00Z` : iso).toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: iso.length === 10 ? "UTC" : "America/Chicago" });
 const usd = (n: number) => `$${n.toFixed(2)}`;

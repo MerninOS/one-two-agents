@@ -18,6 +18,7 @@
     "check:goals": "npx --yes tsx scripts/check-goals.ts",
     "check:proposals": "npx --yes tsx --conditions=react-server scripts/check-proposals.ts",
     "check:plans": "npx --yes tsx --conditions=react-server scripts/check-plans.ts",
+    "check:chat": "npx --yes tsx --conditions=react-server scripts/check-chat.ts",
     "check": "npm run typecheck && npm run lint && npm run validate:graphql"
   },
   "dependencies": {

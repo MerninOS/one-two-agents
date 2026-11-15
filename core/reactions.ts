@@ -15,6 +15,20 @@ export interface Reaction { id: string; agent_id: string; run_id: string | null;
 const deptOf = async (agentId: string) => { try { return (await agentDepartment(agentId))?.dept ?? null; } catch { return null; } };
 
 /**
+ * Saves one rule in Zak's words as a memory line: the agent's own (a standing order, or a note for
+ * the next run or 30 days), its department's, or the whole crew's. Used by reactions and by Avery's
+ * chat (core/avery-chat.ts). Returns the memory line's id.
+ */
+export async function saveRule(r: { scope: "agent" | "department" | "crew"; agentId: string; deptId: string | null; keep: "next_run" | "days_30" | "always"; text: string; tag: string }): Promise<string> {
+  if (r.scope === "department") {
+    if (!r.deptId) throw new Error("That agent isn't in a department.");
+    return addDepartmentRule(r.deptId, r.text, r.tag);
+  }
+  const keep = r.scope === "agent" ? r.keep : "always";
+  return teach({ agentId: r.agentId, text: r.text, keepAs: r.scope === "crew" ? "crew" : keep === "always" ? "standing_order" : "note", forget: keep, sourceTag: r.tag });
+}
+
+/**
  * Saves a reaction: the rule first (so a failed save never loses the old rule), then forgets the
  * rule it replaces, then records the reaction itself (one per thing reacted to). Returns what to
  * tell Zak. The caller has checked the login and that the target belongs to this agent.
@@ -36,9 +50,7 @@ export async function saveReaction(agentId: string, name: string, target: ReactT
       if (!data || !canReplace(data, r, agentId, dept?.id ?? null)) throw new Error("That rule can't be replaced from here: it isn't one of the rules for who you picked.");
       old = data;
     }
-    memoryId = r.scope === "department"
-      ? await addDepartmentRule(dept!.id, r.text, tag)
-      : await teach({ agentId, text: r.text, keepAs: r.scope === "crew" ? "crew" : r.grp === "note" ? "note" : "standing_order", forget: r.keep, sourceTag: tag });
+    memoryId = await saveRule({ scope: r.scope, agentId, deptId: dept?.id ?? null, keep: r.keep, text: r.text, tag });
     if (old && r.replaces) await forgetMemory(r.replaces);
   }
 

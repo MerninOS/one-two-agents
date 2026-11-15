@@ -175,11 +175,11 @@ export async function agentNames(agentIds: string[]): Promise<Record<string, str
 
 export interface RunStats { runs: number; ok: number; failed: number; skipped: number; costUsd: number; lastError: string | null }
 
-/** How each agent's runs went since a time (tries from the builder left out). Counted and added up in code. */
+/** How each agent's runs went since a time (tries from the builder and Avery's chat left out). Counted and added up in code. */
 export async function runStats(agentIds: string[], since: string): Promise<Record<string, RunStats>> {
   const out: Record<string, RunStats> = Object.fromEntries(agentIds.map((id) => [id, { runs: 0, ok: 0, failed: 0, skipped: 0, costUsd: 0, lastError: null }]));
   if (!agentIds.length) return out;
-  const { data, error } = await db().from("agent_runs").select("agent_id, status, cost_usd, error, started_at").in("agent_id", agentIds).gte("started_at", since).neq("trigger", "preview").order("started_at").limit(2000);
+  const { data, error } = await db().from("agent_runs").select("agent_id, status, cost_usd, error, started_at").in("agent_id", agentIds).gte("started_at", since).not("trigger", "in", "(preview,chat)").order("started_at").limit(2000);
   if (error) throw new Error(error.message);
   const cents: Record<string, number> = {};
   for (const r of data ?? []) {
