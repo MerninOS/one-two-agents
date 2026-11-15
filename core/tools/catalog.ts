@@ -16,13 +16,14 @@ import { round2 } from "@/domain/coffee";
 import { db } from "@/core/db";
 import { chicagoDate } from "@/core/time";
 import {
-  agentNames, agentsIn, companyBlock, deptSpent, draftCode, headOf, latestOutputs, leadCheck, liveAgentIds, loadOrg, monthSpendByAgent, runStats, seatOf, seatPath, teamBlock, teamOf,
+  agentNames, agentsIn, companyBlock, deptSpent, headBlock, draftCode, headOf, latestOutputs, leadCheck, liveAgentIds, loadOrg, monthSpendByAgent, runStats, seatOf, seatPath, teamBlock, teamOf,
   type RunStats,
 } from "@/core/org";
 import { snapshot } from "@/agents/cfo";
 import { cover, greenUse, lb } from "@/core/green";
 import { burnRate } from "@/core/money";
 import { goalProgress } from "@/core/goals";
+import { planProposal, proposalTitle, toolInfoOf } from "@/core/proposal-rules";
 import { deliverBrief } from "@/agents/chief-of-staff";
 import { mercuryCash, mercuryCategories, mercuryTransactions } from "@/integrations/mercury";
 import { divider, h2, h3, li, notionPage, notionPageText, p as para, quote } from "@/integrations/notion";
@@ -307,6 +308,49 @@ const TOOLS_LIST: ToolDef[] = [
     id: "goal_progress", label: "Goal progress", detail: "The goals Zak set for its department (every department for the company seat): each goal, its measure counted in code, the target and date, and whether it's on pace. The department comes from the chart",
     kind: "read", group: "agents", params: [], trusted: true, needs: SUPABASE, costUsd: 0,
     run: async (_p, ctx) => goalProgress(ctx.agentId),
+  },
+  // Company mode slice 3 (docs/company-mode.md): a head hands Zak proposals at the end of a run.
+  // Checked here like any report row, saved only after a run that finishes, checked again against
+  // the chart when saved and again at Zak's tap. A proposal does nothing until he says yes, and can
+  // never hand out an action.
+  {
+    id: "propose", label: "Propose to Zak", detail: "Hands Zak a proposal to decide: hire an agent for a seat in its department, give a teammate a read tool, build a new tool, or retire an agent or close a seat. Saved after a run that finishes; nothing happens until Zak says yes, and it can't hand out actions",
+    kind: "report", group: "agents", trusted: false, needs: SUPABASE, costUsd: 0, seat: "head",
+    params: [
+      { name: "kind", type: "enum", options: ["hire", "grant_tool", "new_tool", "retire"], description: "hire: a new agent for a seat. grant_tool: one read tool for a teammate. new_tool: something no tool reads yet. retire: take a teammate off duty, or close an empty seat." },
+      { name: "why", type: "text", maxLength: 600, description: "Why, in a sentence or two, with the numbers your tools gave you." },
+      { name: "name", type: "text", maxLength: 30, optional: true, description: "hire: a short first name for the new agent, starting with a capital." },
+      { name: "seat", type: "text", maxLength: 60, optional: true, description: "hire: the open seat it fills, or a new seat's name (it goes under you). retire: the empty seat to close." },
+      { name: "agent", type: "text", maxLength: 40, optional: true, description: "grant_tool or retire: the teammate's name." },
+      { name: "job", type: "text", maxLength: 200, optional: true, description: "hire: what it does, in one sentence." },
+      { name: "each_run", type: "text", maxLength: 1500, optional: true, multiline: true, description: "hire: what it does on each run, step by step." },
+      { name: "good_result", type: "text", maxLength: 400, optional: true, description: "hire: what a good result looks like." },
+      { name: "tools", type: "text", maxLength: 300, optional: true, description: "hire: the read tool ids it needs, comma separated (at most 8). grant_tool: the one tool id." },
+      { name: "brain", type: "enum", options: ["quick", "thinking"], default: "quick", description: "hire: quick (Haiku) for most jobs; thinking (Sonnet) only when the job needs judgment." },
+      { name: "what", type: "text", maxLength: 300, optional: true, description: "new_tool: what it needs to read, and from where." },
+    ],
+    collect: (input, held) => {
+      if (held.length >= 3) return { problem: "at most 3 proposals in one run" };
+      const got = planProposal(input, toolInfoOf(TOOLS));
+      if ("problem" in got) return got;
+      const title = proposalTitle(got.plan);
+      if (held.some((r) => r.title === title)) return { problem: `${title} is already proposed in this run` };
+      return { row: { ...input, title } };
+    },
+    deliver: async (o, ctx) => {
+      if (!o.rows.length) return "no proposals";
+      const org = await loadOrg();
+      const no = org ? headBlock(org, ctx.agentId) : "The org chart isn't set up.";
+      if (no) return `not filed: ${no}`;
+      // loaded here: the store reads this tool list
+      const { fileProposal } = await import("@/core/proposals");
+      const notes: string[] = [];
+      for (const r of o.rows) {
+        try { await fileProposal(r, { agentId: ctx.agentId, runId: ctx.runId ?? null, source: "agent" }); notes.push(`filed ${r.title}`); }
+        catch (e) { notes.push(`not filed ${r.title}: ${e instanceof Error ? e.message : e}`); }
+      }
+      return notes.join("; ");
+    },
   },
   // Slice 4 (docs/org-chart.md): a lead checks its team's drafts before Zak sees them, where the
   // department has "Lead checks drafts first" on. Only drafts the gateway assigned to this agent

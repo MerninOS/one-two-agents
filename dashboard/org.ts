@@ -5,7 +5,7 @@ import "server-only";
 import { loadCaps } from "@/core/gateway";
 import { CAPS } from "@/core/gateway/policy";
 import { departmentRules } from "@/core/memory";
-import { agentNames, companySeat, deptSpent, headOf, childrenOf, liveAgentIds, monthSpendByAgent, orgProblems, reportsTo, seatOf, seatPath, seatTeam, seatToolBlocks, type Org, type Seat } from "@/core/org";
+import { agentNames, companySeat, deptSpent, headOf, childrenOf, liveAgentIds, monthSpendByAgent, orgProblems, reportsTo, seatOf, seatPath, seatTeam, seatToolBlocks, type Org, type Seat, type SeatBlocks } from "@/core/org";
 import type { MapOrg } from "./agentMap";
 import type { GoalView } from "./goals";
 import type { Floor } from "./data";
@@ -31,6 +31,8 @@ export interface SeatView {
   agent: SeatAgent | null;
   /** Seats under this one, in order. */
   kids: SeatView[];
+  /** Proposals waiting on Zak about this seat: a hire for it (or under it), a retirement (company mode slice 3). */
+  proposals: { id: string; text: string }[];
 }
 export interface DeptView {
   id: string; name: string; head: SeatView; seats: number; filled: number; planned: number; open: number;
@@ -68,13 +70,14 @@ function agentsOf(f: Floor): SeatAgent[] {
   });
 }
 
-export function orgView(f: Floor, org: Org, x: DeptExtras, goals: Record<string, GoalView[]> | null = {}): OrgView {
+export function orgView(f: Floor, org: Org, x: DeptExtras, goals: Record<string, GoalView[]> | null = {}, proposals: Record<string, { id: string; text: string }[]> = {}): OrgView {
   const all = agentsOf(f);
   const byId = new Map(all.map((a) => [a.id, a]));
   const view = (s: Seat, depth: number): SeatView => ({
     id: s.id, title: s.title, sub: s.sub, holder: s.holder,
     agent: s.holder === "agent" && s.agentId ? byId.get(s.agentId) ?? { id: s.agentId, name: s.agentId, role: "Not found", href: "/crew", icon: "cpu", hue: null, planned: false, look: OFF_LOOK, last: "" } : null,
     kids: depth > 6 ? [] : childrenOf(org, s.id).map((c) => view(c, depth + 1)),
+    proposals: proposals[s.id] ?? [],
   });
   const count = (v: SeatView): SeatView[] => [v, ...v.kids.flatMap(count)];
   const departments = org.departments.flatMap((d): DeptView[] => {
@@ -124,10 +127,10 @@ export async function deptExtras(org: Org): Promise<DeptExtras> {
 }
 
 /** For the builder's step 2: why Your team and Department reports are off, for each seat and for no seat (""). Empty before the org chart migration. */
-export async function seatToolChoices(org: Org | null): Promise<Record<string, { team: string | null; company: string | null }>> {
+export async function seatToolChoices(org: Org | null): Promise<Record<string, SeatBlocks>> {
   if (!org) return {};
   const live = await liveAgentIds().catch(() => new Set<string>());
-  const out: Record<string, { team: string | null; company: string | null }> = { "": seatToolBlocks(org, null, live) };
+  const out: Record<string, SeatBlocks> = { "": seatToolBlocks(org, null, live) };
   for (const s of org.seats) out[s.id] = seatToolBlocks(org, s.id, live);
   return out;
 }

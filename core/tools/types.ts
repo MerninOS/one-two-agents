@@ -134,10 +134,11 @@ export interface ToolDef {
   agents?: readonly string[];
   /**
    * Tools that depend on where the agent sits on the org chart (docs/org-chart.md, slice 3):
-   * "team" for an agent with live agents under its seat, "company" for the company seat. The
+   * "team" for an agent with live agents under its seat, "company" for the company seat, "head"
+   * for a department head or the company seat (company mode, slice 3: proposals). The
    * builder offers them only there, and the tool checks the chart again on every call.
    */
-  seat?: "team" | "company";
+  seat?: "team" | "company" | "head";
 }
 
 export const paramsOf = (t: ToolDef, ctx: ToolCtx): readonly Param[] => (t.paramsFor ? t.paramsFor(ctx) : t.params);

@@ -43,7 +43,7 @@ export interface FlowProps {
   /** Its seat now, or for a new agent the seat it was opened from. */
   seatId?: string | null;
   /** Why Your team and Department reports are off, by seat id ("" for no seat), from the org chart. */
-  seatBlocks?: Record<string, { team: string | null; company: string | null }>;
+  seatBlocks?: Record<string, { team: string | null; company: string | null; head: string | null }>;
   /** An existing agent's seat is saved straight away, not as part of a version. */
   place?: Act<[string | null]>;
   /** Answers a new agent starts with (from the seat it was opened from). */

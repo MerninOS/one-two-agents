@@ -15,7 +15,7 @@ import { activePlaybook, listPlaybooks, pendingPlaybook, playbookHold, stepLabel
 import { CONNECTIONS, connOf, isSetUp, type ConnId } from "@/dashboard/connections";
 import { health } from "@/dashboard/data";
 
-export interface BuildTool { id: string; label: string; detail: string; kind: string; group: string; conn: ConnId; trusted: boolean; connected: boolean; needs: string[]; grantable: boolean; agents: string[] | null; seat: "team" | "company" | null }
+export interface BuildTool { id: string; label: string; detail: string; kind: string; group: string; conn: ConnId; trusted: boolean; connected: boolean; needs: string[]; grantable: boolean; agents: string[] | null; seat: "team" | "company" | "head" | null }
 /** A connection as the flow shows it: plain data, set up or not (no values of keys). */
 export interface FlowConn { id: ConnId; name: string; sub: string; icon: string; builtIn: boolean; about: string; setUp: boolean }
 export interface BuildModel { id: string; label: string; in: number; out: number }

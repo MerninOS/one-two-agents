@@ -16,6 +16,7 @@
     "check:roster": "npx --yes tsx scripts/check-roster.ts",
     "check:reactions": "npx --yes tsx scripts/check-reactions.ts",
     "check:goals": "npx --yes tsx scripts/check-goals.ts",
+    "check:proposals": "npx --yes tsx --conditions=react-server scripts/check-proposals.ts",
     "check": "npm run typecheck && npm run lint && npm run validate:graphql"
   },
   "dependencies": {

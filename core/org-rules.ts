@@ -180,22 +180,31 @@ export function seatTeam(o: Org, seat: Seat, live: ReadonlySet<string>): { seat:
 
 const OFF_CHART_TEAM = "Only for an agent in a seat with agents under it. Put it on the org chart first (step 1).";
 const NOT_COMPANY = "Only for the agent in the company seat (Avery’s), which reports to you.";
+const NOT_HEAD = "Only for a department head (or the company seat): heads hand you proposals.";
 
-/** Why the agent in this seat (or with no seat) can't have Your team and Department reports, or null for each. */
-export function seatToolBlocks(o: Org, seatId: string | null, live: ReadonlySet<string>): { team: string | null; company: string | null } {
+export interface SeatBlocks { team: string | null; company: string | null; head: string | null }
+
+/** Why the agent in this seat (or with no seat) can't have Your team, Department reports and Propose, or null for each. */
+export function seatToolBlocks(o: Org, seatId: string | null, live: ReadonlySet<string>): SeatBlocks {
   const seat = seatId ? o.seats.find((s) => s.id === seatId) ?? null : null;
-  if (!seat) return { team: OFF_CHART_TEAM, company: NOT_COMPANY };
+  if (!seat) return { team: OFF_CHART_TEAM, company: NOT_COMPANY, head: NOT_HEAD };
   const t = seatTeam(o, seat, live);
-  if (t.company) return { team: "The company seat reads Department reports instead.", company: null };
+  const head = seat.parentId == null ? null : NOT_HEAD;
+  if (t.company) return { team: "The company seat reads Department reports instead.", company: null, head };
   const need = t.head ? 1 : LEAD_MIN_TEAM;
   const team = t.agents.length >= need ? null
     : !t.agents.length ? "No live agent sits under its seat yet." : `A lead needs ${LEAD_MIN_TEAM} live agents under its seat first (it has ${t.agents.length}).`;
-  return { team, company: NOT_COMPANY };
+  return { team, company: NOT_COMPANY, head };
 }
 
 /** Why an agent can't have the Team connection now, or null. */
 export function teamBlock(o: Org, agentId: string | null, live: ReadonlySet<string>): string | null {
   return seatToolBlocks(o, agentId ? seatOf(o, agentId)?.id ?? null : null, live).team;
+}
+
+/** Why an agent can't file proposals, or null: only a department head or the company seat does. */
+export function headBlock(o: Org, agentId: string | null): string | null {
+  return seatToolBlocks(o, agentId ? seatOf(o, agentId)?.id ?? null : null, new Set()).head;
 }
 
 /** Why an agent can't have Department reports, or null: only the company seat reads every department. */

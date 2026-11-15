@@ -34,7 +34,7 @@ promotion; agents stay off until he says launched.
 |---|---|---|
 | 1 | Teach by reacting | The Memory tab's Teach form; Reject's "proposed lesson" from Zak's own reason |
 | 2 | Goals and measures | Today's stat chips |
-| 3 | Proposals: hire, grant a tool, new tool, retire | The new-agent skill's direct database writes; New agent opens a blank proposal |
+| 3 | Proposals: hire, grant a tool, new tool, retire | The new-agent skill's direct database writes (New agent stays the builder, see slice 3) |
 | 4 | Heads plan, review and set focus | Hand-written focus in department rules |
 | 5 | Avery, the front door, and the Desk | The Today page; the /one-two-new-agent skill |
 | 6 | MCP connections, Klaviyo first | (new kind of connection) |
@@ -154,3 +154,70 @@ out of the tool list so the tools and the measures share one copy), `agents/cfo`
 **What it replaces.** Today's stat chips (and their CSS).
 
 **Checks.** `npm run check`, `npm run check:goals`, `npm run build`.
+
+## Slice 3: Proposals
+
+**What Zak sees.**
+
+- **Needs you** says "2 proposals from your heads" and opens **Proposals** (`/proposals`). The
+  Approvals item in the sidebar counts proposals too, and the Approvals page leads with a card for
+  them when any wait.
+- **Proposals** (`/proposals`): Waiting on you, the **Build list** (new tools he said yes to, each
+  with **Mark built**), and Decided lately with what each yes or no did.
+- **A proposal's page** (`/proposals/[id]`, the Hire artboard): from whom, the department and when;
+  **Why** in the head's words; the job (for a hire: seat, job, each run, good result, brain, reads,
+  hands you) or what it asks; **What your yes does**; for a hire, the cost cap per run and what the
+  department has spent on AI this month; **Checked in code** (name free, seat still open, every tool
+  on the list and none an action, starts off duty); and three buttons:
+  - **Hire Tate, off duty** (or **Give Rowan "Goal progress"**, **Put it on the build list**,
+    **Retire Rowan**, **Close the Follow-ups seat**), with a confirm. Off while a check fails.
+  - **Change it first** (hires): the builder with everything filled in and the seat picked. Creating
+    the agent there says yes to the proposal (and makes the new seat, if it asked for one).
+  - **Not now…** asks why. Words become a 30-day note for the head that asked ("Zak said not now to
+    …"), so it doesn't ask again for the same reason next run.
+- **Crew > Org chart:** a seat with a proposal waiting shows "Proposal · Hire Tate for Follow-ups"
+  (on the open seat, or on the head's seat when the hire asks for a new seat under it). An open
+  seat with a waiting hire opens the proposal instead of the builder.
+
+**How a head proposes.** A new report tool, **Propose to Zak** (`propose`, Agents group in builder
+step 2), offered only to a department head or the company seat (`seat: "head"`, from the chart;
+the tool checks the chart again when it saves). The model hands one proposal per call, at most 3 a
+run; each is checked in code like any report row (`planProposal`) and saved only after a run that
+finishes, where names are resolved against the chart within the head's own department. At most 6
+wait per head, and the same title can't wait twice. It isn't added to any live spec here: tick it
+in step 2, or slice 4 adds it to the heads' review runs.
+
+| Kind | Holds | A yes does |
+|---|---|---|
+| hire | name, seat (open, or new under the head), job, each run, good result, read tools (up to 8), brain | creates the agent off duty as v1 (`createBuiltAgent`, like New agent), seats it |
+| grant_tool | teammate, one read tool | saves a draft version with the tool added; it runs only after Try it and Go live |
+| new_tool | what to read and from where | puts it on the build list (a tool is code: it comes as a PR) |
+| retire | teammate, or an empty seat | takes the agent off duty and opens its seat; or removes the empty seat |
+
+Brains are Claude only: **quick** (Haiku, low effort, $0.10 cap a run) unless the job needs
+judgment, **thinking** (Sonnet, medium, $0.25). A hire gets 12 steps.
+
+**What it never does.** A proposal is words and choices from lists in code; it does nothing by
+itself. It can never hand out an action (refused when filed, and again at the tap: actions are
+granted in code only). A head can't propose tools for itself or its own retirement, can't close a
+head seat, and reaches only its own department. Every check runs again at Zak's tap against the
+chart and tool list as they are then. Nothing here runs, sends or spends, so it needs the login
+only (no Controls).
+
+**Data.** Migration `20261122090000_proposals.sql` (the `proposals` table: kind, title, source agent
+/ claude / zak, from_agent, department, run, the checked plan as `payload`, why, state pending /
+accepted / declined / built / failed, outcome, result_ref, decided_at). Until it's applied, the
+Proposals page says so and the tool refuses to save.
+
+**Code.** `core/proposal-rules.ts` (pure: kinds, brains, `planProposal`, `proposalTitle`,
+`hireSpec`), `core/proposals.ts` (store, resolve against the chart, `acceptProposal`,
+`declineProposal`, `markBuilt`, `proposalChecks`, `proposalsBySeat`), the `propose` tool in
+`core/tools/catalog.ts`, `headBlock` and the `head` seat scope in `core/org-rules.ts`,
+`dashboard/proposalActions.ts`, `dashboard/components/proposals.tsx`, `app/(room)/proposals/`,
+`/build/new?proposal=`.
+
+**What it replaces.** The /one-two-new-agent skill's direct inserts into `agents`, `agent_defs` and
+`seats`: it now files a pending proposal (source `claude`) that Zak decides here. New agent on Crew
+stays the builder: it is already the blank form, and Zak's own tap needs no proposal to approve.
+
+**Checks.** `npm run check`, `npm run check:proposals`, `npm run check:org`, `npm run build`.

@@ -3,6 +3,7 @@ import { previewChain, rollBackFlow, runChainNow, saveCrewFlow } from "@/dashboa
 import { getCrewCanvas, getFloor } from "@/dashboard/data";
 import { deptExtras, orgView } from "@/dashboard/org";
 import { goalsByDept } from "@/dashboard/goals";
+import { listProposals, proposalsBySeat } from "@/core/proposals";
 import { GOALS_MISSING } from "@/core/goals";
 import { orgAddDepartment, orgAddDeptRule, orgAddSeat, orgEditDeptRule, orgEditSeat, orgForgetDeptRule, orgRemoveDepartment, orgRemoveSeat, orgRenameDepartment, orgSetDeptBudget, orgSetDeptEmails, orgSetHolder, orgSetLeadChecks } from "@/dashboard/orgActions";
 import { controlsOn } from "@/dashboard/session";
@@ -42,12 +43,12 @@ export default async function Crew({ searchParams }: { searchParams: Promise<{ v
 async function Chart({ f }: { f: Awaited<ReturnType<typeof getFloor>> }) {
   const org = await loadOrg();
   if (!org) return <div className="card"><span className="sub">The org chart tables aren’t up to date: apply the org chart migrations (20261115090000_org_chart.sql, 20261116090000_department_budgets.sql).</span></div>;
-  const [extras, goals] = await Promise.all([deptExtras(org), goalsByDept(org)]);
+  const [extras, goals, pending] = await Promise.all([deptExtras(org), goalsByDept(org), listProposals(["pending"]).catch(() => null)]);
   return (
     <>
     {goals == null && <div className="card"><span className="sub">{GOALS_MISSING}</span></div>}
     <OrgChart
-      v={orgView(f, org, extras, goals)}
+      v={orgView(f, org, extras, goals, pending ? proposalsBySeat(org, pending) : {})}
       controls={controlsOn()}
       actions={{
         addDept: orgAddDepartment, renameDept: orgRenameDepartment, removeDept: orgRemoveDepartment, addSeat: orgAddSeat, editSeat: orgEditSeat, removeSeat: orgRemoveSeat, setHolder: orgSetHolder,
