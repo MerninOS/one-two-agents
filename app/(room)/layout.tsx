@@ -8,6 +8,13 @@ import { SEEN_COOKIE, parseSeen } from "@/dashboard/seen";
 import { STATE_LOOK, isLive, stateOf } from "@/dashboard/status";
 import { LiveRefresher, MobileMenu, RailLink, SideLink, ThemeToggle, type RecentRun } from "@/dashboard/components/client";
 import { Icon } from "@/dashboard/components/Icon";
+import { AveryChat } from "@/dashboard/components/avery";
+import { sendToAvery } from "@/dashboard/chatActions";
+import { CHAT_MISSING, chatHistory } from "@/core/avery-chat";
+import { agentNames, companySeat, loadOrg } from "@/core/org";
+
+// a message to Avery is a run on the page Zak is on (docs/company-mode.md, slice 5)
+export const maxDuration = 120;
 
 export default async function RoomLayout({ children }: { children: React.ReactNode }) {
   const floor = await getFloor();
@@ -25,9 +32,13 @@ export default async function RoomLayout({ children }: { children: React.ReactNo
     .map((r) => ({ id: r.id, name: floor.byId[r.agent_id]?.name ?? r.agent_id, status: r.status, live: isLive(r, floor.now) }));
   // approval cards and proposals both wait on Zak (company mode slice 3)
   const waiting = (floor.approvalsPending ?? 0) + (floor.proposalsPending ?? 0);
+  // Avery's chat: whoever holds the company seat, with the conversation so far
+  const [history, org] = await Promise.all([chatHistory(30).catch(() => null), loadOrg().catch(() => null)]);
+  const frontId = org ? companySeat(org)?.agentId ?? null : null;
+  const frontName = frontId ? (await agentNames([frontId]))[frontId] ?? "Avery" : "Avery";
   // six places (docs/builder-flow.md, slice 5): Settings sits apart at the bottom of the sidebar
   const nav = [
-    { href: "/", match: "/", icon: "layout-dashboard", label: "Today" },
+    { href: "/", match: "/", icon: "layout-dashboard", label: "Desk" },
     { href: "/approvals", match: ["/approvals", "/proposals*"], icon: "inbox", label: "Approvals", count: waiting ? String(waiting) : undefined },
     { href: "/crew", match: ["/crew", "/agents/*", "/build*"], icon: "users", label: "Crew", count: `${floor.built.length} + ${floor.planned.length}` },
     { href: "/runs", match: "/runs*", icon: "history", label: "Runs" },
@@ -75,6 +86,8 @@ export default async function RoomLayout({ children }: { children: React.ReactNo
             <SideLink href="/settings" match="/settings" icon="settings" label="Settings" />
           </aside>
           <main className="main">{children}</main>
+          <AveryChat name={frontName} send={sendToAvery} missing={history ? null : CHAT_MISSING}
+            initial={(history ?? []).map((h) => ({ id: h.id, role: h.role, text: h.text, runId: h.run_id, notes: h.notes }))} />
           <LiveRefresher runs={recent} />
         </div>
       </div>

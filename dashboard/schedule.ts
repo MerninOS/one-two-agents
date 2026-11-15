@@ -25,13 +25,6 @@ export function nextRuns(s: Schedule | undefined, from = Date.now(), n = 5) {
   return out;
 }
 
-/** The next seven Chicago dates, starting today. */
-export function weekFrom(now = Date.now()) {
-  const days = [chicagoDate(0, new Date(now))];
-  while (days.length < 7) days.push(nextDay(days[days.length - 1]));
-  return days;
-}
-
 export function schedWords(s: Schedule | undefined) {
   if (!s || s.kind === "manual" || !s.time) return "Manual only";
   return `${s.kind === "daily" ? "Daily" : "Weekdays"} ${t12(s.time)} CT`;

@@ -57,7 +57,7 @@ async function facts() {
   const [{ data: kpis }, { data: runs }, { data: pending }, { count: newDrafts }, orders, green] = await Promise.all([
     db().from("kpi_snapshots").select("*").order("date", { ascending: false }).limit(KPI_DAYS),
     // a try from the builder is not a run the brief reports on
-    db().from("agent_runs").select("id, agent_id, status, summary, error, started_at, cost_usd").gte("started_at", dayAgo).neq("trigger", "preview").order("started_at"),
+    db().from("agent_runs").select("id, agent_id, status, summary, error, started_at, cost_usd").gte("started_at", dayAgo).not("trigger", "in", "(preview,chat)").order("started_at"),
     db().from("approvals").select("created_at").eq("status", "pending").order("created_at").limit(500),
     db().from("wholesale_leads").select("id", { count: "exact", head: true }).not("gmail_draft_id", "is", null).gte("created_at", dayAgo),
     getBoardOrders(),

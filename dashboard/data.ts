@@ -163,20 +163,6 @@ export async function getRun(id: string): Promise<Run | null> {
 
 export interface Pipeline { stages: Record<string, number>; total: number; domains: string[] }
 
-/** Mission control's "Memory per agent": what each agent's next run would load. Notion pages aren't read here, only counted. */
-export async function getMemoryMeters(): Promise<Record<string, { tokens: number; budget: number; lines: number; groups: MemoryLoad["groups"]; linked: number }> | null> {
-  await requireSession();
-  if (!health().supabase) return null;
-  try {
-    const ids = (await getFloor()).built.map((a) => a.id);
-    const loads = await Promise.all(ids.map((id) => loadMemory(id, Date.now(), { pages: false })));
-    return Object.fromEntries(loads.map((m) => [m.agentId, {
-      tokens: m.tokens, budget: m.budget, lines: m.rows.length, groups: m.groups,
-      linked: m.rows.filter((r) => r.grp === "standing_order" && r.notion_page_id).length,
-    }]));
-  } catch { return null; }
-}
-
 /** Rowan's pipeline by stage, and the domains it won't repeat. */
 export async function getPipeline(): Promise<Pipeline | null> {
   await requireSession();
@@ -186,13 +172,6 @@ export async function getPipeline(): Promise<Pipeline | null> {
   const stages: Record<string, number> = {};
   for (const l of data ?? []) stages[l.stage] = (stages[l.stage] ?? 0) + 1;
   return { stages, total: data?.length ?? 0, domains: (data ?? []).map((l) => l.domain).filter(Boolean) };
-}
-
-export async function leadsForRun(runId: string): Promise<number | null> {
-  await requireSession();
-  if (!UUID.test(runId) || !health().supabase) return null;
-  const { count } = await db().from("wholesale_leads").select("id", { count: "exact", head: true }).eq("run_id", runId);
-  return count ?? 0;
 }
 
 /** The leads one run found, for Good / Not this on each (docs/company-mode.md). */

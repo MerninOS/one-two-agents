@@ -2,6 +2,7 @@ import { cookies } from "next/headers";
 import { needs } from "@/dashboard/needs";
 import { SEEN_COOKIE, parseSeen } from "@/dashboard/seen";
 import Link from "next/link";
+import { askedIn } from "@/core/avery-chat";
 import { notFound } from "next/navigation";
 import { costUsd, MODELS } from "@/integrations/anthropic";
 import { MODEL_LIST } from "@/integrations/models";
@@ -35,6 +36,7 @@ export default async function Replay({ params }: { params: Promise<{ id: string 
   const leads = items ? items.length : null;
   const map = mf && mapOf({ agentId: a.id, spec: mf.spec, menu: builderMenu(f.built), schedule: null, chain: null, usedBy: mf.usedBy, edit: null, run: mapRunOf(run, steps) });
   const chain = run.trigger === "chain" ? await getChainRuns(run.id) : null;
+  const asked = run.trigger === "chat" ? await askedIn(run.id).catch(() => null) : null;
   const look = RUN_LOOK[run.status];
 
   // Where the money went, split in code with the same prices the agents bill with.
@@ -51,13 +53,13 @@ export default async function Replay({ params }: { params: Promise<{ id: string 
     { label: has("web_search") ? "Web searches" : "Other", amount: rest, sub: has("web_search") ? `about ${Math.round(rest / 0.01)} at $0.01` : "", color: "var(--ink2)" },
   ];
 
-  const title = run.status === "skipped" ? `Skipped · ${when(run.started_at)}` : run.status === "failed" ? `Failed · ${when(run.started_at)}` : `${run.trigger === "manual" ? "Manual" : run.trigger === "approval" ? "Approval" : run.trigger === "chain" ? "Chain" : run.trigger === "preview" ? "Try" : "Scheduled"} run · ${when(run.started_at)}`;
+  const title = run.status === "skipped" ? `Skipped · ${when(run.started_at)}` : run.status === "failed" ? `Failed · ${when(run.started_at)}` : `${run.trigger === "manual" ? "Manual" : run.trigger === "approval" ? "Approval" : run.trigger === "chain" ? "Chain" : run.trigger === "preview" ? "Try" : run.trigger === "chat" ? "Chat" : "Scheduled"} run · ${when(run.started_at)}`;
   const stats = [
     ["Started", `${when(run.started_at)} CT`, utcStr(run.started_at)],
     ["Duration", dur(run.started_at, run.ended_at), ""],
     ["Cost", m4(run.cost_usd), ""],
     ["Tokens", `${num(run.tokens_in)} in · ${num(run.tokens_out)} out`, ""],
-    ["Trigger", run.trigger === "cron" ? "Vercel Schedule" : run.trigger === "manual" ? "Zak pressed Run" : run.trigger === "approval" ? "Zak approved changes (gateway)" : run.trigger === "chain" ? `Chain${chain ? `: ${chain.name}` : ""}` : run.trigger === "preview" ? "A try from the builder: nothing sent or saved" : run.trigger, ""],
+    ["Trigger", run.trigger === "cron" ? "Vercel Schedule" : run.trigger === "manual" ? "Zak pressed Run" : run.trigger === "approval" ? "Zak approved changes (gateway)" : run.trigger === "chain" ? `Chain${chain ? `: ${chain.name}` : ""}` : run.trigger === "preview" ? "A try from the builder: nothing sent or saved" : run.trigger === "chat" ? `Zak’s message in the chat${asked ? `: “${asked.slice(0, 200)}”` : ""}` : run.trigger, ""],
   ];
 
   return (
