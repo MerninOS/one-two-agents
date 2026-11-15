@@ -4,14 +4,17 @@
 // an open seat to New agent with the seat filled in. Edit chart opens each seat and department to
 // rename it, add seats under it, pick who sits there or remove it. Slice 2: each department card
 // shows its monthly AI budget, and its Edit sheet sets the budget, the email cap and the rules
-// every agent in it follows. The server checks every change.
+// every agent in it follows. The server checks every change. Company mode slice 2: each department
+// card leads with its goals (docs/company-mode.md).
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 import { DEPT_BUDGET_CEILING, LEAD_REVIEW_HOURS, deptBudgetChange, deptEmailChange } from "@/core/org-rules";
+import { MAX_GOALS_PER_DEPT } from "@/core/goal-rules";
 import type { ActionResult } from "../actions";
 import type { DeptView, OrgView, SeatAgent, SeatView } from "../org";
 import { Modal, Toast, type Confirm } from "./client";
+import { GoalTile } from "./goals";
 import { Icon } from "./Icon";
 import { MemoryLine } from "./memory";
 
@@ -85,6 +88,7 @@ export function OrgChart({ v, actions, controls }: { v: OrgView; actions: OrgAct
                   <Icon name={folded ? "chevron-right" : "chevron-down"} size={18} style={{ flex: "none", opacity: 0.6 }} />
                 </button>
               )}
+              {!editing && <DeptGoals d={d} />}
               {folded && <DeptSummary d={d} />}
               <div className={`org-dept-h${editing ? "" : " wide-only"}`}>
                 <span className="org-dept-n">{d.name}</span>
@@ -164,6 +168,17 @@ function teamCounts(s: SeatView) {
   const planned = team.filter((k) => k.agent?.planned).length;
   const filled = team.length - open - planned;
   return [filled && `${filled} filled`, planned && `${planned} planned`, open && `${open} open`].filter(Boolean).join(" · ");
+}
+
+/** A department's goals lead its card (docs/company-mode.md, slice 2), with Set a goal when it has room. */
+function DeptGoals({ d }: { d: DeptView }) {
+  if (d.goals == null) return null;
+  return (
+    <div className="stack" style={{ gap: 8 }}>
+      {d.goals.map((g) => <GoalTile key={g.id} g={g} />)}
+      {d.goals.length < MAX_GOALS_PER_DEPT && <Link href={`/goals/new?dept=${d.id}`} className="goal-add"><Icon name="plus" size={14} />{d.goals.length ? "Add a goal" : `Set a goal for ${d.name}`}</Link>}
+    </div>
+  );
 }
 
 /** A folded department on a phone: a face per seat (filled first, open last) and who heads it. */

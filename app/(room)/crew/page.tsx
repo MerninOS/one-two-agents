@@ -2,6 +2,8 @@ import Link from "next/link";
 import { previewChain, rollBackFlow, runChainNow, saveCrewFlow } from "@/dashboard/actions";
 import { getCrewCanvas, getFloor } from "@/dashboard/data";
 import { deptExtras, orgView } from "@/dashboard/org";
+import { goalsByDept } from "@/dashboard/goals";
+import { GOALS_MISSING } from "@/core/goals";
 import { orgAddDepartment, orgAddDeptRule, orgAddSeat, orgEditDeptRule, orgEditSeat, orgForgetDeptRule, orgRemoveDepartment, orgRemoveSeat, orgRenameDepartment, orgSetDeptBudget, orgSetDeptEmails, orgSetHolder, orgSetLeadChecks } from "@/dashboard/orgActions";
 import { controlsOn } from "@/dashboard/session";
 import { loadOrg } from "@/core/org";
@@ -13,7 +15,7 @@ import { OrgChart } from "@/dashboard/components/OrgChart";
 // agents not on the chart yet below it) and New agent, which opens the builder flow; and a Schedule
 // view (the chains that were the Crew canvas), the one place a schedule is turned on.
 
-// Preview dry-runs up to three agents in a row.
+// Preview dry-runs up to three agents in a row. (Goals read Shopify or Mercury when the chart opens.)
 export const maxDuration = 300;
 
 export default async function Crew({ searchParams }: { searchParams: Promise<{ view?: string }> }) {
@@ -24,7 +26,7 @@ export default async function Crew({ searchParams }: { searchParams: Promise<{ v
       <div className="row wrap" style={{ gap: 12, alignItems: "flex-end" }}>
         <div className="stack" style={{ gap: 6, flex: "1 1 320px" }}>
           <h1 className="h1">Crew</h1>
-          <span className="sub">{view === "org" ? "Your agents by department. Open one to see how it’s doing, edit it, teach it or replay its runs." : "When each agent runs, and who goes next."}</span>
+          <span className="sub">{view === "org" ? "Your agents by department, each led by its goals. Open one to see how it’s doing, edit it, teach it or replay its runs." : "When each agent runs, and who goes next."}</span>
         </div>
         <Link href="/build/new" className="btn dark"><Icon name="user-plus" size={15} />New agent</Link>
       </div>
@@ -40,15 +42,19 @@ export default async function Crew({ searchParams }: { searchParams: Promise<{ v
 async function Chart({ f }: { f: Awaited<ReturnType<typeof getFloor>> }) {
   const org = await loadOrg();
   if (!org) return <div className="card"><span className="sub">The org chart tables aren’t up to date: apply the org chart migrations (20261115090000_org_chart.sql, 20261116090000_department_budgets.sql).</span></div>;
+  const [extras, goals] = await Promise.all([deptExtras(org), goalsByDept(org)]);
   return (
+    <>
+    {goals == null && <div className="card"><span className="sub">{GOALS_MISSING}</span></div>}
     <OrgChart
-      v={orgView(f, org, await deptExtras(org))}
+      v={orgView(f, org, extras, goals)}
       controls={controlsOn()}
       actions={{
         addDept: orgAddDepartment, renameDept: orgRenameDepartment, removeDept: orgRemoveDepartment, addSeat: orgAddSeat, editSeat: orgEditSeat, removeSeat: orgRemoveSeat, setHolder: orgSetHolder,
         setBudget: orgSetDeptBudget, setEmails: orgSetDeptEmails, addRule: orgAddDeptRule, editRule: orgEditDeptRule, forgetRule: orgForgetDeptRule, setLeadChecks: orgSetLeadChecks,
       }}
     />
+    </>
   );
 }
 

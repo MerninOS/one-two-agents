@@ -91,9 +91,6 @@ h1, h2, h3, p { margin: 0; }
 .pill { display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px; border-radius: 999px; font-size: 12.5px; font-weight: 600; white-space: nowrap; }
 .pill.sm { padding: 4px 10px; font-size: 12px; }
 .dot { width: 7px; height: 7px; border-radius: 999px; flex: none; display: inline-block; }
-.chip { display: flex; flex-direction: column; gap: 2px; padding: 10px 16px; border-radius: 18px; background: var(--soft); min-width: 110px; }
-.chip-l { font-size: 11.5px; color: var(--mut); }
-.chip-v { font-size: 15px; font-weight: 600; white-space: nowrap; }
 .tag { padding: 3px 8px; border-radius: 6px; background: var(--soft); font-size: 10px; font-weight: 700; letter-spacing: .06em; color: var(--ink2); white-space: nowrap; }
 
 .btn { height: 44px; padding: 0 20px; border-radius: 999px; border: 0; font-size: 14px; font-weight: 600; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; gap: 8px; white-space: nowrap; }
@@ -551,3 +548,15 @@ button.org-seat { cursor: pointer; }
   .org-who .org-last { display: none; }
   .org-kids { padding-left: 10px; margin-left: 12px; }
 }
+
+/* Goals (docs/company-mode.md, slice 2) */
+.goal-tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 240px), 1fr)); gap: 10px; }
+.goal-tile { display: flex; flex-direction: column; gap: 7px; padding: 12px 14px; border-radius: 16px; background: var(--soft); color: var(--ink); text-decoration: none; min-width: 0; }
+a.goal-tile:hover { text-decoration: none; box-shadow: inset 0 0 0 1px var(--mut2); }
+.goal-t { font-size: 14px; font-weight: 600; line-height: 1.3; overflow-wrap: anywhere; }
+.goal-add { display: flex; align-items: center; gap: 6px; padding: 10px 14px; border-radius: 16px; border: 1.5px dashed var(--mut2); color: var(--ink2); font-size: 13px; font-weight: 600; text-decoration: none; }
+a.goal-add:hover { text-decoration: none; color: var(--ink); }
+.funnel { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 6px; }
+.funnel > span { display: flex; flex-direction: column; gap: 2px; padding: 10px; border-radius: 14px; background: var(--soft); font-size: 11.5px; color: var(--mut); }
+.funnel b { font-size: 20px; font-weight: 600; color: var(--ink); letter-spacing: -.02em; }
+@media (max-width: 760px) { .funnel { grid-template-columns: repeat(3, minmax(0, 1fr)); } }

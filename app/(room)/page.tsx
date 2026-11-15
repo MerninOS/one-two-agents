@@ -2,8 +2,10 @@ import { cookies } from "next/headers";
 import { SEEN_COOKIE, parseSeen } from "@/dashboard/seen";
 import Link from "next/link";
 import { chicagoDate } from "@/core/time";
-import { CONNECTIONS, isSetUp } from "@/dashboard/connections";
-import { getFloor, getMemoryMeters, getPipeline, leadsForRun } from "@/dashboard/data";
+import { getFloor, getMemoryMeters, leadsForRun } from "@/dashboard/data";
+import { goalsByDept } from "@/dashboard/goals";
+import { GOALS_MISSING } from "@/core/goals";
+import { GoalTile } from "@/dashboard/components/goals";
 import { dow, dur, hm, longDay, m2, m4, num, shortHm, when } from "@/dashboard/format";
 import { PRI_COLOR, needs } from "@/dashboard/needs";
 import { deptOf, groupByDepartment, loadOrg } from "@/core/org";
@@ -19,14 +21,12 @@ export default async function MissionControl() {
   const f = await getFloor();
   const now = f.now;
   const open = needs(f, now, parseSeen((await cookies()).get(SEEN_COOKIE)?.value));
-  const today = chicagoDate(0, new Date(now));
-  const todayRuns = f.runs.filter((r) => chicagoDate(0, new Date(r.started_at)) === today);
-  const ok = todayRuns.filter((r) => r.status === "ok").length, sk = todayRuns.filter((r) => r.status === "skipped").length, fl = todayRuns.filter((r) => r.status === "failed").length;
   const spend = Object.values(f.spentToday).reduce((s, v) => s + v, 0);
   const budgetSum = f.built.reduce((s, a) => s + (f.agents[a.id]?.daily_budget_usd ?? 0), 0);
-  const outside = CONNECTIONS.filter((c) => !c.builtIn);
-  const systems = outside.filter((c) => isSetUp(c, f.health)).length;
-  const [pipeline, meters, org] = await Promise.all([getPipeline(), getMemoryMeters(), loadOrg().catch(() => null)]);
+  const [meters, org] = await Promise.all([getMemoryMeters(), loadOrg().catch(() => null)]);
+  // goal tiles replace the stat chips (docs/company-mode.md, slice 2)
+  const goals = await goalsByDept(org);
+  const allGoals = org && goals ? org.departments.flatMap((d) => goals[d.id] ?? []) : [];
   // Needs you, grouped by the department of the agent each one is about (docs/org-chart.md, slice 4)
   const groups = groupByDepartment(open, (id) => (org ? deptOf(org, id) : null));
 
@@ -57,16 +57,16 @@ export default async function MissionControl() {
           <h1 style={{ fontSize: 32, lineHeight: 1.15, fontWeight: 600, letterSpacing: "-.025em", textWrap: "pretty" }}>{greeting}</h1>
           <p style={{ fontSize: 14.5, textWrap: "pretty" }} className="ink2">{greetingSub}</p>
         </div>
-        <div className="row wrap" style={{ gap: 8 }}>
-          {[
-            ["Spend today", m4(spend), `of ${m2(budgetSum)}`],
-            ["Runs today", String(todayRuns.length), `${ok} OK · ${sk} skipped${fl ? ` · ${fl} failed` : ""}`],
-            ["Pipeline", pipeline ? String(pipeline.total) : "—", "leads"],
-            ["Connections", `${systems}/${outside.length}`, "set up"],
-          ].map(([l, v, s]) => (
-            <div key={l} className="chip"><span className="chip-l">{l}</span><span className="chip-v">{v}<span style={{ fontWeight: 400, fontSize: 12.5 }} className="muted"> {s}</span></span></div>
-          ))}
+      </div>
+
+      <div className="card" style={{ gap: 12 }}>
+        <div className="row wrap" style={{ gap: 12 }}>
+          <span className="card-t">Goals</span>
+          <Link href="/goals/new" className="btn outline sm"><Icon name="plus" size={14} />Set a goal</Link>
         </div>
+        {goals == null ? <span className="sub">{GOALS_MISSING}</span>
+          : allGoals.length ? <div className="goal-tiles">{allGoals.map((g) => <GoalTile key={g.id} g={g} showDept />)}</div>
+          : <span className="sub">No goals yet. Give each department one, with a measure code can count, and its head plans around it.</span>}
       </div>
 
       {!f.ok && <div className="card" style={{ background: "var(--red-soft)", color: "var(--red-ink)", borderColor: "transparent" }}>{f.problem}</div>}

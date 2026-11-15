@@ -7,6 +7,7 @@ import { CAPS } from "@/core/gateway/policy";
 import { departmentRules } from "@/core/memory";
 import { agentNames, companySeat, deptSpent, headOf, childrenOf, liveAgentIds, monthSpendByAgent, orgProblems, reportsTo, seatOf, seatPath, seatTeam, seatToolBlocks, type Org, type Seat } from "@/core/org";
 import type { MapOrg } from "./agentMap";
+import type { GoalView } from "./goals";
 import type { Floor } from "./data";
 import { when } from "./format";
 import { STATE_LOOK, stateOf, type Look } from "./status";
@@ -41,6 +42,8 @@ export interface DeptView {
   rules: { id: string; text: string }[];
   /** Drafts from its agents wait for the agent above them first (slice 4). */
   leadChecks: boolean;
+  /** Its goals with where they stand (docs/company-mode.md, slice 2); null when the goals table isn't there. */
+  goals: GoalView[] | null;
 }
 /** What the department cards need besides the chart: spend this month per agent, department rules, the company email cap. */
 export interface DeptExtras { spend: Record<string, number>; rules: { id: string; departmentId: string; text: string }[]; companyEmails: number }
@@ -65,7 +68,7 @@ function agentsOf(f: Floor): SeatAgent[] {
   });
 }
 
-export function orgView(f: Floor, org: Org, x: DeptExtras): OrgView {
+export function orgView(f: Floor, org: Org, x: DeptExtras, goals: Record<string, GoalView[]> | null = {}): OrgView {
   const all = agentsOf(f);
   const byId = new Map(all.map((a) => [a.id, a]));
   const view = (s: Seat, depth: number): SeatView => ({
@@ -84,6 +87,7 @@ export function orgView(f: Floor, org: Org, x: DeptExtras): OrgView {
       budget: d.monthlyBudgetUsd, spent: deptSpent(org, d.id, x.spend), emails: d.maxEmailsPerDay, companyEmails: x.companyEmails,
       rules: x.rules.filter((r) => r.departmentId === d.id).map((r) => ({ id: r.id, text: r.text })),
       leadChecks: d.leadChecksDrafts,
+      goals: goals ? goals[d.id] ?? [] : null,
     }];
   });
   const top = companySeat(org);

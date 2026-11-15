@@ -85,3 +85,72 @@ Journal's compact copy); `RejectButton`'s "propose a lesson" path in `reject` (Z
 reaction). `proposeLesson` stays for a lead's or head's send-back.
 
 **Checks.** `npm run check`, `npm run check:reactions`, `npm run build`.
+
+## Slice 2: Goals and measures
+
+**What Zak sees.**
+
+- **Crew > Org chart:** each department card leads with its goals (up to 3), above its budget and
+  seats, and stays visible when a department is folded on a phone. A tile shows the goal in his
+  words, a status (On track, Behind, Reached, Missed, No measure yet, Couldn't read, Paused), what
+  code counted ("1 of 5 won", "$1,240 of $3,000 this month", "48 days, at least 45 days") and a
+  bar. **Set a goal for Sales** (or **Add a goal**) opens Set a goal with the department picked.
+- **Today:** the stat chips (Spend today, Runs today, Pipeline, Connections) are gone; a **Goals**
+  card with a tile per goal, across departments, takes their place, with **Set a goal**. Spend
+  stays in Spend by agent, runs on Runs, connections on Connections.
+- **Set a goal** (`/goals/new`): department, the goal in his words, **How code measures it**
+  (picked from the list; the ones code can't count yet are listed separately and say what read is
+  missing), a target and a date. The form says how each measure is counted.
+- **Goal page** (`/goals/[id]`): Crew › Sales › Goal, status, "Set by you Nov 15 · owned by Rico,
+  Head of sales · due Mar 31", the goal, "Measured in code: …", the number, the bar and the pace
+  ("One more every 34 days to get there. At the current rate, about 3 by Mar 31."). For accounts
+  won, the leads funnel by stage; for days of cover, each lot. What the department costs AI this
+  month, per agent. **Change the goal**, **Pause it** / **Turn it back on**, **Mark done** /
+  **Reopen**, **Remove** (with a confirm). The head's plan and review come with slice 4.
+- **Heads read it:** a new **Goal progress** tool (`goal_progress`, Agents group in builder step 2)
+  gives the goals of the agent's own department (every department for the company seat), each with
+  its status, progress line, pace and the numbers `gN_value`, `gN_target` (plus `gN_<stage>` for
+  the funnel) and `goals_behind`. The department comes from the chart on every call; an agent not
+  on the chart is refused. It isn't added to any live spec here: tick it in step 2, or slice 4 adds
+  it to the heads' planning runs.
+
+**The measures** (`core/goal-rules.ts` MEASURES, a list in code; counted in `core/measures.ts`).
+
+| Measure | Shape | Counted from |
+|---|---|---|
+| Wholesale accounts won | total, by a date | `wholesale_leads` at stage Won |
+| Revenue this month | month | Shopify orders this Chicago month, cancelled left out |
+| Orders this month | month | the same orders, counted |
+| Lowest days of green cover | floor | each listed lot: on hand ÷ use per day over 30 days (`core/green.ts`) |
+| Months of runway | floor | Mercury cash ÷ net burn per 30 days over 90 days (`core/money.ts`) |
+| Email list size | (can't count yet) | needs a Klaviyo read, slice 6 |
+
+- **total:** pace counts from where the measure stood when the goal was set (`start_value`, read in
+  code on save) to the target by the date. On track when the count is at or above that line,
+  Reached at the target, Missed after the date.
+- **month:** starts again on the 1st. On track when it's at or above the target times the share of
+  the month gone. No date.
+- **floor:** On track at or above the line. Runway with no net burn has no limit, so it's on track.
+- A goal whose measure can't be counted yet saves with no target and shows "No measure yet" with
+  the missing read. A read that fails or takes over 20 seconds shows "Couldn't read" with why.
+- Each measure is read once per page, however many goals use it, when the page opens (Crew,
+  Today, the goal page). Nothing is cached or stored: the number is always today's.
+- Status and pace are plain arithmetic in `progress()`, tested by `npm run check:goals`.
+
+**What it never does.** A goal grants nothing: no agent can do anything new because of one, and
+goals need the login only (no Controls), like the org chart. Goal words are Zak's (trusted); the
+numbers are code's. Changing a goal's measure starts its pace again from that day (`paced_from`).
+
+**Data.** Migration `20261121090000_goals.sql` (the `goals` table: department, title, measure key,
+target, `start_value`, `due_on`, state active / paused / done / dropped, `paced_from`). Removing a
+department removes its goals. Until it's applied, Crew and Today say so and Set a goal refuses.
+
+**Code.** `core/goal-rules.ts` (pure: the list, `planGoal`, `progress`), `core/measures.ts`,
+`core/goals.ts` (store, `goalProgress` for the tool), `core/green.ts` and `core/money.ts` (moved
+out of the tool list so the tools and the measures share one copy), `agents/cfo` `ordersBetween`,
+`dashboard/goals.ts`, `dashboard/goalActions.ts`, `dashboard/components/goals.tsx`,
+`dashboard/components/GoalForm.tsx`, `app/(room)/goals/`.
+
+**What it replaces.** Today's stat chips (and their CSS).
+
+**Checks.** `npm run check`, `npm run check:goals`, `npm run build`.
