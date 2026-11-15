@@ -7,7 +7,9 @@ import { redirect } from "next/navigation";
 import { db } from "@/core/db";
 import { env } from "@/core/env";
 import { DEFAULT_BUDGET, loadMemory, memoryView, proposedLessons, readPages, type MemoryEvent, type MemoryLoad, type MemoryRow, type PageLoad } from "@/core/memory";
-import { agentNames, loadOrg } from "@/core/org";
+import { agentDepartment, agentNames, loadOrg } from "@/core/org";
+import { reactionTally, reactionsOf, reactionsOnRun, type Reaction } from "@/core/reactions";
+import type { Tally } from "@/core/reaction-rules";
 import { APPROVAL_LABELS, APPROVAL_TOOLS, MAX_CHAINS, MAX_STEPS, METRICS, listFlowVersions, loadFlow, nextFirings, readFlow, type Chain, type Crew } from "@/core/flow";
 import { TOOLS } from "@/core/tools/catalog";
 import type { CrewMember, IntegrationId } from "./crew";
@@ -184,6 +186,53 @@ export async function leadsForRun(runId: string): Promise<number | null> {
   if (!UUID.test(runId) || !health().supabase) return null;
   const { count } = await db().from("wholesale_leads").select("id", { count: "exact", head: true }).eq("run_id", runId);
   return count ?? 0;
+}
+
+/** The leads one run found, for Good / Not this on each (docs/company-mode.md). */
+export async function leadItemsOfRun(runId: string): Promise<{ id: string; business: string; city: string | null; fit: string | null }[] | null> {
+  await requireSession();
+  if (!UUID.test(runId) || !health().supabase) return null;
+  const { data, error } = await db().from("wholesale_leads").select("id, business, city, fit_reason").eq("run_id", runId).order("created_at", { ascending: true }).limit(25);
+  if (error) return null;
+  return (data ?? []).map((l) => ({ id: l.id as string, business: String(l.business), city: (l.city as string | null) ?? null, fit: (l.fit_reason as string | null) ?? null }));
+}
+
+export interface RuleChoice { id: string; text: string }
+/** What a reaction can save to and replace, for one agent: its own rules, its department's, the crew's. */
+export interface ReactRules { deptName: string | null; agent: RuleChoice[]; department: RuleChoice[]; crew: RuleChoice[] }
+
+/** The rules a reaction may replace, read fresh. Empty lists when memory isn't set up. */
+export async function getReactRules(agentId: string): Promise<ReactRules> {
+  await requireSession();
+  const empty: ReactRules = { deptName: null, agent: [], department: [], crew: [] };
+  if (!health().supabase) return empty;
+  try {
+    const d = (await agentDepartment(agentId).catch(() => null))?.dept ?? null;
+    const { rows } = await memoryView(agentId);
+    const kept = rows.filter((r) => r.state === "kept");
+    const pick = (keep: (r: MemoryRow) => boolean) => kept.filter(keep).slice(0, 12).map((r) => ({ id: r.id, text: r.text }));
+    return {
+      deptName: d?.name ?? null,
+      agent: pick((r) => r.agent_id === agentId && (r.grp === "standing_order" || r.grp === "note" || r.grp === "lesson")),
+      department: pick((r) => r.grp === "department" && !!d && r.department_id === d.id),
+      crew: pick((r) => r.grp === "crew" && r.agent_id === null),
+    };
+  } catch { return empty; }
+}
+
+/** Zak's reactions on one run, keyed by item id ("" for the run). */
+export async function getRunReactions(runId: string): Promise<Record<string, Reaction>> {
+  await requireSession();
+  if (!UUID.test(runId) || !health().supabase) return {};
+  return reactionsOnRun(runId);
+}
+
+/** An agent's scorecard from Zak (last 30 days) and its latest reactions, for the Overview. */
+export async function getReactionsFor(agentId: string): Promise<{ tally: Tally | undefined; latest: Reaction[] }> {
+  await requireSession();
+  if (!health().supabase) return { tally: undefined, latest: [] };
+  const [t, latest] = await Promise.all([reactionTally([agentId], new Date(Date.now() - 30 * 864e5).toISOString()), reactionsOf(agentId, 8)]);
+  return { tally: t[agentId], latest };
 }
 
 export interface Books {

@@ -8,7 +8,8 @@ import { after } from "next/server";
 import { jobOf, loadCrew } from "@/agents/registry";
 import { db } from "@/core/db";
 import { withRun } from "@/core/runs";
-import { discardLesson, editMemory, forgetMemory, keepLesson, proposeLesson, teach as teachMemory, type Keep } from "@/core/memory";
+import { discardLesson, editMemory, forgetMemory, keepLesson, teach as teachMemory } from "@/core/memory";
+import { saveReaction } from "@/core/reactions";
 import { applyApproved, decide, loadCaps, queueBookkeeperProposals, retry } from "@/core/gateway";
 import { CAPS, capChange, fmtCap, type CapKey } from "@/core/gateway/policy";
 import { env } from "@/core/env";
@@ -178,10 +179,10 @@ export async function approve(approvalId: string): Promise<ActionResult> {
 }
 
 /**
- * Rejects an approval. A reason (Zak's own words) also proposes a lesson for the agent, which waits on
- * its Memory tab until he keeps it. No model call: the lesson is his sentence.
+ * Rejects an approval. A reason is Zak's own words, so it is a reaction (docs/company-mode.md): it
+ * saves a rule for the agent (or its department, or everyone) straight away, with no Keep to tap.
  */
-export async function reject(approvalId: string, reason?: string): Promise<ActionResult> {
+export async function reject(approvalId: string, reason?: string, scope?: string, keep?: string, replaces?: string | null): Promise<ActionResult> {
   await requireSession();
   if (!UUID.test(approvalId)) return { ok: false, text: "Unknown approval." };
   const why = String(reason ?? "").replace(/\s+/g, " ").trim().slice(0, 400);
@@ -189,20 +190,16 @@ export async function reject(approvalId: string, reason?: string): Promise<Actio
     const actionId = await decide(approvalId, "reject", BY, why || undefined);
     if (!actionId) { revalidatePath("/", "layout"); return { ok: false, text: "That item was already decided or has expired." }; }
     await fireApprovalChains("reject");
-    let lesson = "";
-    if (why) {
-      try {
-        const { data: ap } = await db().from("approvals").select("agent_id, title").eq("id", approvalId).single();
-        if (ap && await proposeLesson(ap.agent_id, approvalId, ap.title, why)) lesson = ` A lesson is waiting on ${await nameOf(ap.agent_id)}’s Memory tab for your Keep.`;
-      } catch (e) { lesson = ` The lesson couldn’t be saved: ${e instanceof Error ? e.message : String(e)}.`; }
+    let more = "";
+    const { data: ap } = await db().from("approvals").select("agent_id, title").eq("id", approvalId).single();
+    if (why && ap) {
+      try { more = ` ${await saveReaction(ap.agent_id, await nameOf(ap.agent_id), { approvalId }, { verdict: "not", text: why, scope, keep, replaces })}`; }
+      catch (e) { more = ` Your words couldn’t be saved as a rule: ${e instanceof Error ? e.message : String(e)}`; }
     }
     // an agent on a playbook that proposed this goes back to needing approval for its next playbook
-    try {
-      const { data: ap } = await db().from("approvals").select("agent_id, title").eq("id", approvalId).single();
-      if (ap && await holdAfterRejection(ap.agent_id, ap.title)) lesson += " Its next playbook will wait for your approval.";
-    } catch { /* no playbook tables yet */ }
+    try { if (ap && await holdAfterRejection(ap.agent_id, ap.title)) more += " Its next playbook will wait for your approval."; } catch { /* no playbook tables yet */ }
     revalidatePath("/", "layout");
-    return { ok: true, text: `Rejected.${lesson}` };
+    return { ok: true, text: `Rejected.${more}` };
   } catch (e) { return fail(e); }
 }
 
@@ -249,21 +246,27 @@ export async function queueQuinn(): Promise<ActionResult> {
 
 // ---- Memory. Teaching, editing and forgetting spend nothing and wake nothing, so they need only the login.
 
-const KEEP_AS = ["note", "standing_order", "crew"] as const;
-const FORGET: Keep[] = ["next_run", "days_30", "always"];
-
-export async function teach(agentId: string, text: string, keepAs: string, forget: string, notionLink = ""): Promise<ActionResult> {
+/**
+ * Good or Not this on a run, or on one item of a run (a lead it found). The run and the item must
+ * belong to the agent: both are looked up here, never taken from the page.
+ */
+export async function react(agentId: string, runId: string, itemId: string | null, verdict: string, text = "", scope = "agent", keep = "always", replaces: string | null = null): Promise<ActionResult> {
   await requireSession();
   const who = await crewAgent(agentId);
   if (!who) return { ok: false, text: "Unknown agent." };
-  if (!KEEP_AS.includes(keepAs as (typeof KEEP_AS)[number]) || !FORGET.includes(forget as Keep)) return { ok: false, text: "Pick how long to keep it." };
+  if (!UUID.test(runId) || (itemId && !UUID.test(itemId))) return { ok: false, text: "Unknown run." };
   try {
-    const link = keepAs === "standing_order" ? String(notionLink ?? "").slice(0, 500) : "";
-    await teachMemory({ agentId, text: String(text), keepAs: keepAs as (typeof KEEP_AS)[number], forget: forget as Keep, notionLink: link });
+    const { data: run } = await db().from("agent_runs").select("agent_id").eq("id", runId).maybeSingle();
+    if (!run || run.agent_id !== agentId) return { ok: false, text: "That run isn’t this agent’s." };
+    let itemLabel: string | null = null;
+    if (itemId) {
+      const { data: lead } = await db().from("wholesale_leads").select("business, run_id").eq("id", itemId).maybeSingle();
+      if (!lead || lead.run_id !== runId) return { ok: false, text: "That lead isn’t from this run." };
+      itemLabel = String(lead.business);
+    }
+    const said = await saveReaction(agentId, who.name, { runId, itemId, itemLabel }, { verdict, text, scope, keep, replaces });
     revalidatePath("/", "layout");
-    const name = who.name;
-    const how = keepAs === "crew" ? "Every agent will load it from its next run." : keepAs === "standing_order" ? `${name} follows it from the next run${link ? " and reads the linked page each time. Share that page with the agents’ Notion integration in Notion if you haven’t" : ""}.` : forget === "next_run" ? `${name} reads it on the next run, then forgets it.` : forget === "days_30" ? `${name} keeps it for 30 days.` : `${name} keeps it until you forget it.`;
-    return { ok: true, text: `Saved. ${how}` };
+    return { ok: true, text: said };
   } catch (e) { return fail(e); }
 }
 

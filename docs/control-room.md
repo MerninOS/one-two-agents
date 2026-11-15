@@ -31,7 +31,7 @@ A "mission control" for the agents, light and dark themes, Plus Jakarta Sans, wh
 | Memory (orders, facts, lessons, notes, working, don't repeat) | `agent_memory`, `memory_events` (docs/agent-memory.md) | Live: Teach, Edit, Forget, lessons, linked Notion pages, context meter, timeline |
 | Run steps, gateway decisions, quarantine | Nothing (needs run transcripts) | Replay shows the design's "Steps need run transcripts" state |
 | Approvals queue | `approvals` + `agent_actions` (gateway) | Pending cards with Approve / Reject / Approve all, approved-not-applied with Apply now and Retry, decided list, gateway log |
-| Journal / Teach | `agent_memory` | Live |
+| Journal / Teach | `agent_memory`, `reactions` (Good / Not this on runs and approvals, docs/company-mode.md) | Live |
 
 No sample data ships. Where the design used sample numbers, the build shows the real number or an honest empty state.
 

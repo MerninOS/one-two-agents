@@ -5,8 +5,9 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { costUsd, MODELS } from "@/integrations/anthropic";
 import { MODEL_LIST } from "@/integrations/models";
-import { dryRun } from "@/dashboard/actions";
-import { getChainRuns, getFloor, getRun, leadsForRun } from "@/dashboard/data";
+import { dryRun, react } from "@/dashboard/actions";
+import { getChainRuns, getFloor, getReactRules, getRun, getRunReactions, leadItemsOfRun } from "@/dashboard/data";
+import { ReactBar } from "@/dashboard/components/react";
 import { dur, m4, num, utcStr, when } from "@/dashboard/format";
 import { RUN_LOOK } from "@/dashboard/status";
 import { DryRun, MarkSeen } from "@/dashboard/components/client";
@@ -26,7 +27,12 @@ export default async function Replay({ params }: { params: Promise<{ id: string 
   const unseen = needs(f, f.now, parseSeen((await cookies()).get(SEEN_COOKIE)?.value)).some((n) => n.run && n.agentId === a.id);
   const others = f.runs.filter((r) => r.agent_id === a.id && r.status !== "skipped" && r.id !== run.id).slice(0, 6);
   const has = (tool: string) => (f.grants[a.id] ?? []).includes(tool);
-  const [leads, mf, steps] = await Promise.all([has("report_leads") ? leadsForRun(run.id) : null, mapFor(a.id), mapSteps(run.id)]);
+  const reactable = run.status === "ok" || run.status === "failed";
+  const [items, mf, steps, said, rules] = await Promise.all([
+    has("report_leads") ? leadItemsOfRun(run.id) : null, mapFor(a.id), mapSteps(run.id),
+    reactable ? getRunReactions(run.id) : Promise.resolve({} as Awaited<ReturnType<typeof getRunReactions>>), reactable ? getReactRules(a.id) : null,
+  ]);
+  const leads = items ? items.length : null;
   const map = mf && mapOf({ agentId: a.id, spec: mf.spec, menu: builderMenu(f.built), schedule: null, chain: null, usedBy: mf.usedBy, edit: null, run: mapRunOf(run, steps) });
   const chain = run.trigger === "chain" ? await getChainRuns(run.id) : null;
   const look = RUN_LOOK[run.status];
@@ -79,6 +85,26 @@ export default async function Replay({ params }: { params: Promise<{ id: string 
         </div>
       </div>
 
+      {reactable && rules && (
+        <div id="react" className="card" style={{ gap: 14, scrollMarginTop: 80 }}>
+          <div className="card-h"><span className="card-t">Was this right?</span><span className="muted" style={{ fontSize: 12 }}>Your words become a rule for {a.name} straight away</span></div>
+          <ReactBar name={a.name} rules={rules} current={said[""] ?? null} save={react.bind(null, a.id, run.id, null)} />
+          {items && items.length > 0 && (
+            <div className="stack" style={{ gap: 0 }}>
+              <span className="muted" style={{ fontSize: 11.5, fontWeight: 700, letterSpacing: ".05em", paddingBottom: 4 }}>EACH LEAD IT FOUND</span>
+              {items.map((l) => (
+                <div key={l.id} className="rule" style={{ display: "flex", flexWrap: "wrap", gap: 12, padding: "12px 0", alignItems: "flex-start" }}>
+                  <div style={{ flex: "1 1 260px", display: "flex", flexDirection: "column", gap: 2, minWidth: 0 }}>
+                    <span style={{ fontSize: 14, fontWeight: 600 }}>{l.business}</span>
+                    <span className="muted" style={{ fontSize: 12.5, lineHeight: 1.4 }}>{[l.city, l.fit].filter(Boolean).join(" · ")}</span>
+                  </div>
+                  <div style={{ flex: "1 1 280px" }}><ReactBar compact name={a.name} rules={rules} current={said[l.id] ?? null} save={react.bind(null, a.id, run.id, l.id)} /></div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
       {chain && (
         <div className="card" style={{ gap: 12 }}>
           <div className="card-h">

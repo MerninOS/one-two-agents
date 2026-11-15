@@ -167,7 +167,7 @@ async function writeBriefRow(databaseId: string, f: Facts, j: Judgment, sections
 }
 
 /** What the email is built from. Every value is a fact computed above, plus the model's two sections. */
-const briefView = (f: Facts, j: Judgment, sections: readonly string[], notionUrl?: string): BriefView => ({
+const briefView = (f: Facts, j: Judgment, sections: readonly string[], notionUrl?: string, runId?: string | null): BriefView => ({
   today: f.today,
   yesterday: (f.yesterday as Kpi | null) ?? null,
   earlier: f.lastWeek as Kpi[],
@@ -180,6 +180,7 @@ const briefView = (f: Facts, j: Judgment, sections: readonly string[], notionUrl
   watch: j.watch,
   focus: j.focus,
   dashboardUrl: env.dashboardUrl,
+  runId: runId ?? undefined,
   notionUrl,
   names: f.names,
   sections,
@@ -198,8 +199,8 @@ function destinations(): { email: boolean; notion: { kind: "database" | "page"; 
 }
 
 /** Writes the Notion copy, then emails the brief. Returns one line on what went where. */
-async function sendBrief(f: Facts, judgment: Judgment, sections: readonly string[] = SECTIONS): Promise<string> {
-  const view = (notionUrl?: string) => briefView(f, judgment, sections, notionUrl);
+async function sendBrief(f: Facts, judgment: Judgment, sections: readonly string[] = SECTIONS, runId: string | null = null): Promise<string> {
+  const view = (notionUrl?: string) => briefView(f, judgment, sections, notionUrl, runId);
   const { email, notion: target } = destinations();
   if (!email && !target) throw new Error("Nowhere to send the brief: email needs RESEND_API_KEY, BRIEF_FROM and BRIEF_TO; Notion needs NOTION_TOKEN and NOTION_BRIEFS_DB_ID or NOTION_BRIEF_PARENT_ID");
 
@@ -245,11 +246,11 @@ export function parseJudgment(text: string): Judgment | null {
  * result. When the result has no Focus line, the
  * fixed rules write both, as they do when no model can be reached.
  */
-export async function deliverBrief(result: string): Promise<string> {
+export async function deliverBrief(result: string, runId: string | null = null): Promise<string> {
   const f = await facts();
   const parsed = parseJudgment(result);
   // department lines match only department names on the chart, so a line can't add a section
   const judgment = { ...(parsed ?? rulesJudgment(f)), depts: departmentLines(result, f.departments.map((d) => d.name)) };
-  const sent = await sendBrief(f, judgment);
+  const sent = await sendBrief(f, judgment, SECTIONS, runId);
   return `${sent}${parsed ? "" : " (no Focus line in the result, so the fixed rules wrote the focus and watch list)"}`;
 }

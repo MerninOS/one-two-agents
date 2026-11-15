@@ -280,10 +280,10 @@ export async function saveWorking(agentId: string, runId: string, lines: unknown
 
 const BY_ZAK = "zak (control room)";
 
-export interface TeachInput { agentId: string; text: string; keepAs: "note" | "standing_order" | "crew"; forget: Keep; notionLink?: string }
+export interface TeachInput { agentId: string; text: string; keepAs: "note" | "standing_order" | "crew"; forget: Keep; notionLink?: string; /** Where it came from, e.g. `run:<id>` for a reaction. */ sourceTag?: string }
 
-/** "Teach [name] something": saved as kept straight away, because they are Zak's own words. */
-export async function teach(t: TeachInput) {
+/** Zak's own words, saved as kept straight away (a reaction, or a rule in builder step 1). Returns the line's id. */
+export async function teach(t: TeachInput): Promise<string> {
   const text = t.text.replace(/\s+/g, " ").trim();
   if (!text) throw new Error("Write something to remember.");
   if (text.length > MAX_LINE) throw new Error(`Keep it to ${MAX_LINE} characters (this is ${text.length}).`);
@@ -295,7 +295,7 @@ export async function teach(t: TeachInput) {
   const row = {
     agent_id: t.keepAs === "crew" ? null : t.agentId,
     grp: t.keepAs,
-    text, source: "zak", trust: "note", state: "kept", keep: forget, notion_page_id: pageId,
+    text, source: "zak", source_tag: t.sourceTag ?? null, trust: "note", state: "kept", keep: forget, notion_page_id: pageId,
     runs_left: forget === "next_run" ? 1 : null,
     expires_at: forget === "days_30" ? new Date(Date.now() + 30 * 864e5).toISOString() : null,
     tokens: countTokens(text),
@@ -304,6 +304,7 @@ export async function teach(t: TeachInput) {
   const { data, error } = await db().from("agent_memory").insert(row).select("id").single();
   if (error) throw new Error(error.message);
   await logEvent({ memory_id: data.id, agent_id: row.agent_id, kind: "added", before: null, after: pageId ? `${text} (links Notion page ${pageId})` : text, by: BY_ZAK });
+  return data.id as string;
 }
 
 async function getRow(id: string) {
@@ -359,23 +360,25 @@ export async function departmentRules(deptIds: string[]): Promise<MemoryRow[]> {
   return error ? [] : (data ?? []) as MemoryRow[];
 }
 
-export async function addDepartmentRule(deptId: string, raw: string) {
+export async function addDepartmentRule(deptId: string, raw: string, sourceTag?: string): Promise<string> {
   if (!/^[a-z][a-z0-9_]{1,39}$/.test(deptId)) throw new Error("Unknown department.");
   const text = raw.replace(/\s+/g, " ").trim();
   if (!text) throw new Error("Write the rule first.");
   if (text.length > MAX_LINE) throw new Error(`Keep it to ${MAX_LINE} characters (this is ${text.length}).`);
   const { data, error } = await db().from("agent_memory").insert({
-    agent_id: null, department_id: deptId, grp: "department", text, source: "zak", trust: "note", state: "kept", keep: "always",
+    agent_id: null, department_id: deptId, grp: "department", text, source: "zak", source_tag: sourceTag ?? null, trust: "note", state: "kept", keep: "always",
     tokens: countTokens(text), decided_at: new Date().toISOString(),
   }).select("id").single();
   if (error) throw new Error(error.message);
   await logEvent({ memory_id: data.id, agent_id: null, department_id: deptId, kind: "added", before: null, after: text, by: BY_ZAK });
+  return data.id as string;
 }
 
-// ---- Lessons. Proposed by code from Zak's own words when he rejects an approval with a reason
-// (no model call, so $0). A lesson is loaded only after Zak taps Keep.
+// ---- Lessons. Proposed by code when a lead or head sends back a team draft (no model call, so $0).
+// A lesson is loaded only after Zak taps Keep. Zak's own reasons don't wait: a Reject with words is a
+// reaction (core/reactions.ts) and saves a rule straight away.
 
-/** Proposes a lesson from a rejection. Returns false when there is nothing to learn (no reason given). */
+/** Proposes a lesson from a send-back. Returns false when there is nothing to learn (no reason given). */
 export async function proposeLesson(agentId: string, approvalId: string, title: string, reason: string, sentBackBy?: string) {
   safeId(agentId);
   const why = reason.replace(/\s+/g, " ").trim();

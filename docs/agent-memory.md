@@ -3,8 +3,9 @@
 Spec (with the diagram): "Agent memory: spec" in Claude Docs, https://claude.ai/artifact/4cZFcAvFmpadpLSZXYHuWt.
 This file is the in-repo summary. Build card: "Agent memory" on the Notion Build Board.
 
-Each agent carries short notes into every run. Zak reads and corrects them on the Memory tab,
-so he teaches an agent once instead of rewriting its prompt.
+Each agent carries short notes into every run. Zak teaches by reacting to an agent's work where he
+sees it (Good / Not this on a run, Reject with a reason: docs/company-mode.md, slice 1), and reads and
+corrects what it learned on the Memory tab, so he teaches an agent once instead of rewriting its prompt.
 
 ## Rules (enforced in code)
 
@@ -17,7 +18,8 @@ so he teaches an agent once instead of rewriting its prompt.
   (Rowan, Quinn) always store working memory as data.
 - Facts an agent may claim and "don't repeat" are worked out from Shopify and its own tables
   each run, never stored.
-- Lessons are proposed and wait for Zak's Keep. Nothing is deleted: Forget, Discard and expiry
+- Zak's own words (a reaction, a Reject reason, a rule in builder step 1) are kept straight away.
+  Lessons proposed by a lead's or head's send-back wait for Zak's Keep. Nothing is deleted: Forget, Discard and expiry
   change `state`, and every change lands in `memory_events`.
 
 ## Storage (migration `20261112120000_agent_memory.sql`)
@@ -54,8 +56,10 @@ so he teaches an agent once instead of rewriting its prompt.
 
 ## Slices
 
-1. Store, Avery, Memory tab with Teach, Edit, Forget, context meter, timeline. (PR #14)
-2. Lessons: Reject on an approval asks "why not?" (optional). A reason becomes a proposed lesson
+1. Store, Avery, Memory tab with Teach, Edit, Forget, context meter, timeline. (PR #14; the Teach
+   form was replaced by reactions in company mode slice 1.)
+2. Lessons (since company mode slice 1, a Reject reason saves a kept rule instead; lessons now come
+   from a lead's send-back). Originally: Reject on an approval asks "why not?" (optional). A reason became a proposed lesson
    (`proposeLesson`, Zak's words, no model call), shown on the agent's Memory tab with Keep,
    Keep for crew, Edit and Discard, and in Needs you. Proposed lessons are never loaded.
    Edits to an approval (`edit_diff`) will propose lessons too once Edit exists on approvals.
@@ -72,3 +76,7 @@ so he teaches an agent once instead of rewriting its prompt.
    (Shopify offer facts and the pipeline list for Rowan, expense_docs for Quinn), never stored.
    Mission control's "Memory per agent" shows each agent's next load against the budget, and the
    run canvas Memory node shows what that run loaded (`agent_runs.memory_json`).
+5. Teach by reacting (docs/company-mode.md, slice 1): Good / Not this on runs, leads and approval
+   cards; Zak's words save as a standing order, note, department rule or crew line straight away,
+   optionally replacing a rule in the same scope. `reactions` table holds the signal; heads read it
+   in Your team.

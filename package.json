@@ -14,6 +14,7 @@
     "check:runner": "npx --yes tsx --conditions=react-server scripts/check-runner.ts",
     "check:org": "npx --yes tsx scripts/check-org.ts",
     "check:roster": "npx --yes tsx scripts/check-roster.ts",
+    "check:reactions": "npx --yes tsx scripts/check-reactions.ts",
     "check": "npm run typecheck && npm run lint && npm run validate:graphql"
   },
   "dependencies": {
