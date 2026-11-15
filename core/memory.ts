@@ -8,9 +8,10 @@ import "server-only";
 import { db } from "@/core/db";
 import { agentDepartment } from "@/core/org";
 import { notionPageId, notionPageText } from "@/integrations/notion";
+import { OUTSIDE_POINTER } from "@/core/pointer";
 
-export type MemoryGroup = "crew" | "department" | "standing_order" | "lesson" | "note" | "working";
-export type Keep = "next_run" | "days_30" | "always";
+export type MemoryGroup = "crew" | "department" | "standing_order" | "focus" | "lesson" | "note" | "working";
+export type Keep = "next_run" | "days_7" | "days_30" | "always";
 
 export interface MemoryRow {
   id: string;
@@ -46,19 +47,18 @@ export const GROUP_LABEL: Record<MemoryGroup, string> = {
   crew: "Shared crew memory",
   department: "Department rules",
   standing_order: "Standing orders",
+  focus: "This week's focus from your head",
   lesson: "Lessons",
   note: "Zak's notes",
   working: "Working memory",
 };
 /** Loaded in this order. When over budget, lines are dropped from the end of this list first. */
-const ORDER: MemoryGroup[] = ["crew", "department", "standing_order", "note", "lesson", "working"];
+const ORDER: MemoryGroup[] = ["crew", "department", "standing_order", "focus", "note", "lesson", "working"];
 const NEVER_TRIMMED = new Set<MemoryGroup>(["crew", "department", "standing_order"]);
 
 /** Tokens, counted in code: characters ÷ 3.5, rounded up. Overcounts a little, so a budget is never passed. */
 export const countTokens = (s: string) => Math.ceil(s.length / 3.5);
 
-/** Lines a model may not leave itself: anything that could carry a recipient, a number to call or a link. */
-const OUTSIDE_POINTER = /@|https?:|www\.|\b[a-z0-9-]+\.(com|net|org|io|co|coffee|shop|us|biz|info|app|dev)\b|\(?\b\d{3}\)?[\s.-]?\d{3}[\s.-]\d{4}\b|\+\d[\d\s-]{7,}\d/i;
 
 export interface GroupLoad { lines: number; tokens: number }
 /** A Notion page linked from a standing order, as one run read it. */
@@ -222,7 +222,7 @@ async function logEvent(e: Omit<MemoryEvent, "id" | "at" | "department_id"> & { 
 }
 
 /**
- * After a run that finished: count down next-run notes it loaded and retire expired 30-day notes.
+ * After a run that finished: count down next-run notes it loaded and retire notes whose days ran out.
  * Failures here never fail the run.
  */
 export async function afterLoad(m: MemoryLoad, runId: string, now = Date.now()) {
@@ -236,7 +236,7 @@ export async function afterLoad(m: MemoryLoad, runId: string, now = Date.now()) 
   const { data: old } = await db().from("agent_memory").select("id, agent_id, text").or(`agent_id.eq.${m.agentId},grp.eq.crew`).eq("state", "kept").lte("expires_at", new Date(now).toISOString());
   for (const r of old ?? []) {
     await db().from("agent_memory").update({ state: "expired", updated_at: new Date(now).toISOString() }).eq("id", r.id).eq("state", "kept");
-    await logEvent({ memory_id: r.id, agent_id: r.agent_id, kind: "expired", before: r.text, after: null, by: "30 days passed" });
+    await logEvent({ memory_id: r.id, agent_id: r.agent_id, kind: "expired", before: r.text, after: null, by: "its days ran out" });
   }
 }
 
@@ -371,6 +371,31 @@ export async function addDepartmentRule(deptId: string, raw: string, sourceTag?:
   }).select("id").single();
   if (error) throw new Error(error.message);
   await logEvent({ memory_id: data.id, agent_id: null, department_id: deptId, kind: "added", before: null, after: text, by: BY_ZAK });
+  return data.id as string;
+}
+
+// ---- Focus (docs/company-mode.md, slice 4). A head's plan gives each teammate under it a focus
+// for the week: a note that expires in 7 days and replaces the same head's earlier focus. Like
+// every memory line it never overrides a rule, adds a recipient, raises a cap or grants access.
+
+/** Saves a head's focus for a teammate, retiring that teammate's earlier focus. Returns the line's id. */
+export async function setFocus(agentId: string, text: string, headName: string, sourceTag: string, days = 7): Promise<string> {
+  safeId(agentId);
+  const t = text.replace(/\s+/g, " ").trim().slice(0, MAX_LINE);
+  if (!t) throw new Error("A focus can't be empty.");
+  if (OUTSIDE_POINTER.test(t)) throw new Error("A focus can't hold an address, a phone number or a link.");
+  const now = new Date().toISOString();
+  const { data: old } = await db().from("agent_memory").select("id, text").eq("agent_id", agentId).eq("grp", "focus").eq("state", "kept");
+  for (const r of old ?? []) {
+    await db().from("agent_memory").update({ state: "expired", updated_at: now }).eq("id", r.id).eq("state", "kept");
+    await logEvent({ memory_id: r.id, agent_id: agentId, kind: "expired", before: r.text, after: null, by: `${headName}'s new plan` });
+  }
+  const { data, error } = await db().from("agent_memory").insert({
+    agent_id: agentId, grp: "focus", text: t, source: "agent", source_tag: sourceTag, trust: "note", state: "kept", keep: "days_7",
+    expires_at: new Date(Date.now() + days * 864e5).toISOString(), tokens: countTokens(t), decided_at: now,
+  }).select("id").single();
+  if (error) throw new Error(error.message);
+  await logEvent({ memory_id: data.id, agent_id: agentId, kind: "added", before: null, after: t, by: `${headName}'s plan` });
   return data.id as string;
 }
 

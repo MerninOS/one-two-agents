@@ -2,7 +2,7 @@
 // Run: npm run check:org
 import assert from "node:assert/strict";
 
-import { LEAD_MIN_TEAM, LEAD_REVIEW_HOURS, groupByDepartment, checkerOf, draftCode, leadCheck, agentsIn, below, companyBlock, headBlock, departmentLines, seatToolBlocks, teamBlock, teamOf, deptBudgetBlock, deptBudgetChange, deptEmailCap, deptEmailChange, deptOf, deptSpent, depthOf, deptSlug, headOf, orgProblems, reportsTo, seatOf, seatPath, type Org } from "../core/org-rules";
+import { LEAD_MIN_TEAM, LEAD_REVIEW_HOURS, groupByDepartment, checkerOf, draftCode, leadCheck, agentsIn, below, companyBlock, headBlock, seatToolBlocks, teamBlock, teamOf, deptBudgetBlock, deptBudgetChange, deptEmailCap, deptEmailChange, deptOf, deptSpent, depthOf, deptSlug, headOf, orgProblems, reportsTo, seatOf, seatPath, type Org } from "../core/org-rules";
 
 const org: Org = {
   departments: [{ id: "marketing", name: "Marketing", sort: 1, monthlyBudgetUsd: 20, maxEmailsPerDay: null, leadChecksDrafts: false }],
@@ -96,13 +96,6 @@ assert.ok(headBlock(team, "b_lead"), "a lead doesn't propose");
 assert.ok(headBlock(team, null), "nor an agent off the chart");
 assert.equal(seatToolBlocks(team, "nope", live).team, teamBlock(team, null, live));
 
-// Avery's department lines are matched to chart names in code; anything else is ignored
-assert.deepEqual(
-  departmentLines("Focus: Ship it. Today.\n- watch this\nmarketing: Two drafts wait.\n- Finance: Cash is fine.\nSales: not on the chart\nMarketing: a second line", ["Marketing", "Finance"]),
-  { Marketing: "Two drafts wait.", Finance: "Cash is fine." },
-);
-assert.equal(departmentLines(`Marketing: ${"x".repeat(400)}`, ["Marketing"]).Marketing.length, 300);
-assert.deepEqual(departmentLines("", ["Marketing"]), {});
 
 
 // Slice 4: the lead checks drafts first, only where the department has it on

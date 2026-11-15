@@ -212,19 +212,6 @@ export function companyBlock(o: Org, agentId: string | null): string | null {
   return seatToolBlocks(o, agentId ? seatOf(o, agentId)?.id ?? null : null, new Set()).company;
 }
 
-/** A department's line in Avery's result: "Finance: ..." for a department on the chart. Matched in code, case-insensitive. */
-export function departmentLines(text: string, names: readonly string[]): Record<string, string> {
-  const out: Record<string, string> = {};
-  for (const raw of text.split("\n")) {
-    const l = raw.trim().replace(/^[-•*]\s+/, "");
-    const m = /^([^:]{1,60}):\s*(.+)$/.exec(l);
-    if (!m) continue;
-    const name = names.find((n) => n.toLowerCase() === m[1].trim().toLowerCase());
-    if (name && !out[name]) out[name] = m[2].replace(/\s+/g, " ").trim().slice(0, 300);
-  }
-  return out;
-}
-
 /** A department's email cap as enforced: never above the company cap, whatever the row says. */
 export const deptEmailCap = (d: Department, companyCap: number) => (d.maxEmailsPerDay == null ? companyCap : Math.max(0, Math.min(companyCap, d.maxEmailsPerDay)));
 

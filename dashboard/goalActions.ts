@@ -3,6 +3,7 @@
 // a goal is what Zak wants, never something an agent may do, and nothing here runs, sends or spends.
 import { revalidatePath } from "next/cache";
 import { createGoal, editGoal, setGoalState } from "@/core/goals";
+import { setJobDone } from "@/core/plans";
 import type { GoalState } from "@/core/goal-rules";
 import type { ActionResult } from "./actions";
 import { requireSession } from "./data";
@@ -33,4 +34,11 @@ export async function goalSetState(id: string, state: GoalState): Promise<Action
   if (!UUID.test(String(id)) || !STATES.includes(state)) return { ok: false, text: "Unknown goal." };
   const words: Record<GoalState, string> = { active: "Goal is back on.", paused: "Goal paused. It stays on the chart, greyed.", done: "Marked done.", dropped: "Goal removed." };
   try { await setGoalState(id, state); return done(words[state]); } catch (e) { return fail(e); }
+}
+
+/** A person's job from a head's plan (slice 4): Zak marks it done, or not done. */
+export async function planJobDone(planId: string, n: number, isDone: boolean): Promise<ActionResult> {
+  await requireSession();
+  if (!UUID.test(String(planId)) || !Number.isInteger(n)) return { ok: false, text: "Unknown job." };
+  try { await setJobDone(planId, n, isDone); return done(isDone ? "Marked done." : "Back on your list."); } catch (e) { return fail(e); }
 }
