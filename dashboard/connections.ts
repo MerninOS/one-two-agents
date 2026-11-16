@@ -33,9 +33,9 @@ export interface Connection {
 
 export const CONNECTIONS: Connection[] = [
   {
-    id: "shopify", name: "Shopify", sub: "Orders, products, stock", icon: "shopping-bag", builtIn: false,
-    about: "Read-only app “One Two Agents (read)”. Nothing here can change the store.",
-    checks: [{ key: "shopify", label: "Store", setup: "Needs SHOPIFY_STORE_DOMAIN and the read-only app’s token (or its client id and secret)." }],
+    id: "shopify", name: "Shopify", sub: "Orders, products, stock", icon: "shopping-bag", builtIn: false, mcp: "shopify",
+    about: "Our own Shopify server, run in the app with the read-only app “One Two Agents (read)”. Each tool runs one fixed query written in code; no tool takes GraphQL and no change can run. A key whose app has any write scope is refused when you paste it. Order reads carry no customer names or addresses.",
+    checks: [{ key: "shopify", label: "Store", setup: "Paste the read-only app’s key below, and set SHOPIFY_STORE_DOMAIN (and SHOPIFY_CLIENT_ID if the key is a client secret)." }],
   },
   {
     id: "mercury", name: "Mercury", sub: "Bank", icon: "landmark", builtIn: false, mcp: "mercury", mcpMore: ["mercury_write"],

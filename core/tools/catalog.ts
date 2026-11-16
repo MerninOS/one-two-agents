@@ -44,7 +44,7 @@ import { getInventoryLots } from "@/integrations/shopify/lots";
 import { getBoardOrders } from "@/integrations/shopify/orders";
 import type { Param, Pick, ReportInput, ToolDef } from "./types";
 
-const SHOPIFY = ["SHOPIFY_STORE_DOMAIN"], MERCURY = ["MERCURY_CONNECTED"], NOTION = ["NOTION_CONNECTED"], SUPABASE = ["SUPABASE_URL", "SUPABASE_SERVICE_ROLE_KEY"], EMAIL = ["RESEND_API_KEY", "BRIEF_FROM", "BRIEF_TO"], GMAIL = ["GMAIL_CONNECTED"];
+const SHOPIFY = ["SHOPIFY_CONNECTED"], MERCURY = ["MERCURY_CONNECTED"], NOTION = ["NOTION_CONNECTED"], SUPABASE = ["SUPABASE_URL", "SUPABASE_SERVICE_ROLE_KEY"], EMAIL = ["RESEND_API_KEY", "BRIEF_FROM", "BRIEF_TO"], GMAIL = ["GMAIL_CONNECTED"];
 /** Not settings: Klaviyo, Mercury and Notion are signed in on Connections (mcp_connections), so the builder checks those rows. */
 const KLAVIYO = ["KLAVIYO_CONNECTED"];
 const LEAD_TYPES = ["cafe", "restaurant", "office", "grocery", "other"] as const;

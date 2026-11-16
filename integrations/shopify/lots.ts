@@ -1,29 +1,11 @@
 import "server-only";
 // Green lots: unpublished Shopify products tagged `blended-green`, one inventory-tracked
-// variant whose quantity is green coffee in grams, costs in blended.* metafields.
+// variant whose quantity is green coffee in grams, costs in blended.* metafields. Read through our
+// Shopify MCP server (integrations/shopify-server.ts, docs/mcp-everywhere.md slice 7).
 import type { GreenLot } from "@/domain/types";
 import { G_PER_LB } from "@/domain/coffee";
-import { admin, gql } from "./client";
+import { callMcpTool } from "@/integrations/mcp";
 
-const GREEN_QUERY = "tag:blended-green AND -status:archived";
-
-const GREEN_LOTS = gql`
-  query AgentGreenLots($query: String!) {
-    products(first: 250, query: $query, sortKey: TITLE) {
-      nodes {
-        id handle title status
-        variants(first: 1) { nodes { inventoryQuantity } }
-        origin: metafield(namespace: "blended", key: "origin") { value }
-        lot_code: metafield(namespace: "blended", key: "lot_code") { value }
-        process: metafield(namespace: "blended", key: "process") { value }
-        roast_level: metafield(namespace: "blended", key: "roast_level") { value }
-        green_price: metafield(namespace: "blended", key: "green_price") { value }
-        wholesale_price: metafield(namespace: "blended", key: "wholesale_price") { value }
-        retail_price: metafield(namespace: "blended", key: "retail_price") { value }
-      }
-    }
-  }
-`;
 type MF = { value: string } | null;
 type Node = {
   id: string; handle: string; title: string; status: string;
@@ -57,6 +39,6 @@ function lotFromProduct(p: Node): GreenLot {
 
 /** Every green lot that isn't archived, listed or not, with live stock (total across locations). */
 export async function getInventoryLots(): Promise<GreenLot[]> {
-  const r = await admin<{ products: { nodes: Node[] } }>(GREEN_LOTS, { query: GREEN_QUERY });
+  const r = (await callMcpTool("shopify", "shopify_green_lots", {})) as { products: { nodes: Node[] } };
   return r.products.nodes.map(lotFromProduct);
 }

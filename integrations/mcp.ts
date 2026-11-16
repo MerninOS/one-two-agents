@@ -18,6 +18,8 @@ import {
 import { MIN_SECRET_CHARS, keyIdOf, legacyKey, open as openWith, seal as sealWith, vaultKey, type VaultKey } from "@/core/vault";
 import { looksLikeNotionKey } from "@/core/notion-blocks";
 import { checkNotionKey, notionServer } from "./notion-server";
+import { checkShopifyKey, shopifyServer } from "./shopify-server";
+import { shopifyKeyKind } from "@/core/shopify-queries";
 import { gmailMailbox, gmailServer } from "./gmail-server";
 
 const TIMEOUT_MS = 25_000;
@@ -162,9 +164,9 @@ export async function disconnectMcp(id: McpId): Promise<{ revoked: boolean; note
   const r = await row(id);
   let revoked = false, note: string | null = null;
   if (!usesConnect(id)) {
-    // a pasted key can't be cancelled through the API; it stops working when the integration's secret is refreshed in Notion
+    // a pasted key can't be cancelled through the API; it stops working when it is rotated at the service
     if (r?.secret) {
-      note = `${MCP_SERVERS[id].name} keys can't be cancelled from here. To make this one stop working too, refresh the integration's secret in ${MCP_SERVERS[id].name}'s settings.`;
+      note = `${MCP_SERVERS[id].name} keys can't be cancelled from here. To make this one stop working too, rotate it (or uninstall the app) in ${MCP_SERVERS[id].name}'s settings.`;
       await logEvent(id, "revoke_failed", note);
     }
     const { error } = await db().from("mcp_connections").delete().eq("id", id);
@@ -475,6 +477,7 @@ async function callRemote(id: McpId, tool: string, args: Record<string, unknown>
 type Handler = (raw: unknown) => Promise<unknown>;
 const LOCAL: Partial<Record<McpId, { server: (key: string) => Handler; looksRight: (key: string) => boolean; who: (key: string) => Promise<{ name: string; workspace: string }> }>> = {
   notion: { server: notionServer, looksRight: looksLikeNotionKey, who: checkNotionKey },
+  shopify: { server: shopifyServer, looksRight: (k) => !!shopifyKeyKind(k), who: checkShopifyKey },
 };
 
 /** Whether a server we run is connected and not paused. False when the tables are missing. */
@@ -525,8 +528,8 @@ export async function callLocalTool(id: McpId, tool: string, args: Record<string
   const out = "error" in rep ? { error: rep.error } : toolPayload(rep.result);
   if ("error" in out) {
     const msg = scrubSecrets(out.error, [s.key]);
-    // 401 is a key Notion no longer accepts; 403 and 404 are a page not shared with the integration
-    if (/^Notion 401\b/.test(msg)) { await pause(id, `${name} refused the key (401)`, "refused", [s.key]); throw new Error(`${name} refused the key. Paste a new one on Connections.`); }
+    // 401 is a key the service no longer accepts; Notion's 403 and 404 are a page not shared with the integration
+    if (/^(Notion|Shopify) 401\b/.test(msg)) { await pause(id, `${name} refused the key (401)`, "refused", [s.key]); throw new Error(`${name} refused the key. Paste a new one on Connections.`); }
     throw new Error(`${name} ${tool}: ${msg}`);
   }
   return out.data;

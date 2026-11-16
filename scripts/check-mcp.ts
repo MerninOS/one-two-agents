@@ -6,6 +6,7 @@ import { join } from "node:path";
 import { CTX_META, callThrough, createHost, listThrough, served } from "../core/tools/mcp-host";
 import type { ToolDef } from "../core/tools/types";
 import { checkNotionArgs, looksLikeNotionKey, notionPageId } from "../core/notion-blocks";
+import { SHOPIFY_DOCS, WHO, assertReadOnly, shopifyKeyKind, shopifyVariables, writeScopes } from "../core/shopify-queries";
 import { checkGmailArgs, draftRaw, isPlainAddress, readMail } from "../core/gmail-rules";
 import { cashOf, readAccounts, readCategories, readOneTxn, readOrgName, readTxnPage } from "../core/mercury-rules";
 import { LEGACY_ID, keyIdOf, legacyKey, open, seal, vaultKey } from "../core/vault";
@@ -201,6 +202,32 @@ assert.ok(!mayWrite("mercury", "updateTransaction"), "the agents' read sign-in h
 assert.deepEqual(checkedTools("mercury_write"), ["updateTransaction"], "the tool check watches the write tool too");
 for (const srv of Object.values(MCP_SERVERS) as McpServer[]) for (const sc of srv.scopes) assert.ok(!/transfers|transactions:request|reimbursements|budgets|receipts/.test(sc), `${srv.id} never asks for ${sc}`);
 
+// ---- Shopify on our own server (slice 7)
+assert.equal(MCP_SERVERS.shopify.auth, "token");
+assert.deepEqual([...MCP_SERVERS.shopify.readTools].sort(), Object.keys(SHOPIFY_DOCS).sort(), "every Shopify tool runs exactly one fixed query");
+assert.deepEqual([MCP_SERVERS.shopify.writeTools, MCP_SERVERS.shopify.reportTools], [[], []], "Shopify is read-only here");
+for (const [tool, doc] of Object.entries(SHOPIFY_DOCS)) { assert.doesNotThrow(() => assertReadOnly(doc), tool); assert.ok(!/\b(email|phone|address|firstName|lastName|displayName)\b/.test(doc), `${tool} reads no customer details`); }
+assert.doesNotThrow(() => assertReadOnly(WHO));
+for (const bad of ["mutation M { productDelete(input: {}) { deletedProductId } }", "query Q { shop { name } } mutation M { x }", "subscription S { x }", "{ shop { name } }"]) assert.throws(() => assertReadOnly(bad), bad);
+assert.doesNotThrow(() => assertReadOnly('query Q { products(query: "mutation") { nodes { id } } }'), "a word inside a string is not an operation");
+assert.deepEqual(writeScopes(["read_products", "read_orders", "unauthenticated_read_product_listings"]), []);
+assert.deepEqual(writeScopes(["read_products", "write_products", "write_orders"]), ["write_products", "write_orders"], "a key with a write scope is refused");
+assert.equal(shopifyKeyKind("shpat_" + "a1".repeat(16)), "token");
+assert.equal(shopifyKeyKind("shpss_" + "b2".repeat(16)), "secret");
+assert.equal(shopifyKeyKind("ntn_short"), null);
+assert.equal(shopifyKeyKind("shpat_abc def"), null);
+assert.deepEqual(shopifyVariables("shopify_green_lots", { query: "status:any" }, "our-coffees"), { tool: "shopify_green_lots", variables: { query: "tag:blended-green AND -status:archived" } }, "a caller never writes the search");
+assert.deepEqual(shopifyVariables("shopify_stock_coffees", { handle: "secret-drops" }, "our-coffees"), { tool: "shopify_stock_coffees", variables: { handle: "our-coffees" } }, "the collection comes from settings");
+assert.deepEqual(shopifyVariables("shopify_board_orders", { since: "2026-08-18" }, "x"), { tool: "shopify_board_orders", variables: { query: "tag:blended created_at:>=2026-08-18", after: null } });
+const btw = shopifyVariables("shopify_orders_between", { start: "2026-11-15", end: "2026-11-16", after: "eyJsYXN0X2lkIjo1fQ==" }, "x");
+assert.ok(!("problem" in btw) && /created_at:>='2026-11-15T00:00:00-06:00' created_at:<'2026-11-16T00:00:00-06:00'/.test(String(btw.variables.query)) && btw.variables.after === "eyJsYXN0X2lkIjo1fQ==");
+for (const [tool, args, why] of [
+  ["shopify_recent_orders", { since: "2026-11-01 OR tag:x" }, /since/],
+  ["shopify_board_orders", { since: "2026-11-01", after: "x' OR '1" }, /after/],
+  ["shopify_orders_between", { start: "2026-11-16", end: "2026-11-15" }, /end after start/],
+  ["shopify_graphql", { query: "{ shop { name } }" }, /isn't a Shopify tool/],
+] as const) { const r = shopifyVariables(tool, args, "our-coffees"); assert.ok("problem" in r && why.test(r.problem), tool); }
+
 // ---- Gmail on our own server, signed in with Google (slice 6)
 const RO = "https://www.googleapis.com/auth/gmail.readonly", COMPOSE = "https://www.googleapis.com/auth/gmail.compose";
 assert.ok(isGoogle("gmail_read") && isGoogle("gmail") && usesConnect("gmail") && !isOauth("gmail") && !usesConnect("notion"));
@@ -295,5 +322,10 @@ assert.deepEqual(writers, [], "callWriteTool is for core/gateway only");
 const importers = (mod: string) => ["core", "agents", "dashboard", "app", "integrations"].flatMap(files).filter((f) => new RegExp(`from "[^"]*/${mod}"`).test(readFileSync(f, "utf8")));
 assert.deepEqual(importers("gmail-api"), ["integrations/gmail-server.ts"]);
 assert.deepEqual(importers("gmail-server"), ["integrations/mcp.ts"]);
+assert.deepEqual(importers("shopify-api"), ["integrations/shopify-server.ts"]);
+assert.deepEqual(importers("shopify-server"), ["integrations/mcp.ts"]);
+// no direct GraphQL path from agents: only our Shopify server posts to Shopify's API
+const gqlPosters = ["core", "agents", "dashboard", "app", "integrations"].flatMap(files).filter((f) => /graphql\.json|admin\/oauth\/access_token/.test(readFileSync(f, "utf8")));
+assert.deepEqual(gqlPosters, ["integrations/shopify-api.ts"]);
 
 hostChecks.then(() => console.log("mcp: ok"), (e) => { console.error(e); process.exit(1); });

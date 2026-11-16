@@ -25,7 +25,6 @@ export interface BuiltRow { id: string; name: string; mandate: string; enabled: 
 
 // a tool is Connected when every setting it needs is present (values are never shown)
 const SETTINGS: Record<string, unknown> = {
-  SHOPIFY_STORE_DOMAIN: env.shopifyDomain && (env.shopifyAdminToken || (env.shopifyClientId && env.shopifyClientSecret)),
   SUPABASE_URL: env.supabaseUrl, SUPABASE_SERVICE_ROLE_KEY: env.supabaseServiceKey,
   RESEND_API_KEY: env.resendKey, BRIEF_FROM: env.briefFrom, BRIEF_TO: env.briefTo,
 };
@@ -52,7 +51,7 @@ export async function listBuilt(): Promise<BuiltRow[] | null> {
 /** The pick-lists the builder offers, all from code. */
 /** What the builder offers. `crew` names the agents (the Floor's roster) where a rule names one by id. */
 export function builderMenu(crew: readonly { id: string; name: string }[] = [], h: Record<IntegrationId, boolean> = health()) {
-  const SETTING: Record<string, unknown> = { ...SETTINGS, KLAVIYO_CONNECTED: h.klaviyo, NOTION_CONNECTED: h.notion, MERCURY_CONNECTED: h.mercury, GMAIL_CONNECTED: h.gmail };
+  const SETTING: Record<string, unknown> = { ...SETTINGS, SHOPIFY_CONNECTED: h.shopify, KLAVIYO_CONNECTED: h.klaviyo, NOTION_CONNECTED: h.notion, MERCURY_CONNECTED: h.mercury, GMAIL_CONNECTED: h.gmail };
   return {
     tools: TOOL_LIST.map((t): BuildTool => ({ id: t.id, label: t.label, detail: t.detail, kind: t.kind, group: t.group, conn: connOf(t), trusted: t.trusted, needs: [...t.needs], connected: t.needs.every((k) => !!SETTING[k]), grantable: GRANTABLE.has(t.kind), agents: t.agents ? [...t.agents] : null, seat: t.seat ?? null })),
     agentNames: Object.fromEntries(crew.map((a) => [a.id, `${a.name} (${a.id})`])) as Record<string, string>,

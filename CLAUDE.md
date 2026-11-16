@@ -30,8 +30,10 @@ or publish action type is built, so no agent gets one of those integrations: dra
   only by the gateway: category and memo through Mercury's MCP on the `mercury_write` sign-in
   (scope `transactions:update` only, via `callWriteTool`), receipt files through
   `integrations/mercury-write.ts`. Only `core/gateway` may import either (lint enforces it).
-- Shopify is read-only here. `scripts/validate-graphql.mjs` fails on any mutation. An
-  agent that needs Shopify writes gets its own separately scoped app.
+- Shopify is read-only here: our own MCP server (`integrations/shopify-server.ts`), one fixed
+  query per tool (`core/shopify-queries.ts`), a key with any write scope is refused, and
+  `scripts/validate-graphql.mjs` fails on any mutation. An agent that needs Shopify writes gets
+  its own separately scoped app.
 - Email: first contact with a person who has never heard from One Two is always Draft
   and never promoted. Follow-ups and replies on an existing thread can be promoted. Daily
   cap `policies.max_emails_per_day` (start 20); an unsubscribe or "stop" reply ends all

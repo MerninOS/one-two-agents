@@ -5,26 +5,8 @@ import "server-only";
 // sees published products).
 import type { StockCoffee } from "@/domain/types";
 import { sizeFromOption } from "@/domain/coffee";
-import { env } from "@/core/env";
-import { admin, gql } from "./client";
+import { callMcpTool } from "@/integrations/mcp";
 
-const STOCK = gql`
-  query AgentStockCoffees($handle: String!) {
-    collectionByIdentifier(identifier: { handle: $handle }) {
-      products(first: 50, sortKey: COLLECTION_DEFAULT) {
-        nodes {
-          id handle title description status
-          variants(first: 10) { nodes { id price availableForSale selectedOptions { name value } } }
-          roast: metafield(namespace: "blended", key: "roast_level") { value }
-          wholesale: metafield(namespace: "blended", key: "wholesale_price") { value }
-          subtitle: metafield(namespace: "blended", key: "subtitle") { value }
-          kind: metafield(namespace: "blended", key: "kind") { value }
-          recipe: metafield(namespace: "blended", key: "recipe") { value }
-        }
-      }
-    }
-  }
-`;
 type MF = { value: string } | null;
 type Node = {
   id: string; handle: string; title: string; description: string; status: string;
@@ -59,6 +41,6 @@ function stockFromProduct(p: Node): StockCoffee {
 
 /** Our coffees as Shopify has them. */
 export async function fetchStockCoffees(): Promise<StockCoffee[]> {
-  const r = await admin<{ collectionByIdentifier: { products: { nodes: Node[] } } | null }>(STOCK, { handle: env.shopifyStockCollection });
+  const r = (await callMcpTool("shopify", "shopify_stock_coffees", {})) as { collectionByIdentifier: { products: { nodes: Node[] } } | null };
   return (r.collectionByIdentifier?.products.nodes ?? []).filter((p) => p.status === "ACTIVE").map(stockFromProduct);
 }

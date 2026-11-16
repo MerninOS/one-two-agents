@@ -16,13 +16,12 @@ export const env = {
   mcpSecretKey: v("MCP_SECRET_KEY"),
   mcpSecretKeyOld: v("MCP_SECRET_KEY_OLD"),
 
-  // Shopify Admin API, read-only app "One Two Agents (read)": a static token, or
-  // Dev Dashboard app credentials exchanged with the client-credentials grant.
+  // Shopify Admin API, read-only app "One Two Agents (read)", on our own MCP server (slice 7). The
+  // app's key (access token or client secret) is pasted on Connections into the token vault; these
+  // aren't secrets: the store, the API version and, for a Dev Dashboard app, its client id.
   shopifyDomain: v("SHOPIFY_STORE_DOMAIN"),
   shopifyApiVersion: v("SHOPIFY_API_VERSION") || "2026-07",
-  shopifyAdminToken: v("SHOPIFY_ADMIN_ACCESS_TOKEN"),
   shopifyClientId: v("SHOPIFY_CLIENT_ID"),
-  shopifyClientSecret: v("SHOPIFY_CLIENT_SECRET"),
   shopifyStockCollection: v("SHOPIFY_STOCK_COLLECTION") || "our-coffees",
 
   // Mercury read-only token (business org). Agents never move money.

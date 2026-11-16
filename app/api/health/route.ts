@@ -4,6 +4,7 @@ import { env } from "@/core/env";
 import { cronAuthorized } from "@/core/runs";
 import { notionConnected } from "@/integrations/notion";
 import { hasMercury } from "@/integrations/mercury";
+import { localReady } from "@/integrations/mcp";
 import { hasGmail } from "@/integrations/gmail";
 import { hasGmailRead } from "@/integrations/gmail-read";
 
@@ -12,7 +13,7 @@ export async function GET(req: Request) {
   if (!cronAuthorized(req)) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   const set = {
     supabase: !!(env.supabaseUrl && env.supabaseServiceKey),
-    shopify: !!(env.shopifyDomain && (env.shopifyAdminToken || (env.shopifyClientId && env.shopifyClientSecret))),
+    shopify: !!env.shopifyDomain && (await localReady("shopify")),
     anthropic: !!process.env.ANTHROPIC_API_KEY,
     mercury: !!env.mercuryAccountIds.length && (await hasMercury()),
     notion: !!env.notionBriefParent && (await notionConnected()),

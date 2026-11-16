@@ -190,3 +190,31 @@ client). A consent screen in Testing with user type External makes Google's refr
 after 7 days; Internal (Workspace) or In production doesn't.
 
 No migration.
+
+## Slice 7: Shopify on our own server
+
+Shopify's own MCP servers are for storefronts and building apps, not a read-only Admin view of one
+store, so Shopify runs on our own server in the app, like Notion and Gmail:
+
+- **`core/shopify-queries.ts`** (pure) holds every query that may run, one per tool, and builds each
+  tool's variables from checked inputs (`shopifyVariables`). No tool takes GraphQL or a search
+  string: the green-lot search and the stock collection are fixed in code and settings, dates must
+  be `YYYY-MM-DD`, cursors must look like cursors. `assertReadOnly` refuses anything but a single
+  named query, and `scripts/validate-graphql.mjs` still checks every document against Shopify's
+  schema. Order reads carry no customer names, emails or addresses.
+- **`integrations/shopify-server.ts`** serves `shopify_green_lots`, `shopify_stock_coffees`,
+  `shopify_shop_settings`, `shopify_recent_orders`, `shopify_board_orders` and
+  `shopify_orders_between`. **`integrations/shopify-api.ts`** is the only file that posts to
+  Shopify (`check:mcp` checks that). Lint and `check:mcp` make sure only the server imports it, and
+  only `integrations/mcp.ts` imports the server. The facades in `integrations/shopify/*` call
+  `callMcpTool("shopify", …)` and keep their shapes, so agents didn't change.
+- **The key** (the read-only app's Admin API access token, or a Dev Dashboard app's client secret
+  with `SHOPIFY_CLIENT_ID` in Vercel) is pasted on Connections into the vault. Before it is kept, the
+  server asks Shopify which shop it opens and every scope the app was granted: a key for another
+  store, or one whose app has **any** scope that isn't a read, is refused. A key Shopify stops
+  accepting pauses the connection.
+- Removed: `integrations/shopify/client.ts`, `SHOPIFY_ADMIN_ACCESS_TOKEN` and `SHOPIFY_CLIENT_SECRET`.
+  `SHOPIFY_STORE_DOMAIN`, `SHOPIFY_API_VERSION`, `SHOPIFY_CLIENT_ID` and `SHOPIFY_STOCK_COLLECTION`
+  stay: none is a secret.
+
+No migration.
