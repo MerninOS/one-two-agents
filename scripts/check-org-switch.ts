@@ -3,7 +3,9 @@
 import assert from "node:assert/strict";
 
 import { planOrgOn, runsInMonth } from "../dashboard/orgPlan";
-import type { Chain } from "../core/flow-rules";
+import { flowProblems, withAgentTime, type Chain, type Flow } from "../core/flow-rules";
+import { orgDay } from "../dashboard/orgDay";
+import type { CrewMember } from "../dashboard/crew";
 
 // Monday 2026-11-16, 3:00 PM Central
 const now = Date.parse("2026-11-16T15:00:00-06:00");
@@ -60,5 +62,62 @@ assert.equal(p3.totalMonth, 0);
 assert.equal(runsInMonth({ kind: "daily" }), 30);
 assert.equal(runsInMonth({ kind: "weekdays" }), 22);
 assert.equal(runsInMonth({ kind: "manual" }), 0);
+
+// ---- one agent's time (core/flow-rules.ts withAgentTime)
+const flow: Flow = { chains: [{ ...morning, on: true }] };
+const crew = { ids: ["b_piper", "cfo", "chief_of_staff", "wholesale_hunter"], manualOnly: new Set<string>() };
+const ok = (r: ReturnType<typeof withAgentTime>) => { if ("refuse" in r) throw new Error(r.refuse); return r.flow; };
+
+// a new time for an agent in no chain: its own one-step chain, on
+const piper = ok(withAgentTime(flow, "b_piper", "Piper", { days: "weekdays", time: "06:30" }));
+assert.equal(piper.chains.length, 2);
+assert.deepEqual(piper.chains[1], { key: "solo-b_piper", name: "Piper", on: true, start: { type: "schedule", days: "weekdays", time: "06:30" }, steps: [{ agent: "b_piper" }] });
+assert.deepEqual(flowProblems(piper, crew), []);
+assert.equal(flow.chains.length, 1); // not changed in place
+// a first step moves the chain's start; a later step moves its "not before"
+assert.deepEqual(ok(withAgentTime(flow, "cfo", "Morgan", { days: "weekdays", time: "05:00" })).chains[0].start, { type: "schedule", days: "weekdays", time: "05:00" });
+const av = ok(withAgentTime(flow, "chief_of_staff", "Avery", { days: "weekdays", time: "07:00" })).chains[0].steps[1];
+assert.equal(av.notBefore, "07:00");
+assert.equal(av.days, "weekdays");
+assert.equal(av.passAlong, true);
+// a later step can't run before its chain starts
+assert.ok("refuse" in withAgentTime(flow, "chief_of_staff", "Avery", { days: "weekdays", time: "05:00" }));
+assert.ok("refuse" in withAgentTime(flow, "b_piper", "Piper", { days: "weekdays", time: "06:10" }));
+// by hand: the first step leaves and the next takes the start at its own time and days
+const morganByHand = ok(withAgentTime(flow, "cfo", "Morgan", null));
+assert.deepEqual(morganByHand.chains[0].start, { type: "schedule", days: "weekdays", time: "06:45" });
+assert.deepEqual(morganByHand.chains[0].steps, [{ agent: "chief_of_staff" }]);
+assert.deepEqual(flowProblems(morganByHand, { ...crew, manualOnly: new Set(["cfo"]) }), []);
+// by hand on the only step drops the chain; a button chain keeps the agent
+const soloGone = ok(withAgentTime(piper, "b_piper", "Piper", null));
+assert.equal(soloGone.chains.length, 1);
+const button: Flow = { chains: [{ key: "b", name: "By button", on: false, start: { type: "button" }, steps: [{ agent: "b_piper" }] }] };
+assert.deepEqual(ok(withAgentTime(button, "b_piper", "Piper", null)), button);
+
+// ---- the org's day (dashboard/orgDay.ts)
+const m = (id: string, name: string, schedule: CrewMember["schedule"], avgCost: number | null, extra: Partial<CrewMember> = {}): CrewMember =>
+  ({ id, name, role: name, icon: "cpu", tier: "Report", mandate: "", job: "", built: true, hue: "#F2884B", schedule, avgCost, inOrg: true, ...extra });
+const org = { departments: [{ id: "finance", name: "Finance", sort: 1, monthlyBudgetUsd: null, maxEmailsPerDay: null, leadChecksDrafts: false }], seats: [
+  { id: "s0", departmentId: null, parentId: null, title: "Chief of Staff", sub: "", holder: "agent" as const, agentId: "chief_of_staff", sort: 0 },
+  { id: "s1", departmentId: "finance", parentId: null, title: "CFO", sub: "", holder: "agent" as const, agentId: "cfo", sort: 0 },
+] };
+const day = orgDay({
+  members: [
+    m("cfo", "Morgan", { kind: "daily", time: "05:30", chain: "Morning" }, 0.05),
+    m("chief_of_staff", "Avery", { kind: "weekdays", time: "06:45", chain: "Morning" }, 0.01),
+    m("wholesale_hunter", "Rowan", { kind: "manual" }, 1.02),
+    m("scratch", "Scratch", { kind: "manual" }, null, { inOrg: false }),
+  ],
+  enabled: { cfo: true }, budget: { cfo: 0.5 }, grants: { chief_of_staff: ["report_morning_brief"] }, org, now,
+});
+assert.deepEqual(day.groups.map((g) => [g.name, g.rows.map((r) => r.id)]), [["Company", ["chief_of_staff"]], ["Finance", ["cfo"]], ["Not on the chart", ["wholesale_hunter"]]]);
+assert.deepEqual(day.window, [4, 12]);
+assert.equal(day.rows.find((r) => r.id === "cfo")!.at, 1.5 / 8);
+assert.equal(day.rows.find((r) => r.id === "chief_of_staff")!.reportsToYou, true);
+assert.equal(day.rows.find((r) => r.id === "wholesale_hunter")!.at, null);
+assert.equal(day.totalMonth.toFixed(2), (0.05 * 30 + 0.01 * 22).toFixed(2));
+assert.deepEqual([day.scheduled, day.byHand], [2, 1]);
+assert.deepEqual(day.left, ["Scratch"]);
+assert.equal(day.rows.find((r) => r.id === "cfo")!.next[0], Date.parse("2026-11-17T05:30:00-06:00"));
 
 console.log("org switch: ok");

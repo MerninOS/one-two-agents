@@ -144,10 +144,6 @@ export function ActionButton({ action, confirm, className, children, disabled, t
   );
 }
 
-export function SwitchButton({ on, action, confirm, disabled, title }: { on: boolean; action: Act; confirm?: Confirm; disabled?: boolean; title: string }) {
-  return <ActionButton className={"switch" + (on ? " on" : "")} action={action} confirm={confirm} disabled={disabled} title={title}><span /></ActionButton>;
-}
-
 /** Dry run: free, reads real data, writes nothing. Shows the result in place. */
 export function DryRun({ action, compact }: { action: Act; compact?: boolean }) {
   const [res, setRes] = useState<(ActionResult & { at: string }) | null>(null);
