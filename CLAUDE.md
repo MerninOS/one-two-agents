@@ -49,7 +49,8 @@ or publish action type is built, so no agent gets one of those integrations: dra
 - MCP servers (`core/mcp-rules.ts`) are called only by our runner, read tools only, each named in
   code; their write tools are never called (a write becomes a gateway action type). A new
   integration uses MCP when a server exists and fits these rules; where the hosted server reaches
-  more than the profile needs, we run our own in the app (Notion, `integrations/notion-server.ts`).
+  more than the profile needs, or doesn't fit, we run our own in the app (Notion, `integrations/notion-server.ts`;
+  Gmail, `integrations/gmail-server.ts`, which has no send tool: a read-only sign-in and a gateway-only drafts sign-in).
   Report tools (pages and rows in One Two's own Notion) exist only on our own servers and are
   called by code after a run, like emails to Zak, never by a model.
 - Sign-ins live only in the token vault (`core/vault.ts`, key `MCP_SECRET_KEY`, never derived

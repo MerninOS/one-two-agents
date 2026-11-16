@@ -148,3 +148,45 @@ and there is no way to undo a wrong match. So:
   inputs, the write sign-in pauses until Zak signs in again.
 
 No migration.
+
+## Slice 6: Gmail on our own server, signed in with Google
+
+Google's own Gmail MCP server (`gmailmcp.googleapis.com`) is a Developer Preview: it needs the
+preview program, your own OAuth client marked for AI agents, and has no self-registration. It also
+can't hand over an attachment's bytes, and Quinn reads receipt PDFs. So Gmail runs on our own server
+in the app, like Notion:
+
+- **`integrations/gmail-server.ts`** speaks MCP's JSON-RPC and serves four tools: `gmail_search`,
+  `gmail_message`, `gmail_attachment` and `gmail_create_draft`. It serves only the tools of the
+  profile it is opened for (`checkedTools`), so the read sign-in can never reach the draft tool.
+  There is no send tool, and none may be added. Every input is checked again (`checkGmailArgs` in
+  `core/gmail-rules.ts`): message ids before they go into a URL, one plain recipient address with
+  no display name, and a subject that can't add a header.
+- **`integrations/gmail-api.ts`** is Gmail's REST API: search, read, attachment, create draft. No
+  send, trash, modify or label call (`check:mcp` checks the file). Only the Gmail server imports it,
+  and only `integrations/mcp.ts` imports the server (lint and `check:mcp` enforce both).
+- **Two Google sign-ins**, each a profile in `core/mcp-rules.ts` with `auth: "google"`:
+  - `gmail_read` ("Gmail (read only)"): `gmail.readonly` alone. Quinn's receipt search
+    (`integrations/gmail-read.ts`, through `callMcpTool`).
+  - `gmail` ("Gmail drafts"): `gmail.compose` alone, one write tool, `gmail_create_draft`. Only the
+    gateway uses it (`callWriteTool`), after Zak approves a draft; the address always comes from
+    the lead's row. Zak sends every email from Gmail.
+- **Signing in:** Connect sends Zak to Google's own page with One Two's OAuth client
+  (`GMAIL_CLIENT_ID`), PKCE, `access_type=offline` and `prompt=consent`. Google's addresses are fixed
+  in code (`GOOGLE_AUTH`); there is no discovery or registration. The client secret stays in Vercel
+  (`GMAIL_CLIENT_SECRET`) and is never put in the vault, the cookie or the browser. After the code is
+  traded, the granted scopes must be exactly the profile's (`scopeProblem`): a box left unticked, or
+  an older grant riding along, cancels the sign-in at Google and nothing is kept. The mailbox it
+  belongs to is read and shown on Connections. A token Google stops accepting pauses the sign-in.
+- **Disconnect** cancels the refresh token at Google. Both sign-ins use the same OAuth client, so
+  Google may cancel the other one too; it then shows Paused and Zak signs it in again.
+- The tool check doesn't run for our own servers: their tools are in this repo.
+- Removed: `GMAIL_REFRESH_TOKEN` and `GMAIL_RECEIPTS_REFRESH_TOKEN` (their refresh tokens are now in
+  the vault), `accessToken` and the REST calls in `integrations/gmail.ts` and `gmail-read.ts`.
+
+Setup: add `https://<Control Room domain>/connections/gmail_read/callback` and
+`/connections/gmail/callback` as Authorized redirect URIs on the OAuth client (a Web application
+client). A consent screen in Testing with user type External makes Google's refresh tokens expire
+after 7 days; Internal (Workspace) or In production doesn't.
+
+No migration.

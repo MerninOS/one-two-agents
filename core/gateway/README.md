@@ -35,8 +35,8 @@ approval-only for good. Zak still sends each draft himself from Gmail.
 - Proposed by Rowan's leads list report (`report_leads`, for each new lead with an address,
   when the spec also grants `gmail_draft_lead` and Gmail is connected) or by the model through
   `gmail_draft_lead`, naming a lead from a Leads list result.
-- Applying needs `GMAIL_CLIENT_ID`, `GMAIL_CLIENT_SECRET`, `GMAIL_REFRESH_TOKEN` (compose
-  scope), `DASHBOARD_CONTROLS=on` and Rowan on duty; at most
+- Applying needs the gateway's own "Gmail drafts" sign-in (Connections, Gmail; `gmail.compose`
+  only, through `callWriteTool("gmail", "gmail_create_draft")`), `DASHBOARD_CONTROLS=on` and Rowan on duty; at most
   `policies.max_gmail_drafts_per_run` (10) per apply. The lead moves from new to drafted.
 
 ## `mercury.annotate_transaction`

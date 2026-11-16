@@ -43,13 +43,11 @@ export const env = {
   // The "One Two Agents: Build Board" database. A yes on a new-tool proposal adds a card in Up next. Blank = no card.
   notionBuildBoardDb: v("NOTION_BUILD_BOARD_DB_ID"),
 
-  // Gmail for Wholesale Hunter drafts (gmail.compose scope only). Blank = drafts appear in Notion only.
+  // One Two's own Google OAuth client (a Web application client), for the two Gmail sign-ins made
+  // with Connect on Connections (docs/mcp-everywhere.md, slice 6). The sign-ins themselves live in the
+  // token vault; the secret stays here and is never put in the vault, a cookie or the browser.
   gmailClientId: v("GMAIL_CLIENT_ID"),
   gmailClientSecret: v("GMAIL_CLIENT_SECRET"),
-  gmailRefreshToken: v("GMAIL_REFRESH_TOKEN"),
-  // Bookkeeper's own refresh token for the same mailbox with only gmail.readonly: it searches
-  // for receipts and never drafts or sends. Blank = no receipt search.
-  gmailReceiptsRefreshToken: v("GMAIL_RECEIPTS_REFRESH_TOKEN"),
 
   // Email to Zak only (morning brief, alerts) through Resend. BRIEF_TO is the one fixed
   // recipient; BRIEF_FROM is a sender on a domain verified in Resend. Blank = no email.

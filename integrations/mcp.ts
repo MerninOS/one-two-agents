@@ -12,12 +12,13 @@ import { createHash, randomBytes } from "node:crypto";
 import { db } from "@/core/db";
 import { env } from "@/core/env";
 import {
-  MCP_PROTOCOL, MCP_SERVERS, TOOL_CHECK_HOURS, authorizeUrl, checkTools, checkedTools, isOauth, mayWrite, listedTools, toolCheckNote, type ListedTool, discoveryUrls, mayCall, mayReport, needsRefresh, parseRpc, pickScopes, readAuthServer, readTokens, resourceOf, scrubSecrets, toolPayload,
+  GOOGLE_AUTH, MCP_PROTOCOL, MCP_SERVERS, TOOL_CHECK_HOURS, authorizeUrl, grantedScopes, isGoogle, scopeProblem, usesConnect, checkTools, checkedTools, isOauth, mayWrite, listedTools, toolCheckNote, type ListedTool, discoveryUrls, mayCall, mayReport, needsRefresh, parseRpc, pickScopes, readAuthServer, readTokens, resourceOf, scrubSecrets, toolPayload,
   type AuthServer, type McpEvent, type McpId, type Tokens,
 } from "@/core/mcp-rules";
 import { MIN_SECRET_CHARS, keyIdOf, legacyKey, open as openWith, seal as sealWith, vaultKey, type VaultKey } from "@/core/vault";
 import { looksLikeNotionKey } from "@/core/notion-blocks";
 import { checkNotionKey, notionServer } from "./notion-server";
+import { gmailMailbox, gmailServer } from "./gmail-server";
 
 const TIMEOUT_MS = 25_000;
 const CLIENT_NAME = "One Two Control Room";
@@ -160,7 +161,7 @@ export async function resealAll(): Promise<{ moved: number; unreadable: string[]
 export async function disconnectMcp(id: McpId): Promise<{ revoked: boolean; note: string | null }> {
   const r = await row(id);
   let revoked = false, note: string | null = null;
-  if (!isOauth(id)) {
+  if (!usesConnect(id)) {
     // a pasted key can't be cancelled through the API; it stops working when the integration's secret is refreshed in Notion
     if (r?.secret) {
       note = `${MCP_SERVERS[id].name} keys can't be cancelled from here. To make this one stop working too, refresh the integration's secret in ${MCP_SERVERS[id].name}'s settings.`;
@@ -174,7 +175,7 @@ export async function disconnectMcp(id: McpId): Promise<{ revoked: boolean; note
   const s = r ? await readSecret(id, r).catch(() => null) : null;
   if (s) {
     let endpoint = s.revocationEndpoint ?? null;
-    if (!endpoint) { try { endpoint = (await discover(MCP_SERVERS[id].url)).revocation_endpoint ?? null; } catch { endpoint = null; } }
+    if (!endpoint && isOauth(id)) { try { endpoint = (await discover(MCP_SERVERS[id].url)).revocation_endpoint ?? null; } catch { endpoint = null; } }
     const secrets = [s.tokens.accessToken, s.tokens.refreshToken, s.clientSecret];
     if (!endpoint) note = `${MCP_SERVERS[id].name} has no revoke address, so remove the app in its own settings too.`;
     else {
@@ -183,7 +184,10 @@ export async function disconnectMcp(id: McpId): Promise<{ revoked: boolean; note
           ...(s.tokens.refreshToken ? [{ token: s.tokens.refreshToken, token_type_hint: "refresh_token" }] : []),
           { token: s.tokens.accessToken, token_type_hint: "access_token" },
         ];
-        const res = await Promise.all(tries.map((t) => tokenRequest(endpoint!, s.clientId, s.clientSecret, t)));
+        // Google: cancelling the refresh token cancels its access tokens too, and takes only the token
+        const res = isGoogle(id)
+          ? [await fetchJson(endpoint, { method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" }, body: new URLSearchParams({ token: tries[0].token }) })]
+          : await Promise.all(tries.map((t) => tokenRequest(endpoint!, s.clientId, s.clientSecret, t)));
         revoked = res.every((x) => x.ok);
         if (!revoked) note = scrubSecrets(`${MCP_SERVERS[id].name} didn't confirm the cancel (${res.map((x) => x.status).join(", ")}). Remove the app in its own settings too.`, secrets);
       } catch (e) {
@@ -240,9 +244,19 @@ export const PENDING_MINUTES = 10;
 
 /** Registers the Control Room with the server and returns where to send Zak, plus the sealed pending state. */
 export async function startConnect(id: McpId, redirectUri: string): Promise<{ url: string; pending: string }> {
-  if (!isOauth(id)) throw new Error(`${MCP_SERVERS[id].name} is connected by pasting its key on Connections.`);
+  if (!usesConnect(id)) throw new Error(`${MCP_SERVERS[id].name} is connected by pasting its key on Connections.`);
   if (!keys().current) throw new Error(VAULT_MISSING);
   const server = MCP_SERVERS[id];
+  const verifier = b64url(randomBytes(32));
+  const challenge = b64url(createHash("sha256").update(verifier).digest());
+  const state = b64url(randomBytes(18));
+  if (isGoogle(id)) {
+    // our own Google OAuth client: its secret stays in Vercel and is never put in the cookie or the vault
+    if (!env.gmailClientId || !env.gmailClientSecret) throw new Error("set GMAIL_CLIENT_ID and GMAIL_CLIENT_SECRET in Vercel (One Two's Google OAuth client) first");
+    const url = authorizeUrl(GOOGLE_AUTH, { clientId: env.gmailClientId, redirectUri, challenge, state, scope: server.scopes.join(" "), extra: { access_type: "offline", prompt: "consent", include_granted_scopes: "false" } });
+    const p: Pending = { id, state, verifier, clientId: env.gmailClientId, clientSecret: null, tokenEndpoint: GOOGLE_AUTH.token_endpoint, revocationEndpoint: GOOGLE_AUTH.revocation_endpoint ?? null, redirectUri, at: Date.now() };
+    return { url, pending: seal(p) };
+  }
   const a = await discover(server.url);
   const { scope } = pickScopes(server.scopes, a.scopes_supported);
   if (!a.registration_endpoint) throw new Error("the server doesn't let apps register themselves, so it can't be connected this way yet");
@@ -252,13 +266,15 @@ export async function startConnect(id: McpId, redirectUri: string): Promise<{ ur
   });
   const client = (reg.json ?? {}) as { client_id?: string; client_secret?: string };
   if (!reg.ok || !client.client_id) throw new Error(`the server didn't register the app (${reg.status}): ${scrubSecrets(reg.text).slice(0, 160)}`);
-  const verifier = b64url(randomBytes(32));
-  const challenge = b64url(createHash("sha256").update(verifier).digest());
-  const state = b64url(randomBytes(18));
   const url = authorizeUrl(a, { clientId: client.client_id, redirectUri, challenge, state, resource: resourceOf(server.url), scope });
   const p: Pending = { id, state, verifier, clientId: client.client_id, clientSecret: client.client_secret ?? null, tokenEndpoint: a.token_endpoint, revocationEndpoint: a.revocation_endpoint ?? null, redirectUri, at: Date.now() };
   return { url, pending: seal(p) };
 }
+
+/** The client secret for a token request: Google's lives only in Vercel (GMAIL_CLIENT_SECRET). */
+const clientSecretOf = (id: McpId, stored: string | null) => (isGoogle(id) ? env.gmailClientSecret ?? null : stored);
+/** RFC 8707 resource: hosted MCP servers only (Google doesn't take it). */
+const resourceFor = (id: McpId): Record<string, string> => (isOauth(id) ? { resource: resourceOf(MCP_SERVERS[id].url) } : {});
 
 async function tokenRequest(endpoint: string, clientId: string, clientSecret: string | null, form: Record<string, string>) {
   const body = new URLSearchParams({ ...form, client_id: clientId, ...(clientSecret ? { client_secret: clientSecret } : {}) });
@@ -271,9 +287,27 @@ export async function finishConnect(id: McpId, sealedPending: string | undefined
   const p = sealedPending ? open<Pending>(sealedPending) : null;
   if (!p || p.id !== id || Date.now() - p.at > PENDING_MINUTES * 60_000) throw new Error("the sign-in took too long or was started elsewhere. Tap Connect again.");
   if (!q.code || !q.state || q.state !== p.state) throw new Error("the sign-in didn't match the one started here. Tap Connect again.");
-  const r = await tokenRequest(p.tokenEndpoint, p.clientId, p.clientSecret, { grant_type: "authorization_code", code: q.code, redirect_uri: p.redirectUri, code_verifier: p.verifier, resource: resourceOf(MCP_SERVERS[id].url) });
+  const secret = clientSecretOf(id, p.clientSecret);
+  const r = await tokenRequest(p.tokenEndpoint, p.clientId, secret, { grant_type: "authorization_code", code: q.code, redirect_uri: p.redirectUri, code_verifier: p.verifier, ...resourceFor(id) });
   const tokens = r.ok ? readTokens(r.json, Date.now()) : null;
-  if (!tokens) throw new Error(`the server didn't hand over a token (${r.status}): ${scrubSecrets(r.text, [q.code, p.clientSecret, p.verifier]).slice(0, 160)}`);
+  if (!tokens) throw new Error(`the server didn't hand over a token (${r.status}): ${scrubSecrets(r.text, [q.code, secret, p.verifier]).slice(0, 160)}`);
+  if (isGoogle(id)) {
+    // exactly the profile's scope, or the sign-in is cancelled at Google and not kept
+    const secrets = [tokens.accessToken, tokens.refreshToken, secret];
+    const problem = scopeProblem(grantedScopes(r.json), MCP_SERVERS[id].scopes) ?? (tokens.refreshToken ? null : "Google didn't hand over a refresh token");
+    let box = "";
+    if (!problem) { try { box = await gmailMailbox(tokens.accessToken); } catch (e) { box = ""; await logEvent(id, "refused", `couldn't read the mailbox: ${e instanceof Error ? e.message : String(e)}`, secrets); } }
+    if (problem || !box) {
+      await fetchJson(GOOGLE_AUTH.revocation_endpoint!, { method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" }, body: new URLSearchParams({ token: tokens.refreshToken ?? tokens.accessToken }) }).catch(() => undefined);
+      const why = problem ?? "Gmail didn't say which mailbox this is";
+      await logEvent(id, "refused", why, secrets);
+      throw new Error(`${why}, so it was cancelled. Tap Connect again.`);
+    }
+    await store(id, { clientId: p.clientId, clientSecret: null, tokenEndpoint: p.tokenEndpoint, revocationEndpoint: p.revocationEndpoint, tokens });
+    await db().from("mcp_connections").update({ settings: { mailbox: box } }).eq("id", id);
+    await logEvent(id, "connected", `as ${box}`, secrets);
+    return;
+  }
   await store(id, { clientId: p.clientId, clientSecret: p.clientSecret, tokenEndpoint: p.tokenEndpoint, revocationEndpoint: p.revocationEndpoint, tokens });
   await logEvent(id, "connected");
   // signing in accepts the server's tools as they are now; a tool the profile needs that's gone still pauses it
@@ -283,15 +317,16 @@ export async function finishConnect(id: McpId, sealedPending: string | undefined
 /** A token good for at least a minute, refreshed (and kept) when it's about to run out. */
 async function accessToken(id: McpId): Promise<{ token: string; secrets: (string | null)[]; row: Row }> {
   const name = MCP_SERVERS[id].name;
-  if (!isOauth(id)) throw new Error(`${name} runs on our own server: use callLocalTool.`);
+  if (!usesConnect(id)) throw new Error(`${name} runs on our own server with a pasted key: use callLocalTool.`);
   const r = await row(id);
   if (r?.paused_at) throw new Error(`${name} is paused: ${r.last_error ?? "its sign-in stopped working"}. Tap Sign in again on Connections.`);
   const s = r ? await readSecret(id, r) : null;
   if (!s) throw new Error(r?.secret ? `${name}'s sign-in can't be unlocked with MCP_SECRET_KEY or MCP_SECRET_KEY_OLD. Tap Sign in again on Connections.` : `${name} isn't connected. Tap Connect on Connections.`);
-  const secrets = [s.tokens.accessToken, s.tokens.refreshToken, s.clientSecret];
+  const clientSecret = clientSecretOf(id, s.clientSecret);
+  const secrets = [s.tokens.accessToken, s.tokens.refreshToken, clientSecret];
   if (!needsRefresh(s.tokens, Date.now())) return { token: s.tokens.accessToken, secrets, row: r! };
   if (!s.tokens.refreshToken) { await pause(id, `${name}'s sign-in ran out`, "refresh_failed", secrets); throw new Error(`${name}'s sign-in ran out. Tap Sign in again on Connections.`); }
-  const t = await tokenRequest(s.tokenEndpoint, s.clientId, s.clientSecret, { grant_type: "refresh_token", refresh_token: s.tokens.refreshToken, resource: resourceOf(MCP_SERVERS[id].url) });
+  const t = await tokenRequest(s.tokenEndpoint, s.clientId, clientSecret, { grant_type: "refresh_token", refresh_token: s.tokens.refreshToken, ...resourceFor(id) });
   // a new refresh token replaces the old one at once; the old one is kept only when none is sent
   const tokens = t.ok ? readTokens(t.json, Date.now(), s.tokens.refreshToken) : null;
   if (!tokens) {
@@ -302,7 +337,7 @@ async function accessToken(id: McpId): Promise<{ token: string; secrets: (string
   const { error } = await db().from("mcp_connections").update({ secret: seal({ ...s, tokens }), last_error: null, updated_at: new Date().toISOString() }).eq("id", id);
   if (error) throw new Error(error.message);
   await logEvent(id, "refreshed");
-  return { token: tokens.accessToken, secrets: [tokens.accessToken, tokens.refreshToken, s.clientSecret, ...secrets], row: r! };
+  return { token: tokens.accessToken, secrets: [tokens.accessToken, tokens.refreshToken, ...secrets], row: r! };
 }
 
 // ---- The MCP client: initialize, then one tools/call. A short session per call keeps it simple
@@ -389,6 +424,7 @@ const stale = (at: string | null) => !at || Date.now() - Date.parse(at) > TOOL_C
  */
 export async function callMcpTool(id: McpId, tool: string, args: Record<string, unknown>): Promise<unknown> {
   if (!mayCall(id, tool)) throw new Error(`${tool} isn't on the list of ${MCP_SERVERS[id].name} tools code may call.`);
+  if (isGoogle(id)) return callGoogleTool(id, tool, args);
   if (!isOauth(id)) return callLocalTool(id, tool, args);
   return callRemote(id, tool, args);
 }
@@ -398,8 +434,29 @@ export async function callMcpTool(id: McpId, tool: string, args: Record<string, 
  * after Zak approved the action and the gateway re-checked it against live data.
  */
 export async function callWriteTool(id: McpId, tool: string, args: Record<string, unknown>): Promise<unknown> {
-  if (!isOauth(id) || !mayWrite(id, tool)) throw new Error(`${tool} isn't a write tool the gateway may call on ${MCP_SERVERS[id].name}.`);
-  return callRemote(id, tool, args);
+  if (!usesConnect(id) || !mayWrite(id, tool)) throw new Error(`${tool} isn't a write tool the gateway may call on ${MCP_SERVERS[id].name}.`);
+  return isGoogle(id) ? callGoogleTool(id, tool, args) : callRemote(id, tool, args);
+}
+
+/**
+ * One tools/call to our own Gmail server (slice 6), with an access token the vault opens and renews
+ * for this profile's sign-in. The server serves only this profile's tools. Errors are scrubbed; a
+ * token Google no longer accepts pauses the sign-in.
+ */
+async function callGoogleTool(id: McpId, tool: string, args: Record<string, unknown>): Promise<unknown> {
+  const name = MCP_SERVERS[id].name;
+  const { token, secrets } = await accessToken(id);
+  const n = ++localSeq;
+  const request = JSON.stringify({ jsonrpc: "2.0", id: n, method: "tools/call", params: { name: tool, arguments: args } });
+  const body = JSON.stringify(await gmailServer(id, token)(JSON.parse(request)));
+  const rep = parseRpc("application/json", body, n);
+  const out = "error" in rep ? { error: rep.error } : toolPayload(rep.result);
+  if ("error" in out) {
+    const msg = scrubSecrets(out.error, secrets);
+    if (/^Gmail 401\b/.test(msg)) { await pause(id, `Google refused the sign-in (401)`, "refused", secrets); throw new Error(`${name}: Google refused the sign-in. Tap Sign in again on Connections.`); }
+    throw new Error(`${name} ${tool}: ${msg}`);
+  }
+  return out.data;
 }
 
 async function callRemote(id: McpId, tool: string, args: Record<string, unknown>): Promise<unknown> {
@@ -432,7 +489,7 @@ export async function localReady(id: McpId): Promise<boolean> {
  */
 export async function saveMcpKey(id: McpId, pasted: string): Promise<{ name: string; workspace: string }> {
   const l = LOCAL[id];
-  if (!l || isOauth(id)) throw new Error(`${MCP_SERVERS[id].name} signs in on its own page, not with a key.`);
+  if (!l || usesConnect(id)) throw new Error(`${MCP_SERVERS[id].name} signs in on its own page, not with a key.`);
   if (!keys().current) throw new Error(VAULT_MISSING);
   const key = pasted.trim();
   if (!l.looksRight(key)) throw new Error(`That doesn't look like a ${MCP_SERVERS[id].name} integration key.`);
@@ -455,7 +512,7 @@ let localSeq = 0;
 export async function callLocalTool(id: McpId, tool: string, args: Record<string, unknown>): Promise<unknown> {
   const name = MCP_SERVERS[id].name;
   const l = LOCAL[id];
-  if (!l || isOauth(id)) throw new Error(`${name} isn't a server we run.`);
+  if (!l || usesConnect(id)) throw new Error(`${name} isn't a server we run with a pasted key.`);
   if (!mayCall(id, tool) && !mayReport(id, tool)) throw new Error(`${tool} isn't on the list of ${name} tools code may call.`);
   const r = await row(id);
   if (r?.paused_at) throw new Error(`${name} is paused: ${r.last_error ?? "its key stopped working"}. Paste a new key on Connections.`);

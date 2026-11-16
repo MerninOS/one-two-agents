@@ -27,7 +27,7 @@ export interface Connection {
   checks: Check[];
   /** An MCP server (core/mcp-rules.ts): signed in with Connect on this page, not with a setting. */
   mcp?: McpId;
-  /** More sign-ins shown on the same page (Mercury's gateway-only write sign-in). */
+  /** More sign-ins shown on the same page (the gateway-only write sign-ins: Mercury writes, Gmail drafts). */
   mcpMore?: McpId[];
 }
 
@@ -43,11 +43,11 @@ export const CONNECTIONS: Connection[] = [
     checks: [{ key: "mercury", label: "Bank", setup: "Tap Connect and sign in to Mercury, picking One Two’s business org. Set MERCURY_ACCOUNT_IDS (all, or a comma list) for the cash number." }],
   },
   {
-    id: "gmail", name: "Gmail", sub: "Receipts in, drafts out", icon: "mail", builtIn: false,
-    about: "Two separate tokens for zak@onetwocoffeelab.com: one that only reads (receipts), one that only writes drafts. Neither can send. Email is untrusted data.",
+    id: "gmail", name: "Gmail", sub: "Receipts in, drafts out", icon: "mail", builtIn: false, mcp: "gmail_read", mcpMore: ["gmail"],
+    about: "Our own Gmail server, run in the app. Google’s Gmail MCP server isn’t used: it’s a preview program and can’t download receipt files. Two separate Google sign-ins to One Two’s mailbox, each granted one scope: one only reads (Quinn’s receipts), one only makes drafts and is used only by the gateway after you approve. There is no send tool, so you send every email from Gmail. Email is untrusted data.",
     checks: [
-      { key: "gmail", label: "Drafts", tools: ["gmail_draft_lead"], setup: "Set GMAIL_CLIENT_ID, GMAIL_CLIENT_SECRET and GMAIL_REFRESH_TOKEN (gmail.compose only)." },
-      { key: "gmail_read", label: "Receipts (read only)", setup: "Set GMAIL_RECEIPTS_REFRESH_TOKEN: a refresh token from the same OAuth client, granted only gmail.readonly.", tools: ["report_books_sync"] },
+      { key: "gmail_read", label: "Receipts (read only)", setup: "Tap Connect under Gmail (read only) and sign in to One Two’s mailbox. Needs GMAIL_CLIENT_ID and GMAIL_CLIENT_SECRET in Vercel.", tools: ["report_books_sync"] },
+      { key: "gmail", label: "Drafts", tools: ["gmail_draft_lead"], setup: "Tap Connect under Gmail drafts and sign in to the same mailbox." },
     ],
   },
   {

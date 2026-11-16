@@ -47,7 +47,7 @@ Migration `supabase/migrations/20261109200000_bookkeeper.sql`: tables `expense_d
 ## 5. Settings (Vercel project `one-two-agents`)
 
 - Mercury: connected on Connections (business org, read scope only). Bookkeeper does not need `MERCURY_ACCOUNT_IDS`.
-- `GMAIL_RECEIPTS_REFRESH_TOKEN`: new. A refresh token for zak@onetwocoffeelab.com with only `https://www.googleapis.com/auth/gmail.readonly`, from the same OAuth client as `GMAIL_CLIENT_ID` / `GMAIL_CLIENT_SECRET`. Blank = Quinn skips Gmail and lists every unmatched charge.
+- Gmail: the "Gmail (read only)" sign-in on Connections (`gmail.readonly` only, our own Gmail server; docs/mcp-everywhere.md slice 6). Not connected = Quinn skips Gmail and lists every unmatched charge.
 - `ANTHROPIC_API_KEY`, Notion's key (on Connections), `NOTION_BRIEF_PARENT_ID`, Supabase: already there.
 
 ## 6. Guardrails in code
