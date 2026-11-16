@@ -109,6 +109,8 @@ export function health(): Record<IntegrationId, boolean> {
     // the token vault's own key (core/vault.ts); never made from another secret
     // the gateway's own Mercury sign-in (category and memo); getFloor reads mcp_connections
     mercury_write: false,
+    // the gateway's receipt-file key, pasted on Connections into the vault
+    mercury_files: false,
     vault: vaultReady(),
   };
 }

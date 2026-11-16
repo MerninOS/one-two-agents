@@ -114,3 +114,24 @@ export function readOrgName(payload: unknown): string | null {
   const dbas = arr(o.dbas).map((d) => str(d) ?? str(obj(d).name)).filter(Boolean);
   return str(o.legalBusinessName) ?? str(o.name) ?? (dbas[0] as string | undefined) ?? null;
 }
+
+// ---- Receipt files (docs/mcp-everywhere.md, slice 8): the gateway's receipt token lives in the
+// vault, and our own small server attaches one file to the charge Zak approved.
+
+/** Mercury's API tokens ("secret-token:mercury_production_…"). */
+export const looksLikeMercuryToken = (k: string) => /^secret-token:mercury_[A-Za-z0-9_$.-]{20,300}$/.test(k);
+
+export const RECEIPT_MIME = ["application/pdf", "image/jpeg", "image/png", "image/webp", "image/heic", "text/plain"] as const;
+const RECEIPT_MAX_BYTES = 10_000_000;
+
+/** The checked inputs of mercury_attach_receipt, or why not. */
+export function checkReceiptArgs(raw: unknown): { transactionId: string; name: string; type: string; bytes: Buffer } | { problem: string } {
+  const a = obj(raw);
+  if (typeof a.transactionId !== "string" || !MERCURY_UUID.test(a.transactionId)) return { problem: "transactionId must be a Mercury transaction id" };
+  if (typeof a.name !== "string" || !/^receipt\.[a-z0-9]{2,5}$/.test(a.name)) return { problem: "name must be receipt.<ext>" };
+  if (typeof a.type !== "string" || !(RECEIPT_MIME as readonly string[]).includes(a.type)) return { problem: "type must be a PDF, an image or plain text" };
+  if (typeof a.base64 !== "string" || !a.base64 || !/^[A-Za-z0-9+/]+={0,2}$/.test(a.base64)) return { problem: "base64 must be the file" };
+  const bytes = Buffer.from(a.base64, "base64");
+  if (!bytes.length || bytes.length > RECEIPT_MAX_BYTES) return { problem: "the file must be 1 byte to 10 MB" };
+  return { transactionId: a.transactionId, name: a.name, type: a.type, bytes };
+}

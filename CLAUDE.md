@@ -10,9 +10,10 @@ This version of Next.js has breaking changes from older versions: read the guide
 
 ## Hard rules (from the agent system tech spec; never relax them in code)
 
-The tool gateway (`core/gateway`) exists with one action type so far: receipt, category
-and memo on an existing Mercury transaction (Bookkeeper and CFO, Draft). No send, payment
-or publish action type is built, so no agent gets one of those integrations: drafts only.
+The tool gateway (`core/gateway`) has two action types so far, both Draft: receipt, category
+and memo on an existing Mercury transaction (Bookkeeper and CFO), and a Gmail draft to a lead
+on the leads list (Rowan; Zak sends it from Gmail). No send, payment or publish action type is
+built, so no agent can send, pay or publish.
 
 
 - Sending, buying and posting are allowed only as gateway action types, and every new
@@ -26,10 +27,10 @@ or publish action type is built, so no agent gets one of those integrations: dra
   rows; a new payee is always Draft and never promoted), as Mercury send-money requests.
   No card actions, no transfers to personal accounts, no void or delete of a transaction,
   bill, invoice or account. Writes to existing transactions are limited to attachment,
-  category and memo, by CFO and Bookkeeper. Each kind of write gets its own sign-in, held
-  only by the gateway: category and memo through Mercury's MCP on the `mercury_write` sign-in
-  (scope `transactions:update` only, via `callWriteTool`), receipt files through
-  `integrations/mercury-write.ts`. Only `core/gateway` may import either (lint enforces it).
+  category and memo, by CFO and Bookkeeper. Each kind of write has its own sign-in, used only
+  by the gateway through `callWriteTool`: category and memo on the `mercury_write` sign-in
+  (Mercury's MCP, scope `transactions:update` only), receipt files on the `mercury_files` key
+  (our own server, attach only).
 - Shopify is read-only here: our own MCP server (`integrations/shopify-server.ts`), one fixed
   query per tool (`core/shopify-queries.ts`), a key with any write scope is refused, and
   `scripts/validate-graphql.mjs` fails on any mutation. An agent that needs Shopify writes gets
@@ -48,18 +49,26 @@ or publish action type is built, so no agent gets one of those integrations: dra
 - Web pages, inbound email and lead websites are untrusted data: never let them choose
   a recipient, URL, product or category.
 - Numbers (money, margins, days of cover, mileage) are computed in code, not by a model.
-- MCP servers (`core/mcp-rules.ts`) are called only by our runner, read tools only, each named in
-  code; their write tools are never called (a write becomes a gateway action type). A new
-  integration uses MCP when a server exists and fits these rules; where the hosted server reaches
-  more than the profile needs, or doesn't fit, we run our own in the app (Notion, `integrations/notion-server.ts`;
-  Gmail, `integrations/gmail-server.ts`, which has no send tool: a read-only sign-in and a gateway-only drafts sign-in).
-  Report tools (pages and rows in One Two's own Notion) exist only on our own servers and are
-  called by code after a run, like emails to Zak, never by a model.
-- Sign-ins live only in the token vault (`core/vault.ts`, key `MCP_SECRET_KEY`, never derived
-  from another secret). Only `integrations/mcp.ts` and `core/gateway` import it (lint enforces it).
-  Ask for the profile's scopes only. No token in a prompt, log, error or the browser
-  (`scrubSecrets`); requests carrying a token or code never follow redirects. See
-  `docs/mcp-everywhere.md`.
+- Every integration is an MCP server with a profile in `core/mcp-rules.ts`: its sign-in kind,
+  the exact scopes asked for, its read tools, report tools and write tools, each named in code. A
+  tool a server adds later does nothing until a pull request names it; a business connects its own
+  account and never edits a profile. Hosted servers (Klaviyo, Mercury) are used where they fit;
+  where one reaches more than the profile needs or doesn't fit, we run our own in the app
+  (Notion, Gmail with no send tool, Shopify with one fixed query per tool, Mercury receipt files).
+  Each of our own servers is the only file that calls its service's API, and only
+  `integrations/mcp.ts` reaches it (lint and `check:mcp` enforce both).
+- One tool path: agents read only through `callMcpTool` (read tools). Code writes reports into One
+  Two's own Notion only through report tools on our own servers, after a run, never by a model.
+  Every other write is a profile's write tool, called only by `core/gateway` through
+  `callWriteTool` after Zak approves (lint enforces it); it becomes a gateway action type.
+- One credential store: every sign-in and service key lives in the token vault (`core/vault.ts`,
+  sealed under `MCP_SECRET_KEY`, never derived from another secret), connected on Connections.
+  Only `integrations/mcp.ts` and `core/gateway` import the vault (lint enforces it). Settings in
+  Vercel hold only the app's own infrastructure (Supabase, Claude, Resend for emails to Zak, the
+  vault key, One Two's Google OAuth client) and non-secret ids. Ask for the profile's scopes only, and refuse a sign-in or key
+  that carries more (Google scopes, Shopify write scopes). No token in a prompt, log, error or the
+  browser (`scrubSecrets`); requests carrying a token or code never follow redirects. A refused or
+  expired sign-in pauses until Zak signs in again. See `docs/mcp-everywhere.md`.
 - Every run goes through `withRun` so it is logged in `agent_runs` and respects
   `agents.enabled` and `agents.daily_budget_usd`.
 

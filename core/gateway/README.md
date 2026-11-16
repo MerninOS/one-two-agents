@@ -1,8 +1,9 @@
 # Tool gateway
 
 Every write an agent wants to make outside its own tables goes through here. Agents never
-import a write integration: `integrations/mercury-write.ts` can only be imported from
-`core/gateway/` (enforced in `eslint.config.mjs`, so `npm run check` fails otherwise).
+call a write tool: `callWriteTool` (integrations/mcp.ts) can only be imported from
+`core/gateway/` (enforced in `eslint.config.mjs` and `check:mcp`), and every write tool is named
+on a profile in `core/mcp-rules.ts`.
 
 - `policy.ts`: the rules in plain code. `TOOLS` is the allow-list of write tools, which
   agents may use each one, its tier and its fields. `refuseProposal` checks a proposal;
@@ -49,7 +50,8 @@ Receipt attachment, category and memo on a Mercury transaction that already exis
    row (`pending`) per charge. The Control Room's "Check for Quinn's proposals" does the same.
 2. Zak approves or rejects in the Control Room (`/approvals`). Pending items older than
    `policies.approval_expiry_hours` (72) expire as stale.
-3. Applying needs `MERCURY_WRITE_TOKEN`, `DASHBOARD_CONTROLS=on`, and the agent on duty
+3. Applying needs the gateway's Mercury sign-ins on Connections (Mercury writes for category and
+   memo, Mercury receipt files for the file), `DASHBOARD_CONTROLS=on`, and the agent on duty
    (`applyApproved` runs inside `withRun(agent, "approval")`, so it is logged at $0 and
    skipped while `agents.enabled = false`). Approved items wait until all three hold.
 4. Before each write the gateway re-checks: the fields are on the allow-list; the charge is

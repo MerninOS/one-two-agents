@@ -131,7 +131,7 @@ export async function pauseAll(): Promise<ActionResult> {
 }
 
 // ---- Approvals. Deciding only records Zak's choice. Writing the approved change to Mercury
-// also needs DASHBOARD_CONTROLS=on and MERCURY_WRITE_TOKEN, and the agent on duty (withRun).
+// also needs DASHBOARD_CONTROLS=on, the gateway's Mercury sign-ins, and the agent on duty (withRun).
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const BY = "zak (control room)";
