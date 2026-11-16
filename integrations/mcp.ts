@@ -12,7 +12,7 @@ import { createHash, randomBytes } from "node:crypto";
 import { db } from "@/core/db";
 import { env } from "@/core/env";
 import {
-  MCP_PROTOCOL, MCP_SERVERS, authorizeUrl, discoveryUrls, mayCall, needsRefresh, parseRpc, pickScopes, readAuthServer, readTokens, resourceOf, scrubSecrets, toolPayload,
+  MCP_PROTOCOL, MCP_SERVERS, TOOL_CHECK_HOURS, authorizeUrl, checkTools, listedTools, toolCheckNote, type ListedTool, discoveryUrls, mayCall, needsRefresh, parseRpc, pickScopes, readAuthServer, readTokens, resourceOf, scrubSecrets, toolPayload,
   type AuthServer, type McpEvent, type McpId, type Tokens,
 } from "@/core/mcp-rules";
 import { MIN_SECRET_CHARS, keyIdOf, legacyKey, open as openWith, seal as sealWith, vaultKey, type VaultKey } from "@/core/vault";
@@ -46,15 +46,15 @@ function open<T>(sealed: string): T | null { return openWith<T>(sealed, keys().a
 // ---- The stored connection.
 
 interface Secret { clientId: string; clientSecret: string | null; tokenEndpoint: string; revocationEndpoint?: string | null; tokens: Tokens }
-export interface McpStatus { connected: boolean; paused: boolean; connectedAt: string | null; lastError: string | null; settings: Record<string, string> }
+export interface McpStatus { connected: boolean; paused: boolean; connectedAt: string | null; lastError: string | null; settings: Record<string, string>; toolsCheckedAt: string | null; toolsSeen: string[] }
 export interface McpLogRow { event: McpEvent; detail: string | null; at: string }
-export const MCP_MISSING = "The MCP tables aren't set up yet: apply supabase/migrations/20261125090000_mcp_connections.sql and 20261126090000_mcp_vault.sql.";
+export const MCP_MISSING = "The MCP tables aren't set up yet: apply the mcp_connections, mcp_vault and mcp_tool_check migrations in supabase/migrations.";
 const missing = (m: string) => /relation .* does not exist|schema cache|column .* does not exist/i.test(m);
 
-type Row = { id: string; secret: string | null; settings: Record<string, string> | null; connected_at: string | null; last_error: string | null; paused_at: string | null };
+type Row = { id: string; secret: string | null; settings: Record<string, string> | null; connected_at: string | null; last_error: string | null; paused_at: string | null; tools_seen: Record<string, string> | null; tools_checked_at: string | null };
 
 async function row(id: McpId): Promise<Row | null> {
-  const { data, error } = await db().from("mcp_connections").select("id, secret, settings, connected_at, last_error, paused_at").eq("id", id).maybeSingle();
+  const { data, error } = await db().from("mcp_connections").select("id, secret, settings, connected_at, last_error, paused_at, tools_seen, tools_checked_at").eq("id", id).maybeSingle();
   if (error) throw new Error(missing(error.message) ? MCP_MISSING : error.message);
   return data as Row | null;
 }
@@ -74,7 +74,7 @@ export async function mcpLog(id: McpId, limit = 6): Promise<McpLogRow[]> {
 export async function mcpStatus(id: McpId): Promise<McpStatus | null> {
   try {
     const r = await row(id);
-    return { connected: !!r?.secret, paused: !!r?.paused_at, connectedAt: r?.connected_at ?? null, lastError: r?.last_error ?? null, settings: r?.settings ?? {} };
+    return { connected: !!r?.secret, paused: !!r?.paused_at, connectedAt: r?.connected_at ?? null, lastError: r?.last_error ?? null, settings: r?.settings ?? {}, toolsCheckedAt: r?.tools_checked_at ?? null, toolsSeen: Object.keys(r?.tools_seen ?? {}) };
   } catch { return null; }
 }
 
@@ -260,17 +260,19 @@ export async function finishConnect(id: McpId, sealedPending: string | undefined
   if (!tokens) throw new Error(`the server didn't hand over a token (${r.status}): ${scrubSecrets(r.text, [q.code, p.clientSecret, p.verifier]).slice(0, 160)}`);
   await store(id, { clientId: p.clientId, clientSecret: p.clientSecret, tokenEndpoint: p.tokenEndpoint, revocationEndpoint: p.revocationEndpoint, tokens });
   await logEvent(id, "connected");
+  // signing in accepts the server's tools as they are now; a tool the profile needs that's gone still pauses it
+  try { await toolCheck(id, true); } catch { /* unreachable now: the first call checks */ }
 }
 
 /** A token good for at least a minute, refreshed (and kept) when it's about to run out. */
-async function accessToken(id: McpId): Promise<{ token: string; secrets: (string | null)[] }> {
+async function accessToken(id: McpId): Promise<{ token: string; secrets: (string | null)[]; row: Row }> {
   const name = MCP_SERVERS[id].name;
   const r = await row(id);
   if (r?.paused_at) throw new Error(`${name} is paused: ${r.last_error ?? "its sign-in stopped working"}. Tap Sign in again on Connections.`);
   const s = r ? await readSecret(id, r) : null;
   if (!s) throw new Error(r?.secret ? `${name}'s sign-in can't be unlocked with MCP_SECRET_KEY or MCP_SECRET_KEY_OLD. Tap Sign in again on Connections.` : `${name} isn't connected. Tap Connect on Connections.`);
   const secrets = [s.tokens.accessToken, s.tokens.refreshToken, s.clientSecret];
-  if (!needsRefresh(s.tokens, Date.now())) return { token: s.tokens.accessToken, secrets };
+  if (!needsRefresh(s.tokens, Date.now())) return { token: s.tokens.accessToken, secrets, row: r! };
   if (!s.tokens.refreshToken) { await pause(id, `${name}'s sign-in ran out`, "refresh_failed", secrets); throw new Error(`${name}'s sign-in ran out. Tap Sign in again on Connections.`); }
   const t = await tokenRequest(s.tokenEndpoint, s.clientId, s.clientSecret, { grant_type: "refresh_token", refresh_token: s.tokens.refreshToken, resource: resourceOf(MCP_SERVERS[id].url) });
   // a new refresh token replaces the old one at once; the old one is kept only when none is sent
@@ -283,7 +285,7 @@ async function accessToken(id: McpId): Promise<{ token: string; secrets: (string
   const { error } = await db().from("mcp_connections").update({ secret: seal({ ...s, tokens }), last_error: null, updated_at: new Date().toISOString() }).eq("id", id);
   if (error) throw new Error(error.message);
   await logEvent(id, "refreshed");
-  return { token: tokens.accessToken, secrets: [tokens.accessToken, tokens.refreshToken, s.clientSecret, ...secrets] };
+  return { token: tokens.accessToken, secrets: [tokens.accessToken, tokens.refreshToken, s.clientSecret, ...secrets], row: r! };
 }
 
 // ---- The MCP client: initialize, then one tools/call. A short session per call keeps it simple
@@ -306,27 +308,76 @@ async function rpc(url: string, token: string, session: string | null, id: numbe
   return { session: res.headers.get("mcp-session-id") ?? session, reply: id == null ? null : parseRpc(res.headers.get("content-type"), text, id) };
 }
 
-/**
- * Calls one of the read tools core/mcp-rules.ts names for this server, and returns its data.
- * Anything else is refused before a request is made.
- */
-export async function callMcpTool(id: McpId, tool: string, args: Record<string, unknown>): Promise<unknown> {
+/** One short session: initialize, then the requests `work` makes. Errors are scrubbed; a refused sign-in pauses the server. */
+async function withSession<T>(id: McpId, work: (call: (method: string, params: unknown) => Promise<unknown>, row: Row) => Promise<T>): Promise<T> {
   const name = MCP_SERVERS[id].name;
-  if (!mayCall(id, tool)) throw new Error(`${tool} isn't on the list of ${name} tools code may call.`);
   const url = MCP_SERVERS[id].url;
-  const { token, secrets } = await accessToken(id);
+  const { token, secrets, row: r } = await accessToken(id);
   try {
     const init = await rpc(url, token, null, 1, "initialize", { protocolVersion: MCP_PROTOCOL, capabilities: {}, clientInfo: { name: CLIENT_NAME, version: "1" } });
     if (init.reply && "error" in init.reply) throw new Error(`${name}: ${init.reply.error}`);
     await rpc(url, token, init.session, null, "notifications/initialized", {}).catch(() => undefined);
-    const call = await rpc(url, token, init.session, 2, "tools/call", { name: tool, arguments: args });
-    if (!call.reply || "error" in call.reply) throw new Error(`${name} ${tool}: ${call.reply && "error" in call.reply ? call.reply.error : "no answer"}`);
-    const out = toolPayload(call.reply.result);
-    if ("error" in out) throw new Error(`${name} ${tool}: ${out.error}`);
-    return out.data;
+    let n = 1;
+    const call = async (method: string, params: unknown) => {
+      const res = await rpc(url, token, init.session, ++n, method, params);
+      if (!res.reply || "error" in res.reply) throw new Error(`${name} ${method}: ${res.reply && "error" in res.reply ? res.reply.error : "no answer"}`);
+      return res.reply.result;
+    };
+    return await work(call, r);
   } catch (e) {
     const msg = scrubSecrets(e instanceof Error ? e.message : String(e), secrets);
     if (e instanceof Refused) { await pause(id, msg, "refused", secrets); throw new Error(`${name}: ${msg}. Tap Sign in again on Connections.`); }
     throw new Error(msg);
   }
+}
+
+async function listAll(call: (method: string, params: unknown) => Promise<unknown>): Promise<ListedTool[]> {
+  const all: ListedTool[] = [];
+  let cursor: string | null = null;
+  for (let i = 0; i < 10; i++) {
+    const page = listedTools(await call("tools/list", cursor ? { cursor } : {}));
+    all.push(...page.tools);
+    cursor = page.next;
+    if (!cursor) break;
+  }
+  return all;
+}
+
+/**
+ * The tool check (slice 3): the profile's read tools must still be on the server, with the inputs
+ * accepted last time. `accept` (signing in) takes the inputs as they are now. A failed check pauses
+ * the server with what changed, until Zak signs in again.
+ */
+async function toolCheck(id: McpId, accept: boolean): Promise<void> {
+  await withSession(id, async (call, r) => {
+    const c = checkTools(MCP_SERVERS[id].readTools, await listAll(call), accept ? null : r.tools_seen);
+    const note = toolCheckNote(c);
+    const now = new Date().toISOString();
+    if (note) {
+      await db().from("mcp_connections").update({ paused_at: now, last_error: `${note}. Sign in again once you've checked it`, updated_at: now }).eq("id", id);
+      await logEvent(id, "tools_changed", note);
+      throw new Error(`${MCP_SERVERS[id].name} is paused: ${note}. Sign in again on Connections once you've checked it.`);
+    }
+    const { error } = await db().from("mcp_connections").update({ tools_seen: c.seen, tools_checked_at: now, updated_at: now }).eq("id", id);
+    if (error) throw new Error(missing(error.message) ? MCP_MISSING : error.message);
+    if (accept || !r.tools_checked_at) await logEvent(id, "tools_checked", `${Object.keys(c.seen).length} tools as expected`);
+  });
+}
+
+const stale = (at: string | null) => !at || Date.now() - Date.parse(at) > TOOL_CHECK_HOURS * 3_600_000;
+
+/**
+ * Calls one of the read tools core/mcp-rules.ts names for this server, and returns its data.
+ * Anything else is refused before a request is made. The tool check runs first when it's due.
+ */
+export async function callMcpTool(id: McpId, tool: string, args: Record<string, unknown>): Promise<unknown> {
+  const name = MCP_SERVERS[id].name;
+  if (!mayCall(id, tool)) throw new Error(`${tool} isn't on the list of ${name} tools code may call.`);
+  const r = await row(id);
+  if (r?.secret && !r.paused_at && stale(r.tools_checked_at)) await toolCheck(id, false);
+  return withSession(id, async (call) => {
+    const out = toolPayload(await call("tools/call", { name: tool, arguments: args }));
+    if ("error" in out) throw new Error(`${name} ${tool}: ${out.error}`);
+    return out.data;
+  });
 }

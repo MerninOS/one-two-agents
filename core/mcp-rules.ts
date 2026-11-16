@@ -7,6 +7,12 @@
 // server adds later does nothing until it is named here in a pull request. A server's write tools
 // are never called; a write would become a gateway action type that starts at Draft.
 
+import { createHash } from "node:crypto";
+
+/**
+ * A server's profile (docs/mcp-everywhere.md, slice 3). It ships with the app and only a pull
+ * request changes it: a business connects its own account, never edits what may be called.
+ */
 export interface McpServer {
   id: string;
   name: string;
@@ -16,6 +22,13 @@ export interface McpServer {
   readTools: readonly string[];
   /** The sign-in scopes asked for: only what the read tools need, never the server's whole list. */
   scopes: readonly string[];
+  /**
+   * Write tools, each with the gateway action type it becomes (starting at Draft). Code never calls
+   * one directly: only core/gateway may, after Zak approves. Empty until a slice builds one.
+   */
+  writeTools: readonly { tool: string; actionType: string }[];
+  /** Who should sign in, shown next to Connect. */
+  signInHint: string;
 }
 
 export const MCP_SERVERS = {
@@ -28,6 +41,8 @@ export const MCP_SERVERS = {
     readTools: ["get_lists", "get_list", "get_metrics", "get_campaign_report", "get_flow_report"],
     // Klaviyo's read scopes for those tools (lists, metrics, campaign and flow reports).
     scopes: ["accounts:read", "lists:read", "metrics:read", "campaigns:read", "flows:read"],
+    writeTools: [],
+    signInHint: "Sign in as an Owner, Admin or Manager.",
   },
 } as const satisfies Record<string, McpServer>;
 export type McpId = keyof typeof MCP_SERVERS;
@@ -206,6 +221,56 @@ export function readTokens(j: unknown, now: number, keepRefresh: string | null =
 /** Refresh a minute early. */
 export const needsRefresh = (t: Tokens, now: number) => t.expiresAt != null && t.expiresAt - now < 60_000;
 
+// ---- The tool check (slice 3): a server's tools must still be the ones code was written against.
+
+/** A tool as the server lists it: its name and what inputs it takes. */
+export interface ListedTool { name: string; inputSchema: unknown }
+
+const canon = (x: unknown): unknown => Array.isArray(x) ? x.map(canon) : x && typeof x === "object" ? Object.fromEntries(Object.keys(x as object).sort().map((k) => [k, canon((x as Record<string, unknown>)[k])])) : x;
+
+/** A short fingerprint of a tool's inputs (key order doesn't matter; descriptions do, kept simple on purpose). */
+export function toolFingerprint(t: ListedTool): string {
+  return createHash("sha256").update(JSON.stringify(canon(t.inputSchema ?? null))).digest("base64url").slice(0, 16);
+}
+
+/** The tools in one tools/list reply, and the cursor for the next page. */
+export function listedTools(result: unknown): { tools: ListedTool[]; next: string | null } {
+  const r = obj(result);
+  const tools = arr(r.tools).map((t) => ({ name: str(obj(t).name, 120), inputSchema: obj(t).inputSchema })).filter((t) => t.name);
+  return { tools, next: typeof r.nextCursor === "string" && r.nextCursor ? r.nextCursor : null };
+}
+
+export interface ToolCheck { missing: string[]; changed: string[]; seen: Record<string, string> }
+
+/**
+ * Compares the profile's read tools with what the server lists now. `missing`: gone from the
+ * server. `changed`: inputs differ from the last accepted fingerprint. `seen`: the fingerprints now,
+ * saved when the check passes or Zak signs in again.
+ */
+export function checkTools(readTools: readonly string[], listed: readonly ListedTool[], accepted: Record<string, string> | null): ToolCheck {
+  const by = new Map(listed.map((t) => [t.name, t]));
+  const seen: Record<string, string> = {};
+  const missing: string[] = [], changed: string[] = [];
+  for (const name of readTools) {
+    const t = by.get(name);
+    if (!t) { missing.push(name); continue; }
+    seen[name] = toolFingerprint(t);
+    if (accepted && accepted[name] && accepted[name] !== seen[name]) changed.push(name);
+  }
+  return { missing, changed, seen };
+}
+
+/** In words, for the paused note and the log. Empty when the check passed. */
+export function toolCheckNote(c: ToolCheck): string {
+  const parts: string[] = [];
+  if (c.missing.length) parts.push(`no longer offers ${c.missing.join(", ")}`);
+  if (c.changed.length) parts.push(`changed the inputs of ${c.changed.join(", ")}`);
+  return parts.length ? `the server ${parts.join(" and ")}` : "";
+}
+
+/** How long a passed check holds before the next call checks again. */
+export const TOOL_CHECK_HOURS = 6;
+
 // ---- Keeping sign-ins safe (docs/mcp-everywhere.md, slice 2).
 
 /**
@@ -235,5 +300,5 @@ export function scrubSecrets(text: string, secrets: readonly (string | null | un
 }
 
 /** What the sign-in log records. Never a token value. */
-export const MCP_EVENTS = ["connected", "refreshed", "refresh_failed", "refused", "revoked", "revoke_failed", "disconnected", "resealed"] as const;
+export const MCP_EVENTS = ["connected", "refreshed", "refresh_failed", "refused", "revoked", "revoke_failed", "disconnected", "resealed", "tools_changed", "tools_checked"] as const;
 export type McpEvent = (typeof MCP_EVENTS)[number];

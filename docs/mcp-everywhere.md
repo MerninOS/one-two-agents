@@ -52,3 +52,19 @@ Migration: `supabase/migrations/20261126090000_mcp_vault.sql` (`mcp_connections.
 2. Set `MCP_SECRET_KEY` to a new value (`openssl rand -base64 32`), redeploy.
 3. On Connections, open any MCP connection and tap **Re-lock now**.
 4. Delete `MCP_SECRET_KEY_OLD`, redeploy.
+
+## Slice 3: server profiles and the tool check
+
+Each server's profile in `core/mcp-rules.ts` (`MCP_SERVERS`) holds its address, the scopes to ask
+for, its read tools, its write tools with the gateway action type each becomes (none yet), and
+who should sign in. Only a pull request changes a profile; a business only connects its account.
+The Connections page and the floor's health read every server from this registry.
+
+The tool check: when Zak signs in, the server's `tools/list` is fingerprinted (each read tool's
+input schema, key order ignored) and saved in `mcp_connections.tools_seen`. Before a call, at most
+every `TOOL_CHECK_HOURS` (6), the list is compared again (`checkTools`). A read tool that's gone or
+whose inputs changed pauses the server with a note saying which, logged as `tools_changed`, until
+Zak looks and signs in again, which accepts the tools as they are then.
+
+Migration: `supabase/migrations/20261127090000_mcp_tool_check.sql` (`tools_seen`,
+`tools_checked_at`, two new log events). The code reads the new columns, so apply it before merging.

@@ -7,7 +7,7 @@ import { CTX_META, callThrough, createHost, listThrough, served } from "../core/
 import type { ToolDef } from "../core/tools/types";
 import { LEGACY_ID, keyIdOf, legacyKey, open, seal, vaultKey } from "../core/vault";
 import {
-  MCP_EVENTS, MCP_SERVERS, pickScopes, scrubSecrets, authorizeUrl, discoveryUrls, listSize, mayCall, namedRows, needsRefresh, nextCursor, parseRpc, readAuthServer, readTokens, reportRows, reportTotals, resourceOf, toolPayload,
+  type McpServer, MCP_EVENTS, MCP_SERVERS, checkTools, listedTools, toolCheckNote, toolFingerprint, pickScopes, scrubSecrets, authorizeUrl, discoveryUrls, listSize, mayCall, namedRows, needsRefresh, nextCursor, parseRpc, readAuthServer, readTokens, reportRows, reportTotals, resourceOf, toolPayload,
 } from "../core/mcp-rules";
 
 // only named read tools, never a write; the server's own read-only switch is on
@@ -112,7 +112,28 @@ const leak = `401 {"error":"invalid","access_token":"eyJhbGciOi.abc","refresh_to
 const clean = scrubSecrets(leak, ["tok-plain-secret", null, "short"]);
 for (const bad of ["eyJhbGciOi.abc", "rt_123456789", "abcdefghijkl12", "xyz789", "tok-plain-secret"]) assert.ok(!clean.includes(bad), bad);
 assert.ok(clean.includes("state=s") && clean.includes("401"), "the rest stays readable");
-assert.deepEqual([...MCP_EVENTS].sort(), ["connected", "disconnected", "refresh_failed", "refreshed", "refused", "resealed", "revoke_failed", "revoked"]);
+assert.deepEqual([...MCP_EVENTS].sort(), ["connected", "disconnected", "refresh_failed", "refreshed", "refused", "resealed", "revoke_failed", "revoked", "tools_changed", "tools_checked"]);
+// the log's database check lists the same events
+const lastSql = readFileSync("supabase/migrations/20261127090000_mcp_tool_check.sql", "utf8");
+for (const e of MCP_EVENTS) assert.ok(lastSql.includes(`'${e}'`), `migration allows ${e}`);
+
+// ---- profiles and the tool check (slice 3)
+for (const srv of Object.values(MCP_SERVERS) as McpServer[]) {
+  const reads = new Set<string>(srv.readTools);
+  for (const w of srv.writeTools) { assert.ok(!reads.has(w.tool), `${w.tool} is a write, not a read`); assert.ok(w.actionType, "every write names its gateway action type"); assert.ok(!mayCall(srv.id, w.tool), "code never calls a write tool"); }
+  assert.ok(srv.scopes.length && srv.signInHint, srv.id);
+}
+const schema = { type: "object", properties: { id: { type: "string" }, fields: { type: "array" } } };
+assert.equal(toolFingerprint({ name: "get_list", inputSchema: schema }), toolFingerprint({ name: "get_list", inputSchema: { properties: { fields: { type: "array" }, id: { type: "string" } }, type: "object" } }), "key order doesn't matter");
+assert.notEqual(toolFingerprint({ name: "get_list", inputSchema: schema }), toolFingerprint({ name: "get_list", inputSchema: { ...schema, required: ["id"] } }));
+const listed = listedTools({ tools: [{ name: "get_list", inputSchema: schema }, { name: "get_lists", inputSchema: {} }, { name: "create_campaign", inputSchema: {} }], nextCursor: "p2" });
+assert.equal(listed.next, "p2");
+const first = checkTools(["get_list", "get_lists"], listed.tools, null);
+assert.deepEqual([first.missing, first.changed, Object.keys(first.seen)], [[], [], ["get_list", "get_lists"]], "signing in accepts what is there");
+assert.equal(toolCheckNote(first), "");
+const later = checkTools(["get_list", "get_lists", "get_metrics"], [{ name: "get_list", inputSchema: { ...schema, required: ["id"] } }, { name: "get_lists", inputSchema: {} }], first.seen);
+assert.deepEqual([later.missing, later.changed], [["get_metrics"], ["get_list"]]);
+assert.equal(toolCheckNote(later), "the server no longer offers get_metrics and changed the inputs of get_list");
 
 // ---- the in-app MCP server (slice 1): every read and calculate call goes through it
 const hostChecks = (async () => {
