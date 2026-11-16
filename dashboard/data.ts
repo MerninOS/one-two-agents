@@ -13,7 +13,7 @@ import { reactionTally, reactionsOf, reactionsOnRun, type Reaction } from "@/cor
 import type { Tally } from "@/core/reaction-rules";
 import { APPROVAL_LABELS, APPROVAL_TOOLS, MAX_CHAINS, MAX_STEPS, METRICS, listFlowVersions, loadFlow, nextFirings, readFlow, type Chain, type Crew } from "@/core/flow";
 import { TOOLS } from "@/core/tools/catalog";
-import { mcpStatus } from "@/integrations/mcp";
+import { mcpStatus, vaultReady } from "@/integrations/mcp";
 import type { CrewMember, IntegrationId } from "./crew";
 import { avgCostOf, buildCrew, memberOf, type RosterRow, type RosterSpec } from "./roster";
 import type { CrewAgent, CrewCanvasData } from "./components/CrewCanvas";
@@ -101,6 +101,8 @@ export function health(): Record<IntegrationId, boolean> {
     github: false,
     // signed in on Connections, not a setting: getFloor reads mcp_connections
     klaviyo: false,
+    // the token vault's own key (core/vault.ts); never made from another secret
+    vault: vaultReady(),
   };
 }
 
@@ -129,7 +131,7 @@ export const getFloor = cache(async (): Promise<Floor> => {
     loadOrg().catch(() => null),
     mcpStatus("klaviyo"),
   ]);
-  if (klaviyo?.connected) h.klaviyo = true;
+  if (klaviyo?.connected && !klaviyo.paused) h.klaviyo = true;
   if (a.error || r.error) return { ...empty, problem: `Supabase: ${(a.error ?? r.error)?.message}` };
   const rows = (a.data ?? []) as (AgentRow & RosterRow)[];
   const agents = Object.fromEntries(rows.map((x) => [x.id, { id: x.id, name: x.name, model: x.model, schedule: x.schedule, enabled: x.enabled, daily_budget_usd: Number(x.daily_budget_usd) } as AgentRow]));

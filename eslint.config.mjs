@@ -5,6 +5,9 @@ import nextTs from "eslint-config-next/typescript";
 const MERCURY_MSG = "Mercury writes go through the tool gateway (core/gateway) only.";
 const MERCURY_PATHS = ["@/integrations/mercury-write", "../integrations/mercury-write", "../../integrations/mercury-write"].map((name) => ({ name, message: MERCURY_MSG }));
 const MERCURY_PATTERN = { group: ["**/mercury-write"], message: MERCURY_MSG };
+const VAULT_MSG = "Sign-ins are opened only by integrations/mcp.ts (reads) and core/gateway (writes): nothing else imports the token vault.";
+const VAULT_PATHS = ["@/core/vault", "../core/vault", "../../core/vault", "./vault", "../vault"].map((name) => ({ name, message: VAULT_MSG }));
+const VAULT_PATTERN = { group: ["**/core/vault"], message: VAULT_MSG };
 const MEMORY_MSG = "Memory is notes, never authority: the gateway and integrations must not read it.";
 const MEMORY_RULE = { name: "@/core/memory", message: MEMORY_MSG };
 const MEMORY_PATTERN = { group: ["**/core/memory", "../memory", "./memory"], message: MEMORY_MSG };
@@ -15,12 +18,13 @@ const SPEC_PATTERN = { group: ["**/core/agent-spec", "**/core/runner", "**/core/
 export default defineConfig([
   ...nextVitals,
   ...nextTs,
-  // Hard rule: Mercury writes go through the tool gateway only.
+  // Hard rules: Mercury writes go through the tool gateway only; only the MCP client and the
+  // gateway open the token vault.
   {
     files: ["**/*.{ts,tsx}"],
     ignores: ["core/gateway/**"],
     rules: {
-      "no-restricted-imports": ["error", { paths: MERCURY_PATHS, patterns: [MERCURY_PATTERN] }],
+      "no-restricted-imports": ["error", { paths: [...MERCURY_PATHS, ...VAULT_PATHS], patterns: [MERCURY_PATTERN, VAULT_PATTERN] }],
     },
   },
   // Hard rule: memory is notes, never authority. Nothing that decides access reads it.
@@ -32,7 +36,16 @@ export default defineConfig([
   },
   {
     files: ["integrations/**/*.ts"],
+    rules: { "no-restricted-imports": ["error", { paths: [MEMORY_RULE, ...SPEC_RULES, ...MERCURY_PATHS, ...VAULT_PATHS], patterns: [MEMORY_PATTERN, SPEC_PATTERN, MERCURY_PATTERN, VAULT_PATTERN] }] },
+  },
+  // The MCP client is the one integration that opens the vault; its test reads it too.
+  {
+    files: ["integrations/mcp.ts"],
     rules: { "no-restricted-imports": ["error", { paths: [MEMORY_RULE, ...SPEC_RULES, ...MERCURY_PATHS], patterns: [MEMORY_PATTERN, SPEC_PATTERN, MERCURY_PATTERN] }] },
+  },
+  {
+    files: ["scripts/check-mcp.ts"],
+    rules: { "no-restricted-imports": ["error", { paths: MERCURY_PATHS, patterns: [MERCURY_PATTERN] }] },
   },
   globalIgnores([".next/**", "out/**", "build/**", "next-env.d.ts", ".schemas/**"]),
 ]);

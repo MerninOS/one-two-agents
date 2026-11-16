@@ -11,6 +11,11 @@ export const env = {
   supabaseUrl: v("SUPABASE_URL"),
   supabaseServiceKey: v("SUPABASE_SERVICE_ROLE_KEY"),
 
+  // The token vault (core/vault.ts): seals MCP sign-ins. A key of its own, never made from another
+  // secret. To change it, move the current value to MCP_SECRET_KEY_OLD and put a new one here.
+  mcpSecretKey: v("MCP_SECRET_KEY"),
+  mcpSecretKeyOld: v("MCP_SECRET_KEY_OLD"),
+
   // Shopify Admin API, read-only app "One Two Agents (read)": a static token, or
   // Dev Dashboard app credentials exchanged with the client-credentials grant.
   shopifyDomain: v("SHOPIFY_STORE_DOMAIN"),

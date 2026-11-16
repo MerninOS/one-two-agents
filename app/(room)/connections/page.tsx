@@ -7,13 +7,34 @@ import { Icon } from "@/dashboard/components/Icon";
 import { Avatar, LockList } from "@/dashboard/components/ui";
 import { ActionButton } from "@/dashboard/components/client";
 import { MCP_SERVERS } from "@/core/mcp-rules";
-import { MCP_MISSING, mcpStatus, type McpStatus } from "@/integrations/mcp";
+import { MCP_MISSING, VAULT_MISSING, mcpLog, mcpStatus, vaultState, type McpLogRow, type McpStatus, type VaultState } from "@/integrations/mcp";
 import { klaviyoLists } from "@/integrations/klaviyo";
-import { klaviyoPickList, mcpDisconnect } from "@/dashboard/connectionActions";
+import { klaviyoPickList, mcpDisconnect, vaultReseal } from "@/dashboard/connectionActions";
 import { when } from "@/dashboard/format";
 
 /** An MCP connection's state for its panel: signed in or not, and Klaviyo's lists to pick the counted one from. */
-interface McpView { status: McpStatus | null; lists: { id: string; name: string }[] | null; listsProblem: string | null }
+interface McpView { status: McpStatus | null; lists: { id: string; name: string }[] | null; listsProblem: string | null; log: McpLogRow[]; vault: VaultState | null }
+
+const EVENT_LABEL: Record<McpLogRow["event"], string> = {
+  connected: "Signed in", refreshed: "Sign-in renewed", refresh_failed: "Renewal failed, paused", refused: "Server refused the sign-in, paused",
+  revoked: "Cancelled at the server", revoke_failed: "Cancel not confirmed by the server", disconnected: "Disconnected", resealed: "Re-locked with the current key",
+};
+
+/** The vault's state: is MCP_SECRET_KEY set, and is every sign-in locked with it. */
+function VaultNote({ v }: { v: VaultState | null }) {
+  if (!v) return null;
+  if (!v.keySet) return <span className="soft-box" style={{ fontSize: 12.5, lineHeight: 1.45 }}>{v.tooShort ? `MCP_SECRET_KEY is too short. ${VAULT_MISSING}` : VAULT_MISSING}</span>;
+  if (!v.onOtherKey.length && !v.unreadable.length) return null;
+  return (
+    <span className="soft-box row wrap" style={{ fontSize: 12.5, lineHeight: 1.45, gap: 8 }}>
+      <span style={{ flex: 1, minWidth: 200 }}>
+        {v.onOtherKey.length ? `${v.onOtherKey.length} sign-in${v.onOtherKey.length === 1 ? " is" : "s are"} still locked with an older key. ` : ""}
+        {v.unreadable.length ? `${v.unreadable.join(", ")} can’t be unlocked with either key: sign in again.` : ""}
+      </span>
+      {v.onOtherKey.length > 0 && <ActionButton className="btn outline sm" action={vaultReseal}>Re-lock now</ActionButton>}
+    </span>
+  );
+}
 
 function McpPanel({ c, v }: { c: Connection; v: McpView }) {
   const s = v.status;
@@ -21,13 +42,16 @@ function McpPanel({ c, v }: { c: Connection; v: McpView }) {
   const id = c.mcp!;
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+      <VaultNote v={v.vault} />
       <span className="ink2" style={{ fontSize: 12.5, lineHeight: 1.5 }}>Code may call only these {MCP_SERVERS[id].name} tools: {MCP_SERVERS[id].readTools.join(", ")}. A tool the server adds later does nothing until it is named in code.</span>
       {s.connected ? (
         <>
-          <span style={{ fontSize: 13 }}>Signed in{s.connectedAt ? ` ${when(s.connectedAt)}` : ""}.{s.lastError ? ` Last problem: ${s.lastError}` : ""}</span>
+          {s.paused
+            ? <span className="soft-box" style={{ fontSize: 12.5, lineHeight: 1.45 }}>Paused: {s.lastError ?? "the sign-in stopped working"}. Agents can’t read {c.name} until you sign in again.</span>
+            : <span style={{ fontSize: 13 }}>Signed in{s.connectedAt ? ` ${when(s.connectedAt)}` : ""}.{s.lastError ? ` Last problem: ${s.lastError}` : ""}</span>}
           <span className="row wrap" style={{ gap: 8 }}>
             <a className="btn outline sm" href={`/connections/${id}/connect`}>Sign in again</a>
-            <ActionButton className="btn outline sm" action={mcpDisconnect.bind(null, id)} confirm={{ title: `Disconnect ${c.name}?`, body: "The token is forgotten here. Agents that read it get an error until you connect again. To remove the app on Klaviyo’s side too, do that in Klaviyo’s settings.", confirmLabel: "Disconnect", kind: "danger" }}>Disconnect</ActionButton>
+            <ActionButton className="btn outline sm" action={mcpDisconnect.bind(null, id)} confirm={{ title: `Disconnect ${c.name}?`, body: `${c.name} is asked to cancel the sign-in, and it is forgotten here. Agents that read it get an error until you connect again.`, confirmLabel: "Disconnect", kind: "danger" }}>Disconnect</ActionButton>
           </span>
           {id === "klaviyo" && (
             <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
@@ -49,6 +73,17 @@ function McpPanel({ c, v }: { c: Connection; v: McpView }) {
           <a className="btn dark sm" href={`/connections/${id}/connect`}>Connect {c.name}</a>
           <span className="muted" style={{ fontSize: 12 }}>Opens {c.name}’s own sign-in page. Sign in as an Owner, Admin or Manager.</span>
         </span>
+      )}
+      {v.log.length > 0 && (
+        <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+          <span style={{ fontSize: 13, fontWeight: 700 }}>Sign-in log</span>
+          {v.log.map((e, i) => (
+            <span key={i} className="row" style={{ gap: 8, fontSize: 12.5 }}>
+              <span className="muted" style={{ flex: "none", minWidth: 92 }}>{when(e.at)}</span>
+              <span className="ink2">{EVENT_LABEL[e.event] ?? e.event}{e.detail && e.event !== "resealed" ? `: ${e.detail}` : ""}</span>
+            </span>
+          ))}
+        </div>
       )}
     </div>
   );
@@ -144,12 +179,12 @@ export default async function Connections({ searchParams }: { searchParams: Prom
   const note = sp.problem ? { ok: false, text: sp.problem.slice(0, 300) } : sp.connected ? { ok: true, text: `Connected. Give an agent its read tools in the builder${sel?.mcp === "klaviyo" ? ", and pick the list Email list size counts below" : ""}.` } : null;
   let mcp: McpView | null = null;
   if (sel?.mcp) {
-    const status = await mcpStatus(sel.mcp);
+    const [status, log, vault] = await Promise.all([mcpStatus(sel.mcp), mcpLog(sel.mcp), vaultState()]);
     let lists: McpView["lists"] = null, listsProblem: string | null = null;
-    if (status?.connected && sel.mcp === "klaviyo") {
+    if (status?.connected && !status.paused && sel.mcp === "klaviyo") {
       try { lists = await klaviyoLists(); } catch (e) { listsProblem = (e instanceof Error ? e.message : String(e)).slice(0, 200); }
     }
-    mcp = { status, lists, listsProblem };
+    mcp = { status, lists, listsProblem, log, vault };
   }
   const outside = CONNECTIONS.filter((c) => !c.builtIn);
   const ok = outside.filter((c) => isSetUp(c, f.health)).length;

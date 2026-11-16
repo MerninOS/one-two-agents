@@ -14,6 +14,8 @@ export interface McpServer {
   url: string;
   /** The only tools code may call on it, by the server's own names. Read tools only. */
   readTools: readonly string[];
+  /** The sign-in scopes asked for: only what the read tools need, never the server's whole list. */
+  scopes: readonly string[];
 }
 
 export const MCP_SERVERS = {
@@ -24,6 +26,8 @@ export const MCP_SERVERS = {
     // user-written content (Klaviyo's MCP docs, 2026).
     url: "https://mcp.klaviyo.com/mcp?read-only=true&disable-tools-with-user-generated-content=true",
     readTools: ["get_lists", "get_list", "get_metrics", "get_campaign_report", "get_flow_report"],
+    // Klaviyo's read scopes for those tools (lists, metrics, campaign and flow reports).
+    scopes: ["accounts:read", "lists:read", "metrics:read", "campaigns:read", "flows:read"],
   },
 } as const satisfies Record<string, McpServer>;
 export type McpId = keyof typeof MCP_SERVERS;
@@ -158,7 +162,7 @@ export function discoveryUrls(serverUrl: string): { resource: string[]; authServ
 /** The server address without its query (what a token is for, RFC 8707). */
 export const resourceOf = (serverUrl: string) => { const u = new URL(serverUrl); return `${u.origin}${u.pathname}`; };
 
-export interface AuthServer { authorization_endpoint: string; token_endpoint: string; registration_endpoint?: string; scopes_supported?: string[] }
+export interface AuthServer { authorization_endpoint: string; token_endpoint: string; registration_endpoint?: string; revocation_endpoint?: string; scopes_supported?: string[] }
 
 /** The sign-in details, checked: every endpoint https. */
 export function readAuthServer(j: unknown): AuthServer | null {
@@ -169,6 +173,8 @@ export function readAuthServer(j: unknown): AuthServer | null {
   return {
     authorization_endpoint: o.authorization_endpoint as string, token_endpoint: o.token_endpoint as string,
     registration_endpoint: o.registration_endpoint as string | undefined,
+    // a revoke address that isn't https is ignored, not trusted
+    revocation_endpoint: https(o.revocation_endpoint) ? (o.revocation_endpoint as string) : undefined,
     scopes_supported: Array.isArray(o.scopes_supported) ? (o.scopes_supported as unknown[]).filter((s): s is string => typeof s === "string") : undefined,
   };
 }
@@ -199,3 +205,35 @@ export function readTokens(j: unknown, now: number, keepRefresh: string | null =
 
 /** Refresh a minute early. */
 export const needsRefresh = (t: Tokens, now: number) => t.expiresAt != null && t.expiresAt - now < 60_000;
+
+// ---- Keeping sign-ins safe (docs/mcp-everywhere.md, slice 2).
+
+/**
+ * The scopes to ask for: the profile's own list, cut to what the server says it supports. When the
+ * server supports none of them the sign-in is not started, rather than asking for everything.
+ */
+export function pickScopes(wanted: readonly string[], supported?: readonly string[]): { scope: string; missing: string[] } {
+  if (!supported?.length) return { scope: wanted.join(" "), missing: [] };
+  const ok = wanted.filter((s) => supported.includes(s));
+  if (!ok.length) throw new Error(`the server offers none of the scopes code asks for (${wanted.join(", ")}); it offers: ${supported.slice(0, 20).join(", ")}`);
+  return { scope: ok.join(" "), missing: wanted.filter((s) => !supported.includes(s)) };
+}
+
+const HIDDEN = "[hidden]";
+
+/**
+ * Takes sign-in values out of text before it is saved or shown: the given secrets wherever they
+ * appear, bearer tokens, and token fields in JSON or form bodies a server may echo back.
+ */
+export function scrubSecrets(text: string, secrets: readonly (string | null | undefined)[] = []): string {
+  let out = text;
+  for (const s of secrets) if (s && s.length >= 8) out = out.split(s).join(HIDDEN);
+  return out
+    .replace(/(bearer\s+)[A-Za-z0-9._~+/=-]{8,}/gi, `$1${HIDDEN}`)
+    .replace(/("(?:access_token|refresh_token|id_token|client_secret|code|code_verifier|token)"\s*:\s*")[^"]*(")/gi, `$1${HIDDEN}$2`)
+    .replace(/(\b(?:access_token|refresh_token|id_token|client_secret|code|code_verifier|token)=)[^&\s"]+/gi, `$1${HIDDEN}`);
+}
+
+/** What the sign-in log records. Never a token value. */
+export const MCP_EVENTS = ["connected", "refreshed", "refresh_failed", "refused", "revoked", "revoke_failed", "disconnected", "resealed"] as const;
+export type McpEvent = (typeof MCP_EVENTS)[number];
