@@ -10,7 +10,7 @@ import { db } from "@/core/db";
 import { env } from "@/core/env";
 import { chicagoDate, dayTitle } from "@/core/time";
 import { emailZak, hasEmail } from "@/integrations/email";
-import { h2, li, notionArchive, notionPage, notionRow, notionRowOn, notionSetProps, p, prop, type Block, type Props } from "@/integrations/notion";
+import { h2, li, notionArchive, notionPage, notionRow, notionConnected, notionRowOn, notionUpdateRow, p, prop, type Block, type Props } from "@/integrations/notion";
 import { getInventoryLots } from "@/integrations/shopify/lots";
 import { getBoardOrders, greenLedger } from "@/integrations/shopify/orders";
 import { getRoastLoss } from "@/integrations/shopify/settings";
@@ -193,9 +193,9 @@ const briefView = (f: Facts, j: Judgment, sections: readonly string[], notionUrl
  * Where the brief goes. Email only to BRIEF_TO (integrations/email.ts has no recipient). The
  * Notion copy goes to NOTION_BRIEFS_DB_ID, else a page under NOTION_BRIEF_PARENT_ID.
  */
-function destinations(): { email: boolean; notion: { kind: "database" | "page"; id: string } | null } {
+async function destinations(): Promise<{ email: boolean; notion: { kind: "database" | "page"; id: string } | null }> {
   const email = hasEmail();
-  if (!env.notionToken) return { email, notion: null };
+  if (!(await notionConnected())) return { email, notion: null };
   if (env.notionBriefsDb) return { email, notion: { kind: "database", id: env.notionBriefsDb } };
   if (env.notionBriefParent) return { email, notion: { kind: "page", id: env.notionBriefParent } };
   return { email, notion: null };
@@ -204,8 +204,8 @@ function destinations(): { email: boolean; notion: { kind: "database" | "page"; 
 /** Writes the Notion copy, then emails the brief. Returns one line on what went where. */
 async function sendBrief(f: Facts, judgment: Judgment, sections: readonly string[] = SECTIONS, runId: string | null = null): Promise<string> {
   const view = (notionUrl?: string) => briefView(f, judgment, sections, notionUrl, runId);
-  const { email, notion: target } = destinations();
-  if (!email && !target) throw new Error("Nowhere to send the brief: email needs RESEND_API_KEY, BRIEF_FROM and BRIEF_TO; Notion needs NOTION_TOKEN and NOTION_BRIEFS_DB_ID or NOTION_BRIEF_PARENT_ID");
+  const { email, notion: target } = await destinations();
+  if (!email && !target) throw new Error("Nowhere to send the brief: email needs RESEND_API_KEY, BRIEF_FROM and BRIEF_TO; Notion needs its key pasted on Connections and NOTION_BRIEFS_DB_ID or NOTION_BRIEF_PARENT_ID");
 
   // Notion first, so the email can link to its copy. A Notion failure never stops the email.
   let url: string | undefined, rowId: string | undefined, notionError = "";
@@ -223,7 +223,7 @@ async function sendBrief(f: Facts, judgment: Judgment, sections: readonly string
     const id = await emailZak(m.subject, m.html, m.text);
     sent = `Brief emailed (${id}).`;
     // the row is written before the send, so it is only marked once the email has gone
-    if (rowId) await notionSetProps(rowId, { Emailed: prop.check(true) }).catch(() => { notionError += " The row's Emailed box could not be ticked."; });
+    if (rowId) await notionUpdateRow(rowId, { Emailed: prop.check(true) }).catch(() => { notionError += " The row's Emailed box could not be ticked."; });
   }
   return `${sent}${url ? `${sent ? " Notion copy" : "Brief posted"}: ${url}.` : ""}${notionError}`.trim();
 }

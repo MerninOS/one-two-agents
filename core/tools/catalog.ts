@@ -28,7 +28,7 @@ import { MAX_PLAN_LINES, checkLine } from "@/core/plan-rules";
 import { saveReview, savePlan, weekView } from "@/core/plans";
 import { deliverBrief } from "@/agents/chief-of-staff";
 import { mercuryCash, mercuryCategories, mercuryTransactions } from "@/integrations/mercury";
-import { divider, h2, h3, li, notionPage, notionPageText, p as para, quote } from "@/integrations/notion";
+import { divider, h2, h3, li, notionConnected, notionPage, notionPageText, p as para, quote } from "@/integrations/notion";
 import { emailZak } from "@/integrations/email";
 import { ANNOTATE, DRAFT_EMAIL, DRAFT_LIMITS, TOOLS as GATEWAY_TOOLS, refuseProposal } from "@/core/gateway/policy";
 import { draftsToCheck, leadReview, propose } from "@/core/gateway";
@@ -44,8 +44,8 @@ import { getInventoryLots } from "@/integrations/shopify/lots";
 import { getBoardOrders } from "@/integrations/shopify/orders";
 import type { Param, Pick, ReportInput, ToolDef } from "./types";
 
-const SHOPIFY = ["SHOPIFY_STORE_DOMAIN"], MERCURY = ["MERCURY_API_TOKEN"], NOTION = ["NOTION_TOKEN"], SUPABASE = ["SUPABASE_URL", "SUPABASE_SERVICE_ROLE_KEY"], EMAIL = ["RESEND_API_KEY", "BRIEF_FROM", "BRIEF_TO"], GMAIL = ["GMAIL_CLIENT_ID", "GMAIL_CLIENT_SECRET", "GMAIL_REFRESH_TOKEN"];
-/** Not a setting: Klaviyo is signed in on Connections (mcp_connections), so the builder checks that row. */
+const SHOPIFY = ["SHOPIFY_STORE_DOMAIN"], MERCURY = ["MERCURY_API_TOKEN"], NOTION = ["NOTION_CONNECTED"], SUPABASE = ["SUPABASE_URL", "SUPABASE_SERVICE_ROLE_KEY"], EMAIL = ["RESEND_API_KEY", "BRIEF_FROM", "BRIEF_TO"], GMAIL = ["GMAIL_CLIENT_ID", "GMAIL_CLIENT_SECRET", "GMAIL_REFRESH_TOKEN"];
+/** Not settings: Klaviyo and Notion are signed in on Connections (mcp_connections), so the builder checks those rows. */
 const KLAVIYO = ["KLAVIYO_CONNECTED"];
 const LEAD_TYPES = ["cafe", "restaurant", "office", "grocery", "other"] as const;
 const usd = (n: number) => `${n < 0 ? "-" : ""}$${Math.abs(n).toFixed(2)}`;
@@ -618,7 +618,7 @@ const TOOLS_LIST: ToolDef[] = [
         });
         if (res.status === "queued") cards++; else if (res.status === "refused") refused++;
       }
-      const parent = env.notionToken ? (ctx.reportPage?.id ?? env.notionLeadsParent) : undefined;
+      const parent = await notionConnected() ? (ctx.reportPage?.id ?? env.notionLeadsParent) : undefined;
       let url = "";
       if (parent && saved.length) {
         url = await notionPage(`Wholesale leads · ${o.date}`, [

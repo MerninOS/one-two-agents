@@ -92,7 +92,8 @@ export function health(): Record<IntegrationId, boolean> {
     shopify: !!(env.shopifyDomain && (env.shopifyAdminToken || (env.shopifyClientId && env.shopifyClientSecret))),
     claude: !!process.env.ANTHROPIC_API_KEY,
     mercury: !!(env.mercuryToken && env.mercuryAccountIds.length),
-    notion: !!(env.notionToken && env.notionBriefParent),
+    // signed in on Connections (its key in the vault): getFloor reads mcp_connections
+    notion: false,
     email: !!(env.resendKey && env.briefFrom && env.briefTo),
     gmail: !!(env.gmailClientId && env.gmailClientSecret && env.gmailRefreshToken),
     gmail_read: !!(env.gmailClientId && env.gmailClientSecret && env.gmailReceiptsRefreshToken),
@@ -132,8 +133,8 @@ export const getFloor = cache(async (): Promise<Floor> => {
     loadOrg().catch(() => null),
     Promise.all(MCP_IDS.map(async (id) => [id, await mcpStatus(id)] as const)),
   ]);
-  // every server in the registry: set up when signed in and not paused
-  for (const [id, st] of mcp) if (st?.connected && !st.paused) h[id] = true;
+  // every server in the registry: set up when signed in and not paused (Notion also needs its parent page)
+  for (const [id, st] of mcp) if (st?.connected && !st.paused && (id !== "notion" || env.notionBriefParent)) h[id] = true;
   if (a.error || r.error) return { ...empty, problem: `Supabase: ${(a.error ?? r.error)?.message}` };
   const rows = (a.data ?? []) as (AgentRow & RosterRow)[];
   const agents = Object.fromEntries(rows.map((x) => [x.id, { id: x.id, name: x.name, model: x.model, schedule: x.schedule, enabled: x.enabled, daily_budget_usd: Number(x.daily_budget_usd) } as AgentRow]));

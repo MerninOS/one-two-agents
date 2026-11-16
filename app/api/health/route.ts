@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { db } from "@/core/db";
 import { env } from "@/core/env";
 import { cronAuthorized } from "@/core/runs";
+import { notionConnected } from "@/integrations/notion";
 
 // Which settings are present and whether Supabase answers. Never returns a secret's value.
 export async function GET(req: Request) {
@@ -11,7 +12,7 @@ export async function GET(req: Request) {
     shopify: !!(env.shopifyDomain && (env.shopifyAdminToken || (env.shopifyClientId && env.shopifyClientSecret))),
     anthropic: !!process.env.ANTHROPIC_API_KEY,
     mercury: !!(env.mercuryToken && env.mercuryAccountIds.length),
-    notion: !!(env.notionToken && env.notionBriefParent),
+    notion: !!env.notionBriefParent && (await notionConnected()),
     email: !!(env.resendKey && env.briefFrom && env.briefTo),
     gmail: !!(env.gmailClientId && env.gmailClientSecret && env.gmailRefreshToken),
   };

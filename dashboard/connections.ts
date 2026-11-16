@@ -49,9 +49,9 @@ export const CONNECTIONS: Connection[] = [
     ],
   },
   {
-    id: "notion", name: "Notion", sub: "Pages and the Briefs database", icon: "file-text", builtIn: false,
-    about: "Reads pages you link and writes pages under a page you pick, plus rows in Briefs. Nothing else in the workspace.",
-    checks: [{ key: "notion", label: "Workspace", setup: "Needs NOTION_TOKEN and NOTION_BRIEF_PARENT_ID, with the page shared with the integration. Set NOTION_BRIEFS_DB_ID too for brief rows, and NOTION_BUILD_BOARD_DB_ID for a Build Board card when you say yes to a new tool." }],
+    id: "notion", name: "Notion", sub: "Pages and the Briefs database", icon: "file-text", builtIn: false, mcp: "notion",
+    about: "Our own Notion server, run in the app with the agents’ integration key, so it sees only pages and databases shared with that integration. Agents may read a page you link; code writes report pages under a page you pick, plus rows in Briefs and the Build Board. Notion’s hosted server isn’t used: it signs in as you and reaches your whole workspace.",
+    checks: [{ key: "notion", label: "Workspace", setup: "Paste the integration’s key below, and set NOTION_BRIEF_PARENT_ID with that page shared with the integration. Set NOTION_BRIEFS_DB_ID too for brief rows, and NOTION_BUILD_BOARD_DB_ID for a Build Board card when you say yes to a new tool." }],
   },
   {
     id: "klaviyo", name: "Klaviyo", sub: "Email lists, campaigns, flows", icon: "send", builtIn: false, mcp: "klaviyo",

@@ -11,7 +11,7 @@ import { teach } from "@/core/memory";
 import { addSeat, agentNames, below, headOf, liveAgentIds, loadOrg, removeSeat, seatOf, setHolder, unseat, type Org, type Seat } from "@/core/org";
 import { TOOLS } from "@/core/tools/catalog";
 import { env } from "@/core/env";
-import { h2, li, notionRow, notionUpdateRow, prop } from "@/integrations/notion";
+import { h2, li, notionConnected, notionRow, notionUpdateRow, prop } from "@/integrations/notion";
 import { BOARD_CARD, boardCard, notionPageId, hireSpec, planProposal, proposalTitle, toolInfoOf, type ProposalKind, type ProposalPlan } from "@/core/proposal-rules";
 
 export type ProposalState = "pending" | "accepted" | "declined" | "built" | "failed";
@@ -221,7 +221,8 @@ export async function acceptProposal(id: string, opts: { agentFromBuilder?: stri
  * Notion error comes back as words for the outcome.
  */
 async function addBoardCard(pr: Proposal, p: Extract<Resolved, { kind: "new_tool" }>, org: Org): Promise<{ url: string } | { problem: string }> {
-  if (!env.notionToken || !env.notionBuildBoardDb) return { problem: "NOTION_BUILD_BOARD_DB_ID isn't set in Vercel." };
+  if (!env.notionBuildBoardDb) return { problem: "NOTION_BUILD_BOARD_DB_ID isn't set in Vercel." };
+  if (!(await notionConnected())) return { problem: "Notion isn't connected: paste its key on Connections." };
   try {
     const asker = pr.from_agent ? (await agentNames([pr.from_agent]).catch(() => ({} as Record<string, string>)))[pr.from_agent] ?? pr.from_agent
       : pr.source === "claude" ? "Claude" : "Zak";
@@ -264,7 +265,7 @@ export async function markBuilt(id: string): Promise<void> {
   if (error) throw new Error(error.message);
   // its Build Board card moves to Done too (best effort: the board can be moved by hand)
   const page = notionPageId(pr.result_ref);
-  if (page && env.notionToken) await notionUpdateRow(page, { Status: prop.status("Done") }).catch(() => undefined);
+  if (page && (await notionConnected())) await notionUpdateRow(page, { Status: prop.status("Done") }).catch(() => undefined);
 }
 
 /** Pending proposals per seat, for the org chart: a hire on its seat (or the seat it goes under), a retirement on its seat. */

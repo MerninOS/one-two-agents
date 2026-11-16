@@ -68,3 +68,34 @@ Zak looks and signs in again, which accepts the tools as they are then.
 
 Migration: `supabase/migrations/20261127090000_mcp_tool_check.sql` (`tools_seen`,
 `tools_checked_at`, two new log events). The code reads the new columns, so apply it before merging.
+
+## Slice 4: Notion on our own server
+
+Notion's hosted MCP server signs in with OAuth as a person, reaches everything that person can see
+and has no read-only switch. So Notion runs on our own MCP server, in the app
+(`integrations/notion-server.ts`), over Notion's REST API (`integrations/notion-api.ts`) with the
+agents' internal integration key. That key sees only the pages and databases shared with the
+integration (Zak's choice, 2026-11-16).
+
+- The profile (`MCP_SERVERS.notion`) has `auth: "token"`: Zak pastes the integration's key once on
+  Connections. `saveMcpKey` checks its shape (`looksLikeNotionKey`), asks Notion whose it is
+  (`users/me`, must be a bot), and seals it in the vault. It is never shown again. `NOTION_TOKEN`
+  is gone from the code and should be deleted in Vercel.
+- Two read tools agents may be granted: `notion_page_text` and `notion_row_on`.
+- Four report tools (`reportTools`, `mayReport`): `notion_create_page`, `notion_create_row`,
+  `notion_update_row`, `notion_archive_row`. These write report pages and rows into One Two's own
+  workspace, like an email to Zak. Code calls them after a run (briefs, books pages, lead lists,
+  Build Board cards). A model never calls one, and a hosted server can never have them.
+- Every call goes through `callLocalTool` in `integrations/mcp.ts`. It opens the key for that call,
+  sends a JSON-RPC `tools/call` to the server as JSON, and reads the reply with the same code that
+  reads a remote server's reply. Errors are scrubbed. A 401 from Notion pauses the connection
+  until a new key is pasted. A 403 or 404 means a page isn't shared, which doesn't pause it.
+- The server checks every request again (`checkNotionArgs` in `core/notion-blocks.ts`). Ids must be
+  32 hex characters, at most 100 blocks are sent, and only the profile's tools are served.
+- There is no tool check for our own server, because its tools ship with the app.
+- Disconnect forgets the key. Notion has no API to cancel an integration key: to make an old key
+  stop working, refresh the integration's secret in Notion.
+- Lint: only `notion-server.ts` imports `notion-api.ts`, and only `integrations/mcp.ts` imports
+  `notion-server.ts`. Everything else uses `integrations/notion.ts`.
+
+No migration.

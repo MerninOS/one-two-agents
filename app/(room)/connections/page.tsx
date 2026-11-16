@@ -5,18 +5,18 @@ import { BEHIND_THE_SCENES, CONNECTIONS, CONN_BY_ID, isSetUp, toolsOf, usersOf, 
 import type { ToolDef } from "@/core/tools/types";
 import { Icon } from "@/dashboard/components/Icon";
 import { Avatar, LockList } from "@/dashboard/components/ui";
-import { ActionButton } from "@/dashboard/components/client";
+import { ActionButton, KeyForm } from "@/dashboard/components/client";
 import { MCP_SERVERS } from "@/core/mcp-rules";
 import { MCP_MISSING, VAULT_MISSING, mcpLog, mcpStatus, vaultState, type McpLogRow, type McpStatus, type VaultState } from "@/integrations/mcp";
 import { klaviyoLists } from "@/integrations/klaviyo";
-import { klaviyoPickList, mcpDisconnect, vaultReseal } from "@/dashboard/connectionActions";
+import { klaviyoPickList, mcpDisconnect, mcpSaveKey, vaultReseal } from "@/dashboard/connectionActions";
 import { when } from "@/dashboard/format";
 
 /** An MCP connection's state for its panel: signed in or not, and Klaviyo's lists to pick the counted one from. */
 interface McpView { status: McpStatus | null; lists: { id: string; name: string }[] | null; listsProblem: string | null; log: McpLogRow[]; vault: VaultState | null }
 
 const EVENT_LABEL: Record<McpLogRow["event"], string> = {
-  connected: "Signed in", refreshed: "Sign-in renewed", refresh_failed: "Renewal failed, paused", refused: "Server refused the sign-in, paused",
+  connected: "Connected", refreshed: "Sign-in renewed", refresh_failed: "Renewal failed, paused", refused: "Server refused the sign-in, paused",
   revoked: "Cancelled at the server", revoke_failed: "Cancel not confirmed by the server", disconnected: "Disconnected", resealed: "Re-locked with the current key",
   tools_changed: "Tools changed, paused", tools_checked: "Tools checked",
 };
@@ -41,11 +41,15 @@ function McpPanel({ c, v }: { c: Connection; v: McpView }) {
   const s = v.status;
   if (!s) return <span className="soft-box" style={{ fontSize: 12.5, lineHeight: 1.45 }}>{MCP_MISSING}</span>;
   const id = c.mcp!;
+  const srv = MCP_SERVERS[id];
+  const oauth = srv.auth === "oauth";
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
       <VaultNote v={v.vault} />
-      <span className="ink2" style={{ fontSize: 12.5, lineHeight: 1.5 }}>Code may call only these {MCP_SERVERS[id].name} tools: {MCP_SERVERS[id].readTools.join(", ")}. A tool the server adds later does nothing until it is named in code. Sign-in asks only for: {MCP_SERVERS[id].scopes.join(", ")}.</span>
-      {s.connected && !s.paused && (
+      {oauth
+        ? <span className="ink2" style={{ fontSize: 12.5, lineHeight: 1.5 }}>Code may call only these {srv.name} tools: {srv.readTools.join(", ")}. A tool the server adds later does nothing until it is named in code. Sign-in asks only for: {srv.scopes.join(", ")}.</span>
+        : <span className="ink2" style={{ fontSize: 12.5, lineHeight: 1.5 }}>Agents may read with: {srv.readTools.join(", ")}. Code writes reports with: {srv.reportTools.join(", ")}; a model never calls those. The key reaches {srv.scopes.join(", ")}, and is locked in the vault, never shown again.</span>}
+      {oauth && s.connected && !s.paused && (
         <span className="muted" style={{ fontSize: 12.5 }}>
           {s.toolsCheckedAt ? `Tools checked ${when(s.toolsCheckedAt)}: all ${s.toolsSeen.length} are there with the inputs code expects. If one changes, ${c.name} pauses until you sign in again.` : "Tools not checked yet: the next agent call checks them first."}
         </span>
@@ -53,11 +57,12 @@ function McpPanel({ c, v }: { c: Connection; v: McpView }) {
       {s.connected ? (
         <>
           {s.paused
-            ? <span className="soft-box" style={{ fontSize: 12.5, lineHeight: 1.45 }}>Paused: {s.lastError ?? "the sign-in stopped working"}. Agents can’t read {c.name} until you sign in again.</span>
-            : <span style={{ fontSize: 13 }}>Signed in{s.connectedAt ? ` ${when(s.connectedAt)}` : ""}.{s.lastError ? ` Last problem: ${s.lastError}` : ""}</span>}
+            ? <span className="soft-box" style={{ fontSize: 12.5, lineHeight: 1.45 }}>Paused: {s.lastError ?? "the sign-in stopped working"}. Agents can’t reach {c.name} until you {oauth ? "sign in again" : "paste a new key"}.</span>
+            : <span style={{ fontSize: 13 }}>{oauth ? "Signed in" : "Key locked in the vault"}{s.connectedAt ? ` ${when(s.connectedAt)}` : ""}.{s.lastError ? ` Last problem: ${s.lastError}` : ""}</span>}
+          {!oauth && <KeyForm label={`New ${c.name} key`} save={mcpSaveKey.bind(null, id)} replace />}
           <span className="row wrap" style={{ gap: 8 }}>
-            <a className="btn outline sm" href={`/connections/${id}/connect`}>Sign in again</a>
-            <ActionButton className="btn outline sm" action={mcpDisconnect.bind(null, id)} confirm={{ title: `Disconnect ${c.name}?`, body: `${c.name} is asked to cancel the sign-in, and it is forgotten here. Agents that read it get an error until you connect again.`, confirmLabel: "Disconnect", kind: "danger" }}>Disconnect</ActionButton>
+            {oauth && <a className="btn outline sm" href={`/connections/${id}/connect`}>Sign in again</a>}
+            <ActionButton className="btn outline sm" action={mcpDisconnect.bind(null, id)} confirm={{ title: `Disconnect ${c.name}?`, body: oauth ? `${c.name} is asked to cancel the sign-in, and it is forgotten here. Agents that read it get an error until you connect again.` : `The key is forgotten here. Agents and reports that use ${c.name} get an error until you paste a key again.`, confirmLabel: "Disconnect", kind: "danger" }}>Disconnect</ActionButton>
           </span>
           {id === "klaviyo" && (
             <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
@@ -74,10 +79,15 @@ function McpPanel({ c, v }: { c: Connection; v: McpView }) {
             </div>
           )}
         </>
-      ) : (
+      ) : oauth ? (
         <span className="row wrap" style={{ gap: 8, alignItems: "center" }}>
           <a className="btn dark sm" href={`/connections/${id}/connect`}>Connect {c.name}</a>
-          <span className="muted" style={{ fontSize: 12 }}>Opens {c.name}’s own sign-in page. {MCP_SERVERS[id].signInHint}</span>
+          <span className="muted" style={{ fontSize: 12 }}>Opens {c.name}’s own sign-in page. {srv.signInHint}</span>
+        </span>
+      ) : (
+        <span style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+          <KeyForm label={`${c.name} key`} save={mcpSaveKey.bind(null, id)} />
+          <span className="muted" style={{ fontSize: 12 }}>{srv.signInHint} {c.name} is asked whose key it is before it is kept.</span>
         </span>
       )}
       {v.log.length > 0 && (

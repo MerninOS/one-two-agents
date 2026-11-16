@@ -5,9 +5,10 @@ import { readFileSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { CTX_META, callThrough, createHost, listThrough, served } from "../core/tools/mcp-host";
 import type { ToolDef } from "../core/tools/types";
+import { checkNotionArgs, looksLikeNotionKey, notionPageId } from "../core/notion-blocks";
 import { LEGACY_ID, keyIdOf, legacyKey, open, seal, vaultKey } from "../core/vault";
 import {
-  type McpServer, MCP_EVENTS, MCP_SERVERS, checkTools, listedTools, toolCheckNote, toolFingerprint, pickScopes, scrubSecrets, authorizeUrl, discoveryUrls, listSize, mayCall, namedRows, needsRefresh, nextCursor, parseRpc, readAuthServer, readTokens, reportRows, reportTotals, resourceOf, toolPayload,
+  type McpServer, MCP_EVENTS, MCP_SERVERS, checkTools, listedTools, toolCheckNote, toolFingerprint, pickScopes, mayReport, isOauth, scrubSecrets, authorizeUrl, discoveryUrls, listSize, mayCall, namedRows, needsRefresh, nextCursor, parseRpc, readAuthServer, readTokens, reportRows, reportTotals, resourceOf, toolPayload,
 } from "../core/mcp-rules";
 
 // only named read tools, never a write; the server's own read-only switch is on
@@ -134,6 +135,31 @@ assert.equal(toolCheckNote(first), "");
 const later = checkTools(["get_list", "get_lists", "get_metrics"], [{ name: "get_list", inputSchema: { ...schema, required: ["id"] } }, { name: "get_lists", inputSchema: {} }], first.seen);
 assert.deepEqual([later.missing, later.changed], [["get_metrics"], ["get_list"]]);
 assert.equal(toolCheckNote(later), "the server no longer offers get_metrics and changed the inputs of get_list");
+
+// ---- Notion on our own server (slice 4)
+assert.equal(MCP_SERVERS.notion.auth, "token");
+assert.ok(isOauth("klaviyo") && !isOauth("notion"));
+assert.deepEqual(MCP_SERVERS.klaviyo.reportTools, [], "a hosted server never gets report tools");
+for (const t of MCP_SERVERS.notion.reportTools) { assert.ok(mayReport("notion", t), t); assert.ok(!mayCall("notion", t), `${t} is never a model's tool`); }
+for (const t of MCP_SERVERS.notion.readTools) assert.ok(mayCall("notion", t) && !mayReport("notion", t), t);
+assert.ok(!mayReport("klaviyo", "get_lists") && !mayReport("notion", "notion_search") && !mayCall("notion", "notion_delete_page"));
+for (const t of [...MCP_SERVERS.notion.readTools, ...MCP_SERVERS.notion.reportTools]) assert.ok(!("problem" in checkNotionArgs(t, { pageId: "a".repeat(32), databaseId: "b".repeat(32), parentId: "c".repeat(32), title: "T", dateProp: "Date", date: "2026-11-16", properties: { Name: {} } })), `every profile tool has a check: ${t}`);
+const dashed = "415de330-89c1-81fd-92e3-e770578cc707";
+assert.deepEqual(checkNotionArgs("notion_page_text", { pageId: dashed }), { tool: "notion_page_text", pageId: "415de33089c181fd92e3e770578cc707", maxChars: 6000 });
+for (const [tool, args, why] of [
+  ["notion_page_text", { pageId: "../../users" }, /pageId/],
+  ["notion_page_text", { pageId: "a".repeat(32), maxChars: 50000 }, /maxChars/],
+  ["notion_row_on", { databaseId: "a".repeat(32), dateProp: "Date", date: "tomorrow" }, /YYYY-MM-DD/],
+  ["notion_create_page", { parentId: "a".repeat(32), title: " " }, /title/],
+  ["notion_create_page", { parentId: "a".repeat(32), title: "T", children: [{ no: "type" }] }, /type/],
+  ["notion_create_row", { databaseId: "a".repeat(32), properties: {} }, /properties/],
+  ["notion_search", {}, /isn't a Notion tool/],
+] as const) { const r = checkNotionArgs(tool, args); assert.ok("problem" in r && why.test(r.problem), tool); }
+const many = checkNotionArgs("notion_create_page", { parentId: "a".repeat(32), title: "T", children: Array.from({ length: 150 }, () => ({ type: "divider" })) });
+assert.ok(!("problem" in many) && many.tool === "notion_create_page" && many.children.length === 100, "at most 100 blocks");
+assert.ok(looksLikeNotionKey("ntn_" + "a1".repeat(20)) && looksLikeNotionKey("secret_" + "Z9".repeat(20)));
+assert.ok(!looksLikeNotionKey("ntn_short") && !looksLikeNotionKey("Bearer ntn_" + "a".repeat(40)) && !looksLikeNotionKey("sk-" + "a".repeat(40)));
+assert.equal(notionPageId("https://www.notion.so/Start-here-415de33089c181fd92e3e770578cc707?pvs=4"), "415de33089c181fd92e3e770578cc707");
 
 // ---- the in-app MCP server (slice 1): every read and calculate call goes through it
 const hostChecks = (async () => {
