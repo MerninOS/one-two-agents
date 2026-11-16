@@ -13,6 +13,9 @@ const NAPI_MSG = "Notion's API is called only by our Notion MCP server (integrat
 const NAPI = { paths: ["@/integrations/notion-api", "./notion-api", "../integrations/notion-api"].map((name) => ({ name, message: NAPI_MSG })), pattern: { group: ["**/notion-api"], message: NAPI_MSG } };
 const NSRV_MSG = "Our Notion MCP server is reached only through integrations/mcp.ts (callLocalTool), which opens its key from the vault.";
 const NSRV = { paths: ["@/integrations/notion-server", "./notion-server", "../integrations/notion-server"].map((name) => ({ name, message: NSRV_MSG })), pattern: { group: ["**/notion-server"], message: NSRV_MSG } };
+// MCP write tools (slice 5b): only the gateway calls one, after Zak approves.
+const MCPW_MSG = "Only core/gateway calls an MCP write tool, after Zak approves.";
+const MCPW = { name: "@/integrations/mcp", importNames: ["callWriteTool"], message: MCPW_MSG };
 const MEMORY_MSG = "Memory is notes, never authority: the gateway and integrations must not read it.";
 const MEMORY_RULE = { name: "@/core/memory", message: MEMORY_MSG };
 const MEMORY_PATTERN = { group: ["**/core/memory", "../memory", "./memory"], message: MEMORY_MSG };
@@ -29,7 +32,7 @@ export default defineConfig([
     files: ["**/*.{ts,tsx}"],
     ignores: ["core/gateway/**"],
     rules: {
-      "no-restricted-imports": ["error", { paths: [...MERCURY_PATHS, ...VAULT_PATHS, ...NAPI.paths, ...NSRV.paths], patterns: [MERCURY_PATTERN, VAULT_PATTERN, NAPI.pattern, NSRV.pattern] }],
+      "no-restricted-imports": ["error", { paths: [...MERCURY_PATHS, ...VAULT_PATHS, ...NAPI.paths, ...NSRV.paths, MCPW], patterns: [MERCURY_PATTERN, VAULT_PATTERN, NAPI.pattern, NSRV.pattern] }],
     },
   },
   // Hard rule: memory is notes, never authority. Nothing that decides access reads it.
@@ -41,12 +44,12 @@ export default defineConfig([
   },
   {
     files: ["integrations/**/*.ts"],
-    rules: { "no-restricted-imports": ["error", { paths: [MEMORY_RULE, ...SPEC_RULES, ...MERCURY_PATHS, ...VAULT_PATHS, ...NAPI.paths, ...NSRV.paths], patterns: [MEMORY_PATTERN, SPEC_PATTERN, MERCURY_PATTERN, VAULT_PATTERN, NAPI.pattern, NSRV.pattern] }] },
+    rules: { "no-restricted-imports": ["error", { paths: [MEMORY_RULE, ...SPEC_RULES, ...MERCURY_PATHS, ...VAULT_PATHS, ...NAPI.paths, ...NSRV.paths, MCPW], patterns: [MEMORY_PATTERN, SPEC_PATTERN, MERCURY_PATTERN, VAULT_PATTERN, NAPI.pattern, NSRV.pattern] }] },
   },
   // Our Notion server is the one file that calls Notion's API.
   {
     files: ["integrations/notion-server.ts"],
-    rules: { "no-restricted-imports": ["error", { paths: [MEMORY_RULE, ...SPEC_RULES, ...MERCURY_PATHS, ...VAULT_PATHS, ...NSRV.paths], patterns: [MEMORY_PATTERN, SPEC_PATTERN, MERCURY_PATTERN, VAULT_PATTERN, NSRV.pattern] }] },
+    rules: { "no-restricted-imports": ["error", { paths: [MEMORY_RULE, ...SPEC_RULES, ...MERCURY_PATHS, ...VAULT_PATHS, ...NSRV.paths, MCPW], patterns: [MEMORY_PATTERN, SPEC_PATTERN, MERCURY_PATTERN, VAULT_PATTERN, NSRV.pattern] }] },
   },
   // The MCP client is the one integration that opens the vault; its test reads it too.
   {
@@ -55,7 +58,7 @@ export default defineConfig([
   },
   {
     files: ["scripts/check-mcp.ts"],
-    rules: { "no-restricted-imports": ["error", { paths: [...MERCURY_PATHS, ...NAPI.paths, ...NSRV.paths], patterns: [MERCURY_PATTERN, NAPI.pattern, NSRV.pattern] }] },
+    rules: { "no-restricted-imports": ["error", { paths: [...MERCURY_PATHS, ...NAPI.paths, ...NSRV.paths, MCPW], patterns: [MERCURY_PATTERN, NAPI.pattern, NSRV.pattern] }] },
   },
   globalIgnores([".next/**", "out/**", "build/**", "next-env.d.ts", ".schemas/**"]),
 ]);

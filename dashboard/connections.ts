@@ -27,6 +27,8 @@ export interface Connection {
   checks: Check[];
   /** An MCP server (core/mcp-rules.ts): signed in with Connect on this page, not with a setting. */
   mcp?: McpId;
+  /** More sign-ins shown on the same page (Mercury's gateway-only write sign-in). */
+  mcpMore?: McpId[];
 }
 
 export const CONNECTIONS: Connection[] = [
@@ -36,8 +38,8 @@ export const CONNECTIONS: Connection[] = [
     checks: [{ key: "shopify", label: "Store", setup: "Needs SHOPIFY_STORE_DOMAIN and the read-only app’s token (or its client id and secret)." }],
   },
   {
-    id: "mercury", name: "Mercury", sub: "Bank", icon: "landmark", builtIn: false, mcp: "mercury",
-    about: "Mercury’s own MCP server, signed in with the read scope only, so this sign-in can’t use any tool that changes Mercury or moves money. Code may call only the read tools named in code (accounts, charges, categories). Sums are worked out in code. A separate token, held only by the gateway, writes a receipt, category or memo on an existing charge after you approve.",
+    id: "mercury", name: "Mercury", sub: "Bank", icon: "landmark", builtIn: false, mcp: "mercury", mcpMore: ["mercury_write"],
+    about: "Mercury’s own MCP server, signed in with the read scope only, so this sign-in can’t use any tool that changes Mercury or moves money. Code may call only the read tools named in code (accounts, charges, categories). Sums are worked out in code. After you approve, the gateway sets a charge’s category and memo through its own Mercury sign-in (that one change only), and attaches the receipt file with a separate token it alone holds.",
     checks: [{ key: "mercury", label: "Bank", setup: "Tap Connect and sign in to Mercury, picking One Two’s business org. Set MERCURY_ACCOUNT_IDS (all, or a comma list) for the cash number." }],
   },
   {

@@ -1,11 +1,10 @@
 import "server-only";
-// The only Mercury writes in this repo, and only the gateway may import this file
-// (eslint.config.mjs blocks every other importer). Two calls, both on a transaction that
-// already exists: set its note and/or category, and attach a receipt file. No endpoint that
-// creates, cancels or moves money is here, and none may be added.
-//
-// It uses its own token, MERCURY_WRITE_TOKEN (a Custom token with only the transaction
-// write scope), so the agents' Mercury sign-in (read scope only, on Connections) stays read-only.
+// Receipt files onto an existing Mercury charge, and only the gateway may import this file
+// (eslint.config.mjs blocks every other importer). One call: attach a file to the charge Zak
+// approved. Mercury's MCP server can only upload a receipt and let Mercury pick the charge, so
+// files stay here (slice 5b); a charge's category and memo go through the gateway's own Mercury
+// sign-in (MCP_SERVERS.mercury_write). No endpoint that creates, cancels or moves money is here,
+// and none may be added. It uses its own token, MERCURY_WRITE_TOKEN.
 import { env } from "@/core/env";
 
 const BASE = "https://api.mercury.com/api/v1";
@@ -24,21 +23,6 @@ function txnPath(id: string) {
 async function fail(res: Response, what: string): Promise<never> {
   const body = (await res.text().catch(() => "")).slice(0, 200);
   throw new Error(`Mercury ${res.status} on ${what}${body ? `: ${body}` : ""}`);
-}
-
-/** PATCH /transaction/{id} with only note and/or categoryId. A field left undefined is not sent, so Mercury keeps it. */
-export async function patchTransaction(id: string, patch: { note?: string; categoryId?: string }) {
-  const body: Record<string, string> = {};
-  if (patch.note !== undefined) body.note = patch.note;
-  if (patch.categoryId !== undefined) body.categoryId = patch.categoryId;
-  if (!Object.keys(body).length) return;
-  const res = await fetch(txnPath(id), {
-    method: "PATCH",
-    headers: { Authorization: `Bearer ${token()}`, "Content-Type": "application/json", Accept: "application/json" },
-    body: JSON.stringify(body),
-    cache: "no-store",
-  });
-  if (!res.ok) await fail(res, "update transaction");
 }
 
 /** POST /transaction/{id}/attachments, multipart, attachmentType "receipt". Returns Mercury's attachment id. */

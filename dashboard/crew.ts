@@ -4,7 +4,7 @@
 // planned roster below is written here, until each one is built (docs/agent-roster.md).
 
 export type Tier = "Report" | "Draft" | "Act";
-export type IntegrationId = "shopify" | "mercury" | "notion" | "email" | "gmail" | "gmail_read" | "claude" | "web" | "supabase" | "github" | "klaviyo" | "vault";
+export type IntegrationId = "shopify" | "mercury" | "notion" | "email" | "gmail" | "gmail_read" | "claude" | "web" | "supabase" | "github" | "klaviyo" | "mercury_write" | "vault";
 
 export interface Schedule {
   kind: "manual" | "daily" | "weekdays";
