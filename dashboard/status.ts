@@ -2,9 +2,6 @@
 import type { CrewMember } from "./crew";
 import type { AgentRow, Run, RunStatus } from "./data";
 
-/** True until Zak launches. Paused agents then read "Off duty until launch". */
-export const PRE_LAUNCH = true;
-
 export interface Look { label: string; dot: string; bg: string; fg: string; pulse?: boolean }
 
 export const RUN_LOOK: Record<RunStatus, Look> = {
@@ -33,15 +30,18 @@ export const STATE_LOOK: Record<AgentState, Look> = {
   planned: { label: "Joining after launch", dot: "var(--mut2)", bg: "var(--soft)", fg: "var(--mut)" },
   missing: { label: "Not in the database", dot: "var(--red)", bg: "var(--red-soft)", fg: "var(--red-ink)" },
   running: { label: "Working now", dot: "var(--acc)", bg: "var(--acc-soft)", fg: "var(--acc-ink)", pulse: true },
-  paused: { label: PRE_LAUNCH ? "Off duty until launch" : "Off duty", dot: "var(--mut)", bg: "var(--soft)", fg: "var(--ink2)" },
+  paused: { label: "Off duty", dot: "var(--mut)", bg: "var(--soft)", fg: "var(--ink2)" },
   over: { label: "Budget reached today", dot: "var(--red)", bg: "var(--red-soft)", fg: "var(--red-ink)" },
   manual: { label: "On call", dot: "var(--ink2)", bg: "var(--soft)", fg: "var(--ink)" },
   active: { label: "On shift", dot: "var(--mint)", bg: "var(--mint-soft)", fg: "var(--mint-ink)" },
 };
 
+/** How a state looks. While the org is off (docs/org-schedule.md) an agent off duty says so. */
+export const stateLook = (st: AgentState, orgOn: boolean): Look => (st === "paused" && !orgOn ? { ...STATE_LOOK.paused, label: "Off: the org is off" } : STATE_LOOK[st]);
+
 /** One sentence on what the two switches add up to. */
 export function combined(a: CrewMember, row: AgentRow | undefined) {
   const manual = !a.schedule || a.schedule.kind === "manual";
   if (!row?.enabled) return manual ? "Off duty: anything you start is skipped and logged at $0." : "Off duty: scheduled runs are skipped and logged at $0.";
-  return manual ? "On call: runs only when you press Run." : "On the crew: runs on schedule (if the Vercel schedule is on) and whenever you press Run.";
+  return manual ? "On call: runs only when you press Run." : "On the crew: runs on schedule while the org is on, and whenever you press Run.";
 }

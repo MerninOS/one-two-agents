@@ -10,7 +10,7 @@ import type { MapOrg } from "./agentMap";
 import type { GoalView } from "./goals";
 import type { Floor } from "./data";
 import { when } from "./format";
-import { STATE_LOOK, stateOf, type Look } from "./status";
+import { stateLook, stateOf, type Look } from "./status";
 
 export interface SeatAgent {
   id: string;
@@ -66,7 +66,7 @@ function agentsOf(f: Floor): SeatAgent[] {
   return f.crew.map((a): SeatAgent => {
     const st = stateOf(a, f.agents[a.id], f.runs, f.spentToday[a.id] ?? 0);
     const last = f.runs.find((r) => r.agent_id === a.id && r.status !== "skipped");
-    return { id: a.id, name: a.name, role: a.role, href: `/agents/${a.id}`, icon: a.icon, hue: a.built ? a.hue ?? null : null, planned: !a.built, look: STATE_LOOK[st], last: !a.built ? `Phase ${a.phase}` : last ? `Last ran ${when(last.started_at)}` : "Never run" };
+    return { id: a.id, name: a.name, role: a.role, href: `/agents/${a.id}`, icon: a.icon, hue: a.built ? a.hue ?? null : null, planned: !a.built, look: stateLook(st, f.org.on), last: !a.built ? `Phase ${a.phase}` : last ? `Last ran ${when(last.started_at)}` : "Never run" };
   });
 }
 

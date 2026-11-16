@@ -1,5 +1,7 @@
 import Link from "next/link";
-import { previewChain, rollBackFlow, runChainNow, saveCrewFlow } from "@/dashboard/actions";
+import { previewChain, rollBackFlow, runChainNow, saveCrewFlow, turnOffOrg, turnOnOrg } from "@/dashboard/actions";
+import { planOrgOn } from "@/dashboard/orgPlan";
+import { OrgSwitch } from "@/dashboard/components/OrgSwitch";
 import { getCrewCanvas, getFloor } from "@/dashboard/data";
 import { deptExtras, orgView } from "@/dashboard/org";
 import { goalsByDept } from "@/dashboard/goals";
@@ -14,7 +16,8 @@ import { OrgChart } from "@/dashboard/components/OrgChart";
 
 // Crew: the Org chart (docs/org-chart.md, slice 1: departments, seats and who sits in them, with the
 // agents not on the chart yet below it) and New agent, which opens the builder flow; and a Schedule
-// view (the chains that were the Crew canvas), the one place a schedule is turned on.
+// view: the org switch (docs/org-schedule.md) and the chains that were the Crew canvas, the one
+// place a schedule is turned on.
 
 // Preview dry-runs up to three agents in a row. (Goals read Shopify or Mercury when the chart opens.)
 export const maxDuration = 300;
@@ -61,12 +64,15 @@ async function Chart({ f }: { f: Awaited<ReturnType<typeof getFloor>> }) {
 
 async function Schedule({ f }: { f: Awaited<ReturnType<typeof getFloor>> }) {
   const d = await getCrewCanvas(f);
+  const members = f.built.map((a) => ({ id: a.id, name: a.name, inOrg: a.inOrg !== false, avgCost: a.avgCost ?? null, capPerRun: a.capPerRun }));
+  const plan = planOrgOn(members, d.flow.chains, f.now);
   return (
     <>
+      <OrgSwitch org={f.org} plan={plan} controls={controlsOn()} turnOn={turnOnOrg.bind(null, true)} turnOff={turnOffOrg} />
       <div className="card" style={{ gap: 6, borderLeft: "4px solid var(--acc)" }}>
         <span style={{ fontSize: 14.5, fontWeight: 600 }}>Which agents run when, and who goes next.</span>
         <span className="ink2" style={{ fontSize: 13, lineHeight: 1.55 }}>
-          A chain never turns an agent on. Every step still checks that its agent is on duty and under its daily budget; a skipped step stops the chain.
+          Chains run only while the org is on. A chain never turns an agent on. Every step still checks that its agent is on duty and under its daily budget; a skipped step stops the chain.
           The next agent only gets facts from the one before (its summary and numbers), never instructions, and nothing an email or web page says can choose what runs.
         </span>
       </div>

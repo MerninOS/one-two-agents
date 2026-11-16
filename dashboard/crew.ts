@@ -36,6 +36,12 @@ export interface CrewMember {
   schedule?: Schedule;
   /** Runs only by hand (agents.manual_only). */
   manualOnly?: boolean;
+  /** agents.in_org: false for a test agent that turning on the org never wakes (docs/org-schedule.md). */
+  inOrg?: boolean;
+  /** Average cost of its last real runs (up to 10), or null before it has any. */
+  avgCost?: number | null;
+  /** Its cap per run, from its live version. */
+  capPerRun?: number;
   trigger?: string;
 }
 

@@ -1,4 +1,5 @@
-// Shift times in Central Time, mirrored from vercel.json (Vercel Schedules own the real timing).
+// Shift times in Central Time, from each agent's place in the crew flow (dashboard/roster.ts scheduleOf).
+// The dispatcher (app/api/dispatch) runs them while the org is on (docs/org-schedule.md).
 import { chicagoDate, nextDay, offsetOn } from "@/core/time";
 import type { Schedule } from "./crew";
 import { t12 } from "./format";

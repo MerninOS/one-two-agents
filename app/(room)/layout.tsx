@@ -5,7 +5,7 @@ import { getFloor } from "@/dashboard/data";
 import { longDay } from "@/dashboard/format";
 import { needs } from "@/dashboard/needs";
 import { SEEN_COOKIE, parseSeen } from "@/dashboard/seen";
-import { STATE_LOOK, isLive, stateOf } from "@/dashboard/status";
+import { isLive, stateLook, stateOf } from "@/dashboard/status";
 import { LiveRefresher, MobileMenu, RailLink, SideLink, ThemeToggle, type RecentRun } from "@/dashboard/components/client";
 import { Icon } from "@/dashboard/components/Icon";
 import { AveryChat } from "@/dashboard/components/avery";
@@ -54,9 +54,9 @@ export default async function RoomLayout({ children }: { children: React.ReactNo
             <span style={{ display: "flex", flexDirection: "column", lineHeight: 1.2 }}><span style={{ fontWeight: 700, fontSize: 17, letterSpacing: "-.02em" }}>One Two</span><span style={{ fontSize: 12 }} className="muted">Mission control</span></span>
           </Link>
           <nav className="rail" aria-label="Crew">
-            {rail.filter((r) => r.a.built).map(({ a, st, badge }) => <RailLink key={a.id} id={a.id} name={a.name} icon={a.icon} title={`${a.name} · ${a.role} · ${STATE_LOOK[st].label}`} running={st === "running"} badge={badge} />)}
+            {rail.filter((r) => r.a.built).map(({ a, st, badge }) => <RailLink key={a.id} id={a.id} name={a.name} icon={a.icon} title={`${a.name} · ${a.role} · ${stateLook(st, floor.org.on).label}`} running={st === "running"} badge={badge} />)}
             <span className="rail-sep" />
-            {rail.filter((r) => !r.a.built).map(({ a, st }) => <RailLink key={a.id} id={a.id} name={a.name} icon={a.icon} title={`${a.name} · ${a.role} · ${STATE_LOOK[st].label}`} planned />)}
+            {rail.filter((r) => !r.a.built).map(({ a, st }) => <RailLink key={a.id} id={a.id} name={a.name} icon={a.icon} title={`${a.name} · ${a.role} · ${stateLook(st, floor.org.on).label}`} planned />)}
           </nav>
           <div className="top-right">
             <span className="wide-only"><ThemeToggle initial={theme} /></span>

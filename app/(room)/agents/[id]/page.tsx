@@ -14,7 +14,7 @@ import { MemoryLine, type LineView } from "@/dashboard/components/memory";
 import { budget, dur, hm, m2, m4, md, num, when } from "@/dashboard/format";
 import { nextRuns, schedWords } from "@/dashboard/schedule";
 import { controlsOn } from "@/dashboard/session";
-import { STATE_LOOK, combined, stateOf } from "@/dashboard/status";
+import { combined, stateLook, stateOf } from "@/dashboard/status";
 import { ActionButton, DryRun, MarkSeen, SwitchButton } from "@/dashboard/components/client";
 import { Icon } from "@/dashboard/components/Icon";
 import { RunTable } from "@/dashboard/components/RunTable";
@@ -64,7 +64,7 @@ export default async function AgentPage({ params, searchParams }: { params: Prom
         <div className="row wrap" style={{ gap: 14 }}>
           <Avatar a={a} size={48} working={st === "running"} />
           <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 2, minWidth: 200 }}><span style={{ fontSize: 24, fontWeight: 600, letterSpacing: "-.02em" }}>{a.name}</span><span className="muted" style={{ fontSize: 13 }}>{a.role} · {a.built ? `on the crew since ${a.since}` : `joining after launch · phase ${a.phase}`}</span></div>
-          <Pill look={STATE_LOOK[st]} />
+          <Pill look={stateLook(st, f.org.on)} />
           {a.built && <DryRun action={dryRun.bind(null, id)} compact />}
         </div>
       )}
@@ -132,7 +132,7 @@ function crewSwitch(a: CrewMember, f: Floor, controls: boolean) {
       action={setEnabled.bind(null, a.id, !on)}
       confirm={on
         ? { title: `Take ${a.name} off duty?`, body: "Every run after this, scheduled or manual, is skipped and logged at $0.", confirmLabel: "Take off duty", kind: "danger" }
-        : { title: `Put ${a.name} back on the crew?`, body: "Scheduled and manual runs will go through again.", lines: [{ k: "Next scheduled run", v: next ? `${when(next)} CT, if the Vercel schedule is on` : "None. Runs when you press Run." }, { k: "Expected cost", v: `${a.estCostLabel ?? "?"} a run` }], confirmLabel: "Put on the crew" }} />
+        : { title: `Put ${a.name} back on the crew?`, body: "Scheduled and manual runs will go through again.", lines: [{ k: "Next scheduled run", v: next ? `${when(next)} CT, if the org is on` : "None. Runs when you press Run." }, { k: "Expected cost", v: `${a.estCostLabel ?? "?"} a run` }], confirmLabel: "Put on the crew" }} />
   );
 }
 
@@ -159,7 +159,7 @@ function HeroFull({ a, f, controls }: { a: CrewMember; f: Floor; controls: boole
         <div style={{ display: "flex", flexDirection: "column", gap: 10, minWidth: 0 }}>
           <div className="row wrap">
             <h1 style={{ fontSize: 34, fontWeight: 600, letterSpacing: "-.03em", lineHeight: 1.1 }}>{a.name}</h1>
-            <Pill look={STATE_LOOK[st]} />
+            <Pill look={stateLook(st, f.org.on)} />
             <span title={TIERS[a.tier]} className="pill" style={{ border: "1px solid var(--bd)" }}>{a.tier} tier</span>
           </div>
           <span className="muted" style={{ fontSize: 14 }}>{a.role} · {a.built ? `on the crew since ${a.since}` : `joining after launch · phase ${a.phase}`}</span>
