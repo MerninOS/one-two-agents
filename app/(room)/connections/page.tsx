@@ -18,6 +18,7 @@ interface McpView { status: McpStatus | null; lists: { id: string; name: string 
 const EVENT_LABEL: Record<McpLogRow["event"], string> = {
   connected: "Signed in", refreshed: "Sign-in renewed", refresh_failed: "Renewal failed, paused", refused: "Server refused the sign-in, paused",
   revoked: "Cancelled at the server", revoke_failed: "Cancel not confirmed by the server", disconnected: "Disconnected", resealed: "Re-locked with the current key",
+  tools_changed: "Tools changed, paused", tools_checked: "Tools checked",
 };
 
 /** The vault's state: is MCP_SECRET_KEY set, and is every sign-in locked with it. */
@@ -43,7 +44,12 @@ function McpPanel({ c, v }: { c: Connection; v: McpView }) {
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
       <VaultNote v={v.vault} />
-      <span className="ink2" style={{ fontSize: 12.5, lineHeight: 1.5 }}>Code may call only these {MCP_SERVERS[id].name} tools: {MCP_SERVERS[id].readTools.join(", ")}. A tool the server adds later does nothing until it is named in code.</span>
+      <span className="ink2" style={{ fontSize: 12.5, lineHeight: 1.5 }}>Code may call only these {MCP_SERVERS[id].name} tools: {MCP_SERVERS[id].readTools.join(", ")}. A tool the server adds later does nothing until it is named in code. Sign-in asks only for: {MCP_SERVERS[id].scopes.join(", ")}.</span>
+      {s.connected && !s.paused && (
+        <span className="muted" style={{ fontSize: 12.5 }}>
+          {s.toolsCheckedAt ? `Tools checked ${when(s.toolsCheckedAt)}: all ${s.toolsSeen.length} are there with the inputs code expects. If one changes, ${c.name} pauses until you sign in again.` : "Tools not checked yet: the next agent call checks them first."}
+        </span>
+      )}
       {s.connected ? (
         <>
           {s.paused
@@ -71,7 +77,7 @@ function McpPanel({ c, v }: { c: Connection; v: McpView }) {
       ) : (
         <span className="row wrap" style={{ gap: 8, alignItems: "center" }}>
           <a className="btn dark sm" href={`/connections/${id}/connect`}>Connect {c.name}</a>
-          <span className="muted" style={{ fontSize: 12 }}>Opens {c.name}’s own sign-in page. Sign in as an Owner, Admin or Manager.</span>
+          <span className="muted" style={{ fontSize: 12 }}>Opens {c.name}’s own sign-in page. {MCP_SERVERS[id].signInHint}</span>
         </span>
       )}
       {v.log.length > 0 && (
