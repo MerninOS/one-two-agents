@@ -28,10 +28,10 @@ any agent can use (`core/tools/catalog.ts`), never as code for one agent.
 - `agents/registry.ts` `loadCrew()`: every agent with a row and an active version can run, from
   `/api/agents/<id>`, the dispatcher and chains, on the shared engine (`runBuilt`). The `AGENTS` map is gone.
 - **Runs only by hand** (`agents.manual_only`): only the Run button, or a chain started with Run
-  chain. New agents start this way (column default), Rowan and Quinn stay this way, Avery and Morgan
-  don't. The switch is on the agent's profile: turning it on always works (refused while a chain that
-  starts on its own has the agent); letting it run on a schedule needs Controls and a confirm, and still
-  only happens once Zak adds it to a chain that is on.
+  chain. New agents start this way (column default). It follows the Scheduled / By hand toggle on
+  Crew > Schedule (docs/org-schedule.md): By hand takes the agent out of every chain that starts on
+  its own and always works; Scheduled sets a time (its own one-step chain, or its step in a chain) and
+  needs Controls and a confirm. It runs on that time only while the org is on.
 - Before the migration is applied there is no `manual_only` column: every agent then counts as by
   hand only, so nothing runs on a schedule by mistake (the morning chain is dropped as invalid until then).
 - Every agent on the engine can read a hand-off from the step before (`TAKES_HANDOFF` is gone).

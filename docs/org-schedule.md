@@ -50,7 +50,7 @@ and per-agent control over when each agent runs and what that costs.
    confirm, the switch at the top of Crew > Schedule, status labels from the org instead of
    `PRE_LAUNCH`, Pause all removed from Settings. Pure planner `dashboard/orgPlan.ts` with
    `npm run check:org-switch`.
-2. **The org's day and the cost table.** The Schedule tab opens on a timeline of every agent's
+2. **The org's day and the cost table (built, PR after #62).** The Schedule tab opens on a timeline of every agent's
    runs by department (Avery's brief marked), a cost table with Scheduled / By hand per agent and
    the monthly total, and a panel per agent for days and time. Edits are flow edits through
    `saveCrewFlow`'s rules (a one-step chain `solo-<agent>`, or the step in its chain). The canvas
@@ -66,3 +66,23 @@ and per-agent control over when each agent runs and what that costs.
 - A chain still never turns an agent on, and every run still goes through `withRun` (on duty,
   daily budget, department budget).
 - Nothing is turned on while building or testing this. The org stays off until Zak turns it on.
+
+## Slice 2 as built
+
+- `dashboard/orgDay.ts` (pure): every agent in the org grouped as on the org chart (company seat,
+  departments, then not on the chart), its schedule, next runs, cost a run and a month, and where its
+  time falls in the day's window (4 AM to noon, stretched around the earliest and latest run). An
+  agent with a report tool that reaches Zak (`report_email_zak`, `report_morning_brief`) is marked
+  "reports to you"; the first of them is the anchor on the timeline. No agent is named in code.
+- `core/flow-rules.ts` `withAgentTime` (pure): sets one agent's time or takes it to by hand, as a
+  flow edit. By hand drops its step from every chain that starts on its own (a new first step takes
+  the chain's start at its own days and time; an empty chain goes). A time edits its step in the
+  scheduled chain it is in (start for a first step, "not before" for a later one, never earlier
+  than the chain's start) or adds a one-step chain `solo-<agent>`, on. `MAX_CHAINS` is 30.
+- `setAgentTime` (dashboard/actions.ts) checks the result with `flowProblems`, needs Controls and a
+  confirm for anything looser, saves one flow version and sets `agents.manual_only` to match. It
+  replaced `setManualOnly`.
+- `dashboard/components/OrgDay.tsx`: the timeline, the cost table with the toggle and the total, and
+  the agent editor (on duty, days, time, next runs, cost, budget). The chain canvas sits under
+  "Edit chains". The profile's On the crew and Runs only by hand switches are gone; the profile links
+  here (`SwitchButton` deleted).

@@ -1,5 +1,7 @@
 import Link from "next/link";
-import { previewChain, rollBackFlow, runChainNow, saveCrewFlow, turnOffOrg, turnOnOrg } from "@/dashboard/actions";
+import { previewChain, rollBackFlow, runChainNow, saveCrewFlow, setAgentTime, setEnabled, turnOffOrg, turnOnOrg } from "@/dashboard/actions";
+import { orgDay } from "@/dashboard/orgDay";
+import { OrgDay } from "@/dashboard/components/OrgDay";
 import { planOrgOn } from "@/dashboard/orgPlan";
 import { OrgSwitch } from "@/dashboard/components/OrgSwitch";
 import { getCrewCanvas, getFloor } from "@/dashboard/data";
@@ -30,7 +32,7 @@ export default async function Crew({ searchParams }: { searchParams: Promise<{ v
       <div className="row wrap" style={{ gap: 12, alignItems: "flex-end" }}>
         <div className="stack" style={{ gap: 6, flex: "1 1 320px" }}>
           <h1 className="h1">Crew</h1>
-          <span className="sub">{view === "org" ? "Your agents by department, each led by its goals. Open one to see how it’s doing, edit it, teach it or replay its runs." : "When each agent runs, and who goes next."}</span>
+          <span className="sub">{view === "org" ? "Your agents by department, each led by its goals. Open one to see how it’s doing, edit it, teach it or replay its runs." : "When your org works, what it costs, and when you hear from it."}</span>
         </div>
         <Link href="/build/new" className="btn dark"><Icon name="user-plus" size={15} />New agent</Link>
       </div>
@@ -63,20 +65,28 @@ async function Chart({ f }: { f: Awaited<ReturnType<typeof getFloor>> }) {
 }
 
 async function Schedule({ f }: { f: Awaited<ReturnType<typeof getFloor>> }) {
-  const d = await getCrewCanvas(f);
+  const [d, org] = await Promise.all([getCrewCanvas(f), loadOrg().catch(() => null)]);
   const members = f.built.map((a) => ({ id: a.id, name: a.name, inOrg: a.inOrg !== false, avgCost: a.avgCost ?? null, capPerRun: a.capPerRun }));
   const plan = planOrgOn(members, d.flow.chains, f.now);
+  const day = orgDay({
+    members: f.built,
+    enabled: Object.fromEntries(Object.values(f.agents).map((x) => [x.id, x.enabled])),
+    budget: Object.fromEntries(Object.values(f.agents).map((x) => [x.id, x.daily_budget_usd])),
+    grants: f.grants, org, now: f.now,
+  });
   return (
     <>
       <OrgSwitch org={f.org} plan={plan} controls={controlsOn()} turnOn={turnOnOrg.bind(null, true)} turnOff={turnOffOrg} />
-      <div className="card" style={{ gap: 6, borderLeft: "4px solid var(--acc)" }}>
-        <span style={{ fontSize: 14.5, fontWeight: 600 }}>Which agents run when, and who goes next.</span>
+      <OrgDay day={day} controls={controlsOn()} orgOn={f.org.on} setTime={setAgentTime} setOn={setEnabled} />
+      <details className="card" style={{ gap: 10 }}>
+        <summary style={{ cursor: "pointer", fontSize: 14.5, fontWeight: 600 }}>Edit chains: hand-offs between agents</summary>
         <span className="ink2" style={{ fontSize: 13, lineHeight: 1.55 }}>
-          Chains run only while the org is on. A chain never turns an agent on. Every step still checks that its agent is on duty and under its daily budget; a skipped step stops the chain.
+          For more than a time: one agent after another, checks on numbers, waits and hand-offs. Chains run only while the org is on, and a chain never turns an agent on.
+          Every step still checks that its agent is on duty and under its daily budget; a skipped step stops the chain.
           The next agent only gets facts from the one before (its summary and numbers), never instructions, and nothing an email or web page says can choose what runs.
         </span>
-      </div>
-      <CrewCanvas d={d} actions={{ save: saveCrewFlow, rollBack: rollBackFlow, runNow: runChainNow, preview: previewChain }} />
+        <CrewCanvas d={d} actions={{ save: saveCrewFlow, rollBack: rollBackFlow, runNow: runChainNow, preview: previewChain }} />
+      </details>
     </>
   );
 }

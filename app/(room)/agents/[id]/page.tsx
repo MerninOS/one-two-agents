@@ -3,7 +3,7 @@ import { needs } from "@/dashboard/needs";
 import { SEEN_COOKIE, parseSeen } from "@/dashboard/seen";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { discardLessonLine, dryRun, editMemoryLine, forgetMemoryLine, keepLessonLine, realRun, setEnabled, setManualOnly } from "@/dashboard/actions";
+import { discardLessonLine, dryRun, editMemoryLine, forgetMemoryLine, keepLessonLine, realRun } from "@/dashboard/actions";
 import { HARD_RULES, TIERS, type CrewMember } from "@/dashboard/crew";
 import { ABILITY_WORD, isSetUp, reachOf } from "@/dashboard/connections";
 import { getBooks, getFloor, getMemory, getPipeline, getReactionsFor, type Books, type Floor } from "@/dashboard/data";
@@ -12,10 +12,10 @@ import type { Reaction } from "@/core/reactions";
 import type { MemoryRow, PageLoad } from "@/core/memory";
 import { MemoryLine, type LineView } from "@/dashboard/components/memory";
 import { budget, dur, hm, m2, m4, md, num, when } from "@/dashboard/format";
-import { nextRuns, schedWords } from "@/dashboard/schedule";
+import { schedWords } from "@/dashboard/schedule";
 import { controlsOn } from "@/dashboard/session";
 import { combined, stateLook, stateOf } from "@/dashboard/status";
-import { ActionButton, DryRun, MarkSeen, SwitchButton } from "@/dashboard/components/client";
+import { ActionButton, DryRun, MarkSeen } from "@/dashboard/components/client";
 import { Icon } from "@/dashboard/components/Icon";
 import { RunTable } from "@/dashboard/components/RunTable";
 import { builderMenu, mapFor } from "@/dashboard/builder";
@@ -124,30 +124,6 @@ async function howItWorks(id: string): Promise<[string, string][] | null> {
   ];
 }
 
-function crewSwitch(a: CrewMember, f: Floor, controls: boolean) {
-  const on = !!f.agents[a.id]?.enabled;
-  const next = nextRuns(a.schedule, f.now, 1)[0];
-  return (
-    <SwitchButton on={on} title="On the crew" disabled={!f.agents[a.id] || (!on && !controls)}
-      action={setEnabled.bind(null, a.id, !on)}
-      confirm={on
-        ? { title: `Take ${a.name} off duty?`, body: "Every run after this, scheduled or manual, is skipped and logged at $0.", confirmLabel: "Take off duty", kind: "danger" }
-        : { title: `Put ${a.name} back on the crew?`, body: "Scheduled and manual runs will go through again.", lines: [{ k: "Next scheduled run", v: next ? `${when(next)} CT, if the org is on` : "None. Runs when you press Run." }, { k: "Expected cost", v: `${a.estCostLabel ?? "?"} a run` }], confirmLabel: "Put on the crew" }} />
-  );
-}
-
-/** Runs only by hand (agents.manual_only). Turning it on always works; letting it run on a schedule needs Controls. */
-function manualSwitch(a: CrewMember, controls: boolean) {
-  const on = !!a.manualOnly;
-  return (
-    <SwitchButton on={on} title="Runs only by hand" disabled={on && !controls}
-      action={setManualOnly.bind(null, a.id, !on, true)}
-      confirm={on
-        ? { title: `Let ${a.name} run on a schedule?`, body: `Nothing changes until you add ${a.name} to a chain that is on, on Crew > Schedule. Each run still needs ${a.name} on duty and inside its budget.`, lines: [{ k: "Cost a run", v: a.estCostLabel ?? "?" }], confirmLabel: "Allow schedules" }
-        : { title: `Make ${a.name} run only by hand?`, body: "It runs only when you press Run, or in a chain you start with Run chain. If a chain that starts on its own has it, take it out on Crew > Schedule first.", confirmLabel: "By hand only" }} />
-  );
-}
-
 function HeroFull({ a, f, controls }: { a: CrewMember; f: Floor; controls: boolean }) {
   const row = f.agents[a.id];
   const st = stateOf(a, row, f.runs, f.spentToday[a.id] ?? 0);
@@ -182,22 +158,12 @@ function HeroFull({ a, f, controls }: { a: CrewMember; f: Floor; controls: boole
                 {st === "running" ? <><span className="dot pulse" style={{ background: "var(--acc)" }} />Working…</> : realLabel}
               </ActionButton>
             </div>
-            <div className="hero-boxes" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
-              <div className="soft-box">
-                <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 2, minWidth: 0 }}><span style={{ fontSize: 13.5, fontWeight: 600 }}>On the crew</span><span className="muted" style={{ fontSize: 11.5 }}>{row?.enabled ? "Every run goes through" : "Every run is skipped at $0"}</span></div>
-                {crewSwitch(a, f, controls)}
-              </div>
-              <Link href="/crew?view=schedule" className="soft-box" style={{ color: "var(--ink)", textDecoration: "none" }}>
-                <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 2, minWidth: 0 }}><span style={{ fontSize: 13.5, fontWeight: 600 }}>Schedule</span><span className="muted" style={{ fontSize: 11.5 }}>{schedWords(a.schedule)}{a.schedule?.chain ? ` · ${a.schedule.chain} chain` : ""}</span></div>
-                <Icon name="chevron-right" size={15} style={{ opacity: 0.5 }} />
-              </Link>
-            </div>
-            <div className="soft-box">
-              <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 2, minWidth: 0 }}><span style={{ fontSize: 13.5, fontWeight: 600 }}>Runs only by hand</span><span className="muted" style={{ fontSize: 11.5 }}>{a.manualOnly ? "Only when you press Run, or in a chain you start with Run chain" : "Can run on a schedule when it is in a chain that is on"}</span></div>
-              {manualSwitch(a, controls)}
-            </div>
+            <Link href={`/crew?view=schedule#agent-${a.id}`} className="soft-box" style={{ color: "var(--ink)", textDecoration: "none" }}>
+              <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 2, minWidth: 0 }}><span style={{ fontSize: 13.5, fontWeight: 600 }}>On duty and schedule</span><span className="muted" style={{ fontSize: 11.5 }}>{row?.enabled ? "On duty" : "Off duty"} · {schedWords(a.schedule)}{a.schedule?.chain ? ` · ${a.schedule.chain} chain` : ""} · change on Crew &gt; Schedule</span></div>
+              <Icon name="chevron-right" size={15} style={{ opacity: 0.5 }} />
+            </Link>
             <span style={{ fontSize: 12.5 }} className="ink2">{combined(a, row)}</span>
-            {!controls && <span className="sub">Real runs and putting an agent back on the crew are off here until DASHBOARD_CONTROLS=on. Dry runs and taking agents off duty always work.</span>}
+            {!controls && <span className="sub">Real runs are off here until DASHBOARD_CONTROLS=on. Dry runs always work.</span>}
           </>
         ) : (
           <>

@@ -14,7 +14,7 @@ import { applyApproved, decide, loadCaps, queueBookkeeperProposals, retry } from
 import { CAPS, capChange, fmtCap, type CapKey } from "@/core/gateway/policy";
 import { env } from "@/core/env";
 import { approvalDecided, startStep } from "@/core/chain";
-import { activateFlow, flowLooser, flowProblems, listFlowVersions, loadFlow, saveFlowVersion, type Flow } from "@/core/flow";
+import { activateFlow, flowLooser, flowProblems, listFlowVersions, loadFlow, saveFlowVersion, withAgentTime, type AgentTime, type Flow } from "@/core/flow";
 import { ANNOTATE } from "@/core/gateway";
 import { BUDGET_CEILING, activateSpecVersion, createBuiltAgent, draftOf, listSpecVersions, loadSpec, readSpec, saveSpecVersion, specLooser, type AgentSpec } from "@/core/agent-spec";
 import { dryRunTools, runExplore, type PlaybookStep } from "@/core/runner";
@@ -26,6 +26,7 @@ import { loadOrg, seatPath, setHolder } from "@/core/org";
 import { getFloor, requireSession } from "./data";
 import { planOrgOn } from "./orgPlan";
 import { when } from "./format";
+import { schedWords } from "./schedule";
 import { setOrg } from "@/core/org-switch";
 import { SESSION_COOKIE, SESSION_DAYS, checkPassword, controlsOn, newSessionToken } from "./session";
 
@@ -102,26 +103,38 @@ export async function setEnabled(agentId: string, on: boolean): Promise<ActionRe
 }
 
 /**
- * Runs only by hand (agents.manual_only): only the Run button, or a chain started with Run chain.
- * Turning it on applies at once; letting an agent run on a schedule needs Controls on and a confirm,
- * and still only happens once Zak puts it in a chain that is on (Crew > Schedule).
+ * When one agent runs (Crew > Schedule, docs/org-schedule.md): `t` days and a time, or null for by
+ * hand. An edit of the flow (core/flow-rules.ts withAgentTime) saved as a new version, plus
+ * agents.manual_only to match. By hand always works; letting an agent run on a schedule, or moving a
+ * schedule that is on, needs Controls on and a confirm. It still runs only while the org is on and
+ * the agent is on duty.
  */
-export async function setManualOnly(agentId: string, on: boolean, confirmed = false): Promise<ActionResult> {
+export async function setAgentTime(agentId: string, t: AgentTime | null, confirmed = false): Promise<ActionResult> {
   await requireSession();
   const who = await crewAgent(agentId);
   if (!who) return { ok: false, text: "Unknown agent." };
-  if (!on && !controlsOn()) return { ok: false, text: CONTROLS_OFF };
-  if (!on && !confirmed) return { ok: false, text: `Confirm first: ${who.name} could then run on a schedule.` };
-  if (on) {
-    // a chain with a schedule or an approval start would no longer be valid with it in: say so first
-    const flow = await loadFlow(await loadCrew());
-    const used = flow.flow.chains.filter((c) => c.start.type !== "button" && c.steps.some((x) => x.agent === agentId));
-    if (used.length) return { ok: false, text: `${who.name} is in ${used.map((c) => c.name).join(", ")}, which starts on its own. Take it out on Crew > Schedule first.` };
-  }
-  const { error } = await db().from("agents").update({ manual_only: on }).eq("id", agentId);
-  if (error) return fail(/manual_only/.test(error.message) ? "Apply the agent roster migration (20261119090000_agent_roster.sql) first." : error.message);
-  revalidatePath("/", "layout");
-  return { ok: true, text: on ? `${who.name} runs only when you press Run, or in a chain you start with Run chain.` : `${who.name} can run on a schedule now: add it to a chain on Crew > Schedule.` };
+  try {
+    const crew = await loadCrew();
+    const flow = await loadFlow(crew);
+    const r = withAgentTime(flow.flow, agentId, who.name, t);
+    if ("refuse" in r) return { ok: false, text: r.refuse };
+    // the crew as it will be: the agent by hand or not
+    const manualOnly = new Set(crew.manualOnly);
+    if (t) manualOnly.delete(agentId); else manualOnly.add(agentId);
+    const problems = flowProblems(r.flow, { ids: crew.ids, manualOnly });
+    if (problems.length) return { ok: false, text: problems.join(" ") };
+    const looser = flowLooser(flow.flow, r.flow);
+    if (t && (looser.length || crew.manualOnly.has(agentId))) {
+      if (!controlsOn()) return { ok: false, text: `${CONTROLS_OFF} ${who.name} would run on a schedule.` };
+      if (!confirmed) return { ok: false, text: `Confirm first: ${who.name} would run ${schedWords({ kind: t.days, time: t.time })}.` };
+    }
+    // schedule: allow schedules first, then the flow; by hand: the flow first, then mark it by hand
+    if (t) { const { error } = await db().from("agents").update({ manual_only: false }).eq("id", agentId); if (error) return fail(error.message); }
+    if (JSON.stringify(r.flow) !== JSON.stringify(flow.flow)) await saveFlowVersion(r.flow, t ? `${who.name}: ${schedWords({ kind: t.days, time: t.time })}` : `${who.name}: by hand`, "zak (control room)", flow.version);
+    if (!t) { const { error } = await db().from("agents").update({ manual_only: true }).eq("id", agentId); if (error) return fail(error.message); }
+    revalidatePath("/", "layout");
+    return { ok: true, text: t ? `${who.name} runs ${schedWords({ kind: t.days, time: t.time })}, while the org is on.` : `${who.name} runs only when you press Run now.` };
+  } catch (e) { return fail(e); }
 }
 
 // ---- The org switch (docs/org-schedule.md). Turning on is launch: Controls on and a confirm.

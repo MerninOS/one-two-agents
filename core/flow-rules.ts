@@ -14,7 +14,8 @@
 import { chicagoDate, nextDay, offsetOn } from "@/core/time";
 
 export const MAX_STEPS = 3;
-export const MAX_CHAINS = 12;
+// room for a one-step chain per agent (an agent's own schedule, docs/org-schedule.md) plus shared chains
+export const MAX_CHAINS = 30;
 export type Days = "daily" | "weekdays";
 export type When = "ok" | "failed" | "any";
 export type Op = ">=" | ">" | "<=" | "<" | "=";
@@ -203,4 +204,57 @@ export function flowLooser(now: Flow, next: Flow): string[] {
     }
   }
   return out;
+}
+
+// ---- An agent's own schedule (docs/org-schedule.md, slice 2). Crew > Schedule sets when one agent
+// runs, or makes it run only by hand, as an edit of the flow: its step in the scheduled chain it is
+// in (the chain's start for a first step, "not before" for a later one), or a one-step chain of its
+// own. The result is checked with flowProblems and saved like any other flow.
+
+export interface AgentTime { days: Days; time: string }
+
+/** The key of an agent's own one-step chain. */
+export const soloKey = (agent: string) => `solo-${agent}`.slice(0, 40);
+
+/** Takes one step out of a chain. A new first step takes the chain's start, at its own days and time. */
+function dropStep(c: Chain, agent: string): Chain | null {
+  const k = c.steps.findIndex((s) => s.agent === agent);
+  if (k < 0) return c;
+  const steps = c.steps.filter((_, i) => i !== k);
+  if (!steps.length) return null;
+  if (k > 0) return { ...c, steps };
+  const [first, ...rest] = steps;
+  const start: Start = c.start.type === "schedule" ? { type: "schedule", days: first.days ?? c.start.days, time: first.notBefore ?? c.start.time } : c.start;
+  return { ...c, start, steps: [{ agent: first.agent }, ...rest] };
+}
+
+/**
+ * The flow with `agent` on `t` (days and a quarter-hour time), or by hand (`t` null): out of every
+ * chain that starts on its own (a schedule or an approval), since an agent that runs by hand may only
+ * be in a chain started with Run chain. Returns the flow, or why it can't be done.
+ */
+export function withAgentTime(flow: Flow, agent: string, name: string, t: AgentTime | null): { flow: Flow } | { refuse: string } {
+  if (t === null) {
+    const chains = flow.chains.map((c) => (c.start.type === "button" ? c : dropStep(c, agent))).filter((c): c is Chain => c !== null);
+    return { flow: { chains } };
+  }
+  if (t.days !== "daily" && t.days !== "weekdays") return { refuse: "Pick every day or weekdays." };
+  if (!TIME.test(t.time) || Number(t.time.slice(3)) % 15) return { refuse: "Pick a time on a quarter hour." };
+  const sched = flow.chains.filter((c) => c.start.type === "schedule" && c.steps.some((s) => s.agent === agent));
+  const own = sched.find((c) => c.on) ?? sched[0];
+  if (!own) {
+    if (flow.chains.length >= MAX_CHAINS) return { refuse: `The flow holds ${MAX_CHAINS} chains at most.` };
+    let key = soloKey(agent);
+    for (let i = 2; flow.chains.some((c) => c.key === key); i++) key = `${soloKey(agent).slice(0, 36)}-${i}`;
+    return { flow: { chains: [...flow.chains, { key, name: name.slice(0, 60) || agent, on: true, start: { type: "schedule", days: t.days, time: t.time }, steps: [{ agent }] }] } };
+  }
+  const k = own.steps.findIndex((s) => s.agent === agent);
+  const start = own.start as Extract<Start, { type: "schedule" }>;
+  const chains = flow.chains.map((c) => {
+    if (c !== own) return c;
+    if (k === 0) return { ...c, start: { type: "schedule" as const, days: t.days, time: t.time } };
+    return { ...c, steps: c.steps.map((s, i) => (i === k ? { ...s, notBefore: t.time, days: t.days === start.days ? undefined : t.days } : s)) };
+  });
+  if (k > 0 && t.time < start.time) return { refuse: `${name} runs after ${own.steps[k - 1].agent} in ${own.name}, which starts at ${start.time}, so pick ${start.time} or later, or change it on the chain.` };
+  return { flow: { chains } };
 }
