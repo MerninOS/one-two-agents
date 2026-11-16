@@ -18,8 +18,7 @@ import { round2 } from "@/domain/coffee";
 import { claude, costUsd, inputTokens, type Anthropic } from "@/integrations/anthropic";
 import { GmailReader, hasGmailRead, type Mail } from "@/integrations/gmail-read";
 import { hasMercury, mercuryTransactions, type MercuryTxn } from "@/integrations/mercury";
-import { divider, h2, h3, li, notionPage, p as para, type Block } from "@/integrations/notion";
-import { env } from "@/core/env";
+import { divider, h2, h3, li, notionConnected, notionPage, p as para, type Block } from "@/integrations/notion";
 import { queueBookkeeperProposals } from "@/core/gateway";
 import { READ_RECEIPT } from "./prompt";
 
@@ -296,7 +295,7 @@ export async function syncBooks(runId: string | undefined, opts: { notionParent?
   const proposals = [...all.values()].filter((d) => d.proposal_status === "proposed");
   const close = today.slice(8) === "03" ? await closeMonth(today, p) : null;
   let url: string | null = null;
-  const parent = env.notionToken ? opts.notionParent : undefined;
+  const parent = opts.notionParent && (await notionConnected()) ? opts.notionParent : undefined;
   if (parent && (newlyMatched.length || newlyPhoto.length || close)) {
     url = await notionPage(`Books · ${dayTitle(today)}`, [
       ...(close?.blocks ?? []),

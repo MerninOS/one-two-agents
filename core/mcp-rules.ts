@@ -16,11 +16,22 @@ import { createHash } from "node:crypto";
 export interface McpServer {
   id: string;
   name: string;
-  /** The server's address, with the server's own read-only switches on where it has them. */
+  /**
+   * How it is signed in. "oauth": the server's own sign-in page (Connect). "token": a key pasted
+   * once on Connections, for a server we run ourselves in the app (integrations/mcp.ts LOCAL), used
+   * where the service's hosted server would reach more than the profile needs.
+   */
+  auth: "oauth" | "token";
+  /** The server's address (for a token server, the API our own server calls), with read-only switches on where it has them. */
   url: string;
   /** The only tools code may call on it, by the server's own names. Read tools only. */
   readTools: readonly string[];
-  /** The sign-in scopes asked for: only what the read tools need, never the server's whole list. */
+  /**
+   * Report tools: writes into One Two's own workspace (a page or row Zak reads), made by code after a
+   * run, like an email to Zak. A model never calls one. Only a server we run ourselves has them.
+   */
+  reportTools: readonly string[];
+  /** The sign-in scopes asked for: only what the read tools need, never the server's whole list. For a token server, what the key reaches, in words. */
   scopes: readonly string[];
   /**
    * Write tools, each with the gateway action type it becomes (starting at Draft). Code never calls
@@ -35,14 +46,30 @@ export const MCP_SERVERS = {
   klaviyo: {
     id: "klaviyo",
     name: "Klaviyo",
+    auth: "oauth",
     // read-only=true turns off every tool that can change the account; no profile reviews or other
     // user-written content (Klaviyo's MCP docs, 2026).
     url: "https://mcp.klaviyo.com/mcp?read-only=true&disable-tools-with-user-generated-content=true",
     readTools: ["get_lists", "get_list", "get_metrics", "get_campaign_report", "get_flow_report"],
     // Klaviyo's read scopes for those tools (lists, metrics, campaign and flow reports).
     scopes: ["accounts:read", "lists:read", "metrics:read", "campaigns:read", "flows:read"],
+    reportTools: [],
     writeTools: [],
     signInHint: "Sign in as an Owner, Admin or Manager.",
+  },
+  notion: {
+    id: "notion",
+    name: "Notion",
+    // Our own server over Notion's REST API with the agents' internal integration key. Notion's hosted
+    // MCP server signs in as a person and reaches their whole workspace with write tools on; this
+    // key reaches only the pages shared with the integration (slice 4, Zak's choice 2026-11-16).
+    auth: "token",
+    url: "https://api.notion.com/v1",
+    readTools: ["notion_page_text", "notion_row_on"],
+    reportTools: ["notion_create_page", "notion_create_row", "notion_update_row", "notion_archive_row"],
+    scopes: ["only the pages and databases shared with the integration"],
+    writeTools: [],
+    signInHint: "Paste the Internal Integration Secret of the agents’ Notion integration.",
   },
 } as const satisfies Record<string, McpServer>;
 export type McpId = keyof typeof MCP_SERVERS;
@@ -53,6 +80,14 @@ export const isMcpId = (s: string): s is McpId => s in MCP_SERVERS;
 export function mayCall(id: string, tool: string): boolean {
   return isMcpId(id) && (MCP_SERVERS[id].readTools as readonly string[]).includes(tool);
 }
+
+/** Report tools: code-delivered writes into One Two's own workspace, only on a server we run. */
+export function mayReport(id: string, tool: string): boolean {
+  return isMcpId(id) && MCP_SERVERS[id].auth === "token" && (MCP_SERVERS[id].reportTools as readonly string[]).includes(tool);
+}
+
+/** Servers signed in on their own page (Connect), and servers we run ourselves with a pasted key. */
+export const isOauth = (id: McpId) => MCP_SERVERS[id].auth === "oauth";
 
 export const MCP_PROTOCOL = "2025-06-18";
 

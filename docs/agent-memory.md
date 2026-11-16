@@ -44,7 +44,7 @@ corrects what it learned on the Memory tab, so he teaches an agent once instead 
    Notion pages linked from standing orders (`readPages`, read only through
    `integrations/notion.ts`) are read next, each capped at 1,500 tokens and all of them at what is
    left of the budget, so they come ahead of notes, lessons and working memory. A page that can't
-   be read (not shared with the integration, deleted, no `NOTION_TOKEN`, no room) is skipped and
+   be read (not shared with the integration, deleted, Notion not connected, no room) is skipped and
    the run summary names it. Pages are Zak's own workspace, so they are notes, framed as
    reference that never beats the rules. The Memory tab reads them the same way to show each
    page's title, size and any problem.

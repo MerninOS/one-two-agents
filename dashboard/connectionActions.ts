@@ -4,7 +4,7 @@
 // tool: that stays a builder step.
 import { revalidatePath } from "next/cache";
 import { isMcpId } from "@/core/mcp-rules";
-import { disconnectMcp, resealAll, saveMcpSetting } from "@/integrations/mcp";
+import { disconnectMcp, resealAll, saveMcpKey, saveMcpSetting } from "@/integrations/mcp";
 import { klaviyoLists } from "@/integrations/klaviyo";
 import type { ActionResult } from "./actions";
 import { requireSession } from "./data";
@@ -18,6 +18,17 @@ export async function mcpDisconnect(id: string): Promise<ActionResult> {
   try {
     const r = await disconnectMcp(id);
     return done(r.revoked ? "Disconnected, and the server cancelled the sign-in. Agents can’t read it until you connect again." : `Disconnected here. ${r.note ?? ""}`.trim());
+  } catch (e) { return fail(e); }
+}
+
+/** Locks a pasted key in the vault, after the service says whose it is. The key is never sent back. */
+export async function mcpSaveKey(id: string, key: string): Promise<ActionResult> {
+  await requireSession();
+  if (!isMcpId(id)) return { ok: false, text: "Unknown connection." };
+  if (typeof key !== "string" || key.length > 300) return { ok: false, text: "That isn’t a key." };
+  try {
+    const who = await saveMcpKey(id, key);
+    return done(`Key locked in the vault. It belongs to “${who.name}”${who.workspace ? ` in ${who.workspace}` : ""}. Agents see only the pages shared with it.`);
   } catch (e) { return fail(e); }
 }
 

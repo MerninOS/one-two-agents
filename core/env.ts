@@ -35,7 +35,6 @@ export const env = {
   mercuryAccountIds: (v("MERCURY_ACCOUNT_IDS") ?? "").split(",").map((s) => s.trim()).filter(Boolean),
 
   // Notion internal integration, shared only with the page briefs and lead lists go under.
-  notionToken: v("NOTION_TOKEN"),
   notionBriefParent: v("NOTION_BRIEF_PARENT_ID"),
   // Each agent's own page for its run pages. Blank = they go under NOTION_BRIEF_PARENT_ID, as before.
   notionLeadsParent: v("NOTION_LEADS_PARENT_ID") ?? v("NOTION_BRIEF_PARENT_ID"),

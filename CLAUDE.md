@@ -47,7 +47,10 @@ or publish action type is built, so no agent gets one of those integrations: dra
 - Numbers (money, margins, days of cover, mileage) are computed in code, not by a model.
 - MCP servers (`core/mcp-rules.ts`) are called only by our runner, read tools only, each named in
   code; their write tools are never called (a write becomes a gateway action type). A new
-  integration uses MCP when a server exists and fits these rules.
+  integration uses MCP when a server exists and fits these rules; where the hosted server reaches
+  more than the profile needs, we run our own in the app (Notion, `integrations/notion-server.ts`).
+  Report tools (pages and rows in One Two's own Notion) exist only on our own servers and are
+  called by code after a run, like emails to Zak, never by a model.
 - Sign-ins live only in the token vault (`core/vault.ts`, key `MCP_SECRET_KEY`, never derived
   from another secret). Only `integrations/mcp.ts` and `core/gateway` import it (lint enforces it).
   Ask for the profile's scopes only. No token in a prompt, log, error or the browser

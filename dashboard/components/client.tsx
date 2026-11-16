@@ -234,3 +234,17 @@ export function LiveRefresher({ runs }: { runs: RecentRun[] }) {
   );
 }
 
+
+/** Pastes a key into the token vault. The field is a password field, cleared once the key is kept; the key is never shown back. */
+export function KeyForm({ label, save, replace }: { label: string; save: (key: string) => Promise<ActionResult>; replace?: boolean }) {
+  const [v, setV] = useState("");
+  return (
+    <span className="row wrap" style={{ gap: 8 }}>
+      <input className="input" type="password" autoComplete="off" spellCheck={false} value={v} onChange={(e) => setV(e.target.value)} placeholder="ntn_…" aria-label={label}
+        style={{ flex: "1 1 220px", minWidth: 0, background: "var(--card)", border: "1px solid var(--bd)", fontSize: 14 }} />
+      <ActionButton className={`btn ${replace ? "outline" : "dark"} sm`} disabled={!v.trim()} action={async () => { const r = await save(v); if (r.ok) setV(""); return r; }}>
+        {replace ? "Replace key" : "Lock key in the vault"}
+      </ActionButton>
+    </span>
+  );
+}
