@@ -44,16 +44,21 @@ function McpPanel({ c: base, id, v }: { c: Connection; id: McpId; v: McpView }) 
   const srv = MCP_SERVERS[id];
   const c = { ...base, name: srv.name };
   const writes = (srv.writeTools as readonly { tool: string }[]).map((w) => w.tool);
-  const oauth = srv.auth === "oauth";
+  // a Connect button (hosted servers and Google), or a pasted key; only hosted servers get the tool check
+  const oauth = srv.auth !== "token";
+  const hosted = srv.auth === "oauth";
+  const google = srv.auth === "google";
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
       <VaultNote v={v.vault} />
       {oauth && !srv.readTools.length
         ? <span className="ink2" style={{ fontSize: 12.5, lineHeight: 1.5 }}>Only the gateway uses this sign-in, after you approve: {writes.join(", ")}. Sign-in asks only for: {srv.scopes.join(", ")}.</span>
+        : google
+        ? <span className="ink2" style={{ fontSize: 12.5, lineHeight: 1.5 }}>Our own server, run in the app. Agents may read with: {srv.readTools.join(", ")}; it has no tool that drafts, sends, labels or deletes. Sign-in asks Google only for: {srv.scopes.join(", ")}, and is refused if Google grants anything else.</span>
         : oauth
         ? <span className="ink2" style={{ fontSize: 12.5, lineHeight: 1.5 }}>Code may call only these {srv.name} tools: {srv.readTools.join(", ")}. A tool the server adds later does nothing until it is named in code. Sign-in asks only for: {srv.scopes.join(", ")}.</span>
         : <span className="ink2" style={{ fontSize: 12.5, lineHeight: 1.5 }}>Agents may read with: {srv.readTools.join(", ")}. Code writes reports with: {srv.reportTools.join(", ")}; a model never calls those. The key reaches {srv.scopes.join(", ")}, and is locked in the vault, never shown again.</span>}
-      {oauth && s.connected && !s.paused && (
+      {hosted && s.connected && !s.paused && (
         <span className="muted" style={{ fontSize: 12.5 }}>
           {s.toolsCheckedAt ? `Tools checked ${when(s.toolsCheckedAt)}: all ${s.toolsSeen.length} are there with the inputs code expects. If one changes, ${c.name} pauses until you sign in again.` : "Tools not checked yet: the next agent call checks them first."}
         </span>
@@ -66,8 +71,13 @@ function McpPanel({ c: base, id, v }: { c: Connection; id: McpId; v: McpView }) 
           {!oauth && <KeyForm label={`New ${c.name} key`} save={mcpSaveKey.bind(null, id)} replace />}
           <span className="row wrap" style={{ gap: 8 }}>
             {oauth && <a className="btn outline sm" href={`/connections/${id}/connect`}>Sign in again</a>}
-            <ActionButton className="btn outline sm" action={mcpDisconnect.bind(null, id)} confirm={{ title: `Disconnect ${c.name}?`, body: oauth ? `${c.name} is asked to cancel the sign-in, and it is forgotten here. Agents that read it get an error until you connect again.` : `The key is forgotten here. Agents and reports that use ${c.name} get an error until you paste a key again.`, confirmLabel: "Disconnect", kind: "danger" }}>Disconnect</ActionButton>
+            <ActionButton className="btn outline sm" action={mcpDisconnect.bind(null, id)} confirm={{ title: `Disconnect ${c.name}?`, body: google ? `Google is asked to cancel the sign-in, and it is forgotten here. Google may cancel the other Gmail sign-in too (both use the same app); if it shows Paused, tap Sign in again there.` : oauth ? `${c.name} is asked to cancel the sign-in, and it is forgotten here. Agents that read it get an error until you connect again.` : `The key is forgotten here. Agents and reports that use ${c.name} get an error until you paste a key again.`, confirmLabel: "Disconnect", kind: "danger" }}>Disconnect</ActionButton>
           </span>
+          {google && !s.paused && (
+            <span className="soft-box" style={{ fontSize: 12.5, lineHeight: 1.45 }}>
+              {s.settings.mailbox ? <>Signed in as <b>{s.settings.mailbox}</b>. If that isn’t One Two’s mailbox, tap Disconnect, then Connect again with the right Google account.</> : "Couldn’t read which mailbox this is."}
+            </span>
+          )}
           {id === "mercury" && !s.paused && (
             <span className="soft-box" style={{ fontSize: 12.5, lineHeight: 1.45 }}>
               {v.org ? <>Signed in to <b>{v.org}</b>. If that isn’t One Two’s business org, tap Disconnect, then Connect again and pick One Two on Mercury’s page.</> : `Couldn’t read which organization this is${v.orgProblem ? `: ${v.orgProblem}` : ""}.`}
@@ -91,7 +101,7 @@ function McpPanel({ c: base, id, v }: { c: Connection; id: McpId; v: McpView }) 
       ) : oauth ? (
         <span className="row wrap" style={{ gap: 8, alignItems: "center" }}>
           <a className="btn dark sm" href={`/connections/${id}/connect`}>Connect {c.name}</a>
-          <span className="muted" style={{ fontSize: 12 }}>Opens {c.name}’s own sign-in page. {srv.signInHint}</span>
+          <span className="muted" style={{ fontSize: 12 }}>Opens {google ? "Google" : c.name}’s own sign-in page. {srv.signInHint}</span>
         </span>
       ) : (
         <span style={{ display: "flex", flexDirection: "column", gap: 6 }}>

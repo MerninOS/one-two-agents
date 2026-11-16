@@ -12,7 +12,7 @@ import { hasMercury, mercuryCategories, mercuryTransaction } from "@/integration
 import { attachReceipt, hasMercuryWrite } from "@/integrations/mercury-write";
 import { callWriteTool, mcpStatus } from "@/integrations/mcp";
 import { chicagoDate, offsetOn } from "@/core/time";
-import { createDraft, hasGmail } from "@/integrations/gmail";
+import { hasGmail } from "@/integrations/gmail";
 import { ANNOTATE, CAP_KEYS, DRAFT_EMAIL, MAX_RECEIPT_BYTES, RECEIPT_TYPES, TOOLS, effectiveCap, planIsEmpty, planWrite, receiptPathOk, refuseDraftTo, refuseProposal, type AnnotateArgs, type CapKey, type DraftArgs, type ToolName } from "./policy";
 
 export { ANNOTATE, DRAFT_EMAIL } from "./policy";
@@ -327,7 +327,7 @@ async function approvedOf(tool: string, ids?: string[]) {
 async function applyDrafts(ids?: string[]) {
   const rows = await approvedOf(DRAFT_EMAIL, ids);
   if (!rows.length) return null;
-  if (!hasGmail()) return { ok: true, text: "Approved, not in Gmail yet: Gmail isn't connected (GMAIL_CLIENT_ID, GMAIL_CLIENT_SECRET, GMAIL_REFRESH_TOKEN)." };
+  if (!(await hasGmail())) return { ok: true, text: "Approved, not in Gmail yet: the Gmail drafts sign-in isn't connected (Connections, Gmail)." };
   const cap = await numPolicy("max_gmail_drafts_per_run", 10);
   const byAgent = new Map<string, ActionRow[]>();
   for (const r of rows) byAgent.set(r.agent_id, [...(byAgent.get(r.agent_id) ?? []), r]);
@@ -344,6 +344,13 @@ async function applyDrafts(ids?: string[]) {
     texts.push(res.status === "skipped" ? `${agentId}: not applied (${res.summary}) Approved drafts are kept.` : res.summary);
   }
   return { ok, text: texts.join(" ") };
+}
+
+/** A plain-text draft through our Gmail server, on the gateway's own gmail.compose sign-in. Returns its draft id. */
+async function createDraft(to: string, subject: string, body: string): Promise<string> {
+  const out = (await callWriteTool("gmail", "gmail_create_draft", { to, subject, body })) as { draftId?: unknown };
+  if (typeof out?.draftId !== "string" || !out.draftId) throw new Error("Gmail didn't return a draft id");
+  return out.draftId;
 }
 
 async function applyDraft(a: ActionRow, runId: string) {

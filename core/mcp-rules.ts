@@ -19,9 +19,11 @@ export interface McpServer {
   /**
    * How it is signed in. "oauth": the server's own sign-in page (Connect). "token": a key pasted
    * once on Connections, for a server we run ourselves in the app (integrations/mcp.ts LOCAL), used
-   * where the service's hosted server would reach more than the profile needs.
+   * where the service's hosted server would reach more than the profile needs. "google": a server we
+   * run ourselves, signed in on Google's own page (Connect) with One Two's own Google OAuth client
+   * (GMAIL_CLIENT_ID and GMAIL_CLIENT_SECRET), asking for the profile's one scope only.
    */
-  auth: "oauth" | "token";
+  auth: "oauth" | "token" | "google";
   /** The server's address (for a token server, the API our own server calls), with read-only switches on where it has them. */
   url: string;
   /** The only tools code may call on it, by the server's own names. Read tools only. */
@@ -100,6 +102,35 @@ export const MCP_SERVERS = {
     writeTools: [],
     signInHint: "Paste the Internal Integration Secret of the agents’ Notion integration.",
   },
+  gmail_read: {
+    id: "gmail_read",
+    name: "Gmail (read only)",
+    // Our own server (integrations/gmail-server.ts) over Gmail's API. Google's Gmail MCP server is a
+    // preview program with no self-registration and no attachment download, which Quinn needs for
+    // receipt files (slice 6). This sign-in is granted gmail.readonly alone: it can search and read,
+    // and Google refuses it anything that drafts, sends, labels or deletes.
+    auth: "google",
+    url: "https://gmail.googleapis.com/gmail/v1",
+    readTools: ["gmail_search", "gmail_message", "gmail_attachment"],
+    reportTools: [],
+    scopes: ["https://www.googleapis.com/auth/gmail.readonly"],
+    writeTools: [],
+    signInHint: "Sign in as the One Two mailbox the receipts come to, and leave the one box Google shows ticked.",
+  },
+  gmail: {
+    id: "gmail",
+    name: "Gmail drafts",
+    // A second Google sign-in, held only by the gateway: gmail.compose, used for one tool, a plain
+    // draft to the address on a lead's row after Zak approves. There is no send tool on our server,
+    // so a draft is only ever sent by Zak from Gmail.
+    auth: "google",
+    url: "https://gmail.googleapis.com/gmail/v1",
+    readTools: [],
+    reportTools: [],
+    scopes: ["https://www.googleapis.com/auth/gmail.compose"],
+    writeTools: [{ tool: "gmail_create_draft", actionType: "gmail.create_draft" }],
+    signInHint: "Sign in as the same One Two mailbox. Only the gateway uses this sign-in, to put an email you approved in Drafts; you send it from Gmail.",
+  },
 } as const satisfies Record<string, McpServer>;
 export type McpId = keyof typeof MCP_SERVERS;
 export const MCP_IDS = Object.keys(MCP_SERVERS) as McpId[];
@@ -123,8 +154,39 @@ export function mayReport(id: string, tool: string): boolean {
   return isMcpId(id) && MCP_SERVERS[id].auth === "token" && (MCP_SERVERS[id].reportTools as readonly string[]).includes(tool);
 }
 
-/** Servers signed in on their own page (Connect), and servers we run ourselves with a pasted key. */
+/** Hosted servers, signed in on their own page (Connect) with dynamic client registration. */
 export const isOauth = (id: McpId) => MCP_SERVERS[id].auth === "oauth";
+/** Servers we run ourselves, signed in on Google's page with our own OAuth client. */
+export const isGoogle = (id: McpId) => MCP_SERVERS[id].auth === "google";
+/** Signed in with a Connect button (hosted or Google), not a pasted key. */
+export const usesConnect = (id: McpId) => MCP_SERVERS[id].auth !== "token";
+
+/** Google's fixed sign-in addresses (no discovery, no self-registration: our own OAuth client). */
+export const GOOGLE_AUTH: AuthServer = {
+  authorization_endpoint: "https://accounts.google.com/o/oauth2/v2/auth",
+  token_endpoint: "https://oauth2.googleapis.com/token",
+  revocation_endpoint: "https://oauth2.googleapis.com/revoke",
+};
+
+/** The scopes a token reply says were granted, or null when it doesn't say. */
+export function grantedScopes(j: unknown): string[] | null {
+  const s = obj(j).scope;
+  return typeof s === "string" ? s.split(/\s+/).filter(Boolean) : null;
+}
+
+/**
+ * Why a sign-in's granted scopes aren't the profile's, or null when they match. Google lets the
+ * person untick a box, and an OAuth client can carry older grants, so both ways are refused: a
+ * missing scope (the tools wouldn't work) and an extra one (more reach than the profile needs).
+ */
+export function scopeProblem(granted: readonly string[] | null, wanted: readonly string[]): string | null {
+  if (!granted) return "the sign-in didn't say what it was granted";
+  const extra = granted.filter((g) => !wanted.includes(g));
+  const missing = wanted.filter((w) => !granted.includes(w));
+  if (missing.length) return `the sign-in wasn't granted ${missing.join(", ")} (leave the box ticked on Google's page)`;
+  if (extra.length) return `the sign-in was granted more than it needs (${extra.join(", ")})`;
+  return null;
+}
 
 export const MCP_PROTOCOL = "2025-06-18";
 
@@ -267,7 +329,7 @@ export function readAuthServer(j: unknown): AuthServer | null {
 }
 
 /** The address Zak's browser goes to, to say yes on the server's own sign-in page. */
-export function authorizeUrl(a: AuthServer, o: { clientId: string; redirectUri: string; challenge: string; state: string; resource: string; scope?: string }): string {
+export function authorizeUrl(a: AuthServer, o: { clientId: string; redirectUri: string; challenge: string; state: string; resource?: string; scope?: string; extra?: Record<string, string> }): string {
   const u = new URL(a.authorization_endpoint);
   u.searchParams.set("response_type", "code");
   u.searchParams.set("client_id", o.clientId);
@@ -275,8 +337,9 @@ export function authorizeUrl(a: AuthServer, o: { clientId: string; redirectUri: 
   u.searchParams.set("code_challenge", o.challenge);
   u.searchParams.set("code_challenge_method", "S256");
   u.searchParams.set("state", o.state);
-  u.searchParams.set("resource", o.resource);
+  if (o.resource) u.searchParams.set("resource", o.resource);
   if (o.scope) u.searchParams.set("scope", o.scope);
+  for (const [k, v] of Object.entries(o.extra ?? {})) u.searchParams.set(k, v);
   return u.toString();
 }
 

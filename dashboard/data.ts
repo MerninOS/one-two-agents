@@ -96,8 +96,9 @@ export function health(): Record<IntegrationId, boolean> {
     // signed in on Connections (its key in the vault): getFloor reads mcp_connections
     notion: false,
     email: !!(env.resendKey && env.briefFrom && env.briefTo),
-    gmail: !!(env.gmailClientId && env.gmailClientSecret && env.gmailRefreshToken),
-    gmail_read: !!(env.gmailClientId && env.gmailClientSecret && env.gmailReceiptsRefreshToken),
+    // both Gmail sign-ins (read only, drafts) are made on Connections: getFloor reads mcp_connections
+    gmail: false,
+    gmail_read: false,
     // web search runs through the Claude API key
     web: !!process.env.ANTHROPIC_API_KEY,
     // planned for the Conversion Optimizer; nothing uses it yet

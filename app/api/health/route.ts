@@ -4,6 +4,8 @@ import { env } from "@/core/env";
 import { cronAuthorized } from "@/core/runs";
 import { notionConnected } from "@/integrations/notion";
 import { hasMercury } from "@/integrations/mercury";
+import { hasGmail } from "@/integrations/gmail";
+import { hasGmailRead } from "@/integrations/gmail-read";
 
 // Which settings are present and whether Supabase answers. Never returns a secret's value.
 export async function GET(req: Request) {
@@ -15,7 +17,8 @@ export async function GET(req: Request) {
     mercury: !!env.mercuryAccountIds.length && (await hasMercury()),
     notion: !!env.notionBriefParent && (await notionConnected()),
     email: !!(env.resendKey && env.briefFrom && env.briefTo),
-    gmail: !!(env.gmailClientId && env.gmailClientSecret && env.gmailRefreshToken),
+    gmail: await hasGmail(),
+    gmail_read: await hasGmailRead(),
   };
   let agents: { id: string; enabled: boolean }[] | string = "not checked";
   if (set.supabase) {

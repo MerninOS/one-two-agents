@@ -222,7 +222,7 @@ export async function syncBooks(runId: string | undefined, opts: { notionParent?
   if (error) throw new Error(`Could not read expense_docs (is the bookkeeper migration applied?): ${error.message}`);
   const existing = new Map(((existingRows ?? []) as Doc[]).map((d) => [d.mercury_txn_id, d]));
   const charges = txns.filter((t) => t.amount < 0 && t.postedAt);
-  const gmailReady = hasGmailRead();
+  const gmailReady = await hasGmailRead();
 
   const fresh: Doc[] = [];
   const touched = new Map<string, Doc>(); // existing rows that changed, by txn id

@@ -6,10 +6,11 @@ import { join } from "node:path";
 import { CTX_META, callThrough, createHost, listThrough, served } from "../core/tools/mcp-host";
 import type { ToolDef } from "../core/tools/types";
 import { checkNotionArgs, looksLikeNotionKey, notionPageId } from "../core/notion-blocks";
+import { checkGmailArgs, draftRaw, isPlainAddress, readMail } from "../core/gmail-rules";
 import { cashOf, readAccounts, readCategories, readOneTxn, readOrgName, readTxnPage } from "../core/mercury-rules";
 import { LEGACY_ID, keyIdOf, legacyKey, open, seal, vaultKey } from "../core/vault";
 import {
-  type McpServer, MCP_EVENTS, MCP_SERVERS, checkTools, listedTools, toolCheckNote, toolFingerprint, pickScopes, mayReport, isOauth, mayWrite, checkedTools, scrubSecrets, authorizeUrl, discoveryUrls, listSize, mayCall, namedRows, needsRefresh, nextCursor, parseRpc, readAuthServer, readTokens, reportRows, reportTotals, resourceOf, toolPayload,
+  type McpServer, GOOGLE_AUTH, MCP_EVENTS, MCP_SERVERS, grantedScopes, isGoogle, scopeProblem, usesConnect, checkTools, listedTools, toolCheckNote, toolFingerprint, pickScopes, mayReport, isOauth, mayWrite, checkedTools, scrubSecrets, authorizeUrl, discoveryUrls, listSize, mayCall, namedRows, needsRefresh, nextCursor, parseRpc, readAuthServer, readTokens, reportRows, reportTotals, resourceOf, toolPayload,
 } from "../core/mcp-rules";
 
 // only named read tools, never a write; the server's own read-only switch is on
@@ -200,6 +201,59 @@ assert.ok(!mayWrite("mercury", "updateTransaction"), "the agents' read sign-in h
 assert.deepEqual(checkedTools("mercury_write"), ["updateTransaction"], "the tool check watches the write tool too");
 for (const srv of Object.values(MCP_SERVERS) as McpServer[]) for (const sc of srv.scopes) assert.ok(!/transfers|transactions:request|reimbursements|budgets|receipts/.test(sc), `${srv.id} never asks for ${sc}`);
 
+// ---- Gmail on our own server, signed in with Google (slice 6)
+const RO = "https://www.googleapis.com/auth/gmail.readonly", COMPOSE = "https://www.googleapis.com/auth/gmail.compose";
+assert.ok(isGoogle("gmail_read") && isGoogle("gmail") && usesConnect("gmail") && !isOauth("gmail") && !usesConnect("notion"));
+assert.deepEqual([...MCP_SERVERS.gmail_read.scopes], [RO], "the read sign-in is granted gmail.readonly alone");
+assert.deepEqual([...MCP_SERVERS.gmail.scopes], [COMPOSE], "the drafts sign-in is granted gmail.compose alone");
+assert.deepEqual(MCP_SERVERS.gmail_read.writeTools, [], "the read sign-in has no write tools");
+assert.deepEqual(MCP_SERVERS.gmail.readTools, [], "the drafts sign-in reads nothing");
+assert.deepEqual(checkedTools("gmail_read"), ["gmail_search", "gmail_message", "gmail_attachment"], "what our server serves to the read sign-in");
+assert.deepEqual(checkedTools("gmail"), ["gmail_create_draft"], "what our server serves to the drafts sign-in");
+assert.ok(mayWrite("gmail", "gmail_create_draft") && !mayCall("gmail", "gmail_create_draft") && !mayWrite("gmail_read", "gmail_create_draft"));
+for (const srv of Object.values(MCP_SERVERS) as McpServer[]) for (const t of [...srv.readTools, ...srv.writeTools.map((w) => w.tool)]) assert.ok(!/send|trash|delete|modify|label|forward|reply/i.test(t), `no ${t}`);
+for (const srv of Object.values(MCP_SERVERS) as McpServer[]) for (const sc of srv.scopes) assert.ok(!/mail\.google\.com|gmail\.send|gmail\.modify|gmail\.insert|gmail\.labels|gmail\.settings/.test(sc), `${srv.id} never asks for ${sc}`);
+// Gmail's API: only our server calls it, and it has no send, trash, delete, modify or label call
+const gapi = readFileSync("integrations/gmail-api.ts", "utf8");
+assert.ok(!/\/send|\/trash|\/modify|\/labels|\/batchDelete|\/batchModify|"DELETE"|"PUT"|"PATCH"|\/import|\/insert/.test(gapi), "gmail-api.ts only searches, reads and drafts");
+// Google sign-in: fixed addresses, our own client, no RFC 8707 resource, the scope granted is checked both ways
+const gurl = new URL(authorizeUrl(GOOGLE_AUTH, { clientId: "cid", redirectUri: "https://x.example/connections/gmail/callback", challenge: "ch", state: "st", scope: COMPOSE, extra: { access_type: "offline", prompt: "consent" } }));
+assert.equal(gurl.origin + gurl.pathname, "https://accounts.google.com/o/oauth2/v2/auth");
+assert.deepEqual([gurl.searchParams.get("resource"), gurl.searchParams.get("scope"), gurl.searchParams.get("access_type"), gurl.searchParams.get("code_challenge_method")], [null, COMPOSE, "offline", "S256"]);
+assert.deepEqual(grantedScopes({ scope: `${RO}  openid` }), [RO, "openid"]);
+assert.equal(grantedScopes({}), null);
+assert.equal(scopeProblem([RO], [RO]), null);
+assert.match(scopeProblem([RO, COMPOSE], [RO]) ?? "", /more than it needs/, "an older grant riding along is refused");
+assert.match(scopeProblem([], [RO]) ?? "", /wasn't granted/, "an unticked box is refused");
+assert.match(scopeProblem(null, [RO]) ?? "", /didn't say/);
+// every Gmail tool input is checked before it reaches a URL or a draft
+assert.deepEqual(checkGmailArgs("gmail_search", { q: "$12.50 after:2026/11/01" }), { tool: "gmail_search", q: "$12.50 after:2026/11/01", max: 3 });
+assert.deepEqual(checkGmailArgs("gmail_message", { id: "18c2a9f0e1b2c3d4" }), { tool: "gmail_message", id: "18c2a9f0e1b2c3d4", maxChars: 6000 });
+for (const [tool, args, why] of [
+  ["gmail_search", { q: "" }, /q must/],
+  ["gmail_search", { q: "x", max: 500 }, /max/],
+  ["gmail_message", { id: "../../drafts" }, /id must/],
+  ["gmail_attachment", { messageId: "18c2a9f0e1b2", attachmentId: "a/b" }, /attachmentId/],
+  ["gmail_create_draft", { to: "a@b.co, c@d.co", subject: "Hi", body: "x" }, /one plain/],
+  ["gmail_create_draft", { to: "Zak <a@b.co>", subject: "Hi", body: "x" }, /one plain/],
+  ["gmail_create_draft", { to: "a@b.co\r\nBcc: c@d.co", subject: "Hi", body: "x" }, /one plain/],
+  ["gmail_create_draft", { to: "a@b.co", subject: " ", body: "x" }, /subject/],
+  ["gmail_send", { to: "a@b.co" }, /isn't a Gmail tool/],
+] as const) { const r = checkGmailArgs(tool, args); assert.ok("problem" in r && why.test(r.problem), `${tool} ${JSON.stringify(args)}`); }
+const dr = checkGmailArgs("gmail_create_draft", { to: " lead@cafe.com ", subject: "Hello\r\nBcc: x@y.z", body: "Hi there" });
+assert.ok(!("problem" in dr) && dr.tool === "gmail_create_draft" && dr.to === "lead@cafe.com" && !/[\r\n]/.test(dr.subject), "a subject can't add a header");
+assert.ok(isPlainAddress("o'neil+wholesale@cafe.co.uk") && !isPlainAddress("a@b") && !isPlainAddress("a b@c.com"));
+const mime = Buffer.from(draftRaw("lead@cafe.com", "Café ☕", "Hello"), "base64url").toString("utf8");
+assert.match(mime, /^To: lead@cafe\.com\r\nSubject: =\?UTF-8\?B\?/);
+assert.equal(mime.split("\r\n").filter((l) => /^(To|Cc|Bcc):/i.test(l)).length, 1, "one recipient header");
+assert.throws(() => draftRaw("a@b.co, c@d.co", "x", "y"));
+const b = (t: string) => Buffer.from(t).toString("base64url");
+const mail = readMail({ id: "m1", payload: { headers: [{ name: "From", value: "Shop <r@shop.com>" }, { name: "Subject", value: "Your receipt" }], parts: [
+  { mimeType: "text/html", body: { data: b("<p>Total &#36;12.50</p><script>x()</script>") } },
+  { mimeType: "application/pdf", filename: "receipt.pdf", body: { attachmentId: "att123456", size: 2048 } },
+] } }, 6000);
+assert.deepEqual([mail.from, mail.subject, mail.text.trim(), mail.attachments], ["Shop <r@shop.com>", "Your receipt", "Total $12.50", [{ id: "att123456", filename: "receipt.pdf", mimeType: "application/pdf", size: 2048 }]]);
+
 // ---- the in-app MCP server (slice 1): every read and calculate call goes through it
 const hostChecks = (async () => {
   const seen: unknown[] = [];
@@ -237,5 +291,9 @@ assert.deepEqual(direct, [], "call tools through core/tools/call.ts");
 // only the gateway calls a write tool
 const writers = ["core", "agents", "dashboard", "app", "integrations", "scripts"].flatMap(files).filter((f) => !f.includes("core/gateway/") && !f.endsWith("integrations/mcp.ts") && !f.endsWith("scripts/check-mcp.ts") && /import[^;]*\bcallWriteTool\b[^;]*from/.test(readFileSync(f, "utf8")));
 assert.deepEqual(writers, [], "callWriteTool is for core/gateway only");
+// only our Gmail server imports Gmail's API, and only the MCP client imports our Gmail server
+const importers = (mod: string) => ["core", "agents", "dashboard", "app", "integrations"].flatMap(files).filter((f) => new RegExp(`from "[^"]*/${mod}"`).test(readFileSync(f, "utf8")));
+assert.deepEqual(importers("gmail-api"), ["integrations/gmail-server.ts"]);
+assert.deepEqual(importers("gmail-server"), ["integrations/mcp.ts"]);
 
 hostChecks.then(() => console.log("mcp: ok"), (e) => { console.error(e); process.exit(1); });
