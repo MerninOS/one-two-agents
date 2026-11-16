@@ -217,8 +217,8 @@ export async function retry(actionId: string) {
 // ---- Execution
 
 /** Why approved actions can't be written to Mercury right now, or null. (agents.enabled is checked by withRun.) */
-export function writeBlocker(): string | null {
-  if (!hasMercury()) return "MERCURY_API_TOKEN isn't set, so the gateway can't re-check transactions.";
+export async function writeBlocker(): Promise<string | null> {
+  if (!(await hasMercury())) return "Mercury isn't connected on Connections, so the gateway can't re-check transactions.";
   if (!hasMercuryWrite()) return "MERCURY_WRITE_TOKEN isn't set, so approved changes wait here.";
   return null;
 }
@@ -353,7 +353,7 @@ async function applyDraft(a: ActionRow, runId: string) {
 async function applyMercury(ids?: string[]) {
   const rows = await approvedOf(ANNOTATE, ids);
   if (!rows.length) return null;
-  const blocked = writeBlocker();
+  const blocked = await writeBlocker();
   if (blocked) return { ok: true, text: `Approved, not in Mercury yet: ${blocked}` };
   const cap = await numPolicy("max_mercury_writes_per_run", 20);
   const byAgent = new Map<string, ActionRow[]>();

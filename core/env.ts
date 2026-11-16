@@ -26,7 +26,6 @@ export const env = {
   shopifyStockCollection: v("SHOPIFY_STOCK_COLLECTION") || "our-coffees",
 
   // Mercury read-only token (business org). Agents never move money.
-  mercuryToken: v("MERCURY_API_TOKEN"),
   // "all" (every non-credit account the token sees) or comma-separated account IDs; blank = cash not reported.
   // A second Mercury token used only by the tool gateway (core/gateway) to apply approved
   // receipt, category and memo changes on existing transactions. Blank = approvals are

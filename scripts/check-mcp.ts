@@ -6,6 +6,7 @@ import { join } from "node:path";
 import { CTX_META, callThrough, createHost, listThrough, served } from "../core/tools/mcp-host";
 import type { ToolDef } from "../core/tools/types";
 import { checkNotionArgs, looksLikeNotionKey, notionPageId } from "../core/notion-blocks";
+import { cashOf, readAccounts, readCategories, readOneTxn, readOrgName, readTxnPage } from "../core/mercury-rules";
 import { LEGACY_ID, keyIdOf, legacyKey, open, seal, vaultKey } from "../core/vault";
 import {
   type McpServer, MCP_EVENTS, MCP_SERVERS, checkTools, listedTools, toolCheckNote, toolFingerprint, pickScopes, mayReport, isOauth, scrubSecrets, authorizeUrl, discoveryUrls, listSize, mayCall, namedRows, needsRefresh, nextCursor, parseRpc, readAuthServer, readTokens, reportRows, reportTotals, resourceOf, toolPayload,
@@ -160,6 +161,35 @@ assert.ok(!("problem" in many) && many.tool === "notion_create_page" && many.chi
 assert.ok(looksLikeNotionKey("ntn_" + "a1".repeat(20)) && looksLikeNotionKey("secret_" + "Z9".repeat(20)));
 assert.ok(!looksLikeNotionKey("ntn_short") && !looksLikeNotionKey("Bearer ntn_" + "a".repeat(40)) && !looksLikeNotionKey("sk-" + "a".repeat(40)));
 assert.equal(notionPageId("https://www.notion.so/Start-here-415de33089c181fd92e3e770578cc707?pvs=4"), "415de33089c181fd92e3e770578cc707");
+
+// ---- Mercury over MCP (slice 5)
+assert.deepEqual([...MCP_SERVERS.mercury.scopes], ["read", "offline_access"], "the agents' Mercury sign-in asks for read only");
+assert.equal(MCP_SERVERS.mercury.auth, "oauth");
+for (const t of MCP_SERVERS.mercury.readTools) assert.match(t, /^(get|list)[A-Z]/, t);
+for (const bad of ["requestSendMoney", "requestTransferMoney", "approveReimbursement", "updateTransaction", "matchReceipt", "createCategory"]) assert.ok(!mayCall("mercury", bad), `never ${bad}`);
+const accts = readAccounts({ accounts: [
+  { id: "a1", availableBalance: 1000.105, status: "active", kind: "checking" },
+  { id: "a2", availableBalance: "250.5", status: "active", kind: "savings" },
+  { id: "c1", availableBalance: -300, status: "active", kind: "creditCard", isCredit: true },
+  { id: "x1", availableBalance: 99, status: "archived" },
+  { id: "bad", availableBalance: "n/a", status: "active" },
+] });
+assert.deepEqual(accts.map((a) => a.id), ["a1", "a2", "c1", "x1"], "a balance that isn't a number is dropped, not zero");
+assert.equal(cashOf(accts, ["all"]), 1250.61);
+assert.equal(cashOf(accts, ["a2"]), 250.5);
+assert.throws(() => cashOf(accts, ["a1", "gone"]), /not found/);
+const tid = (n: number) => `00000000-0000-4000-8000-${String(n).padStart(12, "0")}`;
+const pg = readTxnPage({ transactions: [{ id: tid(1), amount: -12.5, status: "sent", postedAt: "2026-11-02", categoryData: { id: "c", name: "Coffee" } }, { id: tid(2), amount: "oops", status: "sent" }, { amount: 5 }], page: { nextPage: tid(1) } });
+assert.equal(pg.transactions.length, 1);
+assert.deepEqual([pg.next, pg.truncatedAt, pg.datesDropped, pg.transactions[0].categoryData?.name], [tid(1), null, false, "Coffee"]);
+assert.equal(readTxnPage({ transactions: [], truncatedAt: 120, totalFetched: 300 }).truncatedAt, 120, "a cut page says how many to ask for");
+assert.equal(readTxnPage({ transactions: [], truncatedAt: 300, totalFetched: 300 }).truncatedAt, null);
+assert.equal(readTxnPage({ transactions: [{ id: tid(3), amount: 1, status: "sent" }], _retryNote: "dates dropped" }).datesDropped, true, "rows outside the asked dates are noticed");
+assert.equal(readTxnPage({ transactions: [], page: { nextPage: "not-a-cursor" } }).next, null);
+assert.equal(readOneTxn({ transaction: { id: tid(4), amount: -3, status: "sent" } })?.id, tid(4));
+assert.equal(readOneTxn({ id: tid(5), amount: -3, status: "sent" })?.id, tid(5));
+assert.deepEqual(readCategories({ categories: [{ id: "k1", name: "Green coffee" }, { id: "k2" }] }).categories, [{ id: "k1", name: "Green coffee" }]);
+assert.equal(readOrgName({ organization: { legalBusinessName: "One Two Coffee Lab LLC", ein: "12-3456789" } }), "One Two Coffee Lab LLC");
 
 // ---- the in-app MCP server (slice 1): every read and calculate call goes through it
 const hostChecks = (async () => {

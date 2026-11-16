@@ -36,9 +36,9 @@ export const CONNECTIONS: Connection[] = [
     checks: [{ key: "shopify", label: "Store", setup: "Needs SHOPIFY_STORE_DOMAIN and the read-only app’s token (or its client id and secret)." }],
   },
   {
-    id: "mercury", name: "Mercury", sub: "Bank", icon: "landmark", builtIn: false,
-    about: "A read-only token for balances, charges and categories. A second token, held only by the gateway, writes a receipt, category or memo on an existing charge after you approve. Nothing can move money yet.",
-    checks: [{ key: "mercury", label: "Bank", setup: "Needs MERCURY_API_TOKEN and MERCURY_ACCOUNT_IDS (all, or a comma list)." }],
+    id: "mercury", name: "Mercury", sub: "Bank", icon: "landmark", builtIn: false, mcp: "mercury",
+    about: "Mercury’s own MCP server, signed in with the read scope only, so this sign-in can’t use any tool that changes Mercury or moves money. Code may call only the read tools named in code (accounts, charges, categories). Sums are worked out in code. A separate token, held only by the gateway, writes a receipt, category or memo on an existing charge after you approve.",
+    checks: [{ key: "mercury", label: "Bank", setup: "Tap Connect and sign in to Mercury, picking One Two’s business org. Set MERCURY_ACCOUNT_IDS (all, or a comma list) for the cash number." }],
   },
   {
     id: "gmail", name: "Gmail", sub: "Receipts in, drafts out", icon: "mail", builtIn: false,
