@@ -1,7 +1,9 @@
 // MCP connection rules (docs/company-mode.md, slice 6): `npm run check:mcp`. Pure: no network.
 import assert from "node:assert/strict";
+import { createCipheriv, createHash, randomBytes } from "node:crypto";
+import { LEGACY_ID, keyIdOf, legacyKey, open, seal, vaultKey } from "../core/vault";
 import {
-  MCP_SERVERS, authorizeUrl, discoveryUrls, listSize, mayCall, namedRows, needsRefresh, nextCursor, parseRpc, readAuthServer, readTokens, reportRows, reportTotals, resourceOf, toolPayload,
+  MCP_EVENTS, MCP_SERVERS, pickScopes, scrubSecrets, authorizeUrl, discoveryUrls, listSize, mayCall, namedRows, needsRefresh, nextCursor, parseRpc, readAuthServer, readTokens, reportRows, reportTotals, resourceOf, toolPayload,
 } from "../core/mcp-rules";
 
 // only named read tools, never a write; the server's own read-only switch is on
@@ -64,5 +66,48 @@ assert.equal(readTokens({ access_token: "b", expires_in: 60 }, 0, "keep")!.refre
 assert.equal(readTokens({ token_type: "bearer" }, 0), null);
 assert.ok(needsRefresh(tok, 1000 + 3_600_000 - 30_000));
 assert.ok(!needsRefresh(tok, 1000));
+
+assert.equal(readTokens({ access_token: "c", refresh_token: "new", expires_in: 60 }, 0, "old")!.refreshToken, "new", "a rotated refresh token replaces the old one");
+
+// ---- the token vault (slice 2)
+const k1 = vaultKey("first-secret-that-is-long-enough-1234567890");
+const k2 = vaultKey("second-secret-that-is-long-enough-0987654321");
+assert.notEqual(k1.id, k2.id);
+assert.equal(vaultKey("first-secret-that-is-long-enough-1234567890").id, k1.id, "same secret, same id");
+const sealed = seal({ tokens: { accessToken: "tok-abc" } }, k1);
+assert.equal(keyIdOf(sealed), k1.id);
+assert.ok(!sealed.includes("tok-abc"), "nothing readable in a sealed value");
+assert.deepEqual(open(sealed, [k1]), { tokens: { accessToken: "tok-abc" } });
+assert.deepEqual(open(sealed, [k2, k1]), { tokens: { accessToken: "tok-abc" } }, "an old key still opens what it sealed");
+assert.equal(open(sealed, [k2]), null, "the wrong key opens nothing");
+const parts = sealed.split(".");
+parts[4] = Buffer.from("tampered").toString("base64url");
+assert.equal(open(parts.join("."), [k1]), null, "a changed value opens nothing");
+assert.equal(keyIdOf("not sealed"), null);
+assert.throws(() => seal({}, legacyKey("service-role")), /old key/);
+// slice 6 rows (iv.tag.body under the service-role key) still open, so they can be moved
+const lk = legacyKey("service-role-key");
+assert.deepEqual(lk.key, createHash("sha256").update("mcp-connections:v1:service-role-key").digest());
+const iv = randomBytes(12), c = createCipheriv("aes-256-gcm", lk.key, iv);
+const body = Buffer.concat([c.update(JSON.stringify({ a: 1 }), "utf8"), c.final()]);
+const old = [iv, c.getAuthTag(), body].map((b) => b.toString("base64url")).join(".");
+assert.equal(keyIdOf(old), LEGACY_ID);
+assert.deepEqual(open(old, [k1, lk]), { a: 1 });
+assert.equal(open(old, [k1]), null, "without the old key it stays shut");
+
+// scopes: only the profile's read scopes, never the server's whole list
+for (const s of MCP_SERVERS.klaviyo.scopes) assert.match(s, /:read$/, s);
+assert.equal(pickScopes(["lists:read", "flows:read"]).scope, "lists:read flows:read");
+assert.deepEqual(pickScopes(["lists:read", "flows:read"], ["lists:read", "lists:write", "profiles:write"]), { scope: "lists:read", missing: ["flows:read"] });
+assert.throws(() => pickScopes(["lists:read"], ["lists:write"]), /none of the scopes/);
+assert.equal(readAuthServer({ authorization_endpoint: "https://x.test/a", token_endpoint: "https://x.test/t", revocation_endpoint: "https://x.test/revoke" })!.revocation_endpoint, "https://x.test/revoke");
+assert.equal(readAuthServer({ authorization_endpoint: "https://x.test/a", token_endpoint: "https://x.test/t", revocation_endpoint: "http://x.test/revoke" })!.revocation_endpoint, undefined, "an http revoke address is ignored");
+
+// scrubbing: secrets never reach a saved error
+const leak = `401 {"error":"invalid","access_token":"eyJhbGciOi.abc","refresh_token":"rt_123456789"} Authorization: Bearer abcdefghijkl12 code=xyz789&state=s tok-plain-secret`;
+const clean = scrubSecrets(leak, ["tok-plain-secret", null, "short"]);
+for (const bad of ["eyJhbGciOi.abc", "rt_123456789", "abcdefghijkl12", "xyz789", "tok-plain-secret"]) assert.ok(!clean.includes(bad), bad);
+assert.ok(clean.includes("state=s") && clean.includes("401"), "the rest stays readable");
+assert.deepEqual([...MCP_EVENTS].sort(), ["connected", "disconnected", "refresh_failed", "refreshed", "refused", "resealed", "revoke_failed", "revoked"]);
 
 console.log("mcp: ok");
