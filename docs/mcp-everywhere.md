@@ -99,3 +99,30 @@ integration (Zak's choice, 2026-11-16).
   `notion-server.ts`. Everything else uses `integrations/notion.ts`.
 
 No migration.
+
+## Slice 5a: Mercury reads over Mercury's MCP server
+
+Mercury's hosted server (`https://mcp.mercury.com/mcp`) signs in with OAuth and dynamic client
+registration. Every write tool needs its own scope (`transactions:request`, `transactions:update`,
+`receipts:manage` and so on), and "a connection without a tool's required scope cannot use that write
+tool" (Mercury's MCP docs). So the agents' sign-in (`MCP_SERVERS.mercury`) asks for `read` and
+`offline_access` only. Even if code tried to call a write tool, that token can't use it, and
+`mayCall` names only five read tools: `getAccounts`, `listTransactions`, `listCategories`,
+`getTransactionById` and `getOrganization`.
+
+- `integrations/mercury.ts` keeps its exports (`mercuryCash`, `mercuryTransactions`,
+  `mercuryCategories`, `mercuryTransaction`) and calls the server through `callMcpTool`. The tool
+  check, pausing, refresh and the vault all work as they do for Klaviyo. `hasMercury()` is async
+  now, because it reads the sign-in row.
+- Replies are read in `core/mercury-rules.ts`, which is pure and tested. A row without an id or a
+  finite amount is dropped, never counted as $0. The server may cut a page (`truncatedAt`); the
+  same call is then asked again with that limit. If the server says it dropped the date filter
+  (`_retryNote`), those rows are not for the asked dates and are not used.
+- Connections shows which organization was signed in (`getOrganization`, name only), so a sign-in
+  to the household account is easy to spot.
+- `MERCURY_API_TOKEN` is gone from the code. `MERCURY_ACCOUNT_IDS` still picks the accounts that count
+  as cash.
+- Writes (receipt, category, memo) still go through the gateway with `MERCURY_WRITE_TOKEN`. Slice 5b
+  moves them to a second, gateway-only sign-in that asks only for the write scopes they need.
+
+No migration.

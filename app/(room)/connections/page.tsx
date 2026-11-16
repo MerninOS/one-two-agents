@@ -9,11 +9,12 @@ import { ActionButton, KeyForm } from "@/dashboard/components/client";
 import { MCP_SERVERS } from "@/core/mcp-rules";
 import { MCP_MISSING, VAULT_MISSING, mcpLog, mcpStatus, vaultState, type McpLogRow, type McpStatus, type VaultState } from "@/integrations/mcp";
 import { klaviyoLists } from "@/integrations/klaviyo";
+import { mercuryOrgName } from "@/integrations/mercury";
 import { klaviyoPickList, mcpDisconnect, mcpSaveKey, vaultReseal } from "@/dashboard/connectionActions";
 import { when } from "@/dashboard/format";
 
 /** An MCP connection's state for its panel: signed in or not, and Klaviyo's lists to pick the counted one from. */
-interface McpView { status: McpStatus | null; lists: { id: string; name: string }[] | null; listsProblem: string | null; log: McpLogRow[]; vault: VaultState | null }
+interface McpView { status: McpStatus | null; lists: { id: string; name: string }[] | null; listsProblem: string | null; log: McpLogRow[]; vault: VaultState | null; org?: string | null; orgProblem?: string | null }
 
 const EVENT_LABEL: Record<McpLogRow["event"], string> = {
   connected: "Connected", refreshed: "Sign-in renewed", refresh_failed: "Renewal failed, paused", refused: "Server refused the sign-in, paused",
@@ -64,6 +65,11 @@ function McpPanel({ c, v }: { c: Connection; v: McpView }) {
             {oauth && <a className="btn outline sm" href={`/connections/${id}/connect`}>Sign in again</a>}
             <ActionButton className="btn outline sm" action={mcpDisconnect.bind(null, id)} confirm={{ title: `Disconnect ${c.name}?`, body: oauth ? `${c.name} is asked to cancel the sign-in, and it is forgotten here. Agents that read it get an error until you connect again.` : `The key is forgotten here. Agents and reports that use ${c.name} get an error until you paste a key again.`, confirmLabel: "Disconnect", kind: "danger" }}>Disconnect</ActionButton>
           </span>
+          {id === "mercury" && !s.paused && (
+            <span className="soft-box" style={{ fontSize: 12.5, lineHeight: 1.45 }}>
+              {v.org ? <>Signed in to <b>{v.org}</b>. If that isn’t One Two’s business org, tap Disconnect, then Connect again and pick One Two on Mercury’s page.</> : `Couldn’t read which organization this is${v.orgProblem ? `: ${v.orgProblem}` : ""}.`}
+            </span>
+          )}
           {id === "klaviyo" && (
             <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
               <span style={{ display: "flex", flexDirection: "column", gap: 2 }}><span style={{ fontSize: 15, fontWeight: 700 }}>The email list a goal counts</span><span className="muted" style={{ fontSize: 12.5 }}>Email list size counts the profiles on this list.</span></span>
@@ -200,7 +206,11 @@ export default async function Connections({ searchParams }: { searchParams: Prom
     if (status?.connected && !status.paused && sel.mcp === "klaviyo") {
       try { lists = await klaviyoLists(); } catch (e) { listsProblem = (e instanceof Error ? e.message : String(e)).slice(0, 200); }
     }
-    mcp = { status, lists, listsProblem, log, vault };
+    let org: string | null = null, orgProblem: string | null = null;
+    if (status?.connected && !status.paused && sel.mcp === "mercury") {
+      try { org = await mercuryOrgName(); } catch (e) { orgProblem = (e instanceof Error ? e.message : String(e)).slice(0, 200); }
+    }
+    mcp = { status, lists, listsProblem, log, vault, org, orgProblem };
   }
   const outside = CONNECTIONS.filter((c) => !c.builtIn);
   const ok = outside.filter((c) => isSetUp(c, f.health)).length;

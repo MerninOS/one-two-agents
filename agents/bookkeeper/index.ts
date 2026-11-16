@@ -211,7 +211,7 @@ async function closeMonth(today: string, p: BookPolicies) {
  * what it did and what the receipt reads cost.
  */
 export async function syncBooks(runId: string | undefined, opts: { notionParent?: string } = {}): Promise<{ summary: string; tokensIn: number; tokensOut: number; costUsd: number }> {
-  if (!hasMercury()) throw new Error("MERCURY_API_TOKEN must be set (business org, read-only)");
+  if (!(await hasMercury())) throw new Error("Mercury isn’t connected: tap Connect on Connections → Mercury (One Two’s business org).");
   const today = chicagoDate(0);
   const start = chicagoDate(LOOKBACK_DAYS);
   const [p, txns, { data: existingRows, error }] = await Promise.all([

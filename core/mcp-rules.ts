@@ -57,6 +57,20 @@ export const MCP_SERVERS = {
     writeTools: [],
     signInHint: "Sign in as an Owner, Admin or Manager.",
   },
+  mercury: {
+    id: "mercury",
+    name: "Mercury",
+    // Mercury's hosted server (OAuth, dynamic client registration). Each write tool needs its own
+    // scope, so this sign-in asks for `read` only: its token can't use a write tool even if code tried
+    // (Mercury's MCP docs, 2026). Writes get a second, gateway-only sign-in in slice 5b.
+    auth: "oauth",
+    url: "https://mcp.mercury.com/mcp",
+    readTools: ["getAccounts", "listTransactions", "listCategories", "getTransactionById", "getOrganization"],
+    reportTools: [],
+    scopes: ["read", "offline_access"],
+    writeTools: [],
+    signInHint: "Sign in as an admin of One Two’s business org, and pick One Two (not the household account) on Mercury’s page.",
+  },
   notion: {
     id: "notion",
     name: "Notion",

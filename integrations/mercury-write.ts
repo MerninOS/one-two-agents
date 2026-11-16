@@ -5,7 +5,7 @@ import "server-only";
 // creates, cancels or moves money is here, and none may be added.
 //
 // It uses its own token, MERCURY_WRITE_TOKEN (a Custom token with only the transaction
-// write scope), so the read-only MERCURY_API_TOKEN the agents use stays read-only.
+// write scope), so the agents' Mercury sign-in (read scope only, on Connections) stays read-only.
 import { env } from "@/core/env";
 
 const BASE = "https://api.mercury.com/api/v1";

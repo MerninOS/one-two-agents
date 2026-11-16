@@ -77,7 +77,7 @@ export default async function Approvals({ searchParams }: { searchParams: Promis
   const inDept = (i: ApprovalItem) => !dept || (dept === "none" ? !i.department_id : i.department_id === dept);
   const view = all && { ...all, pending: all.pending.filter(inDept), withLead: all.withLead.filter(inDept), waiting: all.waiting.filter(inDept), decided: all.decided.filter(inDept) };
   const controls = controlsOn();
-  const blocker = !controls ? "DASHBOARD_CONTROLS is off" : writeBlocker();
+  const blocker = !controls ? "DASHBOARD_CONTROLS is off" : await writeBlocker();
   const quinnOn = !!f.agents.bookkeeper?.enabled;
   const live = !blocker && quinnOn;
   // what a Reject with words can save to or replace, per agent with a card waiting

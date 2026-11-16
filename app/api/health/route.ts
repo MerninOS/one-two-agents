@@ -3,6 +3,7 @@ import { db } from "@/core/db";
 import { env } from "@/core/env";
 import { cronAuthorized } from "@/core/runs";
 import { notionConnected } from "@/integrations/notion";
+import { hasMercury } from "@/integrations/mercury";
 
 // Which settings are present and whether Supabase answers. Never returns a secret's value.
 export async function GET(req: Request) {
@@ -11,7 +12,7 @@ export async function GET(req: Request) {
     supabase: !!(env.supabaseUrl && env.supabaseServiceKey),
     shopify: !!(env.shopifyDomain && (env.shopifyAdminToken || (env.shopifyClientId && env.shopifyClientSecret))),
     anthropic: !!process.env.ANTHROPIC_API_KEY,
-    mercury: !!(env.mercuryToken && env.mercuryAccountIds.length),
+    mercury: !!env.mercuryAccountIds.length && (await hasMercury()),
     notion: !!env.notionBriefParent && (await notionConnected()),
     email: !!(env.resendKey && env.briefFrom && env.briefTo),
     gmail: !!(env.gmailClientId && env.gmailClientSecret && env.gmailRefreshToken),
