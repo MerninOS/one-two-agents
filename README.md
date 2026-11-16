@@ -55,7 +55,7 @@ matrix and integrations, built from the Claude Design file "Agent Control Room".
   `DASHBOARD_CONTROLS=on`. Real runs go through `withRun`, so they respect `enabled` and budgets.
 - Every agent is data: a row in `agents` (role, avatar, runs only by hand) and its live saved version (see docs/agent-roster.md). `dashboard/crew.ts` holds only the planned seats and the hard rules.
 - Approvals (`/approvals`): Quinn's proposed Mercury changes, one card per charge, plus the gateway log.
-  Approving writes to Mercury only when `MERCURY_WRITE_TOKEN` is set, `DASHBOARD_CONTROLS=on` and
+  Approving writes to Mercury only when the gateway's Mercury sign-ins are connected (Connections), `DASHBOARD_CONTROLS=on` and
   Quinn is on duty; otherwise the approval is kept and applied later. See `core/gateway/README.md`.
 - Agent map: what an agent reads, how it thinks, what it hands you and who uses its result, drawn from its saved spec; on its builder page (tap a box to change that step), on its profile and on each run replay with the run laid over it. See `docs/builder-flow.md`, slice 3.
 - Agent builder (New agent on Crew, or an agent's Edit tab): build or edit an agent one question at a time (the job, Connections, what it hands you, brain and budget), see `docs/builder-flow.md`. Each agent is a saved spec that runs on one shared engine; new agents start off duty.
@@ -70,7 +70,7 @@ app/api/health/           settings present + Supabase reachable
 dashboard/                Control Room data, actions, session and components
 agents/                   registry.ts (every agent with a live version can run) and the code the engine's tools call (see agents/README.md)
 core/                     the runner and agent specs for agents built in the app, the tool list (core/tools), env, Supabase client, withRun (log, enabled flag, budget, memory), agent memory, time helpers, the tool gateway
-integrations/             Shopify (read-only), Mercury (read-only; mercury-write.ts is gateway-only), Notion, Gmail (drafts only; receipts read-only), Anthropic
+integrations/             mcp.ts (the one MCP client and the vault), our own servers (Notion, Gmail, Shopify, Mercury receipt files), facades agents call (shopify/, mercury.ts, notion.ts, gmail*.ts, klaviyo.ts), Anthropic
 domain/                   coffee constants and green math (copied from the storefront), bookkeeping rules (books.ts)
 supabase/migrations/      agent tables
 ```

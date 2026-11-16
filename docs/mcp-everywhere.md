@@ -32,9 +32,8 @@ actions are staged for the gateway.
 |---|---|
 | Sign-ins sealed with AES-256-GCM under `MCP_SECRET_KEY`, a key of its own | `core/vault.ts`, `integrations/mcp.ts` |
 | Each sealed value names its key (`v2.<key id>.…`); `MCP_SECRET_KEY_OLD` still opens what it sealed; rows move onto the current key when read, or all at once with **Re-lock now** | `seal`, `open`, `readSecret`, `resealAll` |
-| Slice 6 rows (key made from the service role key) open once and are moved; nothing new is sealed that way | `legacyKey` |
 | Without `MCP_SECRET_KEY` nothing can be connected or renewed | `VAULT_MISSING` |
-| Only the vault's two users import it: the MCP client (reads) and the gateway (future writes) | `eslint.config.mjs` |
+| Only the vault's two users import it: the MCP client and the gateway | `eslint.config.mjs` |
 | Ask for the profile's scopes only, cut to what the server supports; never the server's whole list | `MCP_SERVERS[id].scopes`, `pickScopes` |
 | Token values never reach a saved error, the log or the browser | `scrubSecrets` |
 | Requests carrying a code, token or client secret never follow a redirect; only discovery documents do | `fetchJson`, `rpc` |
@@ -216,5 +215,25 @@ store, so Shopify runs on our own server in the app, like Notion and Gmail:
 - Removed: `integrations/shopify/client.ts`, `SHOPIFY_ADMIN_ACCESS_TOKEN` and `SHOPIFY_CLIENT_SECRET`.
   `SHOPIFY_STORE_DOMAIN`, `SHOPIFY_API_VERSION`, `SHOPIFY_CLIENT_ID` and `SHOPIFY_STOCK_COLLECTION`
   stay: none is a secret.
+
+No migration.
+
+## Slice 8: cleanup
+
+- **One credential store.** The last service key outside the vault, the gateway's Mercury receipt
+  token (`MERCURY_WRITE_TOKEN`), moved in: it is the `mercury_files` profile, a key pasted under
+  Connections → Mercury → Mercury receipt files, served by our own small server
+  (`integrations/mercury-files-server.ts`) with one write tool, `mercury_attach_receipt`. It is
+  checked on paste (shape, and Mercury must not answer 401). `integrations/mercury-write.ts` is
+  gone. Vercel settings now hold only the app's own infrastructure (Supabase, Claude, Resend for
+  emails to Zak, `MCP_SECRET_KEY`, Google's OAuth client) and non-secret ids; `check:mcp` fails if
+  an old service token comes back into `core/env.ts`.
+- **One tool path.** Agents read through `callMcpTool`; code writes reports through report tools;
+  every other write is a profile's write tool through `callWriteTool`, now on every kind of server
+  (hosted, Google, or our own with a key), still importable only by `core/gateway`.
+- The slice 6 vault format (a key made from the service role key) is no longer opened: every row
+  was on `MCP_SECRET_KEY` before this shipped (`legacyKey` removed).
+- `isOauth` is now `isHosted` (hosted servers that sign in on their own page).
+- CLAUDE.md's hard rules talk about servers, profiles, one tool path and one credential store.
 
 No migration.

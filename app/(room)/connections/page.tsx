@@ -38,6 +38,8 @@ function VaultNote({ v }: { v: VaultState | null }) {
   );
 }
 
+const KEY_HINT: Partial<Record<McpId, string>> = { shopify: "shpat_…", mercury_files: "secret-token:mercury_…" };
+
 function McpPanel({ c: base, id, v }: { c: Connection; id: McpId; v: McpView }) {
   const s = v.status;
   if (!s) return <span className="soft-box" style={{ fontSize: 12.5, lineHeight: 1.45 }}>{MCP_MISSING}</span>;
@@ -51,8 +53,8 @@ function McpPanel({ c: base, id, v }: { c: Connection; id: McpId; v: McpView }) 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
       <VaultNote v={v.vault} />
-      {oauth && !srv.readTools.length
-        ? <span className="ink2" style={{ fontSize: 12.5, lineHeight: 1.5 }}>Only the gateway uses this sign-in, after you approve: {writes.join(", ")}. Sign-in asks only for: {srv.scopes.join(", ")}.</span>
+      {!srv.readTools.length
+        ? <span className="ink2" style={{ fontSize: 12.5, lineHeight: 1.5 }}>Only the gateway uses this {oauth ? "sign-in" : "key"}, after you approve: {writes.join(", ")}. {oauth ? `Sign-in asks only for: ${srv.scopes.join(", ")}.` : `It should be ${srv.scopes.join(", ")}, and is locked in the vault, never shown again.`}</span>
         : google
         ? <span className="ink2" style={{ fontSize: 12.5, lineHeight: 1.5 }}>Our own server, run in the app. Agents may read with: {srv.readTools.join(", ")}; it has no tool that drafts, sends, labels or deletes. Sign-in asks Google only for: {srv.scopes.join(", ")}, and is refused if Google grants anything else.</span>
         : oauth
@@ -68,7 +70,7 @@ function McpPanel({ c: base, id, v }: { c: Connection; id: McpId; v: McpView }) 
           {s.paused
             ? <span className="soft-box" style={{ fontSize: 12.5, lineHeight: 1.45 }}>Paused: {s.lastError ?? "the sign-in stopped working"}. Agents can’t reach {c.name} until you {oauth ? "sign in again" : "paste a new key"}.</span>
             : <span style={{ fontSize: 13 }}>{oauth ? "Signed in" : "Key locked in the vault"}{s.connectedAt ? ` ${when(s.connectedAt)}` : ""}.{s.lastError ? ` Last problem: ${s.lastError}` : ""}</span>}
-          {!oauth && <KeyForm label={`New ${c.name} key`} save={mcpSaveKey.bind(null, id)} placeholder={id === "shopify" ? "shpat_…" : undefined} replace />}
+          {!oauth && <KeyForm label={`New ${c.name} key`} save={mcpSaveKey.bind(null, id)} placeholder={KEY_HINT[id]} replace />}
           <span className="row wrap" style={{ gap: 8 }}>
             {oauth && <a className="btn outline sm" href={`/connections/${id}/connect`}>Sign in again</a>}
             <ActionButton className="btn outline sm" action={mcpDisconnect.bind(null, id)} confirm={{ title: `Disconnect ${c.name}?`, body: google ? `Google is asked to cancel the sign-in, and it is forgotten here. Google may cancel the other Gmail sign-in too (both use the same app); if it shows Paused, tap Sign in again there.` : oauth ? `${c.name} is asked to cancel the sign-in, and it is forgotten here. Agents that read it get an error until you connect again.` : `The key is forgotten here. Agents and reports that use ${c.name} get an error until you paste a key again.`, confirmLabel: "Disconnect", kind: "danger" }}>Disconnect</ActionButton>
@@ -105,7 +107,7 @@ function McpPanel({ c: base, id, v }: { c: Connection; id: McpId; v: McpView }) 
         </span>
       ) : (
         <span style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-          <KeyForm label={`${c.name} key`} save={mcpSaveKey.bind(null, id)} placeholder={id === "shopify" ? "shpat_…" : undefined} />
+          <KeyForm label={`${c.name} key`} save={mcpSaveKey.bind(null, id)} placeholder={KEY_HINT[id]} />
           <span className="muted" style={{ fontSize: 12 }}>{srv.signInHint} {c.name} is asked whose key it is before it is kept.</span>
         </span>
       )}

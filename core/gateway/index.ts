@@ -9,7 +9,6 @@ import { db } from "@/core/db";
 import { withRun } from "@/core/runs";
 import { LEAD_REVIEW_HOURS, draftChecker, draftDepartment } from "@/core/org";
 import { hasMercury, mercuryCategories, mercuryTransaction } from "@/integrations/mercury";
-import { attachReceipt, hasMercuryWrite } from "@/integrations/mercury-write";
 import { callWriteTool, mcpStatus } from "@/integrations/mcp";
 import { chicagoDate, offsetOn } from "@/core/time";
 import { hasGmail } from "@/integrations/gmail";
@@ -220,14 +219,24 @@ export async function retry(actionId: string) {
 /** Why approved actions can't be written to Mercury right now, or null. (agents.enabled is checked by withRun.) */
 export async function writeBlocker(): Promise<string | null> {
   if (!(await hasMercury())) return "Mercury isn't connected on Connections, so the gateway can't re-check transactions.";
-  if (!(await editsReady()) && !hasMercuryWrite()) return "Neither Mercury writes (Connections → Mercury) nor MERCURY_WRITE_TOKEN is set up, so approved changes wait here.";
+  if (!(await editsReady()) && !(await filesReady())) return "Neither Mercury writes nor Mercury receipt files is connected (Connections → Mercury), so approved changes wait here.";
   return null;
 }
 
-/** The gateway's own Mercury sign-in (category and memo only) is connected and not paused. */
-async function editsReady(): Promise<boolean> {
-  const s = await mcpStatus("mercury_write");
+/** A gateway sign-in is connected and not paused. */
+async function ready(id: "mercury_write" | "mercury_files"): Promise<boolean> {
+  const s = await mcpStatus(id);
   return !!s?.connected && !s.paused;
+}
+/** The gateway's own Mercury sign-in (category and memo only). */
+const editsReady = () => ready("mercury_write");
+/** The gateway's receipt key, in the vault (attach a file only). */
+const filesReady = () => ready("mercury_files");
+
+/** One receipt file onto the charge Zak approved, through our receipt server on the gateway's key. Returns Mercury's attachment id. */
+async function attachReceipt(transactionId: string, file: { name: string; type: string; bytes: Uint8Array }): Promise<string | null> {
+  const out = (await callWriteTool("mercury_files", "mercury_attach_receipt", { transactionId, name: file.name, type: file.type, base64: Buffer.from(file.bytes).toString("base64") })) as { attachmentId?: unknown };
+  return typeof out?.attachmentId === "string" ? out.attachmentId : null;
 }
 
 /** A charge's memo and/or category, through Mercury's MCP server on the gateway's sign-in. A field left undefined is not sent, so Mercury keeps it. */
@@ -267,7 +276,7 @@ async function applyOne(a: ActionRow, runId: string, cats: () => Promise<Set<str
       return "applied" as const;
     }
     // both ways in are checked before anything is written, so a change never lands half done
-    if (plan.attach && !hasMercuryWrite()) throw new Error("MERCURY_WRITE_TOKEN isn't set, so the receipt can't be attached.");
+    if (plan.attach && !(await filesReady())) throw new Error("Mercury receipt files isn't connected (Connections → Mercury), so the receipt can't be attached.");
     if ((plan.categoryId || plan.note) && !(await editsReady())) throw new Error("Mercury writes isn't connected (Connections → Mercury), so the category and memo can't be set.");
     let attachmentId: string | null = null;
     if (plan.attach) {

@@ -79,7 +79,7 @@ export const MCP_SERVERS = {
     // A second sign-in to the same server, held only by the gateway (slice 5b). It asks for
     // transactions:update alone: a charge's category and memo, after Zak approves. No payment,
     // transfer, receipt, budget or reimbursement scope, so its token can't use those tools.
-    // Receipt files stay on MERCURY_WRITE_TOKEN: Mercury's MCP can't attach a file to a chosen charge.
+    // Receipt files are mercury_files below: Mercury's MCP can't attach a file to a chosen charge.
     auth: "oauth",
     url: "https://mcp.mercury.com/mcp",
     readTools: [],
@@ -87,6 +87,20 @@ export const MCP_SERVERS = {
     scopes: ["transactions:update", "offline_access"],
     writeTools: [{ tool: "updateTransaction", actionType: "mercury_annotate" }],
     signInHint: "Sign in to One Two’s business org again. This sign-in asks only to change a charge’s category and memo, and only the gateway uses it, after you approve.",
+  },
+  mercury_files: {
+    id: "mercury_files",
+    name: "Mercury receipt files",
+    // Our own small server (integrations/mercury-files-server.ts) for the one write Mercury's MCP
+    // can't do: attach a file to the charge Zak approved. Its key is a Mercury Custom token with
+    // transaction write scope, pasted on Connections into the vault; only the gateway uses it.
+    auth: "token",
+    url: "https://api.mercury.com/api/v1",
+    readTools: [],
+    reportTools: [],
+    scopes: ["a Mercury Custom token with transaction write scope, used only to attach a file to a charge"],
+    writeTools: [{ tool: "mercury_attach_receipt", actionType: "mercury_annotate" }],
+    signInHint: "Paste the Custom token you made for receipts (secret-token:mercury_…). Only the gateway uses it, after you approve.",
   },
   notion: {
     id: "notion",
@@ -170,7 +184,7 @@ export function mayReport(id: string, tool: string): boolean {
 }
 
 /** Hosted servers, signed in on their own page (Connect) with dynamic client registration. */
-export const isOauth = (id: McpId) => MCP_SERVERS[id].auth === "oauth";
+export const isHosted = (id: McpId) => MCP_SERVERS[id].auth === "oauth";
 /** Servers we run ourselves, signed in on Google's page with our own OAuth client. */
 export const isGoogle = (id: McpId) => MCP_SERVERS[id].auth === "google";
 /** Signed in with a Connect button (hosted or Google), not a pasted key. */

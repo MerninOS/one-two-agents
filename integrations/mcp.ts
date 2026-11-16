@@ -12,13 +12,15 @@ import { createHash, randomBytes } from "node:crypto";
 import { db } from "@/core/db";
 import { env } from "@/core/env";
 import {
-  GOOGLE_AUTH, MCP_PROTOCOL, MCP_SERVERS, TOOL_CHECK_HOURS, authorizeUrl, grantedScopes, isGoogle, scopeProblem, usesConnect, checkTools, checkedTools, isOauth, mayWrite, listedTools, toolCheckNote, type ListedTool, discoveryUrls, mayCall, mayReport, needsRefresh, parseRpc, pickScopes, readAuthServer, readTokens, resourceOf, scrubSecrets, toolPayload,
+  GOOGLE_AUTH, MCP_PROTOCOL, MCP_SERVERS, TOOL_CHECK_HOURS, authorizeUrl, grantedScopes, isGoogle, scopeProblem, usesConnect, checkTools, checkedTools, isHosted, mayWrite, listedTools, toolCheckNote, type ListedTool, discoveryUrls, mayCall, mayReport, needsRefresh, parseRpc, pickScopes, readAuthServer, readTokens, resourceOf, scrubSecrets, toolPayload,
   type AuthServer, type McpEvent, type McpId, type Tokens,
 } from "@/core/mcp-rules";
-import { MIN_SECRET_CHARS, keyIdOf, legacyKey, open as openWith, seal as sealWith, vaultKey, type VaultKey } from "@/core/vault";
+import { MIN_SECRET_CHARS, keyIdOf, open as openWith, seal as sealWith, vaultKey, type VaultKey } from "@/core/vault";
 import { looksLikeNotionKey } from "@/core/notion-blocks";
 import { checkNotionKey, notionServer } from "./notion-server";
 import { checkShopifyKey, shopifyServer } from "./shopify-server";
+import { checkMercuryFilesKey, mercuryFilesServer } from "./mercury-files-server";
+import { looksLikeMercuryToken } from "@/core/mercury-rules";
 import { shopifyKeyKind } from "@/core/shopify-queries";
 import { gmailMailbox, gmailServer } from "./gmail-server";
 
@@ -35,8 +37,6 @@ function keys(): { current: VaultKey | null; all: VaultKey[] } {
   const all: VaultKey[] = [];
   if (current) all.push(current);
   if (usable(env.mcpSecretKeyOld)) all.push(vaultKey(env.mcpSecretKeyOld!));
-  // slice 6 rows, only so they can be opened once and moved onto MCP_SECRET_KEY
-  if (env.supabaseServiceKey) all.push(legacyKey(env.supabaseServiceKey));
   return { current, all };
 }
 /** Whether MCP_SECRET_KEY is set and long enough. */
@@ -177,7 +177,7 @@ export async function disconnectMcp(id: McpId): Promise<{ revoked: boolean; note
   const s = r ? await readSecret(id, r).catch(() => null) : null;
   if (s) {
     let endpoint = s.revocationEndpoint ?? null;
-    if (!endpoint && isOauth(id)) { try { endpoint = (await discover(MCP_SERVERS[id].url)).revocation_endpoint ?? null; } catch { endpoint = null; } }
+    if (!endpoint && isHosted(id)) { try { endpoint = (await discover(MCP_SERVERS[id].url)).revocation_endpoint ?? null; } catch { endpoint = null; } }
     const secrets = [s.tokens.accessToken, s.tokens.refreshToken, s.clientSecret];
     if (!endpoint) note = `${MCP_SERVERS[id].name} has no revoke address, so remove the app in its own settings too.`;
     else {
@@ -276,7 +276,7 @@ export async function startConnect(id: McpId, redirectUri: string): Promise<{ ur
 /** The client secret for a token request: Google's lives only in Vercel (GMAIL_CLIENT_SECRET). */
 const clientSecretOf = (id: McpId, stored: string | null) => (isGoogle(id) ? env.gmailClientSecret ?? null : stored);
 /** RFC 8707 resource: hosted MCP servers only (Google doesn't take it). */
-const resourceFor = (id: McpId): Record<string, string> => (isOauth(id) ? { resource: resourceOf(MCP_SERVERS[id].url) } : {});
+const resourceFor = (id: McpId): Record<string, string> => (isHosted(id) ? { resource: resourceOf(MCP_SERVERS[id].url) } : {});
 
 async function tokenRequest(endpoint: string, clientId: string, clientSecret: string | null, form: Record<string, string>) {
   const body = new URLSearchParams({ ...form, client_id: clientId, ...(clientSecret ? { client_secret: clientSecret } : {}) });
@@ -427,7 +427,7 @@ const stale = (at: string | null) => !at || Date.now() - Date.parse(at) > TOOL_C
 export async function callMcpTool(id: McpId, tool: string, args: Record<string, unknown>): Promise<unknown> {
   if (!mayCall(id, tool)) throw new Error(`${tool} isn't on the list of ${MCP_SERVERS[id].name} tools code may call.`);
   if (isGoogle(id)) return callGoogleTool(id, tool, args);
-  if (!isOauth(id)) return callLocalTool(id, tool, args);
+  if (!isHosted(id)) return callLocalTool(id, tool, args);
   return callRemote(id, tool, args);
 }
 
@@ -436,8 +436,10 @@ export async function callMcpTool(id: McpId, tool: string, args: Record<string, 
  * after Zak approved the action and the gateway re-checked it against live data.
  */
 export async function callWriteTool(id: McpId, tool: string, args: Record<string, unknown>): Promise<unknown> {
-  if (!usesConnect(id) || !mayWrite(id, tool)) throw new Error(`${tool} isn't a write tool the gateway may call on ${MCP_SERVERS[id].name}.`);
-  return isGoogle(id) ? callGoogleTool(id, tool, args) : callRemote(id, tool, args);
+  if (!mayWrite(id, tool)) throw new Error(`${tool} isn't a write tool the gateway may call on ${MCP_SERVERS[id].name}.`);
+  if (isGoogle(id)) return callGoogleTool(id, tool, args);
+  if (isHosted(id)) return callRemote(id, tool, args);
+  return localCall(id, tool, args, true);
 }
 
 /**
@@ -478,6 +480,7 @@ type Handler = (raw: unknown) => Promise<unknown>;
 const LOCAL: Partial<Record<McpId, { server: (key: string) => Handler; looksRight: (key: string) => boolean; who: (key: string) => Promise<{ name: string; workspace: string }> }>> = {
   notion: { server: notionServer, looksRight: looksLikeNotionKey, who: checkNotionKey },
   shopify: { server: shopifyServer, looksRight: (k) => !!shopifyKeyKind(k), who: checkShopifyKey },
+  mercury_files: { server: mercuryFilesServer, looksRight: looksLikeMercuryToken, who: checkMercuryFilesKey },
 };
 
 /** Whether a server we run is connected and not paused. False when the tables are missing. */
@@ -512,11 +515,14 @@ let localSeq = 0;
  * agents, report tools for code delivering a report. Request and reply cross as JSON and are read
  * like any server's reply. Errors are scrubbed; a key the service no longer accepts pauses it.
  */
-export async function callLocalTool(id: McpId, tool: string, args: Record<string, unknown>): Promise<unknown> {
+export const callLocalTool = (id: McpId, tool: string, args: Record<string, unknown>) => localCall(id, tool, args, false);
+
+/** `write`: only callWriteTool passes true, for a profile's write tool (the gateway, after Zak approves). */
+async function localCall(id: McpId, tool: string, args: Record<string, unknown>, write: boolean): Promise<unknown> {
   const name = MCP_SERVERS[id].name;
   const l = LOCAL[id];
   if (!l || usesConnect(id)) throw new Error(`${name} isn't a server we run with a pasted key.`);
-  if (!mayCall(id, tool) && !mayReport(id, tool)) throw new Error(`${tool} isn't on the list of ${name} tools code may call.`);
+  if (write ? !mayWrite(id, tool) : !mayCall(id, tool) && !mayReport(id, tool)) throw new Error(`${tool} isn't on the list of ${name} tools code may call.`);
   const r = await row(id);
   if (r?.paused_at) throw new Error(`${name} is paused: ${r.last_error ?? "its key stopped working"}. Paste a new key on Connections.`);
   const s = r ? await readSecret<KeySecret>(id, r) : null;
@@ -529,7 +535,7 @@ export async function callLocalTool(id: McpId, tool: string, args: Record<string
   if ("error" in out) {
     const msg = scrubSecrets(out.error, [s.key]);
     // 401 is a key the service no longer accepts; Notion's 403 and 404 are a page not shared with the integration
-    if (/^(Notion|Shopify) 401\b/.test(msg)) { await pause(id, `${name} refused the key (401)`, "refused", [s.key]); throw new Error(`${name} refused the key. Paste a new one on Connections.`); }
+    if (/^(Notion|Shopify|Mercury) 401\b/.test(msg)) { await pause(id, `${name} refused the key (401)`, "refused", [s.key]); throw new Error(`${name} refused the key. Paste a new one on Connections.`); }
     throw new Error(`${name} ${tool}: ${msg}`);
   }
   return out.data;

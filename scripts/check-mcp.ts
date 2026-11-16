@@ -1,6 +1,5 @@
 // MCP connection rules (docs/company-mode.md, slice 6): `npm run check:mcp`. Pure: no network.
 import assert from "node:assert/strict";
-import { createCipheriv, createHash, randomBytes } from "node:crypto";
 import { readFileSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { CTX_META, callThrough, createHost, listThrough, served } from "../core/tools/mcp-host";
@@ -8,10 +7,11 @@ import type { ToolDef } from "../core/tools/types";
 import { checkNotionArgs, looksLikeNotionKey, notionPageId } from "../core/notion-blocks";
 import { SHOPIFY_DOCS, WHO, assertReadOnly, shopifyKeyKind, shopifyVariables, writeScopes } from "../core/shopify-queries";
 import { checkGmailArgs, draftRaw, isPlainAddress, readMail } from "../core/gmail-rules";
+import { checkReceiptArgs, looksLikeMercuryToken } from "../core/mercury-rules";
 import { cashOf, readAccounts, readCategories, readOneTxn, readOrgName, readTxnPage } from "../core/mercury-rules";
-import { LEGACY_ID, keyIdOf, legacyKey, open, seal, vaultKey } from "../core/vault";
+import { keyIdOf, open, seal, vaultKey } from "../core/vault";
 import {
-  type McpServer, GOOGLE_AUTH, MCP_EVENTS, MCP_SERVERS, grantedScopes, isGoogle, scopeProblem, usesConnect, checkTools, listedTools, toolCheckNote, toolFingerprint, pickScopes, mayReport, isOauth, mayWrite, checkedTools, scrubSecrets, authorizeUrl, discoveryUrls, listSize, mayCall, namedRows, needsRefresh, nextCursor, parseRpc, readAuthServer, readTokens, reportRows, reportTotals, resourceOf, toolPayload,
+  type McpServer, GOOGLE_AUTH, MCP_EVENTS, MCP_SERVERS, grantedScopes, isGoogle, scopeProblem, usesConnect, checkTools, listedTools, toolCheckNote, toolFingerprint, pickScopes, mayReport, isHosted, mayWrite, checkedTools, scrubSecrets, authorizeUrl, discoveryUrls, listSize, mayCall, namedRows, needsRefresh, nextCursor, parseRpc, readAuthServer, readTokens, reportRows, reportTotals, resourceOf, toolPayload,
 } from "../core/mcp-rules";
 
 // only named read tools, never a write; the server's own read-only switch is on
@@ -92,16 +92,7 @@ const parts = sealed.split(".");
 parts[4] = Buffer.from("tampered").toString("base64url");
 assert.equal(open(parts.join("."), [k1]), null, "a changed value opens nothing");
 assert.equal(keyIdOf("not sealed"), null);
-assert.throws(() => seal({}, legacyKey("service-role")), /old key/);
-// slice 6 rows (iv.tag.body under the service-role key) still open, so they can be moved
-const lk = legacyKey("service-role-key");
-assert.deepEqual(lk.key, createHash("sha256").update("mcp-connections:v1:service-role-key").digest());
-const iv = randomBytes(12), c = createCipheriv("aes-256-gcm", lk.key, iv);
-const body = Buffer.concat([c.update(JSON.stringify({ a: 1 }), "utf8"), c.final()]);
-const old = [iv, c.getAuthTag(), body].map((b) => b.toString("base64url")).join(".");
-assert.equal(keyIdOf(old), LEGACY_ID);
-assert.deepEqual(open(old, [k1, lk]), { a: 1 });
-assert.equal(open(old, [k1]), null, "without the old key it stays shut");
+assert.equal(keyIdOf("iv.tag.body"), null, "the slice 6 format (no key id) is no longer opened");
 
 // scopes: only the profile's read scopes, never the server's whole list
 for (const s of MCP_SERVERS.klaviyo.scopes) assert.match(s, /:read$/, s);
@@ -141,7 +132,7 @@ assert.equal(toolCheckNote(later), "the server no longer offers get_metrics and 
 
 // ---- Notion on our own server (slice 4)
 assert.equal(MCP_SERVERS.notion.auth, "token");
-assert.ok(isOauth("klaviyo") && !isOauth("notion"));
+assert.ok(isHosted("klaviyo") && !isHosted("notion"));
 assert.deepEqual(MCP_SERVERS.klaviyo.reportTools, [], "a hosted server never gets report tools");
 for (const t of MCP_SERVERS.notion.reportTools) { assert.ok(mayReport("notion", t), t); assert.ok(!mayCall("notion", t), `${t} is never a model's tool`); }
 for (const t of MCP_SERVERS.notion.readTools) assert.ok(mayCall("notion", t) && !mayReport("notion", t), t);
@@ -202,6 +193,24 @@ assert.ok(!mayWrite("mercury", "updateTransaction"), "the agents' read sign-in h
 assert.deepEqual(checkedTools("mercury_write"), ["updateTransaction"], "the tool check watches the write tool too");
 for (const srv of Object.values(MCP_SERVERS) as McpServer[]) for (const sc of srv.scopes) assert.ok(!/transfers|transactions:request|reimbursements|budgets|receipts/.test(sc), `${srv.id} never asks for ${sc}`);
 
+// ---- Receipt files on our own server, key in the vault (slice 8)
+assert.equal(MCP_SERVERS.mercury_files.auth, "token");
+assert.deepEqual(MCP_SERVERS.mercury_files.readTools, [], "the receipt key reads nothing for agents");
+assert.ok(mayWrite("mercury_files", "mercury_attach_receipt") && !mayCall("mercury_files", "mercury_attach_receipt") && !mayReport("mercury_files", "mercury_attach_receipt"), "only the gateway's callWriteTool reaches it");
+assert.ok(looksLikeMercuryToken("secret-token:mercury_production_wma_" + "Ab3".repeat(10)) && !looksLikeMercuryToken("mercury_production_x") && !looksLikeMercuryToken("secret-token:mercury_ab cd" + "x".repeat(30)));
+const okReceipt = { transactionId: tid(9), name: "receipt.pdf", type: "application/pdf", base64: Buffer.from("%PDF-1.4").toString("base64") };
+const rc = checkReceiptArgs(okReceipt);
+assert.ok(!("problem" in rc) && rc.bytes.toString() === "%PDF-1.4");
+for (const [args, why] of [
+  [{ ...okReceipt, transactionId: "../accounts" }, /transactionId/],
+  [{ ...okReceipt, name: "../../x.pdf" }, /name/],
+  [{ ...okReceipt, type: "text/html" }, /type/],
+  [{ ...okReceipt, base64: "" }, /base64/],
+] as const) { const r = checkReceiptArgs(args); assert.ok("problem" in r && why.test(r.problem), JSON.stringify(args).slice(0, 60)); }
+// one credential store: no integration reads a service token from settings any more
+const envSrc = readFileSync("core/env.ts", "utf8");
+for (const gone of ["MERCURY_WRITE_TOKEN", "MERCURY_API_TOKEN", "NOTION_TOKEN", "GMAIL_REFRESH_TOKEN", "GMAIL_RECEIPTS_REFRESH_TOKEN", "SHOPIFY_ADMIN_ACCESS_TOKEN", "SHOPIFY_CLIENT_SECRET", "KLAVIYO_API_KEY"]) assert.ok(!envSrc.includes(`"${gone}"`), `${gone} is in the vault now`);
+
 // ---- Shopify on our own server (slice 7)
 assert.equal(MCP_SERVERS.shopify.auth, "token");
 assert.deepEqual([...MCP_SERVERS.shopify.readTools].sort(), Object.keys(SHOPIFY_DOCS).sort(), "every Shopify tool runs exactly one fixed query");
@@ -230,7 +239,7 @@ for (const [tool, args, why] of [
 
 // ---- Gmail on our own server, signed in with Google (slice 6)
 const RO = "https://www.googleapis.com/auth/gmail.readonly", COMPOSE = "https://www.googleapis.com/auth/gmail.compose";
-assert.ok(isGoogle("gmail_read") && isGoogle("gmail") && usesConnect("gmail") && !isOauth("gmail") && !usesConnect("notion"));
+assert.ok(isGoogle("gmail_read") && isGoogle("gmail") && usesConnect("gmail") && !isHosted("gmail") && !usesConnect("notion"));
 assert.deepEqual([...MCP_SERVERS.gmail_read.scopes], [RO], "the read sign-in is granted gmail.readonly alone");
 assert.deepEqual([...MCP_SERVERS.gmail.scopes], [COMPOSE], "the drafts sign-in is granted gmail.compose alone");
 assert.deepEqual(MCP_SERVERS.gmail_read.writeTools, [], "the read sign-in has no write tools");
@@ -324,6 +333,7 @@ assert.deepEqual(importers("gmail-api"), ["integrations/gmail-server.ts"]);
 assert.deepEqual(importers("gmail-server"), ["integrations/mcp.ts"]);
 assert.deepEqual(importers("shopify-api"), ["integrations/shopify-server.ts"]);
 assert.deepEqual(importers("shopify-server"), ["integrations/mcp.ts"]);
+assert.deepEqual(importers("mercury-files-server"), ["integrations/mcp.ts"]);
 // no direct GraphQL path from agents: only our Shopify server posts to Shopify's API
 const gqlPosters = ["core", "agents", "dashboard", "app", "integrations"].flatMap(files).filter((f) => /graphql\.json|admin\/oauth\/access_token/.test(readFileSync(f, "utf8")));
 assert.deepEqual(gqlPosters, ["integrations/shopify-api.ts"]);

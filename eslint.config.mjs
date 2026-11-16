@@ -2,9 +2,9 @@ import { defineConfig, globalIgnores } from "eslint/config";
 import nextVitals from "eslint-config-next/core-web-vitals";
 import nextTs from "eslint-config-next/typescript";
 
-const MERCURY_MSG = "Mercury writes go through the tool gateway (core/gateway) only.";
-const MERCURY_PATHS = ["@/integrations/mercury-write", "../integrations/mercury-write", "../../integrations/mercury-write"].map((name) => ({ name, message: MERCURY_MSG }));
-const MERCURY_PATTERN = { group: ["**/mercury-write"], message: MERCURY_MSG };
+const MERCURY_MSG = "Our receipt-file server is reached only through integrations/mcp.ts (callWriteTool, core/gateway only).";
+const MERCURY_PATHS = ["@/integrations/mercury-files-server", "./mercury-files-server", "../integrations/mercury-files-server"].map((name) => ({ name, message: MERCURY_MSG }));
+const MERCURY_PATTERN = { group: ["**/mercury-files-server"], message: MERCURY_MSG };
 const VAULT_MSG = "Sign-ins are opened only by integrations/mcp.ts (reads) and core/gateway (writes): nothing else imports the token vault.";
 const VAULT_PATHS = ["@/core/vault", "../core/vault", "../../core/vault", "./vault", "../vault"].map((name) => ({ name, message: VAULT_MSG }));
 const VAULT_PATTERN = { group: ["**/core/vault"], message: VAULT_MSG };
@@ -36,8 +36,8 @@ const SPEC_PATTERN = { group: ["**/core/agent-spec", "**/core/runner", "**/core/
 export default defineConfig([
   ...nextVitals,
   ...nextTs,
-  // Hard rules: Mercury writes go through the tool gateway only; only the MCP client and the
-  // gateway open the token vault.
+  // Hard rules: writes go through the tool gateway only (callWriteTool); only the MCP client and
+  // the gateway open the token vault; each of our own servers is reached only through the MCP client.
   {
     files: ["**/*.{ts,tsx}"],
     ignores: ["core/gateway/**"],
@@ -50,7 +50,7 @@ export default defineConfig([
   // (A later block replaces the rule for these files, so integrations/ repeats the Mercury rule.)
   {
     files: ["core/gateway/**/*.ts"],
-    rules: { "no-restricted-imports": ["error", { paths: [MEMORY_RULE, ...SPEC_RULES, ...NAPI.paths, ...NSRV.paths, ...GAPI.paths, ...GSRV.paths, ...SAPI.paths, ...SSRV.paths], patterns: [MEMORY_PATTERN, SPEC_PATTERN, NAPI.pattern, NSRV.pattern, GAPI.pattern, GSRV.pattern, SAPI.pattern, SSRV.pattern] }] },
+    rules: { "no-restricted-imports": ["error", { paths: [MEMORY_RULE, ...SPEC_RULES, ...MERCURY_PATHS, ...NAPI.paths, ...NSRV.paths, ...GAPI.paths, ...GSRV.paths, ...SAPI.paths, ...SSRV.paths], patterns: [MEMORY_PATTERN, SPEC_PATTERN, MERCURY_PATTERN, NAPI.pattern, NSRV.pattern, GAPI.pattern, GSRV.pattern, SAPI.pattern, SSRV.pattern] }] },
   },
   {
     files: ["integrations/**/*.ts"],
@@ -74,7 +74,7 @@ export default defineConfig([
   // The MCP client is the one integration that opens the vault; its test reads it too.
   {
     files: ["integrations/mcp.ts"],
-    rules: { "no-restricted-imports": ["error", { paths: [MEMORY_RULE, ...SPEC_RULES, ...MERCURY_PATHS, ...NAPI.paths, ...GAPI.paths, ...SAPI.paths], patterns: [MEMORY_PATTERN, SPEC_PATTERN, MERCURY_PATTERN, NAPI.pattern, GAPI.pattern, SAPI.pattern] }] },
+    rules: { "no-restricted-imports": ["error", { paths: [MEMORY_RULE, ...SPEC_RULES, ...NAPI.paths, ...GAPI.paths, ...SAPI.paths], patterns: [MEMORY_PATTERN, SPEC_PATTERN, NAPI.pattern, GAPI.pattern, SAPI.pattern] }] },
   },
   {
     files: ["scripts/check-mcp.ts"],
