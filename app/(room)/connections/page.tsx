@@ -6,7 +6,7 @@ import type { ToolDef } from "@/core/tools/types";
 import { Icon } from "@/dashboard/components/Icon";
 import { Avatar, LockList } from "@/dashboard/components/ui";
 import { ActionButton, KeyForm } from "@/dashboard/components/client";
-import { MCP_SERVERS } from "@/core/mcp-rules";
+import { MCP_SERVERS, type McpId } from "@/core/mcp-rules";
 import { MCP_MISSING, VAULT_MISSING, mcpLog, mcpStatus, vaultState, type McpLogRow, type McpStatus, type VaultState } from "@/integrations/mcp";
 import { klaviyoLists } from "@/integrations/klaviyo";
 import { mercuryOrgName } from "@/integrations/mercury";
@@ -38,16 +38,19 @@ function VaultNote({ v }: { v: VaultState | null }) {
   );
 }
 
-function McpPanel({ c, v }: { c: Connection; v: McpView }) {
+function McpPanel({ c: base, id, v }: { c: Connection; id: McpId; v: McpView }) {
   const s = v.status;
   if (!s) return <span className="soft-box" style={{ fontSize: 12.5, lineHeight: 1.45 }}>{MCP_MISSING}</span>;
-  const id = c.mcp!;
   const srv = MCP_SERVERS[id];
+  const c = { ...base, name: srv.name };
+  const writes = (srv.writeTools as readonly { tool: string }[]).map((w) => w.tool);
   const oauth = srv.auth === "oauth";
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
       <VaultNote v={v.vault} />
-      {oauth
+      {oauth && !srv.readTools.length
+        ? <span className="ink2" style={{ fontSize: 12.5, lineHeight: 1.5 }}>Only the gateway uses this sign-in, after you approve: {writes.join(", ")}. Sign-in asks only for: {srv.scopes.join(", ")}.</span>
+        : oauth
         ? <span className="ink2" style={{ fontSize: 12.5, lineHeight: 1.5 }}>Code may call only these {srv.name} tools: {srv.readTools.join(", ")}. A tool the server adds later does nothing until it is named in code. Sign-in asks only for: {srv.scopes.join(", ")}.</span>
         : <span className="ink2" style={{ fontSize: 12.5, lineHeight: 1.5 }}>Agents may read with: {srv.readTools.join(", ")}. Code writes reports with: {srv.reportTools.join(", ")}; a model never calls those. The key reaches {srv.scopes.join(", ")}, and is locked in the vault, never shown again.</span>}
       {oauth && s.connected && !s.paused && (
@@ -164,7 +167,7 @@ function ToolRow({ t, f, locked }: { t: ToolDef; f: Floor; locked?: boolean }) {
   );
 }
 
-function Detail({ c, f, mcp, note }: { c: Connection; f: Floor; mcp: McpView | null; note: { ok: boolean; text: string } | null }) {
+function Detail({ c, f, mcp, more, note }: { c: Connection; f: Floor; mcp: McpView | null; more: { id: McpId; v: McpView }[]; note: { ok: boolean; text: string } | null }) {
   const t = toolsOf(c.id);
   const missing = c.checks.filter((k) => !f.health[k.key]);
   const section = (title: string, sub: string, list: ToolDef[], empty: string, locked?: boolean) => (
@@ -183,7 +186,13 @@ function Detail({ c, f, mcp, note }: { c: Connection; f: Floor; mcp: McpView | n
       </span>
       <span className="ink2" style={{ fontSize: 13.5, lineHeight: 1.55 }}>{c.about}</span>
       {note && <span className="soft-box" style={{ fontSize: 12.5, lineHeight: 1.45, background: note.ok ? "var(--mint-soft)" : "var(--red-soft)", color: note.ok ? "var(--mint-ink)" : "var(--red-ink)" }}>{note.text}</span>}
-      {c.mcp && mcp && <McpPanel c={c} v={mcp} />}
+      {c.mcp && mcp && <McpPanel c={c} id={c.mcp} v={mcp} />}
+      {more.map((m) => (
+        <div key={m.id} style={{ display: "flex", flexDirection: "column", gap: 8, paddingTop: 6, borderTop: "1px solid var(--bd)" }}>
+          <span style={{ fontSize: 15, fontWeight: 700 }}>{MCP_SERVERS[m.id].name}</span>
+          <McpPanel c={c} id={m.id} v={m.v} />
+        </div>
+      ))}
       {c.checks.length > 1 && <span className="row wrap" style={{ gap: 6 }}>{c.checks.map((k) => <span key={k.key} className="pill sm" style={{ background: f.health[k.key] ? "var(--mint-soft)" : "var(--red-soft)", color: f.health[k.key] ? "var(--mint-ink)" : "var(--red-ink)" }}>{k.label}: {f.health[k.key] ? "set up" : "not set up"}</span>)}</span>}
       {!c.mcp && missing.map((k) => <span key={k.key} className="soft-box" style={{ fontSize: 12.5, lineHeight: 1.45 }}>{c.checks.length > 1 ? `${k.label}: ` : ""}{k.setup}</span>)}
       {section("Can read", "Looks only. Nothing changes.", t.read, `Agents can’t read anything from ${c.name}.`)}
@@ -212,6 +221,10 @@ export default async function Connections({ searchParams }: { searchParams: Prom
     }
     mcp = { status, lists, listsProblem, log, vault, org, orgProblem };
   }
+  const more = await Promise.all((sel?.mcpMore ?? []).map(async (id) => {
+    const [status, log] = await Promise.all([mcpStatus(id), mcpLog(id)]);
+    return { id, v: { status, lists: null, listsProblem: null, log, vault: null } as McpView };
+  }));
   const outside = CONNECTIONS.filter((c) => !c.builtIn);
   const ok = outside.filter((c) => isSetUp(c, f.health)).length;
   const grid = (list: Connection[]) => <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(190px, 1fr))", gap: 12 }}>{list.map((c) => <Tile key={c.id} c={c} f={f} on={sel?.id === c.id} />)}</div>;
@@ -227,7 +240,7 @@ export default async function Connections({ searchParams }: { searchParams: Prom
           <span className="side-label" style={{ padding: "4px 2px 0" }}>Built in</span>
           {grid(CONNECTIONS.filter((c) => c.builtIn))}
         </div>
-        {sel && <div className="conn-detail"><Detail c={sel} f={f} mcp={mcp} note={note} /></div>}
+        {sel && <div className="conn-detail"><Detail c={sel} f={f} mcp={mcp} more={more} note={note} /></div>}
       </div>
       <div className="card dark" style={{ gap: 10 }}>
         <span className="row" style={{ gap: 8, fontSize: 15, fontWeight: 600 }}><Icon name="lock" size={15} />Always on, for every agent</span>

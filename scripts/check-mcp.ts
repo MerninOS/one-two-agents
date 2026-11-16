@@ -9,7 +9,7 @@ import { checkNotionArgs, looksLikeNotionKey, notionPageId } from "../core/notio
 import { cashOf, readAccounts, readCategories, readOneTxn, readOrgName, readTxnPage } from "../core/mercury-rules";
 import { LEGACY_ID, keyIdOf, legacyKey, open, seal, vaultKey } from "../core/vault";
 import {
-  type McpServer, MCP_EVENTS, MCP_SERVERS, checkTools, listedTools, toolCheckNote, toolFingerprint, pickScopes, mayReport, isOauth, scrubSecrets, authorizeUrl, discoveryUrls, listSize, mayCall, namedRows, needsRefresh, nextCursor, parseRpc, readAuthServer, readTokens, reportRows, reportTotals, resourceOf, toolPayload,
+  type McpServer, MCP_EVENTS, MCP_SERVERS, checkTools, listedTools, toolCheckNote, toolFingerprint, pickScopes, mayReport, isOauth, mayWrite, checkedTools, scrubSecrets, authorizeUrl, discoveryUrls, listSize, mayCall, namedRows, needsRefresh, nextCursor, parseRpc, readAuthServer, readTokens, reportRows, reportTotals, resourceOf, toolPayload,
 } from "../core/mcp-rules";
 
 // only named read tools, never a write; the server's own read-only switch is on
@@ -191,6 +191,15 @@ assert.equal(readOneTxn({ id: tid(5), amount: -3, status: "sent" })?.id, tid(5))
 assert.deepEqual(readCategories({ categories: [{ id: "k1", name: "Green coffee" }, { id: "k2" }] }).categories, [{ id: "k1", name: "Green coffee" }]);
 assert.equal(readOrgName({ organization: { legalBusinessName: "One Two Coffee Lab LLC", ein: "12-3456789" } }), "One Two Coffee Lab LLC");
 
+// ---- Mercury writes on the gateway's own sign-in (slice 5b)
+assert.deepEqual([...MCP_SERVERS.mercury_write.scopes], ["transactions:update", "offline_access"], "the write sign-in asks for category and memo only");
+assert.deepEqual(MCP_SERVERS.mercury_write.readTools, []);
+assert.ok(mayWrite("mercury_write", "updateTransaction") && !mayCall("mercury_write", "updateTransaction"), "a write tool is never an agent's tool");
+for (const bad of ["requestSendMoney", "requestTransferMoney", "approveReimbursement", "matchReceipt", "createReceiptUploadUrl", "createCategory"]) assert.ok(!mayWrite("mercury_write", bad) && !mayWrite("mercury", bad), `never ${bad}`);
+assert.ok(!mayWrite("mercury", "updateTransaction"), "the agents' read sign-in has no write tools");
+assert.deepEqual(checkedTools("mercury_write"), ["updateTransaction"], "the tool check watches the write tool too");
+for (const srv of Object.values(MCP_SERVERS) as McpServer[]) for (const sc of srv.scopes) assert.ok(!/transfers|transactions:request|reimbursements|budgets|receipts/.test(sc), `${srv.id} never asks for ${sc}`);
+
 // ---- the in-app MCP server (slice 1): every read and calculate call goes through it
 const hostChecks = (async () => {
   const seen: unknown[] = [];
@@ -223,5 +232,10 @@ const hostChecks = (async () => {
 const files = (d: string): string[] => readdirSync(d).flatMap((f) => { const p = join(d, f); return statSync(p).isDirectory() ? files(p) : /\.tsx?$/.test(f) ? [p] : []; });
 const direct = ["core", "agents", "dashboard", "app", "integrations"].flatMap(files).filter((f) => !f.endsWith("core/tools/mcp-host.ts") && /\bt\.run!?\(|\btool\.run!?\(|\.run!\(/.test(readFileSync(f, "utf8")));
 assert.deepEqual(direct, [], "call tools through core/tools/call.ts");
+
+
+// only the gateway calls a write tool
+const writers = ["core", "agents", "dashboard", "app", "integrations", "scripts"].flatMap(files).filter((f) => !f.includes("core/gateway/") && !f.endsWith("integrations/mcp.ts") && !f.endsWith("scripts/check-mcp.ts") && /import[^;]*\bcallWriteTool\b[^;]*from/.test(readFileSync(f, "utf8")));
+assert.deepEqual(writers, [], "callWriteTool is for core/gateway only");
 
 hostChecks.then(() => console.log("mcp: ok"), (e) => { console.error(e); process.exit(1); });

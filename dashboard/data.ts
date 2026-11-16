@@ -105,6 +105,8 @@ export function health(): Record<IntegrationId, boolean> {
     // signed in on Connections, not a setting: getFloor reads mcp_connections
     klaviyo: false,
     // the token vault's own key (core/vault.ts); never made from another secret
+    // the gateway's own Mercury sign-in (category and memo); getFloor reads mcp_connections
+    mercury_write: false,
     vault: vaultReady(),
   };
 }

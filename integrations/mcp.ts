@@ -12,7 +12,7 @@ import { createHash, randomBytes } from "node:crypto";
 import { db } from "@/core/db";
 import { env } from "@/core/env";
 import {
-  MCP_PROTOCOL, MCP_SERVERS, TOOL_CHECK_HOURS, authorizeUrl, checkTools, isOauth, listedTools, toolCheckNote, type ListedTool, discoveryUrls, mayCall, mayReport, needsRefresh, parseRpc, pickScopes, readAuthServer, readTokens, resourceOf, scrubSecrets, toolPayload,
+  MCP_PROTOCOL, MCP_SERVERS, TOOL_CHECK_HOURS, authorizeUrl, checkTools, checkedTools, isOauth, mayWrite, listedTools, toolCheckNote, type ListedTool, discoveryUrls, mayCall, mayReport, needsRefresh, parseRpc, pickScopes, readAuthServer, readTokens, resourceOf, scrubSecrets, toolPayload,
   type AuthServer, type McpEvent, type McpId, type Tokens,
 } from "@/core/mcp-rules";
 import { MIN_SECRET_CHARS, keyIdOf, legacyKey, open as openWith, seal as sealWith, vaultKey, type VaultKey } from "@/core/vault";
@@ -367,7 +367,7 @@ async function listAll(call: (method: string, params: unknown) => Promise<unknow
  */
 async function toolCheck(id: McpId, accept: boolean): Promise<void> {
   await withSession(id, async (call, r) => {
-    const c = checkTools(MCP_SERVERS[id].readTools, await listAll(call), accept ? null : r.tools_seen);
+    const c = checkTools(checkedTools(id), await listAll(call), accept ? null : r.tools_seen);
     const note = toolCheckNote(c);
     const now = new Date().toISOString();
     if (note) {
@@ -388,9 +388,22 @@ const stale = (at: string | null) => !at || Date.now() - Date.parse(at) > TOOL_C
  * Anything else is refused before a request is made. The tool check runs first when it's due.
  */
 export async function callMcpTool(id: McpId, tool: string, args: Record<string, unknown>): Promise<unknown> {
-  const name = MCP_SERVERS[id].name;
-  if (!mayCall(id, tool)) throw new Error(`${tool} isn't on the list of ${name} tools code may call.`);
+  if (!mayCall(id, tool)) throw new Error(`${tool} isn't on the list of ${MCP_SERVERS[id].name} tools code may call.`);
   if (!isOauth(id)) return callLocalTool(id, tool, args);
+  return callRemote(id, tool, args);
+}
+
+/**
+ * Calls one of a server's write tools. Only core/gateway imports this (lint enforces it), and only
+ * after Zak approved the action and the gateway re-checked it against live data.
+ */
+export async function callWriteTool(id: McpId, tool: string, args: Record<string, unknown>): Promise<unknown> {
+  if (!isOauth(id) || !mayWrite(id, tool)) throw new Error(`${tool} isn't a write tool the gateway may call on ${MCP_SERVERS[id].name}.`);
+  return callRemote(id, tool, args);
+}
+
+async function callRemote(id: McpId, tool: string, args: Record<string, unknown>): Promise<unknown> {
+  const name = MCP_SERVERS[id].name;
   const r = await row(id);
   if (r?.secret && !r.paused_at && stale(r.tools_checked_at)) await toolCheck(id, false);
   return withSession(id, async (call) => {

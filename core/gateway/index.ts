@@ -9,7 +9,8 @@ import { db } from "@/core/db";
 import { withRun } from "@/core/runs";
 import { LEAD_REVIEW_HOURS, draftChecker, draftDepartment } from "@/core/org";
 import { hasMercury, mercuryCategories, mercuryTransaction } from "@/integrations/mercury";
-import { attachReceipt, hasMercuryWrite, patchTransaction } from "@/integrations/mercury-write";
+import { attachReceipt, hasMercuryWrite } from "@/integrations/mercury-write";
+import { callWriteTool, mcpStatus } from "@/integrations/mcp";
 import { chicagoDate, offsetOn } from "@/core/time";
 import { createDraft, hasGmail } from "@/integrations/gmail";
 import { ANNOTATE, CAP_KEYS, DRAFT_EMAIL, MAX_RECEIPT_BYTES, RECEIPT_TYPES, TOOLS, effectiveCap, planIsEmpty, planWrite, receiptPathOk, refuseDraftTo, refuseProposal, type AnnotateArgs, type CapKey, type DraftArgs, type ToolName } from "./policy";
@@ -219,8 +220,23 @@ export async function retry(actionId: string) {
 /** Why approved actions can't be written to Mercury right now, or null. (agents.enabled is checked by withRun.) */
 export async function writeBlocker(): Promise<string | null> {
   if (!(await hasMercury())) return "Mercury isn't connected on Connections, so the gateway can't re-check transactions.";
-  if (!hasMercuryWrite()) return "MERCURY_WRITE_TOKEN isn't set, so approved changes wait here.";
+  if (!(await editsReady()) && !hasMercuryWrite()) return "Neither Mercury writes (Connections → Mercury) nor MERCURY_WRITE_TOKEN is set up, so approved changes wait here.";
   return null;
+}
+
+/** The gateway's own Mercury sign-in (category and memo only) is connected and not paused. */
+async function editsReady(): Promise<boolean> {
+  const s = await mcpStatus("mercury_write");
+  return !!s?.connected && !s.paused;
+}
+
+/** A charge's memo and/or category, through Mercury's MCP server on the gateway's sign-in. A field left undefined is not sent, so Mercury keeps it. */
+async function updateCharge(transactionId: string, patch: { note?: string; categoryId?: string }) {
+  const args: Record<string, unknown> = { transactionId };
+  if (patch.note !== undefined) args.note = patch.note;
+  if (patch.categoryId !== undefined) args.categoryId = patch.categoryId;
+  if (Object.keys(args).length === 1) return;
+  await callWriteTool("mercury_write", "updateTransaction", args);
 }
 
 interface ActionRow { id: string; agent_id: string; target: string; args_json: AnnotateArgs; status: string }
@@ -250,6 +266,9 @@ async function applyOne(a: ActionRow, runId: string, cats: () => Promise<Set<str
       await db().from("expense_docs").update({ proposal_status: "applied", updated_at: now }).eq("id", doc.id);
       return "applied" as const;
     }
+    // both ways in are checked before anything is written, so a change never lands half done
+    if (plan.attach && !hasMercuryWrite()) throw new Error("MERCURY_WRITE_TOKEN isn't set, so the receipt can't be attached.");
+    if ((plan.categoryId || plan.note) && !(await editsReady())) throw new Error("Mercury writes isn't connected (Connections → Mercury), so the category and memo can't be set.");
     let attachmentId: string | null = null;
     if (plan.attach) {
       const path = a.args_json.receipt_path!;
@@ -260,7 +279,7 @@ async function applyOne(a: ActionRow, runId: string, cats: () => Promise<Set<str
       const ext = path.split(".").pop()!;
       attachmentId = await attachReceipt(a.target, { name: `receipt.${ext}`, type: RECEIPT_TYPES[ext], bytes: new Uint8Array(await blob.arrayBuffer()) });
     }
-    if (plan.categoryId || plan.note) await patchTransaction(a.target, { categoryId: plan.categoryId, note: plan.note });
+    if (plan.categoryId || plan.note) await updateCharge(a.target, { categoryId: plan.categoryId, note: plan.note });
     const after = { note: plan.note ?? before.note, category_id: plan.categoryId ?? before.category_id, attachments: before.attachments + (plan.attach ? 1 : 0) };
     await done({
       status: plan.skipped.length ? "partial" : "applied",

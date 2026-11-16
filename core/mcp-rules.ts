@@ -71,6 +71,21 @@ export const MCP_SERVERS = {
     writeTools: [],
     signInHint: "Sign in as an admin of One Two’s business org, and pick One Two (not the household account) on Mercury’s page.",
   },
+  mercury_write: {
+    id: "mercury_write",
+    name: "Mercury writes",
+    // A second sign-in to the same server, held only by the gateway (slice 5b). It asks for
+    // transactions:update alone: a charge's category and memo, after Zak approves. No payment,
+    // transfer, receipt, budget or reimbursement scope, so its token can't use those tools.
+    // Receipt files stay on MERCURY_WRITE_TOKEN: Mercury's MCP can't attach a file to a chosen charge.
+    auth: "oauth",
+    url: "https://mcp.mercury.com/mcp",
+    readTools: [],
+    reportTools: [],
+    scopes: ["transactions:update", "offline_access"],
+    writeTools: [{ tool: "updateTransaction", actionType: "mercury_annotate" }],
+    signInHint: "Sign in to One Two’s business org again. This sign-in asks only to change a charge’s category and memo, and only the gateway uses it, after you approve.",
+  },
   notion: {
     id: "notion",
     name: "Notion",
@@ -94,6 +109,14 @@ export const isMcpId = (s: string): s is McpId => s in MCP_SERVERS;
 export function mayCall(id: string, tool: string): boolean {
   return isMcpId(id) && (MCP_SERVERS[id].readTools as readonly string[]).includes(tool);
 }
+
+/** A server's write tools: only core/gateway calls one, after Zak approves (integrations/mcp.ts callWriteTool). */
+export function mayWrite(id: string, tool: string): boolean {
+  return isMcpId(id) && (MCP_SERVERS[id].writeTools as readonly { tool: string }[]).some((w) => w.tool === tool);
+}
+
+/** Every tool the tool check watches on a server: its read tools and its write tools. */
+export const checkedTools = (id: McpId): string[] => [...MCP_SERVERS[id].readTools, ...(MCP_SERVERS[id].writeTools as readonly { tool: string }[]).map((w) => w.tool)];
 
 /** Report tools: code-delivered writes into One Two's own workspace, only on a server we run. */
 export function mayReport(id: string, tool: string): boolean {

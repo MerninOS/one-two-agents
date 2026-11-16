@@ -26,9 +26,10 @@ or publish action type is built, so no agent gets one of those integrations: dra
   rows; a new payee is always Draft and never promoted), as Mercury send-money requests.
   No card actions, no transfers to personal accounts, no void or delete of a transaction,
   bill, invoice or account. Writes to existing transactions are limited to attachment,
-  category and memo, by CFO and Bookkeeper. Each kind of write gets its own token, held
-  only by the gateway: only `core/gateway` may import `integrations/mercury-write.ts`
-  (lint enforces it).
+  category and memo, by CFO and Bookkeeper. Each kind of write gets its own sign-in, held
+  only by the gateway: category and memo through Mercury's MCP on the `mercury_write` sign-in
+  (scope `transactions:update` only, via `callWriteTool`), receipt files through
+  `integrations/mercury-write.ts`. Only `core/gateway` may import either (lint enforces it).
 - Shopify is read-only here. `scripts/validate-graphql.mjs` fails on any mutation. An
   agent that needs Shopify writes gets its own separately scoped app.
 - Email: first contact with a person who has never heard from One Two is always Draft

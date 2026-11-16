@@ -126,3 +126,25 @@ tool" (Mercury's MCP docs). So the agents' sign-in (`MCP_SERVERS.mercury`) asks 
   moves them to a second, gateway-only sign-in that asks only for the write scopes they need.
 
 No migration.
+
+## Slice 5b: gateway writes on their own Mercury sign-in
+
+Zak's choice (2026-11-16): split the write. Mercury's MCP server can set a charge's category and
+memo (`updateTransaction`, scope `transactions:update`). It can't attach a file to a chosen charge:
+`createReceiptUploadUrl` + `matchReceipt` upload a receipt and let Mercury's OCR pick the charge,
+and there is no way to undo a wrong match. So:
+
+- **Category and memo** go through a second sign-in to the same server, `MCP_SERVERS.mercury_write`.
+  It asks for `transactions:update` and `offline_access` only, with no payment, transfer, receipt,
+  budget or reimbursement scope. Its one write tool is `updateTransaction`, and it has no read
+  tools. Zak connects it under Connections → Mercury → Mercury writes.
+- **Receipt files** stay on `MERCURY_WRITE_TOKEN` (`integrations/mercury-write.ts`, now
+  `attachReceipt` only), attached to the exact charge Zak approved.
+- `callWriteTool` in `integrations/mcp.ts` calls only a profile's write tools. Lint lets only
+  `core/gateway` import it, and `check:mcp` checks that too. The gateway still re-checks the
+  charge live (through the read sign-in) before writing, and checks that both ways in are set up
+  before it writes anything, so a change never lands half done.
+- The tool check watches write tools as well (`checkedTools`): if `updateTransaction` changes its
+  inputs, the write sign-in pauses until Zak signs in again.
+
+No migration.
