@@ -12,6 +12,20 @@ Slices: 1 runner speaks only MCP, 2 credential vault, 3 profiles and connection 
 4 Notion, 5 Mercury, 6 Gmail (reads and drafts; send stays off), 7 Shopify on our own server,
 8 cleanup.
 
+## Slice 1: the runner speaks only MCP
+
+Every read and calculate call goes through the in-app MCP server (`core/tools/mcp-host.ts`): a
+JSON-RPC `tools/call` over the tool list, crossing as JSON, read back with the same
+`parseRpc`/`toolPayload` that read Klaviyo's replies. Callers use `core/tools/call.ts`
+(`callTool`, `listTools`): the runner's explore and playbook steps, the playbook dry run and the
+builder's tool check. The server serves only tools that read or work numbers out (not reports,
+actions or Claude's own web tools), checks every input again, passes the caller's context in
+`_meta["one-two/ctx"]`, and drops numbers that aren't finite. A tool's error comes back as it was.
+`npm run check:mcp` fails if anything else calls a tool's `run`.
+
+Report and action tools stay out of MCP on purpose: code delivers reports after a run, and
+actions are staged for the gateway.
+
 ## Slice 2: the credential vault
 
 | Rule | Where |

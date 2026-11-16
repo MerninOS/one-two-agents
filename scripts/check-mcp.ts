@@ -1,6 +1,10 @@
 // MCP connection rules (docs/company-mode.md, slice 6): `npm run check:mcp`. Pure: no network.
 import assert from "node:assert/strict";
 import { createCipheriv, createHash, randomBytes } from "node:crypto";
+import { readFileSync, readdirSync, statSync } from "node:fs";
+import { join } from "node:path";
+import { CTX_META, callThrough, createHost, listThrough, served } from "../core/tools/mcp-host";
+import type { ToolDef } from "../core/tools/types";
 import { LEGACY_ID, keyIdOf, legacyKey, open, seal, vaultKey } from "../core/vault";
 import {
   MCP_EVENTS, MCP_SERVERS, pickScopes, scrubSecrets, authorizeUrl, discoveryUrls, listSize, mayCall, namedRows, needsRefresh, nextCursor, parseRpc, readAuthServer, readTokens, reportRows, reportTotals, resourceOf, toolPayload,
@@ -110,4 +114,37 @@ for (const bad of ["eyJhbGciOi.abc", "rt_123456789", "abcdefghijkl12", "xyz789",
 assert.ok(clean.includes("state=s") && clean.includes("401"), "the rest stays readable");
 assert.deepEqual([...MCP_EVENTS].sort(), ["connected", "disconnected", "refresh_failed", "refreshed", "refused", "resealed", "revoke_failed", "revoked"]);
 
-console.log("mcp: ok");
+// ---- the in-app MCP server (slice 1): every read and calculate call goes through it
+const hostChecks = (async () => {
+  const seen: unknown[] = [];
+  const tools: Record<string, ToolDef> = {
+    lots: { id: "lots", label: "Lots", detail: "Green lots", kind: "read", group: "shopify", trusted: true, needs: [], costUsd: 0,
+      params: [{ name: "days", type: "int", min: 1, max: 30, default: 7, description: "Days" }],
+      run: async (input, ctx) => { seen.push({ input, agent: ctx.agentId, pages: ctx.notionPages.length }); return { data: { n: 2 }, numbers: { lots: 2, bad: NaN }, picks: { l1: { kind: "lot", id: "x", label: "X" } } }; } },
+    math: { id: "math", label: "Math", detail: "Adds", kind: "calculate", group: "calculate", trusted: true, needs: [], costUsd: 0, params: [], run: async () => { throw new Error("no data for that period"); } },
+    send: { id: "send", label: "Propose send", detail: "x", kind: "action", group: "gmail", trusted: true, needs: [], costUsd: 0, params: [], stage: () => ({ problem: "no" }) },
+    brief: { id: "brief", label: "Brief", detail: "x", kind: "report", group: "email", trusted: true, needs: [], costUsd: 0, params: [], deliver: async () => "sent" },
+    web: { id: "web", label: "Web", detail: "x", kind: "read", group: "web", trusted: false, needs: [], costUsd: 0, params: [], server: { type: "web_search_20260209", maxUses: 3 } },
+  };
+  const host = createHost(tools);
+  const ctx = { agentId: "b_test", notionPages: [{ id: "p1", label: "Page" }], outputSources: [] };
+  const out = await callThrough(host, "lots", { days: 3 }, ctx);
+  assert.deepEqual(out, { data: { n: 2 }, numbers: { lots: 2 }, picks: { l1: { kind: "lot", id: "x", label: "X" } } }, "same result, NaN dropped");
+  assert.deepEqual(seen.at(-1), { input: { days: 3 }, agent: "b_test", pages: 1 }, "the caller's context rides along");
+  await assert.rejects(callThrough(host, "lots", { days: 99 }, ctx), /Input refused: days/, "the server checks input again");
+  await assert.rejects(callThrough(host, "math", {}, ctx), /no data for that period/, "a tool's own error comes back as it was");
+  for (const name of ["send", "brief", "web", "nope"]) await assert.rejects(callThrough(host, name, {}, ctx), /isn't a tool this server serves/, name);
+  assert.ok(!served(tools.send) && !served(tools.brief) && !served(tools.web) && served(tools.lots) && served(tools.math));
+  const list = await listThrough(host);
+  assert.deepEqual(list.map((t) => t.name), ["lots", "math"], "only reads and calculations are listed");
+  assert.equal(list[0].annotations.readOnlyHint, true);
+  assert.deepEqual(await host({ jsonrpc: "2.0", id: 5, method: "resources/list" }), { jsonrpc: "2.0", id: 5, error: { code: -32601, message: "no method resources/list" } });
+  assert.equal(CTX_META, "one-two/ctx");
+})();
+
+// only the in-app server runs a tool's code: nothing else calls `.run(` on a tool
+const files = (d: string): string[] => readdirSync(d).flatMap((f) => { const p = join(d, f); return statSync(p).isDirectory() ? files(p) : /\.tsx?$/.test(f) ? [p] : []; });
+const direct = ["core", "agents", "dashboard", "app", "integrations"].flatMap(files).filter((f) => !f.endsWith("core/tools/mcp-host.ts") && /\bt\.run!?\(|\btool\.run!?\(|\.run!\(/.test(readFileSync(f, "utf8")));
+assert.deepEqual(direct, [], "call tools through core/tools/call.ts");
+
+hostChecks.then(() => console.log("mcp: ok"), (e) => { console.error(e); process.exit(1); });

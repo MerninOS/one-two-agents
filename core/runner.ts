@@ -24,6 +24,7 @@ import { chicagoDate, dayTitle } from "@/core/time";
 import type { RunResult } from "@/core/runs";
 import { Anthropic, claude, costUsd, inputTokens, isModel } from "@/integrations/anthropic";
 import { TOOLS } from "@/core/tools/catalog";
+import { callTool, hostFor } from "@/core/tools/call";
 import { checkInput, inputSchema, paramsOf, type Pick, type PickRef, type Staged, type ToolCtx, type ToolDef } from "@/core/tools/types";
 import { MAX_ROWS } from "@/core/tools/limits";
 import { propose, type Proposal } from "@/core/gateway";
@@ -180,6 +181,8 @@ export async function runExplore(spec: AgentSpec, opts: ExploreOpts): Promise<Ru
   if (!isModel(spec.model)) throw new Error(`No price for ${spec.model}, so its cost can't be computed`);
   const ctx: ToolCtx = { agentId: opts.agentId, notionPages: spec.notionPages, outputSources: spec.readsFrom, reportPage: spec.reportPage, runId: opts.runId ?? null, granted: spec.tools };
   const cat = opts.tools ?? TOOLS;
+  // every read and calculate call goes through MCP (core/tools/mcp-host.ts)
+  const host = hostFor(opts.tools);
   const granted = spec.tools.map((id) => cat[id]).filter((t) => !!t);
   const offered = granted.filter((t) => offeredTo(t, opts.agentId));
   const actionTools = offered.filter((t) => t.kind === "action");
@@ -281,7 +284,7 @@ export async function runExplore(spec: AgentSpec, opts: ExploreOpts): Promise<Ru
       return { ok: true, content: `Staged proposal ${actions.length} (${staged.title}). It goes to Zak as an approval card after you finish. Nothing has changed yet.` };
     }
     try {
-      const out = await t.run!(checked.input, ctx);
+      const out = await callTool(t.id, checked.input, ctx, host);
       const body = cut(JSON.stringify(out.data ?? null), MAX_RESULT_CHARS);
       if (out.numbers) for (const [k, v] of Object.entries(out.numbers)) if (Number.isFinite(v)) numbers[k] = v;
       const idx = steps.length;
@@ -457,7 +460,7 @@ export async function dryRunTools(spec: AgentSpec, agentId: string): Promise<{ t
     const checked = checkInput(params, first);
     if ("problem" in checked) return { tool: id, label: t.label, ok: false, note: checked.problem, ms: 0 };
     try {
-      const out = await t.run!(checked.input, ctx);
+      const out = await callTool(t.id, checked.input, ctx);
       const nums = Object.entries(out.numbers ?? {}).slice(0, 4).map(([k, v]) => `${k.replace(/_/g, " ")} ${v}`).join(", ");
       return { tool: id, label: t.label, ok: true, note: nums || `${JSON.stringify(out.data ?? null).length} characters of data`, ms: Date.now() - t0 };
     } catch (e) {
