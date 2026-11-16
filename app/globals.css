@@ -591,3 +591,30 @@ a.goal-add:hover { text-decoration: none; color: var(--ink); }
   .avery.m-open { display: flex; }
   .avery { position: fixed; inset: 0; z-index: 60; width: 100%; height: 100dvh; min-height: 0; border-radius: 0; padding: 14px 14px calc(14px + env(safe-area-inset-bottom)); }
 }
+
+/* Crew > Schedule: the org's day and the cost table (dashboard/components/OrgDay.tsx). On a phone the
+   timeline drops its name column (the name sits above each track) and the cost table becomes one
+   small card per agent, so nothing scrolls sideways. */
+.od-wrap { min-width: 720px; display: flex; flex-direction: column; gap: 8px; position: relative; }
+.od-row { display: grid; grid-template-columns: 200px minmax(0, 1fr); gap: 14px; align-items: center; }
+.oc-wrap { min-width: 640px; }
+.oc-row { display: grid; grid-template-columns: 1.5fr 1.3fr .7fr .8fr 1.3fr; gap: 10px; align-items: center; padding: 10px 4px; }
+.oc-head { padding: 8px 4px; font-weight: 700; }
+.oc-toggle { display: flex; justify-content: flex-end; }
+.oc-label { display: none; }
+@media (max-width: 760px) {
+  .od-wrap, .oc-wrap { min-width: 0; }
+  .od-row { grid-template-columns: minmax(0, 1fr); gap: 6px; }
+  .od-head > span:first-child { display: none; }
+  .od-odd { display: none; }
+  .od-anchor { left: 0 !important; transform: none !important; }
+  .od-head > div { height: 46px !important; }
+  .oc-head { display: none; }
+  .oc-row { grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: "agent month" "when run" "toggle toggle"; row-gap: 6px; padding: 12px 2px; }
+  .oc-row > :first-child { grid-area: agent; }
+  .oc-when { grid-area: when; }
+  .oc-run { grid-area: run; }
+  .oc-month { grid-area: month; }
+  .oc-toggle { grid-area: toggle; justify-content: flex-start; }
+  .oc-label { display: inline; font-weight: 400; color: var(--mut); }
+}

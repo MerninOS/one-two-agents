@@ -23,8 +23,9 @@ The old paths `/api/agents/brief` and `/api/agents/hunter` still work.
 - Schedules live in the crew flow (Control Room, Crew > Schedule; `docs/agent-setup.md`, slice 5),
   not in `vercel.json`. The one Vercel Schedule is `dispatch` (`/api/dispatch`, every 15
   minutes, `America/Chicago`): it starts the chains that are on and due, and steps waiting for
-  their "not before" time. **Every chain is off while the agents are in development**, so the
-  dispatcher does nothing. To stop it entirely:
+  their "not before" time, but only while the org is on (`policies.org`, the switch at the top of
+  Crew > Schedule; docs/org-schedule.md). **The org stays off until launch**, so the dispatcher
+  starts nothing. To stop it entirely:
   ```bash
   vercel schedules list
   vercel schedules disable dispatch   # or enable; no redeploy needed
@@ -32,7 +33,7 @@ The old paths `/api/agents/brief` and `/api/agents/hunter` still work.
   A chain step is a request to `/api/agents/<id>?trigger=chain&chain=…&key=…&step=…`; the route
   checks it against the saved flow.
 - `agents.enabled = false` is a second off switch: a firing is logged as skipped at $0.
-  The CFO snapshot and brief are also off there until launch.
+  Turning on the org puts every agent in the org on duty; turning it off takes them all off.
 - `agents.daily_budget_usd` caps model spend per agent per UTC day.
 - The Hunter and the Bookkeeper have no schedule and skip any call without `?trigger=manual`.
 - `GET /api/health` (same bearer) shows which settings are present and whether Supabase answers.

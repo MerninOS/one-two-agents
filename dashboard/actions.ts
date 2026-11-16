@@ -14,7 +14,7 @@ import { applyApproved, decide, loadCaps, queueBookkeeperProposals, retry } from
 import { CAPS, capChange, fmtCap, type CapKey } from "@/core/gateway/policy";
 import { env } from "@/core/env";
 import { approvalDecided, startStep } from "@/core/chain";
-import { activateFlow, flowLooser, flowProblems, listFlowVersions, loadFlow, saveFlowVersion, withAgentTime, type AgentTime, type Flow } from "@/core/flow";
+import { activateFlow, flowLooser, flowProblems, listFlowVersions, loadFlow, saveFlowVersion, withAgentTime, DAY_WORDS, type AgentTime, type Flow } from "@/core/flow";
 import { ANNOTATE } from "@/core/gateway";
 import { BUDGET_CEILING, activateSpecVersion, createBuiltAgent, draftOf, listSpecVersions, loadSpec, readSpec, saveSpecVersion, specLooser, type AgentSpec } from "@/core/agent-spec";
 import { dryRunTools, runExplore, type PlaybookStep } from "@/core/runner";
@@ -443,7 +443,7 @@ export async function previewChain(flow: unknown, key: string): Promise<ActionRe
       const when = nxt.when ?? "ok";
       const goes = when === "any" || (when === "ok" ? status === "ok" : status === "failed");
       next = !goes ? `${nn} would not run (${when === "ok" ? "only after a step that worked" : "only after a failure"}).`
-        : `${nn} would run next${nxt.days === "weekdays" ? " on weekdays" : ""}${nxt.notBefore ? `, not before ${nxt.notBefore}` : ""}${nxt.check ? `, if ${nxt.check.metric} ${nxt.check.op} ${nxt.check.value} (a dry run reports no numbers, so not tested)` : ""}${nxt.passAlong ? `, with ${name}’s summary passed along` : ""}.`;
+        : `${nn} would run next${nxt.days && nxt.days !== "daily" ? ` ${DAY_WORDS[nxt.days]}` : ""}${nxt.notBefore ? `, not before ${nxt.notBefore}` : ""}${nxt.check ? `, if ${nxt.check.metric} ${nxt.check.op} ${nxt.check.value} (a dry run reports no numbers, so not tested)` : ""}${nxt.passAlong ? `, with ${name}’s summary passed along` : ""}.`;
       if (!goes) { steps.push({ agent: s.agent, name, summary, next }); break; }
     }
     steps.push({ agent: s.agent, name, summary, next });

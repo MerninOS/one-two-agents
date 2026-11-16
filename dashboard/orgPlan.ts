@@ -1,6 +1,6 @@
 // What turning on the org does, worked out in code before Zak confirms it (docs/org-schedule.md).
 // Pure: no database, so `npm run check:org-switch` tests it and the confirm and the action agree.
-import type { Chain } from "@/core/flow-rules";
+import { DAY_RUNS, type Chain } from "@/core/flow-rules";
 import type { Schedule } from "./crew";
 import { scheduleOf } from "./roster";
 import { nextRuns } from "./schedule";
@@ -42,8 +42,8 @@ export interface OrgPlan {
   unknownCost: string[];
 }
 
-/** Runs in 30 days on a schedule: 30 daily, 22 on weekdays, none by hand. */
-export const runsInMonth = (s: Schedule) => (s.kind === "daily" ? 30 : s.kind === "weekdays" ? 22 : 0);
+/** Runs in 30 days on a schedule (DAY_RUNS: 30 daily, 22 on weekdays, 4 on Mondays), none by hand. */
+export const runsInMonth = (s: Schedule) => (s.kind === "manual" ? 0 : DAY_RUNS[s.kind] ?? 0);
 
 export function planOrgOn(members: readonly OrgMember[], chains: readonly Chain[], now: number): OrgPlan {
   const inOrg = members.filter((m) => m.inOrg);

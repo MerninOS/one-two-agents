@@ -41,7 +41,7 @@ and per-agent control over when each agent runs and what that costs.
   it is in no such chain (`agents.manual_only`, which slice 2 sets from the toggle).
 - **Cost a month** is computed in code: the average of its last 10 real runs (or its cap per run
   before it has any) times its runs in 30 days: 30 daily, 22 weekdays, 4 Mondays, 0 by hand
-  (`dashboard/orgPlan.ts`).
+  (`dashboard/orgPlan.ts`, `DAY_RUNS` in `core/flow-rules.ts`).
 
 ## Slices
 
@@ -55,9 +55,10 @@ and per-agent control over when each agent runs and what that costs.
    the monthly total, and a panel per agent for days and time. Edits are flow edits through
    `saveCrewFlow`'s rules (a one-step chain `solo-<agent>`, or the step in its chain). The canvas
    moves behind "Edit chains". The profile's two switches become a line linking here (deleted).
-3. **Mondays, phone and cleanup.** A Mondays start in `core/flow-rules.ts` (heads plan Mondays),
-   the phone layout, and dead weight removed: the unused `agents.schedule` column, stale
-   "mirrored from vercel.json" notes (`dashboard/schedule.ts`, `docs/control-room.md`).
+3. **Mondays, phone and cleanup (built, PR after #63).** A Mondays start in `core/flow-rules.ts`
+   (heads plan Mondays), the phone layout, and dead weight removed: the unused `agents.schedule`
+   column (migration `20261129090000_drop_agents_schedule.sql`, applied after the merge), stale
+   "mirrored from vercel.json" notes (`docs/control-room.md`, README).
 
 ## Rules
 
@@ -86,3 +87,14 @@ and per-agent control over when each agent runs and what that costs.
   the agent editor (on duty, days, time, next runs, cost, budget). The chain canvas sits under
   "Edit chains". The profile's On the crew and Runs only by hand switches are gone; the profile links
   here (`SwitchButton` deleted).
+
+## Slice 3 as built
+
+- `Days` is daily, weekdays or Mondays (`DAYS`, `DAY_RUNS`, `DAY_WORDS` and `onDay` in
+  `core/flow-rules.ts`). A chain can start on Mondays, a later step can run only on Mondays, and the
+  agent editor, the chain canvas, the cost a month (4 runs) and next runs all follow from that list.
+- On a phone (760px and under) the timeline drops its name column and stacks each agent's name above
+  its track with every other hour label, the anchor pill sits at the left, and the cost table turns
+  into one small card per agent (name and month on top, when and a run, then the toggle). Nothing
+  scrolls sideways.
+- `agents.schedule` is no longer selected or written; the migration drops it once the PR is deployed.

@@ -3,11 +3,13 @@
 // version, runs, seat and schedule), whether it started in code or was built in the app. Only the
 // planned roster below is written here, until each one is built (docs/agent-roster.md).
 
+import type { Days } from "@/core/flow-rules";
+
 export type Tier = "Report" | "Draft" | "Act";
 export type IntegrationId = "shopify" | "mercury" | "notion" | "email" | "gmail" | "gmail_read" | "claude" | "web" | "supabase" | "github" | "klaviyo" | "mercury_write" | "mercury_files" | "vault";
 
 export interface Schedule {
-  kind: "manual" | "daily" | "weekdays";
+  kind: "manual" | Days;
   /** "HH:MM" in Central Time */
   time?: string;
   /** The crew flow chain (core/flow.ts) that runs it on this schedule. Off until Zak turns the chain on. */

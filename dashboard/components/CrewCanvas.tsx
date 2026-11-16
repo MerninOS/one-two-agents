@@ -10,7 +10,7 @@ import { useRouter } from "next/navigation";
 import { Handle, Position, ReactFlow, type Edge, type Node, type NodeProps } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import type { ActionResult, ChainPreviewStep } from "@/dashboard/actions";
-import { flowLooser, flowProblems, nextFirings, runsPerMonth, type Chain, type Days, type Flow, type Op, type Start, type Step, type When } from "@/core/flow-rules";
+import { DAYS, flowLooser, flowProblems, nextFirings, runsPerMonth, type Chain, type Days, type Flow, type Op, type Start, type Step, type When } from "@/core/flow-rules";
 import { Icon } from "./Icon";
 import { Modal, Toast, type Confirm } from "./client";
 import { Summary } from "./ui";
@@ -51,15 +51,16 @@ const readDraft = (): Flow | null => { try { const v = localStorage.getItem(DRAF
 const writeDraft = (f: Flow | null) => { try { if (f) localStorage.setItem(DRAFT_KEY, JSON.stringify(f)); else localStorage.removeItem(DRAFT_KEY); } catch { /* storage blocked: the draft lives until reload */ } };
 
 function startLine(s: Start, tools: CrewCanvasData["approvalTools"]) {
-  if (s.type === "schedule") return `${s.days === "daily" ? "Every day" : "Weekdays"} at ${clock(s.time)}`;
+  if (s.type === "schedule") return `${DAY_LABEL[s.days]} at ${clock(s.time)}`;
   if (s.type === "button") return "When you press Run chain";
   return `When you ${s.decision === "any" ? "decide" : s.decision} ${tools.find((t) => t.id === s.tool)?.label ?? s.tool}`;
 }
+const DAY_LABEL: Record<Days, string> = { daily: "Every day", weekdays: "Weekdays", mondays: "Mondays" };
 function stepLine(st: Step, k: number) {
   const bits: string[] = [];
   if (k > 0) bits.push(WHEN_LABEL[st.when ?? "ok"]);
   if (st.check) bits.push(`if ${st.check.metric} ${st.check.op} ${st.check.value}`);
-  if (st.days === "weekdays") bits.push("weekdays");
+  if (st.days && st.days !== "daily") bits.push(st.days);
   if (st.notBefore) bits.push(`not before ${clock(st.notBefore)}`);
   if (st.passAlong) bits.push("reads the hand-off");
   return bits;
@@ -244,7 +245,7 @@ export function CrewCanvas({ d, actions }: { d: CrewCanvasData; actions: CrewAct
               </div>
               {chain.start.type === "schedule" && (
                 <span className="row wrap" style={{ gap: 8 }}>
-                  <select className="input sel-auto" value={chain.start.days} aria-label="Days" onChange={(e) => setChain({ ...chain, start: { ...(chain.start as Extract<Start, { type: "schedule" }>), days: e.target.value as Days } })}><option value="daily">Every day</option><option value="weekdays">Weekdays</option></select>
+                  <select className="input sel-auto" value={chain.start.days} aria-label="Days" onChange={(e) => setChain({ ...chain, start: { ...(chain.start as Extract<Start, { type: "schedule" }>), days: e.target.value as Days } })}>{DAYS.map((d) => <option key={d} value={d}>{DAY_LABEL[d]}</option>)}</select>
                   <select className="input sel-auto" value={chain.start.time} aria-label="Time" onChange={(e) => setChain({ ...chain, start: { ...(chain.start as Extract<Start, { type: "schedule" }>), time: e.target.value } })}>{QUARTERS.map((q) => <option key={q} value={q}>{clock(q)}</option>)}</select>
                 </span>
               )}
@@ -298,7 +299,7 @@ export function CrewCanvas({ d, actions }: { d: CrewCanvasData; actions: CrewAct
                   )}
                   <div className="row wrap" style={{ gap: 8, fontSize: 13 }}>
                     <span className="muted">On</span>
-                    <select className="input sel-auto" value={st.days ?? "daily"} aria-label="Days" onChange={(e) => setStep(k, { ...st, days: e.target.value === "daily" ? undefined : (e.target.value as Days) })}><option value="daily">any day</option><option value="weekdays">weekdays only</option></select>
+                    <select className="input sel-auto" value={st.days ?? "daily"} aria-label="Days" onChange={(e) => setStep(k, { ...st, days: e.target.value === "daily" ? undefined : (e.target.value as Days) })}>{DAYS.map((d) => <option key={d} value={d}>{d === "daily" ? "any day" : `${d} only`}</option>)}</select>
                     {k > 0 && <>
                       <span className="muted">not before</span>
                       <select className="input sel-auto" value={st.notBefore ?? ""} aria-label="Not before" onChange={(e) => setStep(k, { ...st, notBefore: e.target.value || undefined })}><option value="">no wait</option>{QUARTERS.map((q) => <option key={q} value={q}>{clock(q)}</option>)}</select>
