@@ -47,7 +47,7 @@ export interface RunMemory {
   groups: Record<string, { lines: number; tokens: number }>;
   pages?: { page_id: string; title: string; tokens: number; cut: boolean; problem: string | null }[];
 }
-export interface AgentRow { id: string; name: string; model: string; schedule: string | null; enabled: boolean; daily_budget_usd: number }
+export interface AgentRow { id: string; name: string; model: string; enabled: boolean; daily_budget_usd: number }
 
 export interface Floor {
   ok: boolean;
@@ -129,9 +129,9 @@ export const getFloor = cache(async (): Promise<Floor> => {
   const [a, r, ph, ap, pp, jobsForYou, lessonsWaiting, defs, flowRow, org, mcp, orgSwitch] = await Promise.all([
     // role, icon, hue, manual_only and created_at come with the roster migration; the older shape until then
     // in_org comes with the org switch migration, role, icon, hue, manual_only and created_at with the roster one; older shapes until then
-    db().from("agents").select("id, name, model, schedule, enabled, daily_budget_usd, role, icon, hue, manual_only, in_org, created_at")
-      .then((x) => (x.error ? db().from("agents").select("id, name, model, schedule, enabled, daily_budget_usd, role, icon, hue, manual_only, created_at") : x))
-      .then((x) => (x.error ? db().from("agents").select("id, name, model, schedule, enabled, daily_budget_usd") : x)),
+    db().from("agents").select("id, name, model, enabled, daily_budget_usd, role, icon, hue, manual_only, in_org, created_at")
+      .then((x) => (x.error ? db().from("agents").select("id, name, model, enabled, daily_budget_usd, role, icon, hue, manual_only, created_at") : x))
+      .then((x) => (x.error ? db().from("agents").select("id, name, model, enabled, daily_budget_usd") : x)),
     db().from("agent_runs").select(RUN_COLS).gte("started_at", since).order("started_at", { ascending: false }).limit(1000),
     db().from("expense_docs").select("id", { count: "exact", head: true }).eq("status", "needs_photo"),
     // drafts still with their lead (slice 4) aren't waiting on Zak yet; the older shape until that migration is applied
@@ -151,7 +151,7 @@ export const getFloor = cache(async (): Promise<Floor> => {
   for (const [id, st] of mcp) if (st?.connected && !st.paused && extra[id] !== false) h[id] = true;
   if (a.error || r.error) return { ...empty, problem: `Supabase: ${(a.error ?? r.error)?.message}` };
   const rows = (a.data ?? []) as (AgentRow & RosterRow)[];
-  const agents = Object.fromEntries(rows.map((x) => [x.id, { id: x.id, name: x.name, model: x.model, schedule: x.schedule, enabled: x.enabled, daily_budget_usd: Number(x.daily_budget_usd) } as AgentRow]));
+  const agents = Object.fromEntries(rows.map((x) => [x.id, { id: x.id, name: x.name, model: x.model, enabled: x.enabled, daily_budget_usd: Number(x.daily_budget_usd) } as AgentRow]));
   const all = (r.data ?? []).map(toRun);
   // a Preview is not a run of the agent: it stays out of the floor, the run log
   // and Replay, but its cost counts toward today's spend, the same as withRun's budget check

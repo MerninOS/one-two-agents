@@ -3,7 +3,8 @@
 import assert from "node:assert/strict";
 
 import { planOrgOn, runsInMonth } from "../dashboard/orgPlan";
-import { flowProblems, withAgentTime, type Chain, type Flow } from "../core/flow-rules";
+import { flowProblems, nextFirings, onDay, runsPerMonth, withAgentTime, type Chain, type Flow } from "../core/flow-rules";
+import { nextRuns } from "../dashboard/schedule";
 import { orgDay } from "../dashboard/orgDay";
 import type { CrewMember } from "../dashboard/crew";
 
@@ -62,6 +63,17 @@ assert.equal(p3.totalMonth, 0);
 assert.equal(runsInMonth({ kind: "daily" }), 30);
 assert.equal(runsInMonth({ kind: "weekdays" }), 22);
 assert.equal(runsInMonth({ kind: "manual" }), 0);
+assert.equal(runsInMonth({ kind: "mondays" }), 4);
+
+// ---- Mondays (slice 3): a chain can start on Mondays only; the next Monday from Monday afternoon is a week out
+assert.equal(onDay("mondays", "2026-11-16"), true);
+assert.equal(onDay("mondays", "2026-11-17"), false);
+assert.deepEqual(nextRuns({ kind: "mondays", time: "07:00" }, now, 2), [Date.parse("2026-11-23T07:00:00-06:00"), Date.parse("2026-11-30T07:00:00-06:00")]);
+const mondayFlow: Flow = { chains: [{ key: "plan", name: "Plan", on: true, start: { type: "schedule", days: "mondays", time: "07:00" }, steps: [{ agent: "b_piper" }] }] };
+assert.deepEqual(flowProblems(mondayFlow, { ids: ["b_piper"], manualOnly: new Set() }), []);
+assert.deepEqual(nextFirings(mondayFlow.chains[0], now, 1), [Date.parse("2026-11-23T07:00:00-06:00")]);
+assert.equal(runsPerMonth(mondayFlow.chains[0]), 4);
+assert.deepEqual(flowProblems({ chains: [{ ...mondayFlow.chains[0], start: { type: "schedule", days: "fridays" as never, time: "07:00" } }] }, { ids: ["b_piper"], manualOnly: new Set() }).length, 1);
 
 // ---- one agent's time (core/flow-rules.ts withAgentTime)
 const flow: Flow = { chains: [{ ...morning, on: true }] };
@@ -80,6 +92,8 @@ const av = ok(withAgentTime(flow, "chief_of_staff", "Avery", { days: "weekdays",
 assert.equal(av.notBefore, "07:00");
 assert.equal(av.days, "weekdays");
 assert.equal(av.passAlong, true);
+// Mondays for an agent in no chain
+assert.deepEqual(ok(withAgentTime(flow, "b_piper", "Piper", { days: "mondays", time: "07:00" })).chains[1].start, { type: "schedule", days: "mondays", time: "07:00" });
 // a later step can't run before its chain starts
 assert.ok("refuse" in withAgentTime(flow, "chief_of_staff", "Avery", { days: "weekdays", time: "05:00" }));
 assert.ok("refuse" in withAgentTime(flow, "b_piper", "Piper", { days: "weekdays", time: "06:10" }));

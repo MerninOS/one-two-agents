@@ -159,11 +159,11 @@ are in `core/flow-rules.ts` (no database, so the browser checks a draft too), th
 dispatcher in `app/api/dispatch`. Migration `20261112200000_crew_flow.sql`.
 
 - A flow is up to 12 chains. A chain has a name, an on switch, one start and one to three agents.
-- Starts: a schedule (every day or weekdays, Chicago time, on a quarter hour), the Run chain
+- Starts: a schedule (every day, weekdays or Mondays, Chicago time, on a quarter hour), the Run chain
   button, or an approval being decided (approve, reject or either; at most once a minute per chain).
 - Each step after the first can: run after the step before worked, failed, or either way; only go
   on if a number the step before computed in code passes a check (Rowan: new leads, drafts; Quinn:
-  changes proposed, receipts still missing; Morgan: orders yesterday); only run on weekdays; wait
+  changes proposed, receipts still missing; Morgan: orders yesterday); only run on weekdays or Mondays; wait
   until a time ("not before 6:45"); and read the step before's summary and numbers as facts
   (Avery only, so far). The hand-off is labelled as another agent's words, not instructions.
 - One Vercel Schedule, `dispatch`, every 15 minutes. It starts the chains whose time came in the
@@ -185,7 +185,7 @@ dispatcher in `app/api/dispatch`. Migration `20261112200000_crew_flow.sql`.
   logged) and says what the chain would do next. A dry run reports no numbers, so checks show as
   not tested.
 - Cost: each agent's average over its last real runs; per chain run, and per month for a
-  scheduled chain that is on (30 runs daily, 22 weekdays).
+  scheduled chain that is on (30 runs daily, 22 weekdays, 4 Mondays).
 - Replay: a chain run's page shows every step of that chain run, its status and cost, and the
   total. `agent_runs` gains `chain_id`, `chain_key`, `chain_step`, `parent_run_id` and `metrics`.
 

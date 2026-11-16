@@ -7,7 +7,7 @@
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import type { ActionResult } from "@/dashboard/actions";
-import type { AgentTime, Days } from "@/core/flow-rules";
+import { DAY_RUNS, DAY_WORDS, DAYS, type AgentTime, type Days } from "@/core/flow-rules";
 import type { DayRow, OrgDay as Day } from "@/dashboard/orgDay";
 import { Modal, Toast, type Confirm } from "./client";
 import { Icon } from "./Icon";
@@ -63,19 +63,19 @@ export function OrgDay({ day, controls, orgOn, setTime, setOn }: { day: Day; con
           </div>
         </div>
         <div style={{ overflowX: "auto" }}>
-          <div style={{ minWidth: 720, display: "flex", flexDirection: "column", gap: 8, position: "relative" }}>
-            <div style={{ display: "grid", gridTemplateColumns: "200px minmax(0, 1fr)", gap: 14 }}>
+          <div className="od-wrap">
+            <div className="od-row od-head">
               <span />
               <div style={{ position: "relative", height: 34 }}>
-                {hours.map((h, i) => <span key={h} className="sub" style={{ position: "absolute", bottom: 0, left: pct(i / (to - from)), transform: i === 0 ? "none" : i === hours.length - 1 ? "translateX(-100%)" : "translateX(-50%)", whiteSpace: "nowrap" }}>{hourWords(h)}</span>)}
-                {anchor && <span className="pill sm" style={{ position: "absolute", top: 0, left: pct(anchor.at!), transform: "translateX(-50%)", background: "var(--acc)", color: "#111114" }}>{t12(anchor.schedule.time!)} · {anchor.name} reports to you</span>}
+                {hours.map((h, i) => <span key={h} className={"sub" + (i % 2 && i !== hours.length - 1 ? " od-odd" : "")} style={{ position: "absolute", bottom: 0, left: pct(i / (to - from)), transform: i === 0 ? "none" : i === hours.length - 1 ? "translateX(-100%)" : "translateX(-50%)", whiteSpace: "nowrap" }}>{hourWords(h)}</span>)}
+                {anchor && <span className="pill sm od-anchor" style={{ position: "absolute", top: 0, left: pct(anchor.at!), transform: "translateX(-50%)", background: "var(--acc)", color: "#111114" }}>{t12(anchor.schedule.time!)} · {anchor.name} reports to you</span>}
               </div>
             </div>
             {day.groups.map((g) => (
               <div key={g.name} style={{ display: "flex", flexDirection: "column", gap: 6 }}>
                 <span className="sub" style={{ fontWeight: 700, textTransform: "uppercase", letterSpacing: ".06em", paddingTop: 4 }}>{g.name}</span>
                 {g.rows.map((r) => (
-                  <div key={r.id} id={`agent-${r.id}`} style={{ display: "grid", gridTemplateColumns: "200px minmax(0, 1fr)", gap: 14, alignItems: "center" }}>
+                  <div key={r.id} id={`agent-${r.id}`} className="od-row">
                     <button type="button" onClick={() => setEdit(r)} className="row" style={{ gap: 10, border: 0, background: "transparent", padding: 0, textAlign: "left", cursor: "pointer", minWidth: 0 }}>
                       <Av r={r} />
                       <span style={{ display: "flex", flexDirection: "column", gap: 1, minWidth: 0 }}>
@@ -90,7 +90,7 @@ export function OrgDay({ day, controls, orgOn, setTime, setOn }: { day: Day; con
                     ) : (
                       <div style={{ position: "relative", height: 46, borderRadius: 14, background: r.reportsToYou ? "var(--acc-soft)" : "var(--canvas)", backgroundImage: `repeating-linear-gradient(to right, var(--bd) 0, var(--bd) 1px, transparent 1px, transparent ${100 / (to - from)}%)` }}>
                         <button type="button" onClick={() => setEdit(r)} className="pill sm" style={{ position: "absolute", top: "50%", left: pct(r.at), transform: "translate(-50%, -50%)", border: 0, cursor: "pointer", background: r.reportsToYou ? "var(--acc)" : "var(--ink)", color: r.reportsToYou ? "#111114" : "var(--ws)" }}>
-                          {t12(r.schedule.time!)} · {r.schedule.kind === "daily" ? "daily" : "weekdays"}
+                          {t12(r.schedule.time!)} · {r.schedule.kind}
                         </button>
                       </div>
                     )}
@@ -122,20 +122,20 @@ export function OrgDay({ day, controls, orgOn, setTime, setOn }: { day: Day; con
           </div>
         )}
         <div style={{ overflowX: "auto" }}>
-          <div style={{ minWidth: 640 }}>
-            <div className="row sub" style={{ display: "grid", gridTemplateColumns: "1.5fr 1.3fr .7fr .8fr 1.3fr", gap: 10, padding: "8px 4px", fontWeight: 700 }}>
+          <div className="oc-wrap">
+            <div className="sub oc-row oc-head">
               <span>Agent</span><span>When</span><span style={{ textAlign: "right" }}>A run</span><span style={{ textAlign: "right" }}>A month</span><span style={{ textAlign: "right" }}>Runs</span>
             </div>
             {day.rows.map((r) => (
-              <div key={r.id} className="rule" style={{ display: "grid", gridTemplateColumns: "1.5fr 1.3fr .7fr .8fr 1.3fr", gap: 10, alignItems: "center", padding: "10px 4px" }}>
+              <div key={r.id} className="rule oc-row">
                 <button type="button" onClick={() => setEdit(r)} className="row" style={{ gap: 10, border: 0, background: "transparent", padding: 0, textAlign: "left", cursor: "pointer", minWidth: 0 }}>
                   <Av r={r} size={30} />
                   <span style={{ fontSize: 13.5, fontWeight: 600 }}>{r.name}</span>
                 </button>
-                <span className="ink2" style={{ fontSize: 13 }}>{r.at == null ? "Only when you press Run" : r.when}</span>
-                <span className="ink2" style={{ fontSize: 13, textAlign: "right" }}>{perRunWords(r.perRun)}</span>
-                <span style={{ fontSize: 13.5, fontWeight: 700, textAlign: "right", color: r.perMonth ? "var(--ink)" : "var(--mut)" }}>{r.at == null ? "$0.00" : r.perRun == null ? "Unknown" : money(r.perMonth)}</span>
-                <span style={{ display: "flex", justifyContent: "flex-end" }}>
+                <span className="ink2 oc-when" style={{ fontSize: 13 }}>{r.at == null ? "Only when you press Run" : r.when}</span>
+                <span className="ink2 oc-run" style={{ fontSize: 13, textAlign: "right" }}>{perRunWords(r.perRun)}<span className="oc-label"> a run</span></span>
+                <span className="oc-month" style={{ fontSize: 13.5, fontWeight: 700, textAlign: "right", color: r.perMonth ? "var(--ink)" : "var(--mut)" }}>{r.at == null ? "$0.00" : r.perRun == null ? "Unknown" : money(r.perMonth)}<span className="oc-label"> a month</span></span>
+                <span className="oc-toggle">
                   <span className="seg" role="group" aria-label={`${r.name}: scheduled or by hand`}>
                     <button type="button" aria-pressed={r.at != null} disabled={busy} onClick={() => (r.at == null ? setEdit(r) : undefined)}
                       style={r.at != null ? { background: "var(--card)", color: "var(--ink)", boxShadow: "0 1px 4px rgba(17,17,26,.12)" } : undefined}>Scheduled</button>
@@ -153,7 +153,7 @@ export function OrgDay({ day, controls, orgOn, setTime, setOn }: { day: Day; con
         onSave={(t, needsConfirm) => {
           if (!needsConfirm) return run(() => setTime(edit.id, t, false));
           setConfirm({
-            c: { title: `Let ${edit.name} run ${t.days === "daily" ? "every day" : "on weekdays"} at ${t12(t.time)}?`, body: `${edit.name} runs on this schedule while the org is on and ${edit.name} is on duty, inside its daily budget.`, lines: [{ k: "A run", v: perRunWords(edit.perRun) }, { k: "A month", v: edit.perRun == null ? "Unknown until it has run" : money(edit.perRun * (t.days === "daily" ? 30 : 22)) }], confirmLabel: "Save schedule" },
+            c: { title: `Let ${edit.name} run ${DAY_WORDS[t.days]} at ${t12(t.time)}?`, body: `${edit.name} runs on this schedule while the org is on and ${edit.name} is on duty, inside its daily budget.`, lines: [{ k: "A run", v: perRunWords(edit.perRun) }, { k: "A month", v: edit.perRun == null ? "Unknown until it has run" : money(edit.perRun * DAY_RUNS[t.days]) }], confirmLabel: "Save schedule" },
             go: () => setTime(edit.id, t, true),
           });
         }}
@@ -169,7 +169,7 @@ function Editor({ r, controls, orgOn, busy, onClose, onSave, onHand, onDuty }: {
   r: DayRow; controls: boolean; orgOn: boolean; busy: boolean; onClose: () => void;
   onSave: (t: AgentTime, needsConfirm: boolean) => void; onHand: () => void; onDuty: (on: boolean) => void;
 }) {
-  const [days, setDays] = useState<Days>(r.schedule.kind === "daily" ? "daily" : "weekdays");
+  const [days, setDays] = useState<Days>(r.schedule.kind === "manual" ? "weekdays" : r.schedule.kind);
   const [time, setTimeV] = useState(r.schedule.time ?? "07:00");
   const scheduled = r.at != null;
   const changed = !scheduled || days !== r.schedule.kind || time !== r.schedule.time;
@@ -195,8 +195,8 @@ function Editor({ r, controls, orgOn, busy, onClose, onSave, onHand, onDuty }: {
         <fieldset style={{ border: 0, padding: 0, margin: 0, display: "flex", flexDirection: "column", gap: 8 }}>
           <legend style={{ fontSize: 13.5, fontWeight: 600, paddingBottom: 8 }}>When {r.name} runs</legend>
           <div className="seg" role="radiogroup" aria-label="Days">
-            {(["daily", "weekdays"] as const).map((d) => (
-              <button key={d} type="button" role="radio" aria-checked={days === d} onClick={() => setDays(d)} style={days === d ? { background: "var(--card)", color: "var(--ink)", boxShadow: "0 1px 4px rgba(17,17,26,.12)" } : undefined}>{d === "daily" ? "Every day" : "Weekdays"}</button>
+            {DAYS.map((d) => (
+              <button key={d} type="button" role="radio" aria-checked={days === d} onClick={() => setDays(d)} style={days === d ? { background: "var(--card)", color: "var(--ink)", boxShadow: "0 1px 4px rgba(17,17,26,.12)" } : undefined}>{{ daily: "Every day", weekdays: "Weekdays", mondays: "Mondays" }[d]}</button>
             ))}
           </div>
           <label className="row" style={{ justifyContent: "space-between", gap: 12, fontSize: 13.5 }}>

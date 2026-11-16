@@ -16,7 +16,14 @@ import { chicagoDate, nextDay, offsetOn } from "@/core/time";
 export const MAX_STEPS = 3;
 // room for a one-step chain per agent (an agent's own schedule, docs/org-schedule.md) plus shared chains
 export const MAX_CHAINS = 30;
-export type Days = "daily" | "weekdays";
+export type Days = "daily" | "weekdays" | "mondays";
+/** Every choice of days, in the order the dashboard offers them. Heads plan on Mondays. */
+export const DAYS: readonly Days[] = ["daily", "weekdays", "mondays"];
+/** Runs in 30 days, for the monthly cost: 30 daily, 22 on weekdays, 4 on Mondays. */
+export const DAY_RUNS: Record<Days, number> = { daily: 30, weekdays: 22, mondays: 4 };
+/** How a sentence says the days: "every day", "on weekdays", "on Mondays". */
+export const DAY_WORDS: Record<Days, string> = { daily: "every day", weekdays: "on weekdays", mondays: "on Mondays" };
+const isDays = (d: unknown): d is Days => DAYS.includes(d as Days);
 export type When = "ok" | "failed" | "any";
 export type Op = ">=" | ">" | "<=" | "<" | "=";
 
@@ -79,7 +86,7 @@ export function flowProblems(f: unknown, crew: Crew): string[] {
     if (typeof c.on !== "boolean") out.push(`${at}: on must be true or false.`);
     const s = c.start as Start;
     if (s?.type === "schedule") {
-      if (s.days !== "daily" && s.days !== "weekdays") out.push(`${at}: the schedule runs daily or on weekdays.`);
+      if (!isDays(s.days)) out.push(`${at}: the schedule runs daily, on weekdays or on Mondays.`);
       if (typeof s.time !== "string" || !TIME.test(s.time)) out.push(`${at}: the schedule time must be HH:MM.`);
       else if (Number(s.time.slice(3)) % 15) out.push(`${at}: the dispatcher runs every 15 minutes, so pick :00, :15, :30 or :45.`);
     } else if (s?.type === "approval") {
@@ -95,7 +102,7 @@ export function flowProblems(f: unknown, crew: Crew): string[] {
       if (seen.has(st.agent)) out.push(`${sat}: ${st.agent} is already in this chain. No loops.`); seen.add(st.agent);
       if (crew.manualOnly.has(st.agent) && s?.type !== "button") out.push(`${sat}: ${st.agent} runs only by hand, so it can only be in a chain started with the Run chain button.`);
       if (st.when !== undefined && !["ok", "failed", "any"].includes(st.when)) out.push(`${sat}: when must be ok, failed or any.`);
-      if (st.days !== undefined && st.days !== "daily" && st.days !== "weekdays") out.push(`${sat}: days must be daily or weekdays.`);
+      if (st.days !== undefined && !isDays(st.days)) out.push(`${sat}: days must be daily, weekdays or Mondays.`);
       if (st.notBefore !== undefined && (typeof st.notBefore !== "string" || !TIME.test(st.notBefore) || Number(st.notBefore.slice(3)) % 15)) out.push(`${sat}: not before must be HH:MM on a quarter hour.`);
       if (st.passAlong !== undefined && typeof st.passAlong !== "boolean") out.push(`${sat}: pass along must be true or false.`);
       if (st.check !== undefined) {
@@ -123,7 +130,7 @@ export function readFlow(raw: unknown, crew: Crew): { flow: Flow; problems: stri
 // ---- Time: schedules and waits are Chicago wall-clock times.
 
 const weekday = (date: string) => new Date(`${date}T12:00:00Z`).getUTCDay();
-export const onDay = (days: Days | undefined, date: string) => !days || days === "daily" || (weekday(date) >= 1 && weekday(date) <= 5);
+export const onDay = (days: Days | undefined, date: string) => !days || days === "daily" || (days === "mondays" ? weekday(date) === 1 : weekday(date) >= 1 && weekday(date) <= 5);
 export const chicagoAt = (date: string, time: string) => Date.parse(`${date}T${time}:00${offsetOn(date)}`);
 
 /**
@@ -155,8 +162,8 @@ export function nextFirings(c: Chain, now = Date.now(), n = 3): number[] {
   return out;
 }
 
-/** Runs per 30 days of a chain's first step, for the monthly cost: 30 for daily, about 22 for weekdays, 0 for other starts. */
-export const runsPerMonth = (c: Chain) => (c.start.type !== "schedule" ? 0 : c.start.days === "daily" ? 30 : 22);
+/** Runs per 30 days of a chain's first step, for the monthly cost (DAY_RUNS), 0 for other starts. */
+export const runsPerMonth = (c: Chain) => (c.start.type !== "schedule" ? 0 : DAY_RUNS[c.start.days] ?? 0);
 
 // ---- Going on after a step
 
@@ -181,7 +188,7 @@ export function afterStep(c: Chain, k: number, ended: Ended, now = Date.now()): 
     if (!pass(next.check.op, v, next.check.value)) return { go: false, why: `${next.check.metric} was ${v}, not ${next.check.op} ${next.check.value}.` };
   }
   const today = chicagoDate(0, new Date(now));
-  if (!onDay(next.days, today)) return { go: false, why: `${next.agent} only runs on weekdays.` };
+  if (!onDay(next.days, today)) return { go: false, why: `${next.agent} only runs ${DAY_WORDS[next.days!]}.` };
   const at = next.notBefore ? chicagoAt(today, next.notBefore) : null;
   return { go: true, step: k + 1, at: at && at > now ? at : null };
 }
@@ -238,7 +245,7 @@ export function withAgentTime(flow: Flow, agent: string, name: string, t: AgentT
     const chains = flow.chains.map((c) => (c.start.type === "button" ? c : dropStep(c, agent))).filter((c): c is Chain => c !== null);
     return { flow: { chains } };
   }
-  if (t.days !== "daily" && t.days !== "weekdays") return { refuse: "Pick every day or weekdays." };
+  if (!isDays(t.days)) return { refuse: "Pick every day, weekdays or Mondays." };
   if (!TIME.test(t.time) || Number(t.time.slice(3)) % 15) return { refuse: "Pick a time on a quarter hour." };
   const sched = flow.chains.filter((c) => c.start.type === "schedule" && c.steps.some((s) => s.agent === agent));
   const own = sched.find((c) => c.on) ?? sched[0];

@@ -15,13 +15,13 @@ A "mission control" for the agents, light and dark themes, Plus Jakarta Sans, wh
 
 | Design element | Backend today | Phase 1 (this PR) |
 | --- | --- | --- |
-| Crew, status, model, budget | `agents` table (enabled, daily_budget_usd, model, schedule) | Real |
+| Crew, status, model, budget | `agents` table (enabled, daily_budget_usd, model, manual_only, in_org) | Real |
 | Proposals | `proposals`; checked against the chart and the tool list (`core/proposals.ts`, docs/company-mode.md) | Real |
 | Goals | `goals`; measures counted in code from `wholesale_leads`, Shopify, Mercury (`core/measures.ts`, docs/company-mode.md) | Real |
 | Org chart | `departments` (with monthly budget and email cap), `seats`, department rules in `agent_memory` (docs/org-chart.md) | Real |
 | Run log, cost, tokens, summaries, errors | `agent_runs` | Real |
 | Spend today vs budget | `agent_runs.cost_usd` since UTC midnight (same rule `withRun` uses) | Real |
-| Schedules (Shift) | `vercel.json` Vercel Schedules; on/off lives in Vercel, not the DB | Read only, from a mirror of `vercel.json` |
+| Schedules | The crew flow (`crew_flow`), run by the one `dispatch` Vercel Schedule while the org is on (docs/org-schedule.md) | Crew > Schedule: the org's day, Scheduled / By hand, days and time per agent |
 | Dry run | `?dryRun=1` path in every agent job | Real, button on the profile |
 | Real run | `withRun` | Behind a switch (see 4) |
 | On the crew (enabled) | `agents.enabled` | Turning off: always. Turning on: behind the switch |
