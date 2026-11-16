@@ -10,6 +10,7 @@ import { loadSpec } from "@/core/agent-spec";
 import { activePlaybook, afterRun, listPlaybooks } from "@/core/playbook";
 import { runExplore } from "@/core/runner";
 import { TOOLS } from "@/core/tools/catalog";
+import { callTool } from "@/core/tools/call";
 import { checkInput, paramsOf, type ToolCtx } from "@/core/tools/types";
 import type { MemoryLoad } from "@/core/memory";
 import type { RunResult } from "@/core/runs";
@@ -42,7 +43,7 @@ export async function dryRunPlaybook(agentId: string): Promise<RunResult & { lin
     const checked = checkInput(paramsOf(t, ctx), s.input);
     if ("problem" in checked) { lines.push(`FAILED ${t.label}: ${checked.problem}`); continue; }
     try {
-      const out = await t.run(checked.input, ctx);
+      const out = await callTool(t.id, checked.input, ctx);
       Object.assign(numbers, out.numbers ?? {});
       const nums = Object.entries(out.numbers ?? {}).slice(0, 6).map(([k, v]) => `${k.replace(/_/g, " ")} ${v}`).join(", ");
       lines.push(`OK ${t.label}${nums ? `: ${nums}` : ""}`);
