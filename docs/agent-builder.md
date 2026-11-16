@@ -53,7 +53,7 @@ from the tools the spec grants, code runs them, hard limits stop it.
   builder screen in slice 2 (`/lab` now redirects to `/build`).
 - Lint: `core/gateway` and `integrations/` may not import `core/agent-spec` or `core/runner`.
 - `npm run check:runner` tests limits and refusals with a stand-in model (no network, no cost).
-- "Pause all agents" now takes every agent off duty, including ones built in the app.
+- Turning off the org (Crew > Schedule, docs/org-schedule.md; it replaced "Pause all agents") takes every agent off duty, including ones built in the app.
 
 ## Slice 2: the builder screen (built)
 

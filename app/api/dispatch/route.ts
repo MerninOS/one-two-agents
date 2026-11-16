@@ -3,6 +3,7 @@ import { loadCrew } from "@/agents/registry";
 import { claimDueWaits, claimFiring, startStep } from "@/core/chain";
 import { firingsBetween, loadFlow } from "@/core/flow";
 import { cronAuthorized } from "@/core/runs";
+import { orgOn } from "@/core/org-switch";
 
 export const maxDuration = 300;
 
@@ -10,7 +11,8 @@ export const maxDuration = 300;
 // whose schedule came due in the last hour (each firing once: chain_fires) and the waiting
 // steps whose "not before" time has come (chain_waits). Each step is its own request to
 // /api/agents/<id>, so it runs through withRun like any other run: an agent that is off duty
-// is skipped and its chain stops. With every chain off, this does nothing at all.
+// is skipped and its chain stops. While the org is off (core/org-switch.ts, docs/org-schedule.md)
+// it starts nothing on its own: only waiting steps of a chain Zak started with Run chain go on.
 export async function GET(req: Request) {
   if (!cronAuthorized(req)) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   const origin = new URL(req.url).origin;
@@ -20,8 +22,9 @@ export async function GET(req: Request) {
   try { flow = await loadFlow(await loadCrew()); }
   catch (e) { return NextResponse.json({ error: `Crew flow can't be read: ${e instanceof Error ? e.message : e}` }, { status: 500 }); }
 
+  const on = await orgOn();
   for (const c of flow.flow.chains) {
-    if (!c.on) continue;
+    if (!on || !c.on) continue;
     // an hour back, so a late or missed call still catches the firing
     for (const at of firingsBetween(c, now - 60 * 6e4, now)) {
       const chainId = crypto.randomUUID();
@@ -33,9 +36,9 @@ export async function GET(req: Request) {
   for (const w of await claimDueWaits(now)) {
     const c = flow.flow.chains.find((x) => x.key === w.key);
     // the waiting step goes ahead only if the chain is still on and still has that step
-    if (!c || !c.steps[w.step] || (!c.on && !w.manual)) continue;
+    if (!c || !c.steps[w.step] || ((!on || !c.on) && !w.manual)) continue;
     started.push(`${c.name} step ${w.step + 1}`);
     after(() => startStep(origin, c, { chainId: w.chainId, key: w.key, step: w.step, parent: w.parent ?? undefined, manual: w.manual }));
   }
-  return NextResponse.json({ started, problems: flow.problems });
+  return NextResponse.json({ org: on ? "on" : "off", started, problems: flow.problems });
 }

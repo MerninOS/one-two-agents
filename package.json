@@ -20,6 +20,7 @@
     "check:plans": "npx --yes tsx --conditions=react-server scripts/check-plans.ts",
     "check:chat": "npx --yes tsx --conditions=react-server scripts/check-chat.ts",
     "check:mcp": "npx --yes tsx scripts/check-mcp.ts",
+    "check:org-switch": "npx --yes tsx scripts/check-org-switch.ts",
     "check": "npm run typecheck && npm run lint && npm run validate:graphql"
   },
   "dependencies": {

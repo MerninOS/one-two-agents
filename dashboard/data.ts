@@ -15,6 +15,7 @@ import { APPROVAL_LABELS, APPROVAL_TOOLS, MAX_CHAINS, MAX_STEPS, METRICS, listFl
 import { TOOLS } from "@/core/tools/catalog";
 import { mcpStatus, vaultReady } from "@/integrations/mcp";
 import { MCP_IDS } from "@/core/mcp-rules";
+import { orgState, type OrgState } from "@/core/org-switch";
 import type { CrewMember, IntegrationId } from "./crew";
 import { avgCostOf, buildCrew, memberOf, type RosterRow, type RosterSpec } from "./roster";
 import type { CrewAgent, CrewCanvasData } from "./components/CrewCanvas";
@@ -78,6 +79,8 @@ export interface Floor {
   byId: Record<string, CrewMember>;
   /** The agents a chain may pick, for Crew > Schedule and the chain actions. */
   palette: Crew;
+  /** The org switch (docs/org-schedule.md): off means nothing starts on its own. */
+  org: OrgState;
 }
 
 const RUN_COLS = "id, agent_id, trigger, started_at, ended_at, status, tokens_in, tokens_out, cost_usd, summary, error, memory_json";
@@ -120,12 +123,14 @@ export const getFloor = cache(async (): Promise<Floor> => {
   await requireSession();
   const h = health();
   const now = Date.now();
-  const empty: Floor = { ok: false, now, agents: {}, runs: [], spentToday: {}, health: h, photosWaiting: null, approvalsPending: null, proposalsPending: null, jobsForYou: [], lessonsWaiting: {}, grants: {}, liveVersion: {}, ...buildCrew([]), palette: { ids: [], manualOnly: new Set() } };
+  const empty: Floor = { ok: false, now, agents: {}, runs: [], spentToday: {}, health: h, photosWaiting: null, approvalsPending: null, proposalsPending: null, jobsForYou: [], lessonsWaiting: {}, grants: {}, liveVersion: {}, ...buildCrew([]), palette: { ids: [], manualOnly: new Set() }, org: { on: false, at: null, by: null, known: false } };
   if (!h.supabase) return { ...empty, problem: "SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY are not set, so there is nothing to show yet." };
   const since = new Date(now - 60 * 864e5).toISOString();
-  const [a, r, ph, ap, pp, jobsForYou, lessonsWaiting, defs, flowRow, org, mcp] = await Promise.all([
+  const [a, r, ph, ap, pp, jobsForYou, lessonsWaiting, defs, flowRow, org, mcp, orgSwitch] = await Promise.all([
     // role, icon, hue, manual_only and created_at come with the roster migration; the older shape until then
-    db().from("agents").select("id, name, model, schedule, enabled, daily_budget_usd, role, icon, hue, manual_only, created_at")
+    // in_org comes with the org switch migration, role, icon, hue, manual_only and created_at with the roster one; older shapes until then
+    db().from("agents").select("id, name, model, schedule, enabled, daily_budget_usd, role, icon, hue, manual_only, in_org, created_at")
+      .then((x) => (x.error ? db().from("agents").select("id, name, model, schedule, enabled, daily_budget_usd, role, icon, hue, manual_only, created_at") : x))
       .then((x) => (x.error ? db().from("agents").select("id, name, model, schedule, enabled, daily_budget_usd") : x)),
     db().from("agent_runs").select(RUN_COLS).gte("started_at", since).order("started_at", { ascending: false }).limit(1000),
     db().from("expense_docs").select("id", { count: "exact", head: true }).eq("status", "needs_photo"),
@@ -139,6 +144,7 @@ export const getFloor = cache(async (): Promise<Floor> => {
     db().from("crew_flow").select("flow").eq("active", true).maybeSingle(),
     loadOrg().catch(() => null),
     Promise.all(MCP_IDS.map(async (id) => [id, await mcpStatus(id)] as const)),
+    orgState(),
   ]);
   // every server in the registry: set up when signed in and not paused (Notion also needs its parent page, Mercury its accounts)
   const extra: Partial<Record<string, boolean>> = { shopify: !!env.shopifyDomain, notion: !!env.notionBriefParent, mercury: env.mercuryAccountIds.length > 0 };
@@ -167,7 +173,7 @@ export const getFloor = cache(async (): Promise<Floor> => {
   const tools = Object.fromEntries(Object.values(TOOLS).map((t) => [t.id, { label: t.label, kind: t.kind }]));
   const seatTitle = (id: string) => org?.seats.find((x) => x.holder === "agent" && x.agentId === id)?.title ?? null;
   const roster = buildCrew(live.map((x) => memberOf(x, specs[x.id], { tools, avgCost: avgCostOf(runs, x.id), seatTitle: seatTitle(x.id), chains })));
-  return { ok: true, now, agents, runs, spentToday, health: h, photosWaiting: ph.error ? null : ph.count ?? 0, approvalsPending: ap.error ? null : ap.count ?? 0, proposalsPending: pp.error ? null : pp.count ?? 0, jobsForYou, lessonsWaiting, grants, liveVersion, ...roster, palette };
+  return { ok: true, now, agents, runs, spentToday, health: h, photosWaiting: ph.error ? null : ph.count ?? 0, approvalsPending: ap.error ? null : ap.count ?? 0, proposalsPending: pp.error ? null : pp.count ?? 0, jobsForYou, lessonsWaiting, grants, liveVersion, ...roster, palette, org: orgSwitch };
 });
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;

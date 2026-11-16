@@ -24,6 +24,9 @@ import { activePlaybook, afterRun, approvePlaybook, holdAfterRejection, listPlay
 import { loadMemory } from "@/core/memory";
 import { loadOrg, seatPath, setHolder } from "@/core/org";
 import { getFloor, requireSession } from "./data";
+import { planOrgOn } from "./orgPlan";
+import { when } from "./format";
+import { setOrg } from "@/core/org-switch";
 import { SESSION_COOKIE, SESSION_DAYS, checkPassword, controlsOn, newSessionToken } from "./session";
 
 export interface ActionResult { ok: boolean; text: string }
@@ -121,13 +124,50 @@ export async function setManualOnly(agentId: string, on: boolean, confirmed = fa
   return { ok: true, text: on ? `${who.name} runs only when you press Run, or in a chain you start with Run chain.` : `${who.name} can run on a schedule now: add it to a chain on Crew > Schedule.` };
 }
 
-export async function pauseAll(): Promise<ActionResult> {
+// ---- The org switch (docs/org-schedule.md). Turning on is launch: Controls on and a confirm.
+// Turning off always works, since it only stops things.
+
+/** What turning on the org would do now: who wakes, first runs, chains, cost a month. */
+async function orgPlanNow() {
+  const f = await getFloor();
+  const flow = await loadFlow(f.palette);
+  const members = f.built.map((a) => ({ id: a.id, name: a.name, inOrg: a.inOrg !== false, avgCost: a.avgCost ?? null, capPerRun: a.capPerRun }));
+  return { flow, plan: planOrgOn(members, flow.flow.chains, Date.now()) };
+}
+
+export async function turnOnOrg(confirmed: boolean): Promise<ActionResult> {
   await requireSession();
-  // every agent, including ones built in the app (agent_defs), not only the crew in code
-  const { error } = await db().from("agents").update({ enabled: false }).eq("enabled", true);
-  if (error) return fail(error.message);
-  revalidatePath("/", "layout");
-  return { ok: true, text: "Every agent is off duty." };
+  if (!controlsOn()) return { ok: false, text: `${CONTROLS_OFF} Turning on the org wakes the agents.` };
+  if (!confirmed) return { ok: false, text: "Confirm first: turning on the org wakes the agents." };
+  try {
+    // test agents must stay off: without agents.in_org there is no way to tell them apart
+    const probe = await db().from("agents").select("id, in_org").limit(1);
+    if (probe.error) return fail(/in_org/.test(probe.error.message) ? "Apply the org switch migration (20261128090000_org_switch.sql) first." : probe.error.message);
+    const { flow, plan } = await orgPlanNow();
+    if (!plan.wake.length) return { ok: false, text: "No agent is in the org yet." };
+    const ids = plan.wake.map((w) => w.id);
+    const { error } = await db().from("agents").update({ enabled: true }).in("id", ids);
+    if (error) return fail(error.message);
+    if (plan.chainsOn.length) await saveFlowVersion({ chains: plan.chains }, `Turned on the org: ${plan.chainsOn.join(", ")} on`, "zak (control room)", flow.version);
+    // the switch last, so nothing starts before the agents and chains are ready
+    await setOrg(true, "zak (control room)");
+    revalidatePath("/", "layout");
+    const first = plan.wake.find((w) => w.firstRun);
+    return { ok: true, text: `The org is on. ${ids.length} agent${ids.length === 1 ? " is" : "s are"} on duty${first ? `; first up, ${first.name} at ${when(first.firstRun!)} CT` : ""}.` };
+  } catch (e) { return fail(e); }
+}
+
+export async function turnOffOrg(): Promise<ActionResult> {
+  await requireSession();
+  try {
+    // the switch first, so the dispatcher stops starting chains at once
+    await setOrg(false, "zak (control room)");
+    // every agent, including ones built in the app and test agents
+    const { error } = await db().from("agents").update({ enabled: false }).eq("enabled", true);
+    if (error) return fail(error.message);
+    revalidatePath("/", "layout");
+    return { ok: true, text: "The org is off. Every agent is off duty and nothing runs on its own." };
+  } catch (e) { return fail(e); }
 }
 
 // ---- Approvals. Deciding only records Zak's choice. Writing the approved change to Mercury

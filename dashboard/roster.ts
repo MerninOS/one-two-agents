@@ -6,7 +6,7 @@
 import { PLANNED, type CrewMember, type Schedule, type Tier } from "./crew";
 import type { Chain } from "@/core/flow-rules";
 
-export interface RosterRow { id: string; name: string; role?: string | null; icon?: string | null; hue?: string | null; manual_only?: boolean | null; created_at?: string | null }
+export interface RosterRow { id: string; name: string; role?: string | null; icon?: string | null; hue?: string | null; manual_only?: boolean | null; in_org?: boolean | null; created_at?: string | null }
 export interface RosterSpec { name?: string; mandate?: string; goodResult?: string; tools: string[]; maxCostUsd?: number }
 export interface RosterTool { label: string; kind: string }
 
@@ -59,6 +59,9 @@ export function memberOf(row: RosterRow, spec: RosterSpec | null, o: { tools: Re
     writes: hands.length ? hands.join(", ") : "its result, saved for other agents to read",
     schedule: scheduleOf(row.id, o.chains),
     manualOnly: row.manual_only !== false,
+    inOrg: row.in_org !== false,
+    avgCost: o.avgCost,
+    capPerRun: spec?.maxCostUsd,
   };
 }
 

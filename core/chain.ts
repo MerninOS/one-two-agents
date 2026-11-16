@@ -7,6 +7,7 @@ import "server-only";
 import { db } from "@/core/db";
 import { env } from "@/core/env";
 import { afterStep, type Chain, type Ended } from "@/core/flow";
+import { orgOn } from "@/core/org-switch";
 
 export interface ChainCtx {
   chainId: string;
@@ -90,12 +91,14 @@ export async function handoffFrom(parent: string | undefined) {
 export type Handoff = NonNullable<Awaited<ReturnType<typeof handoffFrom>>>;
 
 /**
- * An approval was decided in the Control Room: start every chain that is on and starts on this
+ * An approval was decided in the Control Room: while the org is on, start every chain that is on and starts on this
  * kind of approval. At most once a minute per chain, so approving twenty receipts at once starts
  * a chain once.
  */
 export async function approvalDecided(origin: string, flow: { chains: Chain[] }, tool: string, decision: "approve" | "reject"): Promise<string[]> {
   const started: string[] = [];
+  // while the org is off nothing starts on its own, an approval start included
+  if (!(await orgOn())) return started;
   const minute = Math.floor(Date.now() / 6e4) * 6e4;
   for (const c of flow.chains) {
     if (!c.on || c.start.type !== "approval" || c.start.tool !== tool || (c.start.decision !== "any" && c.start.decision !== decision)) continue;
