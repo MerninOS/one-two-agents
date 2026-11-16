@@ -89,7 +89,8 @@ export const budgetDayStart = (now = new Date()) => { const d = new Date(now); d
 export function health(): Record<IntegrationId, boolean> {
   return {
     supabase: !!(env.supabaseUrl && env.supabaseServiceKey),
-    shopify: !!(env.shopifyDomain && (env.shopifyAdminToken || (env.shopifyClientId && env.shopifyClientSecret))),
+    // its key is pasted on Connections (the vault): getFloor reads mcp_connections
+    shopify: false,
     claude: !!process.env.ANTHROPIC_API_KEY,
     // signed in on Connections: getFloor reads mcp_connections
     mercury: false,
@@ -138,7 +139,7 @@ export const getFloor = cache(async (): Promise<Floor> => {
     Promise.all(MCP_IDS.map(async (id) => [id, await mcpStatus(id)] as const)),
   ]);
   // every server in the registry: set up when signed in and not paused (Notion also needs its parent page, Mercury its accounts)
-  const extra: Partial<Record<string, boolean>> = { notion: !!env.notionBriefParent, mercury: env.mercuryAccountIds.length > 0 };
+  const extra: Partial<Record<string, boolean>> = { shopify: !!env.shopifyDomain, notion: !!env.notionBriefParent, mercury: env.mercuryAccountIds.length > 0 };
   for (const [id, st] of mcp) if (st?.connected && !st.paused && extra[id] !== false) h[id] = true;
   if (a.error || r.error) return { ...empty, problem: `Supabase: ${(a.error ?? r.error)?.message}` };
   const rows = (a.data ?? []) as (AgentRow & RosterRow)[];

@@ -1,9 +1,10 @@
 # Shopify: the data contract with the storefront
 
 The storefront (`MerninOS/blended`) writes these fields; the agents only read them,
-through the read-only app "One Two Agents (read)". If the storefront changes any of
-them, that is a breaking change for the agents: update the queries here in the same
-week.
+through the read-only app "One Two Agents (read)", on our own Shopify MCP server
+(`integrations/shopify-server.ts`; every query is in `core/shopify-queries.ts`). If the storefront changes any of
+them, that is a breaking change for the agents: update the queries in `core/shopify-queries.ts` in the
+same week.
 
 | What | Where in Shopify | Read by |
 | --- | --- | --- |

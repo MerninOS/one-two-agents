@@ -1,11 +1,12 @@
 import "server-only";
 // Orders, read-only: what each order took out of green (the green ledger), and the
 // open orders on the roasting board. The storefront writes the data read here:
-// blended.green_usage on the order, green:* and stage:* tags, the _blend line property.
+// blended.green_usage on the order, green:* and stage:* tags, the _blend line property. Read through
+// our Shopify MCP server (integrations/shopify-server.ts): each read is one fixed query there.
 import type { GreenLot, StockCoffee } from "@/domain/types";
 import { BLEND_PROP } from "@/domain/coffee";
 import { orderGreenUsage, type GreenLine, type RoastLoss } from "@/domain/green";
-import { admin, gql } from "./client";
+import { callMcpTool } from "@/integrations/mcp";
 
 export const TAG_DEDUCTED = "green:deducted", TAG_RESTOCKED = "green:restocked";
 
@@ -34,17 +35,6 @@ export const parseRecord = (v: string | null | undefined): GreenRecord | null =>
 };
 
 // ---------- green ledger ----------
-const RECENT = gql`
-  query AgentGreenRecentOrders($query: String!) {
-    orders(first: 100, sortKey: CREATED_AT, reverse: true, query: $query) {
-      nodes {
-        id name createdAt tags cancelledAt
-        usage: metafield(namespace: "blended", key: "green_usage") { value }
-        lineItems(first: 100) { nodes { quantity sku variant { id } customAttributes { key value } } }
-      }
-    }
-  }
-`;
 type RecentOrder = { id: string; name: string; createdAt: string; tags: string[]; cancelledAt: string | null; usage: { value: string } | null; lineItems: OrderLines };
 
 export interface LedgerRow {
@@ -57,7 +47,7 @@ export interface LedgerRow {
 /** Recent orders with coffee: what each took, and any that never had green deducted. */
 export async function greenLedger(ctx: GreenCtx, days = 30): Promise<LedgerRow[]> {
   const since = new Date(Date.now() - days * 864e5).toISOString().slice(0, 10);
-  const r = await admin<{ orders: { nodes: RecentOrder[] } }>(RECENT, { query: `created_at:>=${since}` });
+  const r = (await callMcpTool("shopify", "shopify_recent_orders", { since })) as { orders: { nodes: RecentOrder[] } };
   const rows: LedgerRow[] = [];
   for (const o of r.orders.nodes) {
     const rec = parseRecord(o.usage?.value);
@@ -75,15 +65,6 @@ export async function greenLedger(ctx: GreenCtx, days = 30): Promise<LedgerRow[]
 }
 
 // ---------- roasting board ----------
-// Only what the brief counts: no customer names, emails or addresses.
-const BOARD = gql`
-  query AgentBoardOrders($query: String!, $after: String) {
-    orders(first: 100, after: $after, sortKey: CREATED_AT, reverse: true, query: $query) {
-      nodes { id name tags cancelledAt displayFulfillmentStatus }
-      pageInfo { hasNextPage endCursor }
-    }
-  }
-`;
 type BoardNode = { id: string; name: string; tags: string[]; cancelledAt: string | null; displayFulfillmentStatus: string };
 
 export type Stage = "paid" | "roasting" | "packing" | "shipped";
@@ -96,7 +77,7 @@ export async function getBoardOrders(): Promise<BoardOrder[]> {
   let after: string | null = null, pages = 0;
   do {
     type R = { orders: { nodes: BoardNode[]; pageInfo: { hasNextPage: boolean; endCursor: string | null } } };
-    const r: R = await admin<R>(BOARD, { query: `tag:blended created_at:>=${since}`, after });
+    const r = (await callMcpTool("shopify", "shopify_board_orders", { since, after })) as R;
     for (const o of r.orders.nodes) {
       if (o.cancelledAt) continue;
       const shipped = o.displayFulfillmentStatus === "FULFILLED";
@@ -106,4 +87,27 @@ export async function getBoardOrders(): Promise<BoardOrder[]> {
     after = r.orders.pageInfo.hasNextPage ? r.orders.pageInfo.endCursor : null;
   } while (after && ++pages < 2);
   return out;
+}
+
+// ---------- a day's orders (Morgan) ----------
+type Money = { shopMoney: { amount: string } };
+export type DayOrder = {
+  id: string; name: string; tags: string[]; cancelledAt: string | null;
+  totalPriceSet: Money; subtotalPriceSet: Money | null;
+  customer: { numberOfOrders: string } | null;
+  usage: { value: string } | null;
+  lineItems: OrderLines;
+};
+
+/** Orders created from one Chicago day up to (not including) another, cancelled ones left out. */
+export async function ordersBetween(start: string, endExclusive: string): Promise<DayOrder[]> {
+  const out: DayOrder[] = [];
+  let after: string | null = null, pages = 0;
+  do {
+    type R = { orders: { nodes: DayOrder[]; pageInfo: { hasNextPage: boolean; endCursor: string | null } } };
+    const r = (await callMcpTool("shopify", "shopify_orders_between", { start, end: endExclusive, after })) as R;
+    out.push(...r.orders.nodes);
+    after = r.orders.pageInfo.hasNextPage ? r.orders.pageInfo.endCursor : null;
+  } while (after && ++pages < 20);
+  return out.filter((o) => !o.cancelledAt);
 }

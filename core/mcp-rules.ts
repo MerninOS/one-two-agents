@@ -102,6 +102,21 @@ export const MCP_SERVERS = {
     writeTools: [],
     signInHint: "Paste the Internal Integration Secret of the agents’ Notion integration.",
   },
+  shopify: {
+    id: "shopify",
+    name: "Shopify",
+    // Our own server (integrations/shopify-server.ts) over the Admin GraphQL API with the read-only
+    // app "One Two Agents (read)". Shopify's own MCP servers are for storefronts and app building, not
+    // a read-only Admin view (slice 7). Each tool runs one fixed query (core/shopify-queries.ts); no
+    // tool takes GraphQL, no mutation can run, and a key whose app has any write scope is refused.
+    auth: "token",
+    url: "https://shopify.dev/docs/api/admin-graphql",
+    readTools: ["shopify_green_lots", "shopify_stock_coffees", "shopify_shop_settings", "shopify_recent_orders", "shopify_board_orders", "shopify_orders_between"],
+    reportTools: [],
+    scopes: ["the read-only app’s read scopes (a key with any write scope is refused)"],
+    writeTools: [],
+    signInHint: "Paste the read-only app’s Admin API access token (shpat_…), or its client secret if it’s a Dev Dashboard app.",
+  },
   gmail_read: {
     id: "gmail_read",
     name: "Gmail (read only)",

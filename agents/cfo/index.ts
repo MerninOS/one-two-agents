@@ -6,51 +6,14 @@ import "server-only";
 // Mercury's read-only API.
 import { G_PER_LB, round2 } from "@/domain/coffee";
 import { db } from "@/core/db";
-import { chicagoDate, nextDay, offsetOn } from "@/core/time";
+import { chicagoDate, nextDay } from "@/core/time";
 import { mercuryCash } from "@/integrations/mercury";
-import { admin, gql } from "@/integrations/shopify/client";
 import { getInventoryLots } from "@/integrations/shopify/lots";
-import { linesOf, parseRecord, usageOf, type OrderLines } from "@/integrations/shopify/orders";
+import { linesOf, ordersBetween, parseRecord, usageOf } from "@/integrations/shopify/orders";
 import { getRoastLoss } from "@/integrations/shopify/settings";
 import { fetchStockCoffees } from "@/integrations/shopify/stock";
 
-const ORDERS = gql`
-  query CfoOrders($query: String!, $after: String) {
-    orders(first: 100, after: $after, sortKey: CREATED_AT, query: $query) {
-      nodes {
-        id name tags cancelledAt
-        totalPriceSet { shopMoney { amount } }
-        subtotalPriceSet { shopMoney { amount } }
-        customer { numberOfOrders }
-        usage: metafield(namespace: "blended", key: "green_usage") { value }
-        lineItems(first: 100) { nodes { quantity sku variant { id } customAttributes { key value } } }
-      }
-      pageInfo { hasNextPage endCursor }
-    }
-  }
-`;
-type Money = { shopMoney: { amount: string } };
-type OrderNode = {
-  id: string; name: string; tags: string[]; cancelledAt: string | null;
-  totalPriceSet: Money; subtotalPriceSet: Money | null;
-  customer: { numberOfOrders: string } | null;
-  usage: { value: string } | null;
-  lineItems: OrderLines;
-};
-
-/** Orders created from one Chicago day up to (not including) another, cancelled ones left out. */
-export async function ordersBetween(start: string, endExclusive: string) {
-  const query = `created_at:>='${start}T00:00:00${offsetOn(start)}' created_at:<'${endExclusive}T00:00:00${offsetOn(endExclusive)}'`;
-  const out: OrderNode[] = [];
-  let after: string | null = null, pages = 0;
-  do {
-    type R = { orders: { nodes: OrderNode[]; pageInfo: { hasNextPage: boolean; endCursor: string | null } } };
-    const r: R = await admin<R>(ORDERS, { query, after });
-    out.push(...r.orders.nodes);
-    after = r.orders.pageInfo.hasNextPage ? r.orders.pageInfo.endCursor : null;
-  } while (after && ++pages < 20);
-  return out.filter((o) => !o.cancelledAt);
-}
+export { ordersBetween };
 const ordersOn = (date: string) => ordersBetween(date, nextDay(date));
 
 export async function snapshot(date = chicagoDate(1), opts: { dryRun?: boolean } = {}) {
