@@ -8,6 +8,7 @@ import "server-only";
 // Re-explore applies automatically, with what changed shown. A run that falls back or doesn't
 // finish puts the agent on hold: its next playbook waits for approval again. So does an action
 // Zak rejects (slice 5, holdAfterRejection).
+import { actor } from "@/core/actor";
 import { db } from "@/core/db";
 import { TOOLS } from "@/core/tools/catalog";
 import type { PlaybookStep, RunMode, Step } from "@/core/runner";
@@ -161,7 +162,7 @@ export async function approvePlaybook(agentId: string, id: number, keep: number[
   }
   const edited = steps.length !== p.steps.length;
   const { error } = await db().from("agent_playbooks").update({
-    status: "approved", steps, decided_at: new Date().toISOString(), decided_by: "zak (control room)",
+    status: "approved", steps, decided_at: new Date().toISOString(), decided_by: actor(),
     changes: edited ? `${stepChanges(active?.steps ?? null, steps)} (You dropped ${p.steps.length - steps.length} step${p.steps.length - steps.length === 1 ? "" : "s"}.)` : p.changes,
   }).eq("id", id);
   if (error) throw new Error(error.message);

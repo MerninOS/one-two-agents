@@ -3,10 +3,11 @@
 // so far. Read-only; the Control Room login guards it like every page.
 import { cookies } from "next/headers";
 import { db } from "@/core/db";
-import { SESSION_COOKIE, validSessionToken } from "@/dashboard/session";
+import { SESSION_COOKIE } from "@/dashboard/session";
+import { memberFromCookie } from "@/dashboard/data";
 
 export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }) {
-  if (!validSessionToken((await cookies()).get(SESSION_COOKIE)?.value)) return Response.json({ error: "Sign in again." }, { status: 401 });
+  if (!(await memberFromCookie((await cookies()).get(SESSION_COOKIE)?.value))) return Response.json({ error: "Sign in again." }, { status: 401 });
   const { id } = await ctx.params;
   const since = new Date(new URL(req.url).searchParams.get("since") ?? "");
   if (!/^[a-z0-9_]{1,60}$/.test(id) || Number.isNaN(since.getTime())) return Response.json({ error: "Bad request." }, { status: 400 });

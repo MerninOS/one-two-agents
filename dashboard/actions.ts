@@ -1,9 +1,9 @@
 "use server";
-// Control Room actions. Each one checks the login again. Anything that can spend money
+// Control Room actions. Each one checks the signed-in member's role first (asRole, docs/tenancy.md). Anything that can spend money
 // or wake an agent also needs DASHBOARD_CONTROLS=on; stopping things never does.
-import { cookies, headers } from "next/headers";
-import { redirect } from "next/navigation";
+import { headers } from "next/headers";
 import { revalidatePath } from "next/cache";
+import { withActor } from "@/core/actor";
 import { after } from "next/server";
 import { jobOf, loadCrew } from "@/agents/registry";
 import { db } from "@/core/db";
@@ -25,12 +25,12 @@ import { lastTry } from "./builder";
 import { activePlaybook, afterRun, approvePlaybook, holdAfterRejection, listPlaybooks, pendingPlaybook } from "@/core/playbook";
 import { loadMemory } from "@/core/memory";
 import { loadOrg, seatPath, setHolder } from "@/core/org";
-import { getFloor, requireSession } from "./data";
+import { getFloor, asRole } from "./data";
 import { planOrgOn } from "./orgPlan";
 import { when } from "./format";
 import { schedWords } from "./schedule";
 import { setOrg } from "@/core/org-switch";
-import { SESSION_COOKIE, SESSION_DAYS, checkPassword, controlsOn, newSessionToken } from "./session";
+import { controlsOn } from "./session";
 
 export interface ActionResult { ok: boolean; text: string }
 
@@ -41,23 +41,9 @@ const crewAgent = async (id: string) => { const a = (await getFloor()).byId[id];
 const nameOf = async (id: string) => (await getFloor()).byId[id]?.name ?? id;
 const fail = (e: unknown): ActionResult => ({ ok: false, text: e instanceof Error ? e.message : String(e) });
 
-export async function login(_: { error?: string } | undefined, form: FormData) {
-  const password = String(form.get("password") ?? "");
-  const next = String(form.get("next") ?? "/");
-  if (!checkPassword(password)) return { error: process.env.DASHBOARD_PASSWORD ? "That password doesn’t match." : "DASHBOARD_PASSWORD isn’t set, so nobody can sign in yet." };
-  (await cookies()).set(SESSION_COOKIE, newSessionToken(), { httpOnly: true, secure: process.env.NODE_ENV === "production", sameSite: "lax", path: "/", maxAge: SESSION_DAYS * 86400 });
-  // only same-site paths
-  redirect(next.startsWith("/") && !next.startsWith("//") ? next : "/");
-}
-
-export async function logout() {
-  (await cookies()).delete(SESSION_COOKIE);
-  redirect("/login");
-}
-
 /** Reads real data, writes nothing, calls no model, logs nothing. */
 export async function dryRun(agentId: string): Promise<ActionResult> {
-  await requireSession();
+  const { no } = await asRole("approver"); if (no) return no;
   if (!(await crewAgent(agentId))) return { ok: false, text: "Unknown agent." };
   try {
     const res = await jobOf(agentId)({ dryRun: true });
@@ -71,7 +57,7 @@ export async function dryRun(agentId: string): Promise<ActionResult> {
  * dashboard stays usable; the layout polls until the row finishes. A skip or a failure to start comes back at once.
  */
 export async function realRun(agentId: string): Promise<ActionResult> {
-  await requireSession();
+  const { no } = await asRole("owner"); if (no) return no;
   if (!controlsOn()) return { ok: false, text: CONTROLS_OFF };
   const who = await crewAgent(agentId);
   if (!who) return { ok: false, text: "Unknown agent." };
@@ -93,7 +79,8 @@ export async function realRun(agentId: string): Promise<ActionResult> {
 }
 
 export async function setEnabled(agentId: string, on: boolean): Promise<ActionResult> {
-  await requireSession();
+  // taking an agent off duty is a stop, so approvers may; putting one back is the owner's
+  const { no } = await asRole(on ? "owner" : "approver"); if (no) return no;
   const who = await crewAgent(agentId);
   if (!who) return { ok: false, text: "Unknown agent." };
   if (on && !controlsOn()) return { ok: false, text: CONTROLS_OFF };
@@ -112,7 +99,7 @@ export async function setEnabled(agentId: string, on: boolean): Promise<ActionRe
  * the agent is on duty.
  */
 export async function setAgentTime(agentId: string, t: AgentTime | null, confirmed = false): Promise<ActionResult> {
-  await requireSession();
+  const { me, no } = await asRole("owner"); if (no) return no;
   const who = await crewAgent(agentId);
   if (!who) return { ok: false, text: "Unknown agent." };
   try {
@@ -132,7 +119,7 @@ export async function setAgentTime(agentId: string, t: AgentTime | null, confirm
     }
     // schedule: allow schedules first, then the flow; by hand: the flow first, then mark it by hand
     if (t) { const { error } = await db().from("agents").update({ manual_only: false }).eq("id", agentId); if (error) return fail(error.message); }
-    if (JSON.stringify(r.flow) !== JSON.stringify(flow.flow)) await saveFlowVersion(r.flow, t ? `${who.name}: ${schedWords({ kind: t.days, time: t.time })}` : `${who.name}: by hand`, "zak (control room)", flow.version);
+    if (JSON.stringify(r.flow) !== JSON.stringify(flow.flow)) await saveFlowVersion(r.flow, t ? `${who.name}: ${schedWords({ kind: t.days, time: t.time })}` : `${who.name}: by hand`, me.email, flow.version);
     if (!t) { const { error } = await db().from("agents").update({ manual_only: true }).eq("id", agentId); if (error) return fail(error.message); }
     revalidatePath("/", "layout");
     return { ok: true, text: t ? `${who.name} runs ${schedWords({ kind: t.days, time: t.time })}, while the org is on.` : `${who.name} runs only when you press Run now.` };
@@ -151,7 +138,7 @@ async function orgPlanNow() {
 }
 
 export async function turnOnOrg(confirmed: boolean): Promise<ActionResult> {
-  await requireSession();
+  const { me, no } = await asRole("owner"); if (no) return no;
   if (!controlsOn()) return { ok: false, text: `${CONTROLS_OFF} Turning on the org wakes the agents.` };
   if (!confirmed) return { ok: false, text: "Confirm first: turning on the org wakes the agents." };
   try {
@@ -163,9 +150,9 @@ export async function turnOnOrg(confirmed: boolean): Promise<ActionResult> {
     const ids = plan.wake.map((w) => w.id);
     const { error } = await db().from("agents").update({ enabled: true }).in("id", ids);
     if (error) return fail(error.message);
-    if (plan.chainsOn.length) await saveFlowVersion({ chains: plan.chains }, `Turned on the org: ${plan.chainsOn.join(", ")} on`, "zak (control room)", flow.version);
+    if (plan.chainsOn.length) await saveFlowVersion({ chains: plan.chains }, `Turned on the org: ${plan.chainsOn.join(", ")} on`, me.email, flow.version);
     // the switch last, so nothing starts before the agents and chains are ready
-    await setOrg(true, "zak (control room)");
+    await setOrg(true, me.email);
     revalidatePath("/", "layout");
     const first = plan.wake.find((w) => w.firstRun);
     return { ok: true, text: `The org is on. ${ids.length} agent${ids.length === 1 ? " is" : "s are"} on duty${first ? `; first up, ${first.name} at ${when(first.firstRun!)} CT` : ""}.` };
@@ -173,10 +160,10 @@ export async function turnOnOrg(confirmed: boolean): Promise<ActionResult> {
 }
 
 export async function turnOffOrg(): Promise<ActionResult> {
-  await requireSession();
+  const { me, no } = await asRole("approver"); if (no) return no;
   try {
     // the switch first, so the dispatcher stops starting chains at once
-    await setOrg(false, "zak (control room)");
+    await setOrg(false, me.email);
     // every agent, including ones built in the app and test agents
     const { error } = await db().from("agents").update({ enabled: false }).eq("enabled", true);
     if (error) return fail(error.message);
@@ -189,7 +176,6 @@ export async function turnOffOrg(): Promise<ActionResult> {
 // also needs DASHBOARD_CONTROLS=on, the gateway's Mercury sign-ins, and the agent on duty (withRun).
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-const BY = "zak (control room)";
 
 /** Why approved actions can't be applied from here at all right now, or null. Each kind's own blocker (Mercury token, Gmail) is the gateway's to say. */
 const applyBlocker = () => (!controlsOn() ? "Approved, not applied yet: DASHBOARD_CONTROLS is off." : null);
@@ -221,10 +207,10 @@ async function applyNow(ids?: string[]): Promise<ActionResult> {
 }
 
 export async function approve(approvalId: string): Promise<ActionResult> {
-  await requireSession();
+  const { me, no } = await asRole("approver"); if (no) return no;
   if (!UUID.test(approvalId)) return { ok: false, text: "Unknown approval." };
   try {
-    const actionId = await decide(approvalId, "approve", BY);
+    const actionId = await decide(approvalId, "approve", me.email);
     if (!actionId) { revalidatePath("/", "layout"); return { ok: false, text: "That item was already decided or has expired." }; }
     const res = await applyNow([actionId]);
     await fireApprovalChains("approve");
@@ -238,17 +224,17 @@ export async function approve(approvalId: string): Promise<ActionResult> {
  * saves a rule for the agent (or its department, or everyone) straight away, with no Keep to tap.
  */
 export async function reject(approvalId: string, reason?: string, scope?: string, keep?: string, replaces?: string | null): Promise<ActionResult> {
-  await requireSession();
+  const { me, no } = await asRole("approver"); if (no) return no;
   if (!UUID.test(approvalId)) return { ok: false, text: "Unknown approval." };
   const why = String(reason ?? "").replace(/\s+/g, " ").trim().slice(0, 400);
   try {
-    const actionId = await decide(approvalId, "reject", BY, why || undefined);
+    const actionId = await decide(approvalId, "reject", me.email, why || undefined);
     if (!actionId) { revalidatePath("/", "layout"); return { ok: false, text: "That item was already decided or has expired." }; }
     await fireApprovalChains("reject");
     let more = "";
     const { data: ap } = await db().from("approvals").select("agent_id, title").eq("id", approvalId).single();
     if (why && ap) {
-      try { more = ` ${await saveReaction(ap.agent_id, await nameOf(ap.agent_id), { approvalId }, { verdict: "not", text: why, scope, keep, replaces })}`; }
+      try { more = ` ${await withActor(me.email, async () => saveReaction(ap.agent_id, await nameOf(ap.agent_id), { approvalId }, { verdict: "not", text: why, scope, keep, replaces }))}`; }
       catch (e) { more = ` Your words couldn’t be saved as a rule: ${e instanceof Error ? e.message : String(e)}`; }
     }
     // an agent on a playbook that proposed this goes back to needing approval for its next playbook
@@ -259,11 +245,11 @@ export async function reject(approvalId: string, reason?: string, scope?: string
 }
 
 export async function approveAll(approvalIds: string[]): Promise<ActionResult> {
-  await requireSession();
+  const { me, no } = await asRole("approver"); if (no) return no;
   const ids = approvalIds.filter((i) => UUID.test(i)).slice(0, 200);
   try {
     const actionIds: string[] = [];
-    for (const id of ids) { const a = await decide(id, "approve", BY); if (a) actionIds.push(a); }
+    for (const id of ids) { const a = await decide(id, "approve", me.email); if (a) actionIds.push(a); }
     const res = actionIds.length ? await applyNow(actionIds) : { ok: false, text: "Nothing left to approve." };
     if (actionIds.length) await fireApprovalChains("approve");
     revalidatePath("/", "layout");
@@ -273,12 +259,12 @@ export async function approveAll(approvalIds: string[]): Promise<ActionResult> {
 
 /** Applies everything approved that is still waiting (also after a failure was put back with Retry). */
 export async function applyWaiting(): Promise<ActionResult> {
-  await requireSession();
+  const { no } = await asRole("approver"); if (no) return no;
   try { const res = await applyNow(); revalidatePath("/", "layout"); return res; } catch (e) { revalidatePath("/", "layout"); return fail(e); }
 }
 
 export async function retryAction(actionId: string): Promise<ActionResult> {
-  await requireSession();
+  const { no } = await asRole("approver"); if (no) return no;
   if (!UUID.test(actionId)) return { ok: false, text: "Unknown action." };
   try {
     const back = await retry(actionId);
@@ -291,7 +277,7 @@ export async function retryAction(actionId: string): Promise<ActionResult> {
 
 /** Turns Quinn's saved proposals into approvals. Writes only Supabase, never Mercury. */
 export async function queueQuinn(): Promise<ActionResult> {
-  await requireSession();
+  const { no } = await asRole("owner"); if (no) return no;
   try {
     const r = await queueBookkeeperProposals(null);
     revalidatePath("/", "layout");
@@ -306,7 +292,7 @@ export async function queueQuinn(): Promise<ActionResult> {
  * belong to the agent: both are looked up here, never taken from the page.
  */
 export async function react(agentId: string, runId: string, itemId: string | null, verdict: string, text = "", scope = "agent", keep = "always", replaces: string | null = null): Promise<ActionResult> {
-  await requireSession();
+  const { me, no } = await asRole("approver"); if (no) return no;
   const who = await crewAgent(agentId);
   if (!who) return { ok: false, text: "Unknown agent." };
   if (!UUID.test(runId) || (itemId && !UUID.test(itemId))) return { ok: false, text: "Unknown run." };
@@ -319,34 +305,34 @@ export async function react(agentId: string, runId: string, itemId: string | nul
       if (!lead || lead.run_id !== runId) return { ok: false, text: "That lead isn’t from this run." };
       itemLabel = String(lead.business);
     }
-    const said = await saveReaction(agentId, who.name, { runId, itemId, itemLabel }, { verdict, text, scope, keep, replaces });
+    const said = await withActor(me.email, () => saveReaction(agentId, who.name, { runId, itemId, itemLabel }, { verdict, text, scope, keep, replaces }));
     revalidatePath("/", "layout");
     return { ok: true, text: said };
   } catch (e) { return fail(e); }
 }
 
 export async function editMemoryLine(memoryId: string, text: string): Promise<ActionResult> {
-  await requireSession();
+  const { me, no } = await asRole("approver"); if (no) return no;
   if (!UUID.test(memoryId)) return { ok: false, text: "Unknown memory line." };
-  try { await editMemory(memoryId, String(text)); revalidatePath("/", "layout"); return { ok: true, text: "Saved. The old words are in the timeline." }; } catch (e) { return fail(e); }
+  try { await withActor(me.email, () => editMemory(memoryId, String(text))); revalidatePath("/", "layout"); return { ok: true, text: "Saved. The old words are in the timeline." }; } catch (e) { return fail(e); }
 }
 
 export async function forgetMemoryLine(memoryId: string): Promise<ActionResult> {
-  await requireSession();
+  const { me, no } = await asRole("approver"); if (no) return no;
   if (!UUID.test(memoryId)) return { ok: false, text: "Unknown memory line." };
-  try { await forgetMemory(memoryId); revalidatePath("/", "layout"); return { ok: true, text: "Forgotten. It won’t be loaded from the next run." }; } catch (e) { return fail(e); }
+  try { await withActor(me.email, () => forgetMemory(memoryId)); revalidatePath("/", "layout"); return { ok: true, text: "Forgotten. It won’t be loaded from the next run." }; } catch (e) { return fail(e); }
 }
 
 export async function keepLessonLine(memoryId: string, forCrew: boolean): Promise<ActionResult> {
-  await requireSession();
+  const { me, no } = await asRole("approver"); if (no) return no;
   if (!UUID.test(memoryId)) return { ok: false, text: "Unknown lesson." };
-  try { await keepLesson(memoryId, !!forCrew); revalidatePath("/", "layout"); return { ok: true, text: forCrew ? "Kept for the whole crew." : "Kept. It’s loaded from the next run." }; } catch (e) { return fail(e); }
+  try { await withActor(me.email, () => keepLesson(memoryId, !!forCrew)); revalidatePath("/", "layout"); return { ok: true, text: forCrew ? "Kept for the whole crew." : "Kept. It’s loaded from the next run." }; } catch (e) { return fail(e); }
 }
 
 export async function discardLessonLine(memoryId: string): Promise<ActionResult> {
-  await requireSession();
+  const { me, no } = await asRole("approver"); if (no) return no;
   if (!UUID.test(memoryId)) return { ok: false, text: "Unknown lesson." };
-  try { await discardLesson(memoryId); revalidatePath("/", "layout"); return { ok: true, text: "Discarded. The timeline keeps a record of it." }; } catch (e) { return fail(e); }
+  try { await withActor(me.email, () => discardLesson(memoryId)); revalidatePath("/", "layout"); return { ok: true, text: "Discarded. The timeline keeps a record of it." }; } catch (e) { return fail(e); }
 }
 
 // ---- Crew flow (docs/agent-setup.md, slice 5): chains of agents on the Crew canvas
@@ -363,7 +349,7 @@ async function cleanFlow(f: unknown): Promise<{ flow: Flow } | { problems: strin
  * still goes through withRun, and an agent that is off duty is skipped.
  */
 export async function saveCrewFlow(flow: unknown, note: string, confirmed: boolean): Promise<ActionResult> {
-  await requireSession();
+  const { me, no } = await asRole("owner"); if (no) return no;
   const why = String(note ?? "").trim().slice(0, 300);
   if (!why) return { ok: false, text: "Add a short note saying why, so the version list makes sense later." };
   const got = await cleanFlow(flow);
@@ -374,14 +360,14 @@ export async function saveCrewFlow(flow: unknown, note: string, confirmed: boole
     const looser = flowLooser(now.flow, got.flow);
     if (looser.length && !controlsOn()) return { ok: false, text: `${CONTROLS_OFF} ${looser.join("; ")}.` };
     if (looser.length && !confirmed) return { ok: false, text: `Confirm first: ${looser.join("; ")}.` };
-    const v = await saveFlowVersion(got.flow, why, "zak (control room)", now.version);
+    const v = await saveFlowVersion(got.flow, why, me.email, now.version);
     revalidatePath("/", "layout");
     return { ok: true, text: `Saved as flow v${v}.${got.flow.chains.some((c) => c.on) ? " Chains that are on start at their next time; agents that are off duty are skipped." : " Every chain is off, so nothing runs on its own."}` };
   } catch (e) { return fail(e); }
 }
 
 export async function rollBackFlow(version: number, confirmed: boolean): Promise<ActionResult> {
-  await requireSession();
+  const { no } = await asRole("owner"); if (no) return no;
   if (!Number.isInteger(version) || version < 1) return { ok: false, text: "Unknown version." };
   try {
     const crew = await loadCrew();
@@ -403,7 +389,7 @@ export async function rollBackFlow(version: number, confirmed: boolean): Promise
  * profile). Real runs, so DASHBOARD_CONTROLS=on; each agent still needs to be on duty.
  */
 export async function runChainNow(key: string): Promise<ActionResult> {
-  await requireSession();
+  const { no } = await asRole("owner"); if (no) return no;
   if (!controlsOn()) return { ok: false, text: CONTROLS_OFF };
   try {
     const flow = await loadFlow(await loadCrew());
@@ -427,7 +413,7 @@ export interface ChainPreviewStep { agent: string; name: string; summary: string
  * reports no numbers, so a check is shown as not tested.
  */
 export async function previewChain(flow: unknown, key: string): Promise<ActionResult & { steps?: ChainPreviewStep[] }> {
-  await requireSession();
+  const { no } = await asRole("approver"); if (no) return no;
   const got = await cleanFlow(flow);
   if ("problems" in got) return { ok: false, text: got.problems.slice(0, 5).join(" ") };
   const c = got.flow.chains.find((x) => x.key === key);
@@ -458,7 +444,7 @@ export async function previewChain(flow: unknown, key: string): Promise<ActionRe
 // DASHBOARD_CONTROLS=on, and never passes the limit in code (CAPS in core/gateway/policy.ts).
 
 export async function setCap(key: string, value: number, confirmed: boolean): Promise<ActionResult> {
-  await requireSession();
+  const { me, no } = await asRole("owner"); if (no) return no;
   try {
     const caps = await loadCaps();
     const now = caps[key as CapKey]?.value;
@@ -470,7 +456,7 @@ export async function setCap(key: string, value: number, confirmed: boolean): Pr
     if (ch.looser && !confirmed) return { ok: false, text: `Confirm first: ${CAPS[key as CapKey].label} from ${fmtCap(key as CapKey, now)} to ${fmtCap(key as CapKey, v)}.` };
     const { error } = await db().from("policies").upsert({ key, value_json: v, updated_at: new Date().toISOString() });
     if (error) return fail(error.message);
-    await db().from("policy_log").insert({ key, old_value: caps[key as CapKey].raw ?? null, new_value: v, changed_by: "zak (control room)" });
+    await db().from("policy_log").insert({ key, old_value: caps[key as CapKey].raw ?? null, new_value: v, changed_by: me.email });
     revalidatePath("/", "layout");
     return { ok: true, text: `${CAPS[key as CapKey].label}: ${fmtCap(key as CapKey, v)}. The gateway uses it from the next check.` };
   } catch (e) { return fail(e); }
@@ -480,14 +466,14 @@ const KINDS = ["importer", "packaging", "other"] as const;
 
 /** Adds a payee. Only here, only Zak, DASHBOARD_CONTROLS=on. A first payment to a vendor always waits for approval. */
 export async function addVendor(form: { name: string; kind: string; mercuryRecipientId: string; contactEmail: string }): Promise<ActionResult> {
-  await requireSession();
+  const { me, no } = await asRole("owner"); if (no) return no;
   if (!controlsOn()) return { ok: false, text: CONTROLS_OFF };
   const name = String(form.name ?? "").trim(), kind = KINDS.includes(form.kind as (typeof KINDS)[number]) ? form.kind : "other";
   const rid = String(form.mercuryRecipientId ?? "").trim(), email = String(form.contactEmail ?? "").trim().toLowerCase();
   if (!name || name.length > 120) return { ok: false, text: "Give the vendor a name (up to 120 characters)." };
   if (rid && !/^[0-9a-f-]{36}$/i.test(rid)) return { ok: false, text: "The Mercury recipient id is the long id from Mercury (Payments, Recipients). Leave it empty if the recipient isn’t in Mercury yet." };
   if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return { ok: false, text: "That contact email doesn’t look right." };
-  const { error } = await db().from("vendors").insert({ name, kind, mercury_recipient_id: rid || null, contact_email: email || null, added_by: "zak (control room)" });
+  const { error } = await db().from("vendors").insert({ name, kind, mercury_recipient_id: rid || null, contact_email: email || null, added_by: me.email });
   if (error) return fail(error.code === "23505" ? "That Mercury recipient is already a vendor." : error.message);
   revalidatePath("/settings");
   return { ok: true, text: `${name} added to vendors.${rid ? "" : " Add its Mercury recipient id before anything can be paid to it."}` };
@@ -495,10 +481,10 @@ export async function addVendor(form: { name: string; kind: string; mercuryRecip
 
 /** Stops all email to an address. Always allowed: it only takes power away. */
 export async function suppressEmail(address: string, reason: string): Promise<ActionResult> {
-  await requireSession();
+  const { me, no } = await asRole("approver"); if (no) return no;
   const email = String(address ?? "").trim().toLowerCase();
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return { ok: false, text: "That isn’t an email address." };
-  const { error } = await db().from("email_suppressions").upsert({ email, reason: String(reason ?? "").trim().slice(0, 200) || "Added by Zak", source: "zak" });
+  const { error } = await db().from("email_suppressions").upsert({ email, reason: String(reason ?? "").trim().slice(0, 200) || `Added by ${me.email}`, source: "zak" });
   if (error) return fail(error.message);
   revalidatePath("/settings");
   return { ok: true, text: `No agent will email ${email}.` };
@@ -545,13 +531,13 @@ async function checkedDraft(draft: unknown, agentId: string): Promise<{ spec: Ag
  */
 /** Creates the agent off duty as v1, and puts it in the seat picked in step 1 when that seat is still open. */
 export async function createBuilt(draft: unknown, seatId?: string | null): Promise<ActionResult & { id?: string }> {
-  await requireSession();
+  const { me, no } = await asRole("owner"); if (no) return no;
   try {
     const { spec, problems: p0 } = readSpec(draft);
     const problems = [...p0, ...(await customGone(spec))];
     if (problems.length) return { ok: false, text: `Not created. This draft asks for something code doesn’t offer: ${problems.join("; ")}.` };
     if (spec.tools.some((t) => TOOLS[t]?.kind === "action")) return { ok: false, text: "Not created. A new agent can’t ask for actions: code names which agents may." };
-    const id = await createBuiltAgent(spec, BY);
+    const id = await createBuiltAgent(spec, me.email);
     let seated = "";
     if (seatId && UUID.test(seatId)) {
       const o = await loadOrg();
@@ -567,7 +553,7 @@ export async function createBuilt(draft: unknown, seatId?: string | null): Promi
 
 /** Saves the flow's draft as the next version, a draft: today's version keeps running until Go live. */
 export async function saveSpec(agentId: string, draft: unknown, note: string): Promise<ActionResult> {
-  await requireSession();
+  const { me, no } = await asRole("owner"); if (no) return no;
   const why = String(note ?? "").trim().slice(0, 300) || "Edited in the builder";
   try {
     await builtAgent(agentId);
@@ -576,7 +562,7 @@ export async function saveSpec(agentId: string, draft: unknown, note: string): P
     const versions = await listSpecVersions(agentId);
     const base = draftOf(versions) ?? versions.find((v) => v.active);
     if (base && JSON.stringify(base.spec) === JSON.stringify(got.spec)) return { ok: false, text: `Nothing changed from v${base.version}.` };
-    const v = await saveSpecVersion(agentId, got.spec, why, BY);
+    const v = await saveSpecVersion(agentId, got.spec, why, me.email);
     revalidatePath("/", "layout");
     return { ok: true, text: `Saved as draft v${v}. Try it, then go live; what runs today hasn’t changed.` };
   } catch (e) { return fail(e); }
@@ -584,7 +570,7 @@ export async function saveSpec(agentId: string, draft: unknown, note: string): P
 
 /** Goes back to an earlier version in one tap. Anything that lets it do or spend more needs Controls on and a confirm. */
 export async function goBack(agentId: string, version: number, confirmed: boolean): Promise<ActionResult> {
-  await requireSession();
+  const { no } = await asRole("owner"); if (no) return no;
   if (!Number.isInteger(version) || version < 1) return { ok: false, text: "Unknown version." };
   try {
     const now = await builtAgent(agentId);
@@ -603,7 +589,7 @@ export async function goBack(agentId: string, version: number, confirmed: boolea
 
 /** A built agent's daily budget. Lowering is always allowed; raising needs DASHBOARD_CONTROLS=on. */
 export async function setBuiltBudget(agentId: string, value: number): Promise<ActionResult> {
-  await requireSession();
+  const { no } = await asRole("owner"); if (no) return no;
   if (!(Number.isFinite(value) && value >= 0 && value <= BUDGET_CEILING)) return { ok: false, text: `Pick a budget between $0 and $${BUDGET_CEILING} a day. $${BUDGET_CEILING} is the ceiling in code.` };
   try {
     await builtAgent(agentId);
@@ -620,11 +606,11 @@ export async function setBuiltBudget(agentId: string, value: number): Promise<Ac
 
 /** Adds a standing order for a built agent: the same memory store as the Memory tab. */
 export async function addStandard(agentId: string, text: string, notionLink = ""): Promise<ActionResult> {
-  await requireSession();
+  const { me, no } = await asRole("approver"); if (no) return no;
   try {
     await builtAgent(agentId);
     const link = String(notionLink ?? "").slice(0, 500);
-    await teachMemory({ agentId, text: String(text ?? ""), keepAs: "standing_order", forget: "always", notionLink: link });
+    await withActor(me.email, () => teachMemory({ agentId, text: String(text ?? ""), keepAs: "standing_order", forget: "always", notionLink: link }));
     revalidatePath("/", "layout");
     return { ok: true, text: `Saved. It’s loaded on every run from the next one${link ? ", with the linked page read fresh each time" : ""}.` };
   } catch (e) { return fail(e); }
@@ -632,7 +618,7 @@ export async function addStandard(agentId: string, text: string, notionLink = ""
 
 /** Runs every tool the draft (or the saved spec) grants once with default inputs. No model, nothing written, not logged. */
 export async function dryRunBuilt(agentId: string, draft?: unknown): Promise<ActionResult> {
-  await requireSession();
+  const { no } = await asRole("approver"); if (no) return no;
   try {
     const now = await builtAgent(agentId);
     let spec = now?.spec;
@@ -652,7 +638,7 @@ export async function dryRunBuilt(agentId: string, draft?: unknown): Promise<Act
  * code drafts or updates the routine (core/playbook.ts), which Go live approves.
  */
 export async function tryBuilt(agentId: string, fresh = false): Promise<ActionResult & { runId?: string }> {
-  await requireSession();
+  const { no } = await asRole("owner"); if (no) return no;
   if (!controlsOn()) return { ok: false, text: `${CONTROLS_OFF} A try makes real model calls.` };
   try {
     await builtAgent(agentId);
@@ -685,7 +671,7 @@ export async function tryBuilt(agentId: string, fresh = false): Promise<ActionRe
  * schedules and chains don't change.
  */
 export async function goLive(agentId: string, version: number, keep: number[] | null, confirmed: boolean): Promise<ActionResult> {
-  await requireSession();
+  const { me, no } = await asRole("owner"); if (no) return no;
   if (!controlsOn()) return { ok: false, text: `${CONTROLS_OFF} Going live changes what runs.` };
   if (!Number.isInteger(version) || version < 1) return { ok: false, text: "Unknown version." };
   try {
@@ -702,7 +688,7 @@ export async function goLive(agentId: string, version: number, keep: number[] | 
     const pending = pendingPlaybook(all);
     let routine = "";
     if (pending) {
-      const v = await approvePlaybook(agentId, pending.id, Array.isArray(keep) ? keep.map(Number).filter(Number.isInteger) : pending.steps.map((_, i) => i));
+      const v = await withActor(me.email, () => approvePlaybook(agentId, pending.id, Array.isArray(keep) ? keep.map(Number).filter(Number.isInteger) : pending.steps.map((_, i) => i)));
       routine = ` Routine v${v} approved.`;
     } else if (!activePlaybook(all)) return { ok: false, text: "No routine yet: try it fresh, so code can save the calls that worked." };
     if (!target.active) await activateSpecVersion(agentId, version);

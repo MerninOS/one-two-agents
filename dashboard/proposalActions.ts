@@ -3,26 +3,27 @@
 // sends or spends: a yes creates an agent off duty, saves a draft version, or opens Find a tool,
 // through the same code paths as the builder and the org chart.
 import { revalidatePath } from "next/cache";
+import { withActor } from "@/core/actor";
 import { acceptProposal, declineProposal, getProposal } from "@/core/proposals";
 import { addSeat, loadOrg, setHolder } from "@/core/org";
 import { createBuilt, type ActionResult } from "./actions";
-import { requireSession } from "./data";
+import { asRole } from "./data";
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const fail = (e: unknown): ActionResult => ({ ok: false, text: e instanceof Error ? e.message : String(e) });
 const done = (text: string): ActionResult => { revalidatePath("/", "layout"); return { ok: true, text }; };
 
 export async function proposalAccept(id: string): Promise<ActionResult & { href?: string }> {
-  await requireSession();
+  const { no } = await asRole("owner"); if (no) return no;
   if (!UUID.test(String(id))) return { ok: false, text: "Unknown proposal." };
   try { const r = await acceptProposal(id); return { ...done(r.text), href: r.href ?? undefined }; } catch (e) { return fail(e); }
 }
 
 /** Not now, with the reason Zak typed (optional). */
 export async function proposalDecline(id: string, reason: string): Promise<ActionResult> {
-  await requireSession();
+  const { me, no } = await asRole("owner"); if (no) return no;
   if (!UUID.test(String(id))) return { ok: false, text: "Unknown proposal." };
-  try { return done(await declineProposal(id, String(reason ?? ""))); } catch (e) { return fail(e); }
+  try { return done(await withActor(me.email, () => declineProposal(id, String(reason ?? "")))); } catch (e) { return fail(e); }
 }
 
 /**
@@ -31,7 +32,7 @@ export async function proposalDecline(id: string, reason: string): Promise<Actio
  * proposer when the builder picked none.
  */
 export async function proposalCreate(id: string, draft: unknown, seatId?: string | null): Promise<ActionResult & { id?: string }> {
-  await requireSession();
+  const { no } = await asRole("owner"); if (no) return no;
   if (!UUID.test(String(id))) return { ok: false, text: "Unknown proposal." };
   const pr = await getProposal(id);
   if (!pr || pr.state !== "pending" || pr.payload.kind !== "hire") return { ok: false, text: "That proposal isn’t waiting any more." };

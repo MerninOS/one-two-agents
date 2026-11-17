@@ -4,13 +4,14 @@
 // here runs. Department limits (slice 2) are like the company caps: tightening is always allowed,
 // loosening needs DASHBOARD_CONTROLS=on and a confirm.
 import { revalidatePath } from "next/cache";
+import { withActor } from "@/core/actor";
 import { db } from "@/core/db";
 import { loadCaps } from "@/core/gateway";
 import { addDepartmentRule, editMemory, forgetMemory } from "@/core/memory";
 import { addDepartment, addSeat, deptBudgetChange, deptEmailChange, editSeat, loadOrg, removeDepartment, removeSeat, renameDepartment, setDeptBudget, setDeptEmailCap, setHolder, setLeadChecks, unseat } from "@/core/org";
 import type { ActionResult } from "./actions";
 import { PLANNED } from "./crew";
-import { getFloor, requireSession } from "./data";
+import { getFloor, asRole } from "./data";
 import { controlsOn } from "./session";
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -26,41 +27,41 @@ async function knownAgent(id: string): Promise<boolean> {
 }
 
 export async function orgAddDepartment(name: string): Promise<ActionResult> {
-  await requireSession();
+  const { no } = await asRole("owner"); if (no) return no;
   try { await addDepartment(String(name ?? "")); return done(`${String(name).trim()} is on the chart, with an open head seat.`); } catch (e) { return fail(e); }
 }
 
 export async function orgRenameDepartment(id: string, name: string): Promise<ActionResult> {
-  await requireSession();
+  const { no } = await asRole("owner"); if (no) return no;
   try { await renameDepartment(String(id), String(name ?? "")); return done("Renamed."); } catch (e) { return fail(e); }
 }
 
 export async function orgRemoveDepartment(id: string): Promise<ActionResult> {
-  await requireSession();
-  try { await removeDepartment(String(id)); return done("Department removed."); } catch (e) { return fail(e); }
+  const { me, no } = await asRole("owner"); if (no) return no;
+  try { await withActor(me.email, () => removeDepartment(String(id))); return done("Department removed."); } catch (e) { return fail(e); }
 }
 
 export async function orgAddSeat(parentId: string, title: string, sub: string): Promise<ActionResult> {
-  await requireSession();
+  const { no } = await asRole("owner"); if (no) return no;
   if (!UUID.test(String(parentId))) return { ok: false, text: "Unknown seat." };
   try { await addSeat(parentId, String(title ?? ""), String(sub ?? "")); return done("Seat added. It’s open until you build an agent for it."); } catch (e) { return fail(e); }
 }
 
 export async function orgEditSeat(id: string, title: string, sub: string): Promise<ActionResult> {
-  await requireSession();
+  const { no } = await asRole("owner"); if (no) return no;
   if (!UUID.test(String(id))) return { ok: false, text: "Unknown seat." };
   try { await editSeat(id, String(title ?? ""), String(sub ?? "")); return done("Seat saved."); } catch (e) { return fail(e); }
 }
 
 export async function orgRemoveSeat(id: string): Promise<ActionResult> {
-  await requireSession();
+  const { no } = await asRole("owner"); if (no) return no;
   if (!UUID.test(String(id))) return { ok: false, text: "Unknown seat." };
   try { await removeSeat(id); return done("Seat removed."); } catch (e) { return fail(e); }
 }
 
 /** Who sits in a seat: "open", "zak" or "agent:<id>". An agent moves from any seat it had. */
 export async function orgSetHolder(seatId: string, who: string): Promise<ActionResult> {
-  await requireSession();
+  const { no } = await asRole("owner"); if (no) return no;
   if (!UUID.test(String(seatId))) return { ok: false, text: "Unknown seat." };
   const w = String(who ?? "");
   try {
@@ -74,7 +75,7 @@ export async function orgSetHolder(seatId: string, who: string): Promise<ActionR
 
 /** From the builder's step 1: put an agent in a seat, or take it off the chart (null). */
 export async function placeAgent(agentId: string, seatId: string | null): Promise<ActionResult> {
-  await requireSession();
+  const { no } = await asRole("owner"); if (no) return no;
   if (!(await knownAgent(String(agentId)))) return { ok: false, text: "Unknown agent." };
   try {
     if (seatId == null) { await unseat(agentId); return done("Off the chart. Its seat is open."); }
@@ -102,7 +103,7 @@ async function dept(id: string) {
 
 /** A department's monthly AI budget. Raising or removing it needs Controls on and a confirm. */
 export async function orgSetDeptBudget(id: string, value: number | string | null, confirmed = false): Promise<ActionResult> {
-  await requireSession();
+  const { no } = await asRole("owner"); if (no) return no;
   try {
     const d = await dept(String(id));
     const next = limitOf(value);
@@ -119,7 +120,7 @@ export async function orgSetDeptBudget(id: string, value: number | string | null
 
 /** A department's email cap, never above the company cap. Raising or removing it needs Controls on and a confirm. */
 export async function orgSetDeptEmails(id: string, value: number | string | null, confirmed = false): Promise<ActionResult> {
-  await requireSession();
+  const { no } = await asRole("owner"); if (no) return no;
   try {
     const d = await dept(String(id));
     const next = limitOf(value);
@@ -135,10 +136,10 @@ export async function orgSetDeptEmails(id: string, value: number | string | null
 }
 
 export async function orgAddDeptRule(id: string, text: string): Promise<ActionResult> {
-  await requireSession();
+  const { me, no } = await asRole("owner"); if (no) return no;
   try {
     const d = await dept(String(id));
-    await addDepartmentRule(d.id, String(text ?? ""));
+    await withActor(me.email, () => addDepartmentRule(d.id, String(text ?? "")));
     return done(`Every agent in ${d.name} follows it from its next run.`);
   } catch (e) { return fail(e); }
 }
@@ -151,18 +152,18 @@ async function deptRule(ruleId: string) {
 }
 
 export async function orgEditDeptRule(ruleId: string, text: string): Promise<ActionResult> {
-  await requireSession();
-  try { await deptRule(String(ruleId)); await editMemory(ruleId, String(text ?? "")); return done("Rule saved."); } catch (e) { return fail(e); }
+  const { me, no } = await asRole("owner"); if (no) return no;
+  try { await deptRule(String(ruleId)); await withActor(me.email, () => editMemory(ruleId, String(text ?? ""))); return done("Rule saved."); } catch (e) { return fail(e); }
 }
 
 export async function orgForgetDeptRule(ruleId: string): Promise<ActionResult> {
-  await requireSession();
-  try { await deptRule(String(ruleId)); await forgetMemory(ruleId); return done("Forgotten. It stays on each agent’s memory timeline."); } catch (e) { return fail(e); }
+  const { me, no } = await asRole("owner"); if (no) return no;
+  try { await deptRule(String(ruleId)); await withActor(me.email, () => forgetMemory(ruleId)); return done("Forgotten. It stays on each agent’s memory timeline."); } catch (e) { return fail(e); }
 }
 
 /** "Lead checks drafts first" on or off. Neither way loosens a cap: Zak's tap stays the only approval. */
 export async function orgSetLeadChecks(id: string, on: boolean): Promise<ActionResult> {
-  await requireSession();
+  const { no } = await asRole("owner"); if (no) return no;
   try {
     const d = await dept(String(id));
     await setLeadChecks(d.id, !!on);

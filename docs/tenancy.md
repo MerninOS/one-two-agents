@@ -12,7 +12,7 @@ Words: "org" here means the business that owns the data. It is not the org chart
 (`core/org.ts`, departments and seats) or the org switch (`policies.org`, which puts the crew on
 duty). Those keep their names; inside one business they still mean what they meant.
 
-Slices: 1 org id on every table, 2 people, roles and row-level security, 3 queue and workers,
+Slices: 1 org id on every table, 2 people and roles, 2b row-level security policies, 3 queue and workers,
 4 vault keys per org, 5 One Two into a template pack, 6 traces and usage, 7 monorepo and
 self-host, 8 paid layer.
 
@@ -74,3 +74,85 @@ pass, and One Two's dry runs, pages and approvals behave as before.
 
 Sign-in per person and row-level security policies (slice 2), passing the org through the queue
 (slice 3), vault keys and file paths per org (slice 4), moving One Two's coffee code out (slice 5).
+
+## Slice 2: people and roles
+
+The shared password goes. Each person signs in as themselves with a link emailed to them, belongs
+to an org as a **member**, and has a role. What they can do follows from the role, checked on the
+server for every page and every action. Approvals, cap changes and the org switch record who did
+them. Row-level security policies come in slice 2b, so this slice doesn't change how queries run.
+
+### Roles
+
+| Role | Can |
+|---|---|
+| Viewer | See every page. Change nothing. |
+| Approver | Everything a viewer can, plus: approve or reject cards, apply approved actions, react and teach (memory lines), dry runs and previews, chat with Avery, mark a plan job done, and every stop: take an agent off duty, turn the org off, pause a server, add an address that gets no email. |
+| Owner | Everything: real runs, schedules and the crew flow, turning the org on, caps, vendors, the builder, Connections, goals, the org chart, proposals, and People. At least one owner always remains. |
+
+`DASHBOARD_CONTROLS` still gates what it gated (real runs, raising budgets and caps, turning the
+org on): a role says who may, Controls says whether this deployment allows it at all.
+
+### Sign-in
+
+1. **Sign in** asks for an email. If it belongs to a member, Supabase Auth emails a one-time link;
+   the page says "Check your email" either way, so it never tells anyone who is a member.
+2. The link opens `/auth/confirm`, a page with one button. The tap checks the one-time code with
+   Supabase, finds the member, sets a signed session cookie (30 days, `SESSION_SECRET`, at least 32
+   characters) and opens the page they asked for. A button rather than the link itself, so a mail
+   scanner that opens links can't use up the code.
+3. Every page and action reads the member again from the cookie, so a removed member or a changed
+   role takes effect on their next click.
+
+**First owner.** When the org has no members yet, the address in `OPERATOR_OWNER_EMAIL` becomes its
+owner on first sign-in. After that, owners add people on Settings > People.
+
+Only invited emails get a link: an auth user is created when a member first signs in, never for an
+unknown address. The Supabase client used for sign-in is separate from `db()`, so a sign-in can
+never swap the service key for a person's token.
+
+### Code
+
+- `core/roles.ts` (pure): the roles, `atLeast`, the last-owner rule, safe redirects after sign-in.
+- `core/members.ts`: the current org's members through `db()`, including the first-owner rule.
+- `dashboard/session.ts`: the cookie names a member id, signed with `SESSION_SECRET`.
+- `dashboard/data.ts`: `requireSession()` returns the signed-in member (read again every request);
+  `asRole("approver" | "owner")` is the first line of every server action and returns a refusal for
+  a lower role. The connect and callback routes on Connections check for an owner.
+- `core/actor.ts`: `withActor(email, fn)` so memory changes, playbook approvals and Avery's saved
+  rules record who did them. Approvals, caps, the org switch, flow versions and vendors take the
+  member's email directly.
+- `core/db.ts` `authApi()`: Supabase Auth only, a fresh client each call, apart from `db()`.
+- `npm run check:roles` tests the rules and the session cookie, and fails if any server action
+  doesn't check a role.
+
+### Database (`20261203090000_members.sql`)
+
+`members`: `id`, `org_id`, `email` (lowercase, unique per org), `user_id` (the Supabase Auth user,
+unique per org, set on first sign-in), `role` (owner, approver, viewer), `added_by`, `created_at`,
+`last_sign_in_at`. A tenant table like every other.
+
+### Setup (Zak, once)
+
+1. Vercel: add `SESSION_SECRET` (`openssl rand -base64 32`) and `OPERATOR_OWNER_EMAIL` (your email).
+   Delete `DASHBOARD_PASSWORD`.
+2. Supabase, Authentication > URL Configuration: Site URL `https://one-two-agents.vercel.app`;
+   Redirect URLs `https://one-two-agents.vercel.app/auth/confirm` and
+   `https://one-two-agents-*-astromall.vercel.app/auth/confirm` (previews).
+3. Supabase, Authentication > Emails > Magic Link: the link must carry the one-time code to our
+   page: `<a href="{{ .RedirectTo }}&token_hash={{ .TokenHash }}&type=email">Sign in to the Control Room</a>`.
+
+### Rolling it out
+
+Order matters, or nobody can sign in: apply the migration, do the setup above, then merge. The first
+sign-in after the deploy makes `OPERATOR_OWNER_EMAIL` the owner. The old password cookie stops
+working on deploy (new cookie name and secret). The migration was run on the local Postgres built
+from every migration (unique email per org, lowercase only, roles checked, org required).
+
+Supabase's built-in mailer sends a few emails an hour, enough for a handful of people. A custom
+sender (Resend SMTP in Supabase) can come later.
+
+### Not in this slice
+
+Row-level security policies and reading as the signed-in person (slice 2b), choosing between
+several orgs (when a second org exists), SSO (paid layer).

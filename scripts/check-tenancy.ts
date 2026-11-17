@@ -125,6 +125,7 @@ for (const f of files) {
 const live = [...created.keys()].filter((t) => !dropped.has(t) && t !== ORGS_TABLE).sort();
 assert.deepEqual(live, [...TENANT_TABLES].sort(), "TENANT_TABLES lists exactly the tables the migrations leave");
 const slice1 = readFileSync(join(dir, SLICE1), "utf8");
-for (const t of TENANT_TABLES) assert.ok(slice1.includes(`'${t}'`), `slice 1 adds org_id to ${t}`);
+// tables from before slice 1 got org_id there; later ones carry it in their own create table (checked above)
+for (const t of TENANT_TABLES) if ((created.get(t) ?? "") < SLICE1) assert.ok(slice1.includes(`'${t}'`), `slice 1 adds org_id to ${t}`);
 
 asyncCheck.then(() => console.log(`check:tenancy ok (${TENANT_TABLES.length} tenant tables)`), (e) => { console.error(e); process.exit(1); });

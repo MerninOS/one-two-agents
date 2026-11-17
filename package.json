@@ -22,6 +22,7 @@
     "check:mcp": "npx --yes tsx scripts/check-mcp.ts",
     "check:org-switch": "npx --yes tsx scripts/check-org-switch.ts",
     "check:tenancy": "npx --yes tsx scripts/check-tenancy.ts",
+    "check:roles": "npx --yes tsx scripts/check-roles.ts",
     "check": "npm run typecheck && npm run lint && npm run validate:graphql"
   },
   "dependencies": {

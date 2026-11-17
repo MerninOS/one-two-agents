@@ -7,6 +7,10 @@ export const env = {
   // Vercel Cron sends this as a bearer token; manual runs use the same header.
   cronSecret: v("CRON_SECRET"),
 
+  // The first owner (docs/tenancy.md, slice 2): while the org has no members, this address becomes
+  // its owner on first sign-in. After that, owners add people on Settings > People.
+  ownerEmail: v("OPERATOR_OWNER_EMAIL")?.toLowerCase(),
+
   // Supabase project one-two-agents (service role, server only; tables have RLS with no policies)
   supabaseUrl: v("SUPABASE_URL"),
   supabaseServiceKey: v("SUPABASE_SERVICE_ROLE_KEY"),
