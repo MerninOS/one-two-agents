@@ -61,7 +61,7 @@ A number that isn't known is left blank, never written as zero.
 ## Rules it keeps
 
 - **Numbers in code.** Every property comes from facts computed in
-  `agents/chief-of-staff/index.ts`. The model still writes only the Watch list and the focus.
+  `templates/one-two/agents/chief-of-staff/index.ts`. The model still writes only the Watch list and the focus.
 - **"Focus done" is Zak's.** Avery reads it only to carry it across a same-day rerun.
 - **Model text is plain text** in Notion, cut to Notion's 2,000 character limit per value.
 - **No new access.** Same Notion integration and token. It can reach the Morning Briefs
@@ -78,7 +78,7 @@ A number that isn't known is left blank, never written as zero.
 
 - `integrations/notion.ts`: `notionRow`, `notionRowOn`, `notionSetProps`, `notionArchive`
   and the `prop` helpers, next to the existing `notionPage`.
-- `agents/chief-of-staff/index.ts`: `briefRow` (the properties) and the row-or-page choice
+- `templates/one-two/agents/chief-of-staff/index.ts`: `briefRow` (the properties) and the row-or-page choice
   in `runBrief`.
 - `core/env.ts`, `.env.example`: the new setting.
 - `dashboard/crew.ts`, the Integrations page: wording.

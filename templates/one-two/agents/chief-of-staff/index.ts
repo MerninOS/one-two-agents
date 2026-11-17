@@ -5,7 +5,7 @@ import "server-only";
 // (docs/avery-email.md), with a Notion copy as the archive: a row in the Briefs database
 // (docs/avery-briefs-database.md), or a page per day when that isn't set up. Either the email
 // or Notion alone also works.
-import { G_PER_LB } from "@/domain/coffee";
+import { G_PER_LB } from "@/templates/one-two/domain/coffee";
 import { db } from "@/core/db";
 import { env } from "@/core/env";
 import { chicagoDate, dayTitle } from "@/core/time";

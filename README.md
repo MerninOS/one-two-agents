@@ -69,10 +69,10 @@ app/(room)/                Control Room pages (login in app/login, guarded by pr
 app/api/agents/[agent]/   one route for every agent: auth, trigger, run log
 app/api/health/           settings present + Supabase reachable
 dashboard/                Control Room data, actions, session and components
-agents/                   registry.ts (every agent with a live version can run) and the code the engine's tools call (see agents/README.md)
+agents/                   registry.ts (every agent with a live version can run)
 core/                     the runner and agent specs for agents built in the app, the tool list (core/tools), env, Supabase client (scoped to the current org, core/tenancy.ts and docs/tenancy.md), withRun (log, enabled flag, budget, memory), agent memory, time helpers, the tool gateway
 integrations/             mcp.ts (the one MCP client and the vault), our own servers (Notion, Gmail, Shopify, Mercury receipt files), facades agents call (shopify/, mercury.ts, notion.ts, gmail*.ts, klaviyo.ts), Anthropic
-domain/                   coffee constants and green math (copied from the storefront), bookkeeping rules (books.ts)
+templates/                template packs (docs/templates.md); templates/one-two is One Two Coffee Lab's: coffee constants and green math (copied from the storefront), bookkeeping rules, and the code its tools call
 supabase/migrations/      agent tables, each with org_id (docs/tenancy.md)
 ```
 

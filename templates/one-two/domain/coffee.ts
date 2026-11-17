@@ -2,9 +2,10 @@
 // (MerninOS/blended web/src/lib/domain/coffee.ts); keep the numbers in step with it.
 // If a value here changes on the storefront, change it here too.
 import type { GreenLot, ShopSizeId } from "./types";
+import { round2 } from "@/core/num";
 
 export const G_PER_LB = 453.592;
-export const round2 = (n: number) => Math.round(n * 100) / 100;
+export { round2 };
 
 export const roastName = (r: number) =>
   ["LIGHT", "LIGHT", "MED-LIGHT", "MEDIUM", "MED-DARK", "DARK"][Math.max(0, Math.min(5, Math.round(r)))];

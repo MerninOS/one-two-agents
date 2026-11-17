@@ -7,8 +7,8 @@ import { draftSteps, sameSteps, stepChanges } from "../core/playbook";
 import { runExplore, traceNumbers, type Step } from "../core/runner";
 import { TOOLS } from "../core/tools/catalog";
 import type { ToolDef } from "../core/tools/types";
-import { parseJudgment } from "../agents/chief-of-staff";
-import { deptLine } from "../agents/chief-of-staff/email";
+import { parseJudgment } from "../templates/one-two/agents/chief-of-staff";
+import { deptLine } from "../templates/one-two/agents/chief-of-staff/email";
 
 type Block = { type: "text"; text: string } | { type: "tool_use"; id: string; name: string; input: unknown };
 let n = 0;

@@ -1,25 +1,13 @@
 import "server-only";
-// Rowan's code that the engine's tools call (core/tools/catalog.ts): what One Two offers a
-// wholesale customer (wholesale_offer, the only facts an outreach email may claim) and the
-// dedupe key for a lead's website (report_leads). Lead pages are untrusted: report_leads checks
+// Rowan's code that the pack's tools call (templates/one-two/tools.ts): what One Two offers a
+// wholesale customer (wholesale_offer, the only facts an outreach email may claim). The dedupe key
+// for a lead's website is core's (core/lead-rules.ts). Lead pages are untrusted: report_leads checks
 // every lead in code before it is stored, and first emails are only ever draft cards.
-import { PL_BAGS, PL_MIN, PL_PACK, roastName, wholesaleOf } from "@/domain/coffee";
+import { PL_BAGS, PL_MIN, PL_PACK, roastName, wholesaleOf } from "@/templates/one-two/domain/coffee";
 import { env } from "@/core/env";
 import { getInventoryLots } from "@/integrations/shopify/lots";
 import { fetchStockCoffees } from "@/integrations/shopify/stock";
 
-// Profiles on these hosts belong to different businesses, so the profile path is part of the key.
-const SHARED_HOSTS = new Set(["instagram.com", "facebook.com", "linktr.ee", "yelp.com", "google.com", "maps.google.com", "tiktok.com", "x.com", "twitter.com", "square.site", "toasttab.com"]);
-/** Dedupe key for a lead's website: the host without www., plus the profile path on shared hosts. */
-export const domainOf = (url: string) => {
-  try {
-    const u = new URL(/^https?:\/\//i.test(url) ? url : `https://${url}`);
-    const host = u.hostname.toLowerCase().replace(/^www\./, "");
-    if (!SHARED_HOSTS.has(host)) return host;
-    const path = u.pathname.split("/").filter(Boolean).slice(0, 2).join("/").toLowerCase();
-    return path ? `${host}/${path}` : null;
-  } catch { return null; }
-};
 /** What One Two offers a wholesale customer, from Shopify. Rowan's emails may only claim these facts. */
 export async function offer() {
   const [lots, stock] = await Promise.all([getInventoryLots(), fetchStockCoffees()]);

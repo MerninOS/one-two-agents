@@ -8,15 +8,9 @@ is the crew flow (Crew > Schedule).
 `registry.ts` lists the agents that can run on a schedule, in a chain or by hand through
 `/api/agents/<id>`; the route handles auth, the run log, the on-duty switch and the daily budget.
 
-The folders here hold only code the engine's tools call (`core/tools/catalog.ts`). Numbers are
-worked out there in code, never by the model:
-
-| Folder | Used by | What it is |
-| --- | --- | --- |
-| `cfo/` | `calc_daily_snapshot`, `report_kpi_snapshot` | Morgan's daily numbers: revenue, orders, AOV, repeat rate, green cost and margin, cash |
-| `chief-of-staff/` | `report_morning_brief` | Avery's brief email and Briefs row; the focus and watch list come from the run's result |
-| `wholesale-hunter/` | `wholesale_offer`, `report_leads` | What One Two offers a wholesale customer (the only facts an email may claim), and the lead dedupe key |
-| `bookkeeper/` | `report_books_sync` | Quinn's books sync: one row per Mercury charge, receipts found in Gmail and matched in code, photo asks, receipt approvals, month close |
+The code One Two's tools call (Morgan's numbers, Avery's brief, Quinn's books sync, Rowan's
+wholesale offer) lives in One Two's template pack, `templates/one-two` (docs/templates.md).
 
 Adding an agent is done in the builder, not here. A new kind of read, calculation, report or
-action is a new tool in `core/tools/catalog.ts` (actions only through `core/gateway`).
+action is a new tool: in `core/tools/catalog.ts` when any business can use it, or in a template
+pack's `tools.ts` when it belongs to one kind of business (actions only through `core/gateway`).

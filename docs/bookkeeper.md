@@ -18,7 +18,7 @@ Quinn keeps the evidence for every business charge so tax time is an export, not
 | Write receipt, category, memo to Mercury | Through the gateway only, after Zak approves in the Control Room (Draft tier) | Exact matches can earn Act |
 | "Receipts needed" list | A section of the daily Notion page | Notion database with photo upload, email to zak+receipts@ |
 | Monthly close (on the 3rd, for last month) | Numbers in code: charges, spend, receipt coverage, uncategorized, open photo asks, miles. Notion page | Sonnet-written open-items note |
-| Mileage and home office | Tables, policies and the math in `domain/books.ts` (IRS standard rate, simplified $5/sq ft up to 300 sq ft, actual-expense share) | Trip entry (QuickBooks tracker export / Notion form), home office inputs |
+| Mileage and home office | Tables, policies and the math in `templates/one-two/domain/books.ts` (IRS standard rate, simplified $5/sq ft up to 300 sq ft, actual-expense share) | Trip entry (QuickBooks tracker export / Notion form), home office inputs |
 | Tax packet (Jan 15) | Table only | Build before January |
 | QuickBooks | Not connected (One Two has no QBO company yet; Claude's connector is "Mernin Coffee (NOT MAIN ACCOUNT)") | Read expenses + chart of accounts once a company exists |
 

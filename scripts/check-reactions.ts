@@ -3,7 +3,7 @@
 import assert from "node:assert/strict";
 
 import { MAX_REACTION, canReplace, planReaction, savedWords, tally, tallyWords } from "../core/reaction-rules";
-import { replyUrl } from "../agents/chief-of-staff/email";
+import { replyUrl } from "../templates/one-two/agents/chief-of-staff/email";
 
 const ok = (r: ReturnType<typeof planReaction>) => { if ("error" in r) throw new Error(r.error); return r.plan; };
 const err = (r: ReturnType<typeof planReaction>) => ("error" in r ? r.error : null);

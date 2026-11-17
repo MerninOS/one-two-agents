@@ -12,7 +12,7 @@ const schema = buildClientSchema(j.data ?? j, { assumeValid: true });
 
 const files = [];
 const walk = (d) => readdirSync(d).forEach((f) => { const q = join(d, f); if (statSync(q).isDirectory()) walk(q); else if (/\.(ts|tsx)$/.test(f)) files.push(q); });
-for (const d of ["agents", "integrations", "core"]) walk(join(root, d));
+for (const d of ["agents", "templates", "integrations", "core"]) walk(join(root, d));
 
 const fragments = new Map();
 for (const f of files) for (const m of readFileSync(f, "utf8").matchAll(/const (\w+) = gql`(\s*fragment[\s\S]*?)`/g)) fragments.set(m[1], m[2]);

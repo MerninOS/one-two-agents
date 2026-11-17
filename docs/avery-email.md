@@ -41,7 +41,7 @@ revenue. With no snapshot: `Thu: Reorder Guji`.
 - **Not a gateway action.** The gateway governs messages to other people, purchases and
   posts. A report to Zak is a Report-tier write, like the Notion page.
 - **Numbers in code.** Every figure and every comparison is computed in
-  `agents/chief-of-staff`. The model still writes only the Watch list and the focus.
+  `templates/one-two/agents/chief-of-staff`. The model still writes only the Watch list and the focus.
 - **Model text is escaped.** Watch items, the focus and run summaries are HTML-escaped,
   and the subject is cut to one line.
 - **Every run through `withRun`**, so `agents.enabled` and the daily budget still apply.
@@ -72,9 +72,9 @@ revenue. With no snapshot: `Thu: Reorder Guji`.
 ## Files
 
 - `integrations/email.ts`: `emailZak(subject, html, text)` and `hasEmail()`.
-- `agents/chief-of-staff/email.ts`: pure function that turns the facts and the judgment
+- `templates/one-two/agents/chief-of-staff/email.ts`: pure function that turns the facts and the judgment
   into `{ subject, html, text }`. No I/O, so it can be rendered and checked on its own.
-- `agents/chief-of-staff/index.ts`: adds approvals, drafts and comparisons to the facts,
+- `templates/one-two/agents/chief-of-staff/index.ts`: adds approvals, drafts and comparisons to the facts,
   and sends.
 - `dashboard/crew.ts`, `dashboard/data.ts`, `app/api/health`, the Integrations page: a new
   "Email to Zak" integration.

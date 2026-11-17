@@ -2,8 +2,8 @@ import "server-only";
 // Green lots: unpublished Shopify products tagged `blended-green`, one inventory-tracked
 // variant whose quantity is green coffee in grams, costs in blended.* metafields. Read through our
 // Shopify MCP server (integrations/shopify-server.ts, docs/mcp-everywhere.md slice 7).
-import type { GreenLot } from "@/domain/types";
-import { G_PER_LB } from "@/domain/coffee";
+import type { GreenLot } from "@/templates/one-two/domain/types";
+import { G_PER_LB } from "@/templates/one-two/domain/coffee";
 import { callMcpTool } from "@/integrations/mcp";
 
 type MF = { value: string } | null;

@@ -4,7 +4,7 @@ import "server-only";
 // from Shopify (all channels), green cost from what each order took out of green inventory
 // (blended.green_usage, or worked out the same way when it was never deducted), cash from
 // Mercury's read-only API.
-import { G_PER_LB, round2 } from "@/domain/coffee";
+import { G_PER_LB, round2 } from "@/templates/one-two/domain/coffee";
 import { db } from "@/core/db";
 import { chicagoDate, nextDay } from "@/core/time";
 import { mercuryCash } from "@/integrations/mercury";

@@ -3,9 +3,9 @@ import "server-only";
 // open orders on the roasting board. The storefront writes the data read here:
 // blended.green_usage on the order, green:* and stage:* tags, the _blend line property. Read through
 // our Shopify MCP server (integrations/shopify-server.ts): each read is one fixed query there.
-import type { GreenLot, StockCoffee } from "@/domain/types";
-import { BLEND_PROP } from "@/domain/coffee";
-import { orderGreenUsage, type GreenLine, type RoastLoss } from "@/domain/green";
+import type { GreenLot, StockCoffee } from "@/templates/one-two/domain/types";
+import { BLEND_PROP } from "@/templates/one-two/domain/coffee";
+import { orderGreenUsage, type GreenLine, type RoastLoss } from "@/templates/one-two/domain/green";
 import { callMcpTool } from "@/integrations/mcp";
 
 export const TAG_DEDUCTED = "green:deducted", TAG_RESTOCKED = "green:restocked";
