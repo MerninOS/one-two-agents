@@ -18,7 +18,7 @@ export const TENANT_TABLES = [
   "agent_actions", "agent_defs", "agent_memory", "agent_outputs", "agent_playbook_holds", "agent_playbooks",
   "agent_runs", "agents", "approvals", "avery_chat", "chain_fires", "connector_requests",
   "crew_flow", "departments", "email_suppressions", "expense_docs", "goals", "home_office", "jobs", "kpi_snapshots",
-  "mcp_connection_events", "mcp_connections", "mcp_custom_servers", "members", "memory_events", "plans", "policies",
+  "mcp_connection_events", "mcp_connections", "mcp_custom_servers", "members", "memory_events", "org_keys", "plans", "policies",
   "policy_log", "proposals", "reactions", "run_steps", "seats", "tax_packets", "trips", "vendors", "wholesale_leads",
 ] as const;
 /** The orgs themselves: readable (only the current one), never written through db(). */

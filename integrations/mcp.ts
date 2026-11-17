@@ -4,7 +4,8 @@ import "server-only";
 // server's tools, and it calls only what core/mcp-rules.ts names for that server: read tools.
 //
 // Sign-ins are kept in the token vault (core/vault.ts, docs/mcp-everywhere.md slice 2): sealed in
-// mcp_connections with MCP_SECRET_KEY, a key of its own. Tokens never reach a model, the browser,
+// mcp_connections with the org's own data key (org_keys, docs/tenancy.md slice 4), which is kept
+// wrapped by MCP_SECRET_KEY, a key of its own. Tokens never reach a model, the browser,
 // the run log or an error message (scrubSecrets), are never sent on after a redirect, and are
 // revoked at the server on Disconnect where it allows. Every sign-in event is logged, without
 // token values, in mcp_connection_events.
@@ -16,7 +17,8 @@ import {
   GOOGLE_AUTH, MCP_IDS, MCP_PROTOCOL, MCP_SERVERS, TOOL_CHECK_HOURS, isMcpId, authorizeUrl, grantedScopes, isGoogle, scopeProblem, usesConnect, checkTools, checkedTools, isHosted, mayWrite, listedTools, toolCheckNote, type ListedTool, discoveryUrls, mayCall, mayReport, needsRefresh, parseRpc, pickScopes, readAuthServer, readTokens, resourceOf, scrubSecrets, toolPayload,
   type AuthServer, type McpEvent, type McpId, type Tokens,
 } from "@/core/mcp-rules";
-import { MIN_SECRET_CHARS, keyIdOf, open as openWith, seal as sealWith, vaultKey, type VaultKey } from "@/core/vault";
+import { MIN_SECRET_CHARS, envWrapper, isBound, keyIdOf, newDataKey, open as openWith, seal as sealWith, vaultKey, type KeyWrapper, type VaultKey } from "@/core/vault";
+import { currentOrgId } from "@/core/tenancy";
 import { looksLikeNotionKey } from "@/core/notion-blocks";
 import { checkNotionKey, notionServer } from "./notion-server";
 import { checkShopifyKey, shopifyServer } from "./shopify-server";
@@ -39,6 +41,7 @@ const CLIENT_NAME = "One Two Control Room";
 const usable = (s: string | undefined) => !!s && s.length >= MIN_SECRET_CHARS;
 export const VAULT_MISSING = `Set MCP_SECRET_KEY in Vercel (at least ${MIN_SECRET_CHARS} characters, made with openssl rand -base64 32) so sign-ins can be locked.`;
 
+/** The env key and the old one: they wrap each org's data key, and open sign-ins sealed before slice 4 and the sign-in cookie. */
 function keys(): { current: VaultKey | null; all: VaultKey[] } {
   const current = usable(env.mcpSecretKey) ? vaultKey(env.mcpSecretKey!) : null;
   const all: VaultKey[] = [];
@@ -48,12 +51,83 @@ function keys(): { current: VaultKey | null; all: VaultKey[] } {
 }
 /** Whether MCP_SECRET_KEY is set and long enough. */
 export const vaultReady = () => usable(env.mcpSecretKey);
+/** For the short-lived sign-in cookie only (it never reaches the database): the env key. */
 function seal(value: unknown): string {
   const k = keys().current;
   if (!k) throw new Error(VAULT_MISSING);
   return sealWith(value, k);
 }
 function open<T>(sealed: string): T | null { return openWith<T>(sealed, keys().all); }
+
+// ---- Each org's data key (docs/tenancy.md, slice 4). Wrapped by MCP_SECRET_KEY (a cloud KMS can
+// stand in later: KeyWrapper), kept in org_keys, made the first time an org saves a sign-in.
+
+function wrappers(): { current: KeyWrapper | null; all: KeyWrapper[] } {
+  const current = usable(env.mcpSecretKey) ? envWrapper(env.mcpSecretKey!) : null;
+  const all = current ? [current] : [];
+  if (usable(env.mcpSecretKeyOld)) all.push(envWrapper(env.mcpSecretKeyOld!));
+  return { current, all };
+}
+
+interface OrgKeyRow { key_id: string; wrapped: string; wrap_key_id: string }
+const ORG_KEY_MS = 5 * 60_000;
+const orgKeyCache = new Map<string, { key: VaultKey; at: number }>();
+
+async function readOrgKeyRow(): Promise<OrgKeyRow | null> {
+  const { data, error } = await db().from("org_keys").select("key_id, wrapped, wrap_key_id").maybeSingle();
+  if (error) throw new Error(missing(error.message) ? "The org_keys table isn't set up yet: apply 20261206090000_org_keys.sql." : error.message);
+  return (data as OrgKeyRow | null) ?? null;
+}
+
+/** Unwraps an org's data key with whichever wrapping key wrapped it, and rewraps it onto the current one. */
+async function unwrapRow(row: OrgKeyRow, org: string): Promise<VaultKey | null> {
+  const { current, all } = wrappers();
+  const w = all.find((x) => x.id === row.wrap_key_id);
+  const k = w ? await w.unwrap(row.wrapped, org) : null;
+  if (!k || k.id !== row.key_id) return null;
+  if (current && w !== current) {
+    const { error } = await db().from("org_keys").update({ wrapped: await current.wrap(k, org), wrap_key_id: current.id, updated_at: new Date().toISOString() }).eq("key_id", row.key_id);
+    if (error) console.error("[vault] rewrap", error.message);
+  }
+  return k;
+}
+
+/**
+ * The current org's data key. With `make`, one is made (and wrapped) when the org has none.
+ * Null when the org has none yet, or no wrapping key opens it.
+ */
+async function orgKey(make: boolean): Promise<VaultKey | null> {
+  const org = currentOrgId();
+  const hit = orgKeyCache.get(org);
+  if (hit && Date.now() - hit.at < ORG_KEY_MS) return hit.key;
+  let row = await readOrgKeyRow();
+  if (!row && make) {
+    const w = wrappers().current;
+    if (!w) throw new Error(VAULT_MISSING);
+    const k = newDataKey();
+    const { error } = await db().from("org_keys").insert({ key_id: k.id, wrapped: await w.wrap(k, org), wrap_key_id: w.id });
+    if (error && error.code !== "23505") throw new Error(error.message);
+    row = await readOrgKeyRow();
+  }
+  if (!row) return null;
+  const k = await unwrapRow(row, org);
+  if (k) orgKeyCache.set(org, { key: k, at: Date.now() });
+  return k;
+}
+
+/** Seals a sign-in for the database: the current org's data key, bound to the org. */
+async function sealSecret(value: unknown): Promise<string> {
+  const k = await orgKey(true);
+  if (!k) throw new Error("This org's vault key can't be opened with MCP_SECRET_KEY or MCP_SECRET_KEY_OLD.");
+  return sealWith(value, k, currentOrgId());
+}
+
+/** Opens a saved sign-in: the org's data key for a v3 value, the env keys for one sealed before slice 4. */
+async function openSecret<T>(sealed: string): Promise<T | null> {
+  if (!isBound(sealed)) return openWith<T>(sealed, keys().all);
+  const k = await orgKey(false);
+  return k ? openWith<T>(sealed, [k], currentOrgId()) : null;
+}
 
 // ---- Who a connection is for: a built-in server's profile in code, or a custom server's row.
 
@@ -113,7 +187,7 @@ export async function saveMcpSetting(id: McpId, name: string, value: string | nu
 
 async function store(id: string, s: Secret | KeySecret) {
   const now = new Date().toISOString();
-  const { error } = await db().from("mcp_connections").upsert({ id, secret: seal(s), connected_at: now, last_error: null, paused_at: null, updated_at: now }, { onConflict: "id" });
+  const { error } = await db().from("mcp_connections").upsert({ id, secret: await sealSecret(s), connected_at: now, last_error: null, paused_at: null, updated_at: now }, { onConflict: "id" });
   if (error) throw new Error(missing(error.message) ? MCP_MISSING : error.message);
 }
 
@@ -124,50 +198,61 @@ async function pause(id: string, e: string, event: McpEvent, secrets: (string | 
   await logEvent(id, event, text);
 }
 
-/** The sign-in, opened. Moves it onto the current key when an older key sealed it. */
+/** The sign-in, opened. Moves it onto the org's data key when it is sealed any other way. */
 async function readSecret<T = Secret>(id: string, r: Row): Promise<T | null> {
   if (!r.secret) return null;
-  const s = open<T>(r.secret);
+  const s = await openSecret<T>(r.secret);
   if (!s) return null;
-  const cur = keys().current;
-  if (cur && keyIdOf(r.secret) !== cur.id) {
-    const { error } = await db().from("mcp_connections").update({ secret: sealWith(s, cur), updated_at: new Date().toISOString() }).eq("id", id);
-    if (!error) await logEvent(id, "resealed", `moved onto key ${cur.id}`);
+  const k = isBound(r.secret) ? await orgKey(false) : null;
+  if (!k || keyIdOf(r.secret) !== k.id) {
+    try {
+      const sealed = await sealSecret(s);
+      const { error } = await db().from("mcp_connections").update({ secret: sealed, updated_at: new Date().toISOString() }).eq("id", id);
+      if (!error) await logEvent(id, "resealed", `moved onto this org's key ${keyIdOf(sealed)}`);
+    } catch (e) { console.error("[vault] reseal", e instanceof Error ? e.message : e); }
   }
   return s;
 }
 
 export interface VaultState { keySet: boolean; tooShort: boolean; oldKeySet: boolean; keyId: string | null; onOtherKey: string[]; unreadable: string[] }
 
-/** Is MCP_SECRET_KEY set, and is every saved sign-in sealed with it. Never shows a key. */
+/** Is MCP_SECRET_KEY set, and is every saved sign-in sealed with this org's data key. Never shows a key. */
 export async function vaultState(): Promise<VaultState | null> {
   const { current } = keys();
-  const base = { keySet: !!current, tooShort: !!env.mcpSecretKey && !current, oldKeySet: usable(env.mcpSecretKeyOld), keyId: current?.id ?? null };
+  const base = { keySet: !!current, tooShort: !!env.mcpSecretKey && !current, oldKeySet: usable(env.mcpSecretKeyOld) };
   const { data, error } = await db().from("mcp_connections").select("id, secret").not("secret", "is", null);
   if (error) return null;
+  let k: VaultKey | null = null;
+  try { k = await orgKey(false); } catch { return null; }
   const rows = data as { id: string; secret: string }[];
+  const opened = await Promise.all(rows.map(async (r) => ({ id: r.id, ok: (await openSecret(r.secret)) !== null, onOrgKey: !!k && isBound(r.secret) && keyIdOf(r.secret) === k.id })));
   return {
     ...base,
-    onOtherKey: rows.filter((r) => keyIdOf(r.secret) !== current?.id && open(r.secret) !== null).map((r) => r.id),
-    unreadable: rows.filter((r) => open(r.secret) === null).map((r) => r.id),
+    keyId: k?.id ?? null,
+    onOtherKey: opened.filter((r) => r.ok && !r.onOrgKey).map((r) => r.id),
+    unreadable: opened.filter((r) => !r.ok).map((r) => r.id),
   };
 }
 
-/** Re-seals every saved sign-in with MCP_SECRET_KEY. After this, MCP_SECRET_KEY_OLD can be removed. */
+/**
+ * Re-seals every saved sign-in of the current org with its data key (made if it has none), and
+ * rewraps that key with MCP_SECRET_KEY. After this, MCP_SECRET_KEY_OLD can be removed.
+ */
 export async function resealAll(): Promise<{ moved: number; unreadable: string[] }> {
-  const cur = keys().current;
-  if (!cur) throw new Error(VAULT_MISSING);
+  if (!keys().current) throw new Error(VAULT_MISSING);
+  const k = await orgKey(true);
+  if (!k) throw new Error("This org's vault key can't be opened with MCP_SECRET_KEY or MCP_SECRET_KEY_OLD.");
   const { data, error } = await db().from("mcp_connections").select("id, secret").not("secret", "is", null);
   if (error) throw new Error(missing(error.message) ? MCP_MISSING : error.message);
   let moved = 0;
   const unreadable: string[] = [];
   for (const r of data as { id: string; secret: string }[]) {
-    if (keyIdOf(r.secret) === cur.id) continue;
-    const s = open<Secret>(r.secret);
+    if (isBound(r.secret) && keyIdOf(r.secret) === k.id) continue;
+    const s = await openSecret<Secret>(r.secret);
     if (!s) { unreadable.push(r.id); continue; }
-    const u = await db().from("mcp_connections").update({ secret: sealWith(s, cur), updated_at: new Date().toISOString() }).eq("id", r.id);
+    const u = await db().from("mcp_connections").update({ secret: sealWith(s, k, currentOrgId()), updated_at: new Date().toISOString() }).eq("id", r.id);
     if (u.error) throw new Error(u.error.message);
-    await logEvent(r.id, "resealed", `moved onto key ${cur.id}`);
+    await logEvent(r.id, "resealed", `moved onto this org's key ${k.id}`);
     moved++;
   }
   return { moved, unreadable };
@@ -398,7 +483,7 @@ async function accessToken(p: Prof, o: { evenIfPaused?: boolean } = {}): Promise
     await pause(id, e, "refresh_failed", secrets);
     throw new Error(`${e}. Tap Sign in again on Connections.`);
   }
-  const { error } = await db().from("mcp_connections").update({ secret: seal({ ...s, tokens }), last_error: null, updated_at: new Date().toISOString() }).eq("id", id);
+  const { error } = await db().from("mcp_connections").update({ secret: await sealSecret({ ...s, tokens }), last_error: null, updated_at: new Date().toISOString() }).eq("id", id);
   if (error) throw new Error(error.message);
   await logEvent(id, "refreshed");
   return { token: tokens.accessToken, secrets: [tokens.accessToken, tokens.refreshToken, ...secrets], row: r! };
@@ -584,7 +669,7 @@ export async function saveMcpKey(id: McpId, pasted: string): Promise<{ name: str
   let who: { name: string; workspace: string };
   try { who = await l.who(key); } catch (e) { throw new Error(`${MCP_SERVERS[id].name} didn't accept that key: ${scrubSecrets(e instanceof Error ? e.message : String(e), [key]).slice(0, 160)}`); }
   const now = new Date().toISOString();
-  const { error } = await db().from("mcp_connections").upsert({ id, secret: seal({ key } satisfies KeySecret), connected_at: now, last_error: null, paused_at: null, updated_at: now }, { onConflict: "id" });
+  const { error } = await db().from("mcp_connections").upsert({ id, secret: await sealSecret({ key } satisfies KeySecret), connected_at: now, last_error: null, paused_at: null, updated_at: now }, { onConflict: "id" });
   if (error) throw new Error(missing(error.message) ? MCP_MISSING : error.message);
   await logEvent(id, "connected", `as ${who.name}${who.workspace ? ` in ${who.workspace}` : ""}`, [key]);
   return who;
