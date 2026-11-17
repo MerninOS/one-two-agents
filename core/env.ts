@@ -11,9 +11,14 @@ export const env = {
   // its owner on first sign-in. After that, owners add people on Settings > People.
   ownerEmail: v("OPERATOR_OWNER_EMAIL")?.toLowerCase(),
 
-  // Supabase project one-two-agents (service role, server only; tables have RLS with no policies)
+  // Supabase project one-two-agents (service role, server only; every table has RLS, docs/tenancy.md)
   supabaseUrl: v("SUPABASE_URL"),
   supabaseServiceKey: v("SUPABASE_SERVICE_ROLE_KEY"),
+  // The database lock (docs/tenancy.md, slice 2b): our ES256 private key (JWK), imported into
+  // Supabase as its signing key, signs a short-lived token per org; tables are read with it and the
+  // publishable key. Both blank = tables use the service role, as before.
+  supabaseSigningKey: v("SUPABASE_SIGNING_KEY"),
+  supabasePublishableKey: v("SUPABASE_PUBLISHABLE_KEY"),
 
   // The token vault (core/vault.ts): seals MCP sign-ins. A key of its own, never made from another
   // secret. To change it, move the current value to MCP_SECRET_KEY_OLD and put a new one here.

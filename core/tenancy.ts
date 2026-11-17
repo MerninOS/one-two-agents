@@ -112,17 +112,20 @@ function scopeTable<Q extends object>(qb: Q, table: string, orgId: string): Q {
 
 /**
  * The client db() hands out: `from(table)` is scoped to the current org (read when `from` is
- * called), a table outside TENANT_TABLES and orgs is refused, and `rpc` is refused (no database
+ * called) and, given `tablesFor`, goes through that org's own client; a table outside TENANT_TABLES and orgs is refused, and `rpc` is refused (no database
  * functions exist; one would skip the scoping). Storage and the rest pass through.
  */
-export function scopeClient<C extends object>(client: C, orgOf: () => string = currentOrgId): C {
+export function scopeClient<C extends object>(client: C, orgOf: () => string = currentOrgId, tablesFor?: (orgId: string) => C): C {
   return new Proxy(client, {
     get(target, prop, receiver) {
       if (prop === "from") {
         return (table: string) => {
           if (!tenant.has(table) && table !== ORGS_TABLE) throw new Error(`Refused: "${table}" isn't a tenant table (core/tenancy.ts TENANT_TABLES).`);
-          const qb = (Reflect.get(target, "from", receiver) as Fn).call(target, table) as object;
-          return scopeTable(qb, table, orgOf());
+          const org = orgOf();
+          // slice 2b: tables through the org's own client (a token the database holds to that org) when there is one
+          const via = tablesFor ? tablesFor(org) : target;
+          const qb = (Reflect.get(via, "from") as Fn).call(via, table) as object;
+          return scopeTable(qb, table, org);
         };
       }
       if (prop === "rpc" || prop === "schema") return () => { throw new Error(`Refused: ${String(prop)}() skips org scoping.`); };

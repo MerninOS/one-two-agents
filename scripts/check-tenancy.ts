@@ -1,6 +1,8 @@
 // Tenancy rules (docs/tenancy.md, slice 1): `npm run check:tenancy`. Pure: no network, no database.
 import assert from "node:assert/strict";
 import { readFileSync, readdirSync } from "node:fs";
+import { createPublicKey, generateKeyPairSync, verify } from "node:crypto";
+import { REFRESH_MS, TOKEN_MS, orgToken, parseSigningKey } from "../core/org-token";
 import { join } from "node:path";
 import { HOME_ORG_ID, ORGS_TABLE, TENANT_TABLES, conflictColumns, currentOrgId, scopeClient, stampRows, updateValues, withOrg } from "../core/tenancy";
 
@@ -87,6 +89,38 @@ assert.throws(() => updateValues({ org_id: OTHER }, HOME_ORG_ID), /can't be chan
   assert.deepEqual(db.storage.from("receipts"), { bucket: "receipts" }, "storage passes through");
 }
 
+// slice 2b: with tablesFor, tables go through the org's own client; storage stays on the base client
+{
+  const base = fake(), mine = fake(), theirs = fake();
+  const db = scopeClient(base.client, currentOrgId, (org) => (org === HOME_ORG_ID ? mine.client : theirs.client));
+  db.from("agents").select("id");
+  withOrg(OTHER, () => db.from("agents").select("id"));
+  assert.deepEqual(base.calls, [], "tables never use the base client");
+  assert.deepEqual(mine.calls, [["from", "agents"], ["select", "id"], ["eq", "org_id", HOME_ORG_ID]]);
+  assert.deepEqual(theirs.calls, [["from", "agents"], ["select", "id"], ["eq", "org_id", OTHER]]);
+  assert.deepEqual(db.storage.from("receipts"), { bucket: "receipts" });
+}
+
+// org tokens: ES256, signed by our key, holding one org, expiring
+{
+  const { privateKey } = generateKeyPairSync("ec", { namedCurve: "P-256" });
+  const jwk = { ...privateKey.export({ format: "jwk" }), kid: "test-kid" };
+  const k = parseSigningKey(JSON.stringify(jwk));
+  const now = Date.parse("2026-11-17T12:00:00Z");
+  const { token, exp } = orgToken(k, OTHER, now);
+  const [h, b, sig] = token.split(".");
+  assert.ok(verify("sha256", Buffer.from(`${h}.${b}`), { key: createPublicKey(privateKey), dsaEncoding: "ieee-p1363" }, Buffer.from(sig, "base64url")), "signature verifies");
+  assert.deepEqual(JSON.parse(Buffer.from(h, "base64url").toString()), { alg: "ES256", typ: "JWT", kid: "test-kid" });
+  const claims = JSON.parse(Buffer.from(b, "base64url").toString());
+  assert.deepEqual({ role: claims.role, aud: claims.aud, sub: claims.sub, org_id: claims.org_id }, { role: "authenticated", aud: "authenticated", sub: OTHER, org_id: OTHER });
+  assert.equal(exp, now + TOKEN_MS);
+  assert.ok(REFRESH_MS < TOKEN_MS);
+  assert.throws(() => orgToken(k, "one-two", now), /uuid/);
+  assert.throws(() => parseSigningKey("nope"), /isn’t JSON/);
+  assert.throws(() => parseSigningKey(JSON.stringify({ ...jwk, d: undefined })), /ES256 private key/);
+  assert.throws(() => parseSigningKey(JSON.stringify({ ...jwk, kid: undefined })), /kid/);
+}
+
 // the current org: home by default, withOrg for the work inside it (sync and async), nested, then restored
 assert.equal(currentOrgId(), HOME_ORG_ID);
 assert.throws(() => withOrg("one-two", () => 1), /uuid/);
@@ -127,5 +161,16 @@ assert.deepEqual(live, [...TENANT_TABLES].sort(), "TENANT_TABLES lists exactly t
 const slice1 = readFileSync(join(dir, SLICE1), "utf8");
 // tables from before slice 1 got org_id there; later ones carry it in their own create table (checked above)
 for (const t of TENANT_TABLES) if ((created.get(t) ?? "") < SLICE1) assert.ok(slice1.includes(`'${t}'`), `slice 1 adds org_id to ${t}`);
+
+// slice 2b: every tenant table has the org_rows policy, from the policies migration or its own create
+const POLICIES = "20261204090000_org_policies.sql";
+assert.ok(files.includes(POLICIES), "policies migration present");
+const policySql = readFileSync(join(dir, POLICIES), "utf8");
+assert.match(policySql, /create policy org_self on orgs/);
+for (const t of TENANT_TABLES) {
+  const from = created.get(t) ?? "";
+  if (from < POLICIES) assert.ok(policySql.includes(`'${t}'`), `${POLICIES} adds org_rows to ${t}`);
+  else assert.match(readFileSync(join(dir, from), "utf8"), new RegExp(`create policy \\w+ on ${t}\\b[\\s\\S]*org_id = \\(select public\\.jwt_org_id\\(\\)\\)`), `${from}: ${t} needs a policy holding it to jwt_org_id()`);
+}
 
 asyncCheck.then(() => console.log(`check:tenancy ok (${TENANT_TABLES.length} tenant tables)`), (e) => { console.error(e); process.exit(1); });
