@@ -1,7 +1,7 @@
 import "server-only";
 // The job queue (docs/tenancy.md, slice 3). A job is a row in `jobs`, always the current org's
 // (db() stamps and filters it, and the database lock holds it to that org). The scheduler
-// (/api/dispatch, every minute) kicks the jobs that are due; a kick is a signed request to
+// (/api/dispatch, every 15 minutes) kicks the jobs that are due; a kick is a signed request to
 // /api/jobs/<id>?org=<org>, which claims the job as that org, answers, and runs it in its own
 // time limit. Claiming is a conditional update, so a job runs once however often it is kicked.
 // A claimed job that never finishes is marked failed, not retried: a run may have half happened.

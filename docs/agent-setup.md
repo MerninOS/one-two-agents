@@ -166,7 +166,7 @@ dispatcher in `app/api/dispatch`. Migration `20261112200000_crew_flow.sql`.
   changes proposed, receipts still missing; Morgan: orders yesterday); only run on weekdays or Mondays; wait
   until a time ("not before 6:45"); and read the step before's summary and numbers as facts
   (Avery only, so far). The hand-off is labelled as another agent's words, not instructions.
-- One Vercel Schedule, `dispatch`, every minute. It starts the chains whose time came in the
+- One Vercel Schedule, `dispatch`, every 15 minutes. It starts the chains whose time came in the
   last hour (each firing once, `chain_fires`) and kicks the steps that are due: each step is a job
   (`jobs`, docs/tenancy.md slice 3), and a waiting step is a job due at its time.
   With every chain off it does nothing. The old `cfo` and `chief-of-staff` schedules are gone:

@@ -10,7 +10,7 @@ import { withOrg } from "@/core/tenancy";
 
 export const maxDuration = 60;
 
-// The scheduler: the one Vercel Schedule (vercel.json "dispatch", every minute). For each org in
+// The scheduler: the one Vercel Schedule (vercel.json "dispatch", every 15 minutes; this plan's schedules run up to 15 minutes late, so it can't be more often). For each org in
 // turn, as that org (docs/tenancy.md, slice 3): it starts the chains whose schedule came due in the
 // last hour (each firing once: chain_fires), marks failed the jobs that never finished, and kicks
 // the jobs that are due (a step whose "not before" time has come, or one whose kick was lost). The

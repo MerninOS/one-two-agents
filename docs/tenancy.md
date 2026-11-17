@@ -230,7 +230,7 @@ request that runs it as the job's org. One scheduler serves every org.
   however often it is kicked), answers, then runs it after the answer in its own 300 s limit:
   reads the saved flow, checks the chain and the org are on (or the chain was started with Run
   chain), runs the agent through `withRun`, enqueues the next step, and records the outcome.
-- **Scheduler** (`app/api/dispatch`, Vercel Schedule `dispatch`, now every minute): for each org in
+- **Scheduler** (`app/api/dispatch`, Vercel Schedule `dispatch`, every 15 minutes as before (this Vercel plan runs schedules up to 15 minutes late, so it can't be more often; a step that starts now is kicked straight away, so only a step waiting for a time waits on it)): for each org in
   turn (`allOrgIds()` in `core/db.ts`, the only read across orgs: ids only), as that org: starts the
   chains whose time came (`chain_fires`, unchanged), marks failed the jobs claimed more than 6
   minutes ago that never finished (not retried: a run may have half happened), and kicks the jobs
@@ -247,8 +247,7 @@ another org's job.
 
 ### Setup (Zak, once)
 
-Apply `20261205090000_jobs.sql` (Supabase SQL editor) before merging. Merging deploys the
-every-minute schedule from `vercel.json`. While the org is off nothing starts on its own, so the
+Apply `20261205090000_jobs.sql` (Supabase SQL editor) before merging. While the org is off nothing starts on its own, so the
 scheduler finds nothing to do.
 
 ### Not in this slice
