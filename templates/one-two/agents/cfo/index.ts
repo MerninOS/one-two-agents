@@ -8,10 +8,11 @@ import { G_PER_LB, round2 } from "@/templates/one-two/domain/coffee";
 import { db } from "@/core/db";
 import { chicagoDate, nextDay } from "@/core/time";
 import { mercuryCash } from "@/integrations/mercury";
-import { getInventoryLots } from "@/integrations/shopify/lots";
-import { linesOf, ordersBetween, parseRecord, usageOf } from "@/integrations/shopify/orders";
-import { getRoastLoss } from "@/integrations/shopify/settings";
-import { fetchStockCoffees } from "@/integrations/shopify/stock";
+import { getInventoryLots } from "@/templates/one-two/shopify/lots";
+import { linesOf, parseRecord, usageOf } from "@/templates/one-two/shopify/orders";
+import { ordersBetween } from "@/integrations/shopify/orders";
+import { getRoastLoss } from "@/templates/one-two/shopify/settings";
+import { fetchStockCoffees } from "@/templates/one-two/shopify/stock";
 
 export { ordersBetween };
 const ordersOn = (date: string) => ordersBetween(date, nextDay(date));

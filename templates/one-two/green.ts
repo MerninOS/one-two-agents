@@ -3,10 +3,10 @@ import "server-only";
 // lot lasts at that rate. Shared by the tool list (calc_green_use, calc_green_cover,
 // calc_reorder_amount) and the goal measure "Lowest days of green cover" (core/measures.ts).
 import { G_PER_LB } from "@/templates/one-two/domain/coffee";
-import { getInventoryLots } from "@/integrations/shopify/lots";
-import { greenLedger } from "@/integrations/shopify/orders";
-import { getRoastLoss } from "@/integrations/shopify/settings";
-import { fetchStockCoffees } from "@/integrations/shopify/stock";
+import { getInventoryLots } from "@/templates/one-two/shopify/lots";
+import { greenLedger } from "@/templates/one-two/shopify/orders";
+import { getRoastLoss } from "@/templates/one-two/shopify/settings";
+import { fetchStockCoffees } from "@/templates/one-two/shopify/stock";
 
 export const lb = (g: number) => Math.round((g / G_PER_LB) * 10) / 10;
 

@@ -1,4 +1,4 @@
-// The coffee shapes agents work with, read from Shopify (see integrations/shopify/README.md).
+// The coffee shapes agents work with, read from Shopify (see templates/one-two/shopify/README.md).
 // Copied in slimmed form from the storefront (MerninOS/blended web/src/lib/domain/types.ts):
 // only the fields agents use.
 

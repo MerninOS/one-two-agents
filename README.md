@@ -71,12 +71,12 @@ app/api/health/           settings present + Supabase reachable
 dashboard/                Control Room data, actions, session and components
 agents/                   registry.ts (every agent with a live version can run)
 core/                     the runner and agent specs for agents built in the app, the tool list (core/tools), env, Supabase client (scoped to the current org, core/tenancy.ts and docs/tenancy.md), withRun (log, enabled flag, budget, memory), agent memory, time helpers, the tool gateway
-integrations/             mcp.ts (the one MCP client and the vault), our own servers (Notion, Gmail, Shopify, Mercury receipt files), facades agents call (shopify/, mercury.ts, notion.ts, gmail*.ts, klaviyo.ts), Anthropic
-templates/                template packs (docs/templates.md); templates/one-two is One Two Coffee Lab's: coffee constants and green math (copied from the storefront), bookkeeping rules, and the code its tools call
+integrations/             mcp.ts (the one MCP client and the vault), our own servers (Notion, Gmail, Shopify, Mercury receipt files), facades agents call (shopify/orders.ts, mercury.ts, notion.ts, gmail*.ts, klaviyo.ts), Anthropic
+templates/                template packs (docs/templates.md); templates/one-two is One Two Coffee Lab's: coffee constants and green math (copied from the storefront), bookkeeping rules, its Shopify reads and tables, and the code its tools call
 supabase/migrations/      agent tables, each with org_id (docs/tenancy.md)
 ```
 
-`integrations/shopify/README.md` lists the Shopify fields the storefront writes and the
+`templates/one-two/shopify/README.md` lists the Shopify fields the storefront writes and the
 agents read. That is the contract between the two repos.
 
 ## Setup
