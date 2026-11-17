@@ -2,6 +2,7 @@
 // example another business can learn from. Core never reaches into it; it is registered in
 // templates/index.ts.
 import type { TemplatePack } from "@/templates/types";
+import { ONE_TWO_CREW } from "./crew";
 import { ONE_TWO_MEASURES } from "./measures";
 import { ONE_TWO_TOOLS } from "./tools";
 
@@ -12,4 +13,5 @@ export const oneTwo: TemplatePack = {
   tools: ONE_TWO_TOOLS,
   tables: ["kpi_snapshots", "trips", "home_office", "tax_packets"],
   measures: ONE_TWO_MEASURES,
+  crew: ONE_TWO_CREW,
 };
