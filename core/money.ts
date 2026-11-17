@@ -1,7 +1,7 @@
 import "server-only";
 // Burn rate and runway in plain code, from Mercury's read-only API. Shared by the tool list
 // (calc_burn_rate) and the goal measure "Months of runway" (core/measures.ts).
-import { round2 } from "@/domain/coffee";
+import { round2 } from "@/core/num";
 import { chicagoDate } from "@/core/time";
 import { mercuryCash, mercuryTransactions } from "@/integrations/mercury";
 

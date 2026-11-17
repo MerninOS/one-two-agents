@@ -2,11 +2,11 @@ import "server-only";
 // The goal measures (core/goal-rules.ts MEASURES), counted in code from our own tables, Shopify
 // (read-only), Mercury (read-only) and Klaviyo (its MCP server, read-only). A model never supplies a number here. Each read gives up
 // after a while and says why, so a slow service shows "Couldn't read" instead of hanging a page.
-import { round2 } from "@/domain/coffee";
+import { round2 } from "@/core/num";
 import { db } from "@/core/db";
 import { chicagoDate, nextDay } from "@/core/time";
-import { ordersBetween } from "@/agents/cfo";
-import { cover } from "@/core/green";
+import { ordersBetween } from "@/integrations/shopify/orders";
+import { packMeasure } from "@/templates";
 import { burnRate } from "@/core/money";
 import { measureOf, type MeasureKey, type Reading } from "@/core/goal-rules";
 import { mcpStatus } from "@/integrations/mcp";
@@ -45,10 +45,10 @@ async function readOne(key: MeasureKey, today: string, shared: { month?: ReturnT
       return { reading: { value: key === "orders_month" ? m.count : m.revenue }, detail: null };
     }
     case "lowest_cover_days": {
-      const rows = await cover(30);
-      const known = rows.filter((r) => r.daysOfCover != null).map((r) => r.daysOfCover!);
-      if (!known.length) return { reading: { error: rows.length ? "no listed lot was used in the last 30 days" : "no listed green lots" }, detail: null };
-      return { reading: { value: Math.min(...known) }, detail: { lots: rows.map((r) => ({ lot: r.lot, days: r.daysOfCover })).sort((a, b) => (a.days ?? 1e9) - (b.days ?? 1e9)) } };
+      // a template pack's measure (templates/one-two: green lot cover)
+      const read = packMeasure(key);
+      if (!read) return { reading: { error: "no installed template pack counts this" }, detail: null };
+      return read();
     }
     case "runway_months": {
       const b = await burnRate(90);

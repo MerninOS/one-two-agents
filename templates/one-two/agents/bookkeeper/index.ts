@@ -13,8 +13,8 @@ import { TZ, chicagoDate, dayTitle } from "@/core/time";
 import {
   DEFAULT_POLICIES, amountText, coverage, mileageUsd, needsEvidence, photoNeeded, whyNoMatch,
   type BookPolicies, type DocStatus, type ReadReceipt,
-} from "@/domain/books";
-import { round2 } from "@/domain/coffee";
+} from "@/templates/one-two/domain/books";
+import { round2 } from "@/templates/one-two/domain/coffee";
 import { claude, costUsd, inputTokens, type Anthropic } from "@/integrations/anthropic";
 import { GmailReader, hasGmailRead, type Mail } from "@/integrations/gmail-read";
 import { hasMercury, mercuryTransactions, type MercuryTxn } from "@/integrations/mercury";

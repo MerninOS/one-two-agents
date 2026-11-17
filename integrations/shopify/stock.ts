@@ -3,8 +3,8 @@ import "server-only";
 // The storefront reads these through the Storefront API; agents use the Admin API so one
 // read-only token covers everything, and skip anything not ACTIVE (the storefront only
 // sees published products).
-import type { StockCoffee } from "@/domain/types";
-import { sizeFromOption } from "@/domain/coffee";
+import type { StockCoffee } from "@/templates/one-two/domain/types";
+import { sizeFromOption } from "@/templates/one-two/domain/coffee";
 import { callMcpTool } from "@/integrations/mcp";
 
 type MF = { value: string } | null;

@@ -24,6 +24,7 @@
     "check:tenancy": "npx --yes tsx scripts/check-tenancy.ts",
     "check:roles": "npx --yes tsx scripts/check-roles.ts",
     "check:jobs": "npx --yes tsx scripts/check-jobs.ts",
+    "check:packs": "npx --yes tsx scripts/check-packs.ts",
     "check": "npm run typecheck && npm run lint && npm run validate:graphql"
   },
   "dependencies": {

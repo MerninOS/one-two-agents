@@ -2,7 +2,7 @@ import "server-only";
 // Green coffee math in plain code: how much of each lot orders used, and how many days each listed
 // lot lasts at that rate. Shared by the tool list (calc_green_use, calc_green_cover,
 // calc_reorder_amount) and the goal measure "Lowest days of green cover" (core/measures.ts).
-import { G_PER_LB } from "@/domain/coffee";
+import { G_PER_LB } from "@/templates/one-two/domain/coffee";
 import { getInventoryLots } from "@/integrations/shopify/lots";
 import { greenLedger } from "@/integrations/shopify/orders";
 import { getRoastLoss } from "@/integrations/shopify/settings";

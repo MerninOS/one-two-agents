@@ -355,22 +355,22 @@ const hostChecks = (async () => {
 
 // only the in-app server runs a tool's code: nothing else calls `.run(` on a tool
 const files = (d: string): string[] => readdirSync(d).flatMap((f) => { const p = join(d, f); return statSync(p).isDirectory() ? files(p) : /\.tsx?$/.test(f) ? [p] : []; });
-const direct = ["core", "agents", "dashboard", "app", "integrations"].flatMap(files).filter((f) => !f.endsWith("core/tools/mcp-host.ts") && /\bt\.run!?\(|\btool\.run!?\(|\.run!\(/.test(readFileSync(f, "utf8")));
+const direct = ["core", "agents", "templates", "dashboard", "app", "integrations"].flatMap(files).filter((f) => !f.endsWith("core/tools/mcp-host.ts") && /\bt\.run!?\(|\btool\.run!?\(|\.run!\(/.test(readFileSync(f, "utf8")));
 assert.deepEqual(direct, [], "call tools through core/tools/call.ts");
 
 
 // only the gateway calls a write tool
-const writers = ["core", "agents", "dashboard", "app", "integrations", "scripts"].flatMap(files).filter((f) => !f.includes("core/gateway/") && !f.endsWith("integrations/mcp.ts") && !f.endsWith("scripts/check-mcp.ts") && /import[^;]*\bcallWriteTool\b[^;]*from/.test(readFileSync(f, "utf8")));
+const writers = ["core", "agents", "templates", "dashboard", "app", "integrations", "scripts"].flatMap(files).filter((f) => !f.includes("core/gateway/") && !f.endsWith("integrations/mcp.ts") && !f.endsWith("scripts/check-mcp.ts") && /import[^;]*\bcallWriteTool\b[^;]*from/.test(readFileSync(f, "utf8")));
 assert.deepEqual(writers, [], "callWriteTool is for core/gateway only");
 // only our Gmail server imports Gmail's API, and only the MCP client imports our Gmail server
-const importers = (mod: string) => ["core", "agents", "dashboard", "app", "integrations"].flatMap(files).filter((f) => new RegExp(`from "[^"]*/${mod}"`).test(readFileSync(f, "utf8")));
+const importers = (mod: string) => ["core", "agents", "templates", "dashboard", "app", "integrations"].flatMap(files).filter((f) => new RegExp(`from "[^"]*/${mod}"`).test(readFileSync(f, "utf8")));
 assert.deepEqual(importers("gmail-api"), ["integrations/gmail-server.ts"]);
 assert.deepEqual(importers("gmail-server"), ["integrations/mcp.ts"]);
 assert.deepEqual(importers("shopify-api"), ["integrations/shopify-server.ts"]);
 assert.deepEqual(importers("shopify-server"), ["integrations/mcp.ts"]);
 assert.deepEqual(importers("mercury-files-server"), ["integrations/mcp.ts"]);
 // no direct GraphQL path from agents: only our Shopify server posts to Shopify's API
-const gqlPosters = ["core", "agents", "dashboard", "app", "integrations"].flatMap(files).filter((f) => /graphql\.json|admin\/oauth\/access_token/.test(readFileSync(f, "utf8")));
+const gqlPosters = ["core", "agents", "templates", "dashboard", "app", "integrations"].flatMap(files).filter((f) => /graphql\.json|admin\/oauth\/access_token/.test(readFileSync(f, "utf8")));
 assert.deepEqual(gqlPosters, ["integrations/shopify-api.ts"]);
 
 hostChecks.then(() => console.log("mcp: ok"), (e) => { console.error(e); process.exit(1); });
