@@ -32,7 +32,7 @@ actions are staged for the gateway.
 
 | Rule | Where |
 |---|---|
-| Sign-ins sealed with AES-256-GCM under `MCP_SECRET_KEY`, a key of its own | `core/vault.ts`, `integrations/mcp.ts` |
+| Sign-ins sealed with AES-256-GCM under the org's own data key, bound to the org (`v3`); the data key is kept in `org_keys` wrapped by `MCP_SECRET_KEY`, a key of its own (docs/tenancy.md, slice 4) | `core/vault.ts`, `integrations/mcp.ts` |
 | Each sealed value names its key (`v2.<key id>.…`); `MCP_SECRET_KEY_OLD` still opens what it sealed; rows move onto the current key when read, or all at once with **Re-lock now** | `seal`, `open`, `readSecret`, `resealAll` |
 | Without `MCP_SECRET_KEY` nothing can be connected or renewed | `VAULT_MISSING` |
 | Only the vault's two users import it: the MCP client and the gateway | `eslint.config.mjs` |
@@ -51,7 +51,8 @@ Migration: `supabase/migrations/20261126090000_mcp_vault.sql` (`mcp_connections.
 
 1. In Vercel, copy the value of `MCP_SECRET_KEY` into a new variable `MCP_SECRET_KEY_OLD`.
 2. Set `MCP_SECRET_KEY` to a new value (`openssl rand -base64 32`), redeploy.
-3. On Connections, open any MCP connection and tap **Re-lock now**.
+3. On Connections, open any MCP connection and tap **Re-lock now**. This rewraps the org's data key
+   with the new `MCP_SECRET_KEY`; the sign-ins themselves stay on the data key.
 4. Delete `MCP_SECRET_KEY_OLD`, redeploy.
 
 ## Slice 3: server profiles and the tool check

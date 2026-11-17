@@ -254,3 +254,45 @@ scheduler finds nothing to do.
 
 Retries with backoff, a Jobs view in the Control Room, other kinds of job (agent schedules that
 aren't chains, inbound email), per-org concurrency limits, and workers outside Vercel functions.
+
+## Slice 4: each org's own vault key
+
+One `MCP_SECRET_KEY` used to seal every sign-in. Now each org has its own data key, so one org's
+key opening can't open another org's sign-ins, and an org can be removed cleanly.
+
+### How
+
+- **Data key** (`newDataKey` in `core/vault.ts`): 32 random bytes per org, made the first time the
+  org saves a sign-in. Never made from another secret.
+- **Kept wrapped** (`20261206090000_org_keys.sql`): `org_keys` holds one row per org with the data
+  key wrapped, its short id and which wrapping key wrapped it. The table has `org_id` and the
+  `org_rows` policy like every table. The wrapping key never lives in the database.
+- **Wrapping key** (`KeyWrapper`): `envWrapper` makes it from `MCP_SECRET_KEY` under its own label,
+  so it is never the key a sign-in is sealed with. The interface is async so a cloud KMS key can
+  stand in later (ee). The wrapped key is bound to its org: org 2 can't unwrap org 1's.
+- **Sign-ins** (`integrations/mcp.ts`): sealed with the org's data key and bound to the org
+  (`v3.<key id>.…`, the org id checked by AES-GCM), so a row copied to another org opens for
+  nobody. Sign-ins sealed before this slice (`v2`, under `MCP_SECRET_KEY`) still open, and move onto
+  the org's key the next time they are read, or all at once with **Re-lock now** on Connections.
+  The short-lived sign-in cookie stays on `MCP_SECRET_KEY` (it never reaches the database).
+- **Changing `MCP_SECRET_KEY`**: same steps as before (docs/mcp-everywhere.md). The data key is
+  rewrapped with the new key when read or on Re-lock; the sign-ins don't need re-sealing.
+- **Removing an org**: delete its `org_keys` row and every sign-in it saved is unreadable.
+- **`npm run check:mcp`** checks that another org's data key, or the right key used for another
+  org, opens nothing; that a wrapped key unwraps only for its org and only with its wrapping key;
+  that the plain data key is never stored; and that every place `integrations/mcp.ts` stores a
+  sign-in seals it with the org's key.
+
+Tested on a local Postgres: one data key per org, a plain (unwrapped) key is refused, and org 2's
+token can't see, change or add org 1's key.
+
+### Setup (Zak, once)
+
+Apply `20261206090000_org_keys.sql` (Supabase SQL editor) before merging. After the deploy, open
+Connections and tap **Re-lock now** once: every sign-in moves onto One Two's own key. Nothing to
+change in Vercel.
+
+### Not in this slice
+
+A cloud KMS wrapper (ee, when Cloud picks one), rotating an org's data key itself, deleting an
+org from the Control Room.

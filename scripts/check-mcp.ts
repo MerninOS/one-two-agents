@@ -9,7 +9,7 @@ import { SHOPIFY_DOCS, WHO, assertReadOnly, shopifyKeyKind, shopifyVariables, wr
 import { checkGmailArgs, draftRaw, isPlainAddress, readMail } from "../core/gmail-rules";
 import { checkReceiptArgs, looksLikeMercuryToken } from "../core/mercury-rules";
 import { cashOf, readAccounts, readCategories, readOneTxn, readOrgName, readTxnPage } from "../core/mercury-rules";
-import { keyIdOf, open, seal, vaultKey } from "../core/vault";
+import { envWrapper, isBound, keyIdOf, newDataKey, open, seal, vaultKey } from "../core/vault";
 import * as C from "../core/custom-mcp-rules";
 import {
   type McpServer, GOOGLE_AUTH, MCP_EVENTS, MCP_SERVERS, grantedScopes, isGoogle, scopeProblem, usesConnect, checkTools, listedTools, toolCheckNote, toolFingerprint, pickScopes, mayReport, isHosted, mayWrite, checkedTools, scrubSecrets, authorizeUrl, discoveryUrls, listSize, mayCall, namedRows, needsRefresh, nextCursor, parseRpc, readAuthServer, readTokens, reportRows, reportTotals, resourceOf, toolPayload,
@@ -94,6 +94,40 @@ parts[4] = Buffer.from("tampered").toString("base64url");
 assert.equal(open(parts.join("."), [k1]), null, "a changed value opens nothing");
 assert.equal(keyIdOf("not sealed"), null);
 assert.equal(keyIdOf("iv.tag.body"), null, "the slice 6 format (no key id) is no longer opened");
+
+// ---- per-org data keys (docs/tenancy.md, slice 4): org 2 can't open org 1's sign-ins
+const ORG1 = "0e1a7c4e-0001-4000-8000-000000000001", ORG2 = "0e1a7c4e-0002-4000-8000-000000000002";
+const d1 = newDataKey(), d2 = newDataKey();
+assert.notEqual(d1.id, d2.id, "each org's data key is its own");
+assert.equal(d1.key.length, 32);
+const s1 = seal({ key: "shpat_secret" }, d1, ORG1);
+assert.ok(isBound(s1) && s1.startsWith("v3.") && keyIdOf(s1) === d1.id);
+assert.ok(!s1.includes("shpat_secret"));
+assert.deepEqual(open(s1, [d1], ORG1), { key: "shpat_secret" });
+assert.equal(open(s1, [d2], ORG1), null, "another org's data key opens nothing");
+assert.equal(open(s1, [d2, d1], ORG2), null, "the right key, copied to another org, opens nothing");
+assert.equal(open(s1, [d1]), null, "a bound value needs its org");
+assert.equal(open(sealed, [k1], ORG1), null, "an unbound (v2) value isn't opened as bound");
+assert.deepEqual(open(sealed, [k1]), { tokens: { accessToken: "tok-abc" } }, "sign-ins sealed before slice 4 still open, so they can be moved");
+const swapped = s1.replace(/^v3\./, "v2.");
+assert.equal(open(swapped, [d1]), null, "dropping the org binding opens nothing");
+(async () => {
+  const w = envWrapper("first-secret-that-is-long-enough-1234567890"), wOld = envWrapper("second-secret-that-is-long-enough-0987654321");
+  assert.notEqual(w.id, `env:${k1.id}`, "the wrapping key isn't the key sign-ins were sealed with");
+  const wrapped = await w.wrap(d1, ORG1);
+  assert.ok(!wrapped.includes(d1.key.toString("base64url")), "the data key is never stored plain");
+  assert.deepEqual((await w.unwrap(wrapped, ORG1))?.key, d1.key);
+  assert.equal((await w.unwrap(wrapped, ORG1))?.id, d1.id);
+  assert.equal(await w.unwrap(wrapped, ORG2), null, "org 2 can't unwrap org 1's data key");
+  assert.equal(await wOld.unwrap(wrapped, ORG1), null, "another wrapping key can't unwrap it");
+  assert.equal(await w.unwrap(seal("x".repeat(10), vaultKey("first-secret-that-is-long-enough-1234567890", "org-keys:v1"), `org-key:${ORG1}`), ORG1), null, "a key of the wrong length is refused");
+})().catch((e) => { console.error(e); process.exit(1); });
+// only integrations/mcp.ts seals sign-ins for the database, always with the org's key
+const mcpSrc = readFileSync(join(process.cwd(), "integrations/mcp.ts"), "utf8");
+const sealCalls = [...mcpSrc.matchAll(/\bsecret: ((?:await )?\w+)\(/g)].map((m) => m[1]);
+assert.ok(sealCalls.length >= 4, "found where sign-ins are stored");
+for (const c of sealCalls) assert.ok(c === "await sealSecret" || c === "sealWith", `sign-ins are sealed with the org key, not ${c}`);
+assert.ok(!/secret: sealWith\(s, (?!k, currentOrgId\(\)\))/.test(mcpSrc), "re-sealing uses the org key and binds the org");
 
 // scopes: only the profile's read scopes, never the server's whole list
 for (const s of MCP_SERVERS.klaviyo.scopes) assert.match(s, /:read$/, s);

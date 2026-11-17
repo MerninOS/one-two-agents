@@ -72,8 +72,9 @@ built, so no agent can send, pay or publish.
   Two's own Notion only through report tools on our own servers, after a run, never by a model.
   Every other write is a profile's write tool, called only by `core/gateway` through
   `callWriteTool` after Zak approves (lint enforces it); it becomes a gateway action type.
-- One credential store: every sign-in and service key lives in the token vault (`core/vault.ts`,
-  sealed under `MCP_SECRET_KEY`, never derived from another secret), connected on Connections.
+- One credential store: every sign-in and service key lives in the token vault (`core/vault.ts`),
+  sealed with its org's own random data key and bound to that org; the data key is kept only
+  wrapped by `MCP_SECRET_KEY` (never derived from another secret), connected on Connections.
   Only `integrations/mcp.ts` and `core/gateway` import the vault (lint enforces it). Settings in
   Vercel hold only the app's own infrastructure (Supabase, Claude, Resend for emails to Zak, the
   vault key, One Two's Google OAuth client) and non-secret ids. Ask for the profile's scopes only, and refuse a sign-in or key
