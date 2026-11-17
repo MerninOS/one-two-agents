@@ -12,13 +12,17 @@ import { MODEL_LIST } from "@/integrations/models";
 import { env } from "@/core/env";
 import { when } from "@/dashboard/format";
 import { activePlaybook, listPlaybooks, pendingPlaybook, playbookHold, stepLabel } from "@/core/playbook";
-import { CONNECTIONS, connOf, isSetUp, type ConnId } from "@/dashboard/connections";
+import { CONNECTIONS, connOf, isSetUp, type ConnId, type CustomConnId } from "@/dashboard/connections";
+import { customMenu } from "@/core/tools/custom";
+import { CUSTOM_WARNING } from "@/core/custom-mcp-rules";
 import { health } from "@/dashboard/data";
 import type { IntegrationId } from "@/dashboard/crew";
 
-export interface BuildTool { id: string; label: string; detail: string; kind: string; group: string; conn: ConnId; trusted: boolean; connected: boolean; needs: string[]; grantable: boolean; agents: string[] | null; seat: "team" | "company" | "head" | null }
+export interface BuildTool { id: string; label: string; detail: string; kind: string; group: string; conn: ConnId | CustomConnId; trusted: boolean; connected: boolean; needs: string[]; grantable: boolean; agents: string[] | null; seat: "team" | "company" | "head" | null }
 /** A connection as the flow shows it: plain data, set up or not (no values of keys). */
-export interface FlowConn { id: ConnId; name: string; sub: string; icon: string; builtIn: boolean; about: string; setUp: boolean }
+export interface FlowConn { id: ConnId | CustomConnId; name: string; sub: string; icon: string; builtIn: boolean; about: string; setUp: boolean; custom?: boolean }
+/** Servers the owner added and their turned-on tools, as the builder offers them (docs/custom-servers.md, slice 2). */
+export interface CustomMenu { tools: BuildTool[]; conns: FlowConn[] }
 export interface BuildModel { id: string; label: string; in: number; out: number }
 export interface Standard { id: string; grp: "standing_order" | "crew" | "department"; text: string; notionPageId: string | null }
 export interface BuiltRow { id: string; name: string; mandate: string; enabled: boolean; budget: number; version: number | null; problems: number; lastRun: { at: string; status: string } | null }
@@ -48,19 +52,36 @@ export async function listBuilt(): Promise<BuiltRow[] | null> {
   }).sort((x, y) => x.name.localeCompare(y.name));
 }
 
-/** The pick-lists the builder offers, all from code. */
+/**
+ * The tools turned on on servers the owner added, each server as a connection of its own. No
+ * network: whether a server is ready is its row's state; the tool check runs before every run.
+ */
+export async function customMenuFor(): Promise<CustomMenu> {
+  const servers = await customMenu().catch(() => []);
+  return {
+    conns: servers.map(({ server: c, setUp, why }): FlowConn => ({
+      id: c.id as CustomConnId, name: c.name, sub: why ?? "A server you added", icon: "plug", builtIn: false, custom: true, setUp,
+      about: `${new URL(c.url).host}. ${CUSTOM_WARNING} Only the tools you turned on on Connections show here, and they only read.`,
+    })),
+    tools: servers.flatMap(({ server: c, setUp, tools }) => tools.map((t): BuildTool => ({
+      id: t.id, label: t.label, detail: t.detail, kind: "read", group: "custom", conn: c.id as CustomConnId, trusted: false, needs: [], connected: setUp, grantable: true, agents: null, seat: null,
+    }))),
+  };
+}
+
+/** The pick-lists the builder offers, all from code, plus the tools turned on on servers the owner added (`custom`). */
 /** What the builder offers. `crew` names the agents (the Floor's roster) where a rule names one by id. */
-export function builderMenu(crew: readonly { id: string; name: string }[] = [], h: Record<IntegrationId, boolean> = health()) {
+export function builderMenu(crew: readonly { id: string; name: string }[] = [], h: Record<IntegrationId, boolean> = health(), custom: CustomMenu = { tools: [], conns: [] }) {
   const SETTING: Record<string, unknown> = { ...SETTINGS, SHOPIFY_CONNECTED: h.shopify, KLAVIYO_CONNECTED: h.klaviyo, NOTION_CONNECTED: h.notion, MERCURY_CONNECTED: h.mercury, GMAIL_CONNECTED: h.gmail };
   return {
-    tools: TOOL_LIST.map((t): BuildTool => ({ id: t.id, label: t.label, detail: t.detail, kind: t.kind, group: t.group, conn: connOf(t), trusted: t.trusted, needs: [...t.needs], connected: t.needs.every((k) => !!SETTING[k]), grantable: GRANTABLE.has(t.kind), agents: t.agents ? [...t.agents] : null, seat: t.seat ?? null })),
+    tools: [...TOOL_LIST.map((t): BuildTool => ({ id: t.id, label: t.label, detail: t.detail, kind: t.kind, group: t.group, conn: connOf(t), trusted: t.trusted, needs: [...t.needs], connected: t.needs.every((k) => !!SETTING[k]), grantable: GRANTABLE.has(t.kind), agents: t.agents ? [...t.agents] : null, seat: t.seat ?? null })), ...custom.tools],
     agentNames: Object.fromEntries(crew.map((a) => [a.id, `${a.name} (${a.id})`])) as Record<string, string>,
     models: MODEL_LIST.filter((m) => m.route === "anthropic").map((m): BuildModel => ({ id: m.id, label: m.label, in: m.in, out: m.out })),
     efforts: [...EFFORTS],
     limits: RUN_LIMITS,
     budgetCeiling: BUDGET_CEILING,
     safety: SAFETY,
-    conns: CONNECTIONS.map((c): FlowConn => ({ id: c.id, name: c.name, sub: c.sub, icon: c.icon, builtIn: c.builtIn, about: c.about, setUp: isSetUp(c, h) })),
+    conns: [...CONNECTIONS.map((c): FlowConn => ({ id: c.id, name: c.name, sub: c.sub, icon: c.icon, builtIn: c.builtIn, about: c.about, setUp: isSetUp(c, h) })), ...custom.conns],
   };
 }
 export type BuilderMenu = ReturnType<typeof builderMenu>;

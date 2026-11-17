@@ -19,6 +19,8 @@ import { ANNOTATE } from "@/core/gateway";
 import { BUDGET_CEILING, activateSpecVersion, createBuiltAgent, draftOf, listSpecVersions, loadSpec, readSpec, saveSpecVersion, specLooser, type AgentSpec } from "@/core/agent-spec";
 import { dryRunTools, runExplore, type PlaybookStep } from "@/core/runner";
 import { TOOLS } from "@/core/tools/catalog";
+import { customMenu } from "@/core/tools/custom";
+import { isCustomToolId } from "@/core/custom-mcp-rules";
 import { lastTry } from "./builder";
 import { activePlaybook, afterRun, approvePlaybook, holdAfterRejection, listPlaybooks, pendingPlaybook } from "@/core/playbook";
 import { loadMemory } from "@/core/memory";
@@ -521,10 +523,19 @@ async function builtAgent(agentId: string) {
   return loadSpec(agentId);
 }
 
-/** A draft from the builder, checked against code. Problems refuse it; nothing is clamped. */
-function checkedDraft(draft: unknown, agentId: string): { spec: AgentSpec } | { error: string } {
+/** Tools from servers the owner added that aren't turned on now (or whose server is gone). */
+async function customGone(spec: AgentSpec): Promise<string[]> {
+  const ids = spec.tools.filter(isCustomToolId);
+  if (!ids.length) return [];
+  const on = new Set((await customMenu()).flatMap((s) => s.tools.map((t) => t.id)));
+  return ids.filter((id) => !on.has(id)).map(() => "a tool from a server you added is no longer turned on (Connections)");
+}
+
+/** A draft from the builder, checked against code and, for tools from servers you added, against what is turned on. Problems refuse it; nothing is clamped. */
+async function checkedDraft(draft: unknown, agentId: string): Promise<{ spec: AgentSpec } | { error: string }> {
   const { spec, problems } = readSpec(draft, agentId);
-  return problems.length ? { error: `This draft asks for something code doesn’t offer: ${problems.join("; ")}.` } : { spec };
+  const all = [...problems, ...(await customGone(spec))];
+  return all.length ? { error: `This draft asks for something code doesn’t offer: ${all.join("; ")}.` } : { spec };
 }
 
 /**
@@ -536,7 +547,8 @@ function checkedDraft(draft: unknown, agentId: string): { spec: AgentSpec } | { 
 export async function createBuilt(draft: unknown, seatId?: string | null): Promise<ActionResult & { id?: string }> {
   await requireSession();
   try {
-    const { spec, problems } = readSpec(draft);
+    const { spec, problems: p0 } = readSpec(draft);
+    const problems = [...p0, ...(await customGone(spec))];
     if (problems.length) return { ok: false, text: `Not created. This draft asks for something code doesn’t offer: ${problems.join("; ")}.` };
     if (spec.tools.some((t) => TOOLS[t]?.kind === "action")) return { ok: false, text: "Not created. A new agent can’t ask for actions: code names which agents may." };
     const id = await createBuiltAgent(spec, BY);
@@ -559,7 +571,7 @@ export async function saveSpec(agentId: string, draft: unknown, note: string): P
   const why = String(note ?? "").trim().slice(0, 300) || "Edited in the builder";
   try {
     await builtAgent(agentId);
-    const got = checkedDraft(draft, agentId);
+    const got = await checkedDraft(draft, agentId);
     if ("error" in got) return { ok: false, text: `Not saved. ${got.error}` };
     const versions = await listSpecVersions(agentId);
     const base = draftOf(versions) ?? versions.find((v) => v.active);
@@ -624,7 +636,7 @@ export async function dryRunBuilt(agentId: string, draft?: unknown): Promise<Act
   try {
     const now = await builtAgent(agentId);
     let spec = now?.spec;
-    if (draft !== undefined) { const g = checkedDraft(draft, agentId); if ("error" in g) return { ok: false, text: g.error }; spec = g.spec; }
+    if (draft !== undefined) { const g = await checkedDraft(draft, agentId); if ("error" in g) return { ok: false, text: g.error }; spec = g.spec; }
     if (!spec) return { ok: false, text: "That agent has no saved spec." };
     const rows = await dryRunTools(spec, agentId);
     const bad = rows.filter((r) => !r.ok);

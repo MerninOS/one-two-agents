@@ -31,7 +31,7 @@ Connections has a **Your servers** row under the built-in ones, with an **Add a 
 | Key | Sent only to the server's own address as a bearer token. The server must answer `initialize` and `tools/list` with it before it's kept. Never shown again. | `saveCustomKey` |
 | Tools | The server's list as accepted (name, title, description, inputs, read-only claim), at most 200. Every tool starts off. | `readToolList`, `mcp_custom_servers.tools` |
 | Turn on | Only a tool the server marks read-only (and not destructive) whose required inputs are plain values. The owner sets the name and the one line agents read instead of the server's description, and may pin inputs (text up to 300 characters, no links or line breaks; numbers; true/false; one of the server's choices). Turning a tool on grants it to no agent. Needs Controls on. | `cantTurnOn`, `checkLabel`, `checkLine`, `checkPins`, `setCustomTool` |
-| Tool check | A fingerprint of everything an agent relies on (name, title, description, inputs, read-only claim) for each turned-on tool. Any change, or a tool gone, pauses the server with what changed; the page shows the new version marked Changed. **Accept the change** keeps names, lines and pins, takes the new version, and turns off anything gone or no longer read-only. New tools arrive off. Slice 2 runs it before every run that uses the server; slice 1 has **Check tools now**. | `customFingerprint`, `checkCustomTools`, `acceptTools`, `checkCustomServer` |
+| Tool check | A fingerprint of everything an agent relies on (name, title, description, inputs, read-only claim) for each turned-on tool. Any change, or a tool gone, pauses the server with what changed; the page shows the new version marked Changed. **Accept the change** keeps names, lines and pins, takes the new version, and turns off anything gone or no longer read-only. New tools arrive off. It runs right before every run that uses the server (slice 2), and from **Check tools now**. | `customFingerprint`, `checkCustomTools`, `acceptTools`, `checkCustomServer` |
 | Pause | **Pause for every agent** at any time, without Controls. Running again needs Controls and never clears a pause for a refused sign-in or changed tools. | `pauseCustom` |
 | Remove | Cancels the sign-in where the server has a revoke address, forgets it, and deletes the row. Allowed without Controls. The log stays. | `removeCustomServer` |
 | Log | Added, connected, tool on or off, paused, resumed, tools changed, checked or accepted, revoked, disconnected. Never a token. | `mcp_connection_events` |
@@ -40,7 +40,7 @@ Shorter limits than built-in servers: 15 seconds a call. Calls carry the token o
 `redirect: "error"`, as for built-in servers. Between the address check and the request a host's
 DNS could change; the check runs right before each request to keep that window small.
 
-No agent can use a custom tool in this slice.
+Slice 1 gave no agent a custom tool; slice 2 does, below.
 
 Migration: `supabase/migrations/20261130090000_custom_mcp_servers.sql` (`mcp_custom_servers`, RLS on,
 no policies; six new sign-in log events). Apply it before merging: Connections reads the table.
@@ -56,3 +56,33 @@ no policies; six new sign-in log events). Apply it before merging: Connections r
    service's page. Key: paste it and tap **Lock key in the vault**.
 7. Under **Tools**, tap **Turn on** next to a tool marked **Reads**, check the name and line agents
    will see, pin any input that should never change, and tap **Turn on**.
+
+## Slice 2: grant custom read tools to agents
+
+A turned-on tool shows up in the builder's Tools step as a tile of its own, named after its
+server, next to the built-in connections. Ticking it grants it like any other read tool: the
+agent's next version is a draft until **Try it** and **Go live**.
+
+| Step | What happens | Where |
+|---|---|---|
+| Grant | A custom tool's id is its server's id, two underscores, and its name made safe (`c_ab12cd34__query_insights`). A spec may hold at most 20. Saving refuses one that isn't turned on now. Heads can't hand one out in a proposal: only the owner grants them, in the builder. | `customToolId`, `readSpec`, `customGone`, `hireDraft` |
+| Warning | The server's tile repeats the warning that someone else runs it. When the agent also reads money or email (any Mercury or Gmail tool), the tile says so: warn, don't block. | `ConnStep` in `Flow.tsx` |
+| Before a run | For each server the spec uses: still on Connections, connected, not paused, and the tool check passes now (a passing check isn't logged, so the log keeps what matters). A server that fails offers the run none of its tools, and the run's summary says which and why. Only tools still on and exactly as accepted are built. | `loadCustomTools`, `readyCustomServers`, `checkCustomServer(id, false, { quiet })` |
+| Inputs | Only inputs that aren't pinned and are plain values are offered (text at most 300 characters and no links, numbers, true/false, one of the server's choices), checked in code. Pins are laid over them, and the whole lot may weigh 2 KB. | `customParams`, `checkInput`, `customArgs` |
+| Call | Through the in-app MCP host like every read tool, then to the server with the token or key from the vault. The tool must still be on and unchanged at the moment of the call. 15 seconds a call; at most 20 custom calls a run. | `customDefs`, `callCustomTool`, `MAX_CUSTOM_CALLS` |
+| Reply | Text, cut to 20,000 characters (and to the runner's limit for the model), handed over as untrusted data, with no numbers worked out in code and no rows an action could name. The run's rules add a line saying so. | `customReply`, `CUSTOM_RULES` |
+| Playbooks | Custom tools are never playbook steps: each run calls them live, after the tool check. In a playbook run they stay callable once the playbook's data is in. | `runExplore` |
+| Replay | Every call's inputs and reply show in the run replay, like any tool. | `run_steps` |
+| Connections | A server's page says which agents have its tools. | `CustomDetail` |
+
+Only `core/tools/custom.ts` may import `callCustomTool` (lint). No migration.
+
+### Giving a custom tool to an agent (click by click)
+
+1. Turn the tool on first: **Connections**, **Your servers**, the server, **Turn on** next to the tool.
+2. Open **Crew**, tap the agent, then **Edit** (or **Build**, then the agent).
+3. Go to the **Tools** step. Tap the tile with the server's name.
+4. Read the note on the tile, then tick the tool under **Can read**.
+5. Tap **See what it finds today** to check it (a tool that needs inputs is tried only during a run).
+6. **Save**, then **Try it**. If the run looks right, tap **Go live**.
+

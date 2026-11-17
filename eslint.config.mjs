@@ -26,6 +26,9 @@ const SSRV = { paths: ["@/integrations/shopify-server", "./shopify-server", "../
 // MCP write tools (slice 5b): only the gateway calls one, after Zak approves.
 const MCPW_MSG = "Only core/gateway calls an MCP write tool, after Zak approves.";
 const MCPW = { name: "@/integrations/mcp", importNames: ["callWriteTool"], message: MCPW_MSG };
+// Custom-server tools (docs/custom-servers.md, slice 2): only the tool list for a run calls one.
+const MCPC_MSG = "Only core/tools/custom.ts calls a custom server's tool, as a read tool granted for a run.";
+const MCPC = { name: "@/integrations/mcp", importNames: ["callCustomTool"], message: MCPC_MSG };
 const MEMORY_MSG = "Memory is notes, never authority: the gateway and integrations must not read it.";
 const MEMORY_RULE = { name: "@/core/memory", message: MEMORY_MSG };
 const MEMORY_PATTERN = { group: ["**/core/memory", "../memory", "./memory"], message: MEMORY_MSG };
@@ -42,6 +45,12 @@ export default defineConfig([
     files: ["**/*.{ts,tsx}"],
     ignores: ["core/gateway/**"],
     rules: {
+      "no-restricted-imports": ["error", { paths: [...MERCURY_PATHS, ...VAULT_PATHS, ...NAPI.paths, ...NSRV.paths, ...GAPI.paths, ...GSRV.paths, ...SAPI.paths, ...SSRV.paths, MCPW, MCPC], patterns: [MERCURY_PATTERN, VAULT_PATTERN, NAPI.pattern, NSRV.pattern, GAPI.pattern, GSRV.pattern, SAPI.pattern, SSRV.pattern] }],
+    },
+  },
+  {
+    files: ["core/tools/custom.ts"],
+    rules: {
       "no-restricted-imports": ["error", { paths: [...MERCURY_PATHS, ...VAULT_PATHS, ...NAPI.paths, ...NSRV.paths, ...GAPI.paths, ...GSRV.paths, ...SAPI.paths, ...SSRV.paths, MCPW], patterns: [MERCURY_PATTERN, VAULT_PATTERN, NAPI.pattern, NSRV.pattern, GAPI.pattern, GSRV.pattern, SAPI.pattern, SSRV.pattern] }],
     },
   },
@@ -54,7 +63,7 @@ export default defineConfig([
   },
   {
     files: ["integrations/**/*.ts"],
-    rules: { "no-restricted-imports": ["error", { paths: [MEMORY_RULE, ...SPEC_RULES, ...MERCURY_PATHS, ...VAULT_PATHS, ...NAPI.paths, ...NSRV.paths, ...GAPI.paths, ...GSRV.paths, ...SAPI.paths, ...SSRV.paths, MCPW], patterns: [MEMORY_PATTERN, SPEC_PATTERN, MERCURY_PATTERN, VAULT_PATTERN, NAPI.pattern, NSRV.pattern, GAPI.pattern, GSRV.pattern, SAPI.pattern, SSRV.pattern] }] },
+    rules: { "no-restricted-imports": ["error", { paths: [MEMORY_RULE, ...SPEC_RULES, ...MERCURY_PATHS, ...VAULT_PATHS, ...NAPI.paths, ...NSRV.paths, ...GAPI.paths, ...GSRV.paths, ...SAPI.paths, ...SSRV.paths, MCPW, MCPC], patterns: [MEMORY_PATTERN, SPEC_PATTERN, MERCURY_PATTERN, VAULT_PATTERN, NAPI.pattern, NSRV.pattern, GAPI.pattern, GSRV.pattern, SAPI.pattern, SSRV.pattern] }] },
   },
   // Our Notion server is the one file that calls Notion's API.
   {

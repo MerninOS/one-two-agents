@@ -12,12 +12,18 @@
 export type ToolKind = "read" | "calculate" | "report" | "action";
 
 /** Groups on the builder screen, one per integration. */
-export type ToolGroup = "shopify" | "mercury" | "supabase" | "notion" | "calculate" | "agents" | "web" | "gmail" | "email" | "klaviyo";
+export type ToolGroup = "shopify" | "mercury" | "supabase" | "notion" | "calculate" | "agents" | "web" | "gmail" | "email" | "klaviyo"
+  /** A turned-on tool on a server the owner added by its address (docs/custom-servers.md), built from its row, not written here. */
+  | "custom";
 
 /** One input the model may pass. Kept to plain shapes so code can check every value. */
 export type Param =
   | { name: string; type: "int"; min: number; max: number; default: number; description: string }
-  | { name: string; type: "enum"; options: readonly string[]; default?: string; description: string }
+  | { name: string; type: "enum"; options: readonly string[]; default?: string; optional?: boolean; description: string }
+  /** Custom-server tools only: a number the server asked for, whole when `integer`. */
+  | { name: string; type: "number"; integer: boolean; optional?: boolean; description: string }
+  /** Custom-server tools only: true or false. */
+  | { name: string; type: "bool"; optional?: boolean; description: string }
   /**
    * Action tools only. A row from a tool result earlier in the same run, named by its step and the
    * pick code gave it (like numbers in finish). This is how an action names a transaction or a
@@ -182,8 +188,19 @@ export function checkInput(params: readonly Param[], raw: unknown): { input: Rec
       const step = Number(o.step);
       if (!Number.isInteger(step) || step < 0 || typeof o.pick !== "string" || !/^[a-z]{1,3}\d{1,4}$/.test(o.pick)) return { problem: `${p.name} must be { step, pick } from a tool result` };
       input[p.name] = JSON.stringify({ step, pick: o.pick });
+    } else if (p.type === "number") {
+      if (v === undefined || v === null || v === "") { if (p.optional) continue; return { problem: `${p.name} is required` }; }
+      const n = typeof v === "number" ? v : typeof v === "string" && v.trim() ? Number(v) : NaN;
+      if (!Number.isFinite(n) || Math.abs(n) > 1e12 || (p.integer && !Number.isInteger(n))) return { problem: `${p.name} must be ${p.integer ? "a whole number" : "a number"}` };
+      input[p.name] = n;
+    } else if (p.type === "bool") {
+      if (v === undefined || v === null || v === "") { if (p.optional) continue; return { problem: `${p.name} is required` }; }
+      if (v !== true && v !== false && v !== "true" && v !== "false") return { problem: `${p.name} must be true or false` };
+      // inputs cross as text or numbers; the custom tool turns this back into true or false
+      input[p.name] = String(v);
     } else {
       if (v === undefined || v === null) {
+        if (p.optional) continue;
         if (p.default === undefined) return { problem: `${p.name} is required` };
         input[p.name] = p.default; continue;
       }
@@ -223,8 +240,12 @@ export function inputSchema(params: readonly Param[]) {
             ? { type: "string", maxLength: 200, description: `${p.description} One email address.` }
         : p.type === "pick"
           ? { type: "object", properties: { step: { type: "integer" }, pick: { type: "string" } }, required: ["step", "pick"], additionalProperties: false, description: `${p.description} Name a row by the step number and pick code shown with a tool result in this run.` }
+        : p.type === "number"
+          ? { type: p.integer ? "integer" : "number", description: p.description }
+        : p.type === "bool"
+          ? { type: "boolean", description: p.description }
           : { type: "string", enum: [...p.options], description: p.description };
   }
-  const required = params.filter((p) => (p.type === "enum" && p.default === undefined) || ((p.type === "pick" || p.type === "text" || p.type === "url" || p.type === "email") && !p.optional)).map((p) => p.name);
+  const required = params.filter((p) => (p.type === "enum" && p.default === undefined && !p.optional) || ((p.type === "pick" || p.type === "text" || p.type === "url" || p.type === "email" || p.type === "number" || p.type === "bool") && !p.optional)).map((p) => p.name);
   return { type: "object" as const, properties, required, additionalProperties: false };
 }

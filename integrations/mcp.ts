@@ -25,7 +25,7 @@ import { looksLikeMercuryToken } from "@/core/mercury-rules";
 import { shopifyKeyKind } from "@/core/shopify-queries";
 import { gmailMailbox, gmailServer } from "./gmail-server";
 import {
-  CUSTOM_ID, MAX_CUSTOM_SERVERS, acceptTools, cantTurnOn, checkAddress, checkCustomTools, checkLabel, checkLine, checkPins, checkScopes, checkServerName, customCheckNote, isCustomId, isPublicIp, looksLikeKey, readToolList,
+  CUSTOM_ID, MAX_CUSTOM_SERVERS, acceptTools, cantTurnOn, customArgs, customReply, checkAddress, checkCustomTools, checkLabel, checkLine, checkPins, checkScopes, checkServerName, customCheckNote, isCustomId, isPublicIp, looksLikeKey, readToolList,
   type CustomAuth, type CustomServer, type CustomTool, type ToolOn,
 } from "@/core/custom-mcp-rules";
 
@@ -735,7 +735,7 @@ export interface CustomCheckResult { ok: boolean; note: string; tools: number; t
  * until the owner looks at it and accepts it (`accept`). Runs before every run that uses the
  * server (slice 2), and from the server's page.
  */
-export async function checkCustomServer(id: string, accept = false): Promise<CustomCheckResult> {
+export async function checkCustomServer(id: string, accept = false, o: { quiet?: boolean } = {}): Promise<CustomCheckResult> {
   const c = await getCustomServer(id);
   if (!c) throw new Error("That server isn't on Connections any more.");
   const r = await row(id);
@@ -759,7 +759,8 @@ export async function checkCustomServer(id: string, accept = false): Promise<Cus
     return { ok: false, note, tools: live.length, turnedOff: [] };
   }
   await saveSnapshot(c, live);
-  await logEvent(id, "tools_checked", `${Object.keys(c.toolsOn).length} turned-on tools as accepted, ${live.length} listed`);
+  // the check before every run is quiet when it passes, so the log keeps what matters
+  if (!o.quiet) await logEvent(id, "tools_checked", `${Object.keys(c.toolsOn).length} turned-on tools as accepted, ${live.length} listed`);
   return { ok: true, note: "", tools: live.length, turnedOff: [] };
 }
 
@@ -797,6 +798,52 @@ export async function setCustomTool(id: string, tool: string, on: { label: strin
   next[tool] = { label: l.label, line: ln.line, pins: pins.pins, fingerprint: t.fingerprint };
   await updateCustom(id, { tools_on: next });
   await logEvent(id, "tool_on", `${tool}${was ? " (edited)" : ""} as “${l.label}”${Object.keys(pins.pins).length ? `, pinned ${Object.keys(pins.pins).join(", ")}` : ""}`);
+}
+
+// ---- Slice 2: agents call turned-on custom tools. Only core/tools/custom.ts calls these.
+
+export interface CustomReady { id: string; server: CustomServer | null; ok: boolean; why: string }
+
+/**
+ * Before a run that uses custom servers: each must still be on Connections, connected and not
+ * paused, and its tool check must pass right now. A server that fails any of these offers the run
+ * none of its tools.
+ */
+export async function readyCustomServers(ids: readonly string[]): Promise<CustomReady[]> {
+  return Promise.all([...new Set(ids)].map(async (id): Promise<CustomReady> => {
+    try {
+      const c = await getCustomServer(id);
+      if (!c) return { id, server: null, ok: false, why: "it isn’t on Connections any more" };
+      const s = await mcpStatus(id);
+      if (!s?.connected) return { id, server: c, ok: false, why: `${c.name} isn’t connected` };
+      if (s.paused) return { id, server: c, ok: false, why: `${c.name} is paused (${s.lastError ?? "its sign-in stopped working"})` };
+      const chk = await checkCustomServer(id, false, { quiet: true });
+      if (!chk.ok) return { id, server: c, ok: false, why: `${c.name} is paused: ${chk.note}` };
+      return { id, server: (await getCustomServer(id)) ?? c, ok: true, why: "" };
+    } catch (e) {
+      return { id, server: null, ok: false, why: (e instanceof Error ? e.message : String(e)).slice(0, 200) };
+    }
+  }));
+}
+
+/**
+ * One call to a turned-on custom tool, with the agent's checked inputs and the owner's pins laid
+ * over them. The tool must still be on and exactly as accepted. The reply is the server's: text,
+ * cut to the limit, for the runner to hand over as untrusted data.
+ */
+export async function callCustomTool(id: string, tool: string, checked: Record<string, string | number>): Promise<string> {
+  const c = await getCustomServer(id);
+  if (!c) throw new Error("That server isn't on Connections any more.");
+  const on = c.toolsOn[tool], t = c.tools.find((x) => x.name === tool);
+  if (!on || !t) throw new Error(`${tool} isn't turned on for ${c.name}.`);
+  if (cantTurnOn(t) || t.fingerprint !== on.fingerprint) throw new Error(`${c.name} changed ${tool}. Accept the change on Connections first.`);
+  const a = customArgs(t.inputs, on.pins, checked);
+  if ("problem" in a) throw new Error(`Input refused: ${a.problem}`);
+  return withSession(customProf(c), async (call) => {
+    const out = toolPayload(await call("tools/call", { name: tool, arguments: a.args }));
+    if ("error" in out) throw new Error(`${c.name} ${tool}: ${out.error.slice(0, 200)}`);
+    return customReply(out.data);
+  });
 }
 
 const OWNER_PAUSE = "Paused by you";

@@ -6,7 +6,8 @@ import { useState, useTransition } from "react";
 import type { ActionResult } from "../actions";
 import { Modal, Toast, type Confirm } from "./client";
 
-const input = { flex: "1 1 220px", minWidth: 0, background: "var(--card)", border: "1px solid var(--bd)", fontSize: 14 } as const;
+// Each field sits in a column, so no flex basis here: in a column it sets the height, not the width.
+const input = { width: "100%", minWidth: 0, background: "var(--card)", border: "1px solid var(--bd)", fontSize: 14 } as const;
 
 /** Name, address and how it signs in. The warning is confirmed before anything is saved. */
 export function AddServerForm({ add, warning, controls }: { add: (name: string, url: string, auth: string) => Promise<ActionResult & { id?: string }>; warning: string; controls: boolean }) {

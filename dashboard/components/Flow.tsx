@@ -302,7 +302,7 @@ function OptRow({ t, on, toggle, blocked, locked }: { t: Tool; on: boolean; togg
 function ConnTile({ c, on, n, asks, open }: { c: FlowConn; on: () => void; n: number; asks: boolean; open: boolean }) {
   return (
     <button type="button" className={`bf-tile${open ? " open" : ""}`} onClick={on} aria-expanded={open}>
-      <span className="bf-ico" style={{ background: CONN_TINT[c.id] }}><Icon name={c.icon} size={17} /></span>
+      <span className="bf-ico" style={{ background: CONN_TINT[c.id] ?? "var(--soft)" }}><Icon name={c.icon} size={17} /></span>
       <b>{c.name}</b>
       <span className={n ? "bf-tile-on" : "muted"} style={{ fontSize: 12 }}>{n ? `${n} ticked${asks ? " · asks first" : ""}` : c.setUp ? "Not used" : "Not set up"}</span>
     </button>
@@ -320,6 +320,8 @@ function ConnStep({ d, change, p, setToast, act, busy, seatBlock }: StepProps & 
   const c = conns.find((x) => x.id === open);
   const reads = grantable.filter((t) => t.conn === open && abilityOf(t) === "read");
   const dos = grantable.filter((t) => t.conn === open && abilityOf(t) === "do");
+  // warn, don't block (Zak, Nov 17): an agent that reads money or email and also calls a server someone else runs
+  const readsPrivate = p.menu.tools.filter((t) => (t.conn === "mercury" || t.conn === "gmail") && d.tools.includes(t.id)).map((t) => t.label);
   const addPage = () => {
     const id = notionId(pageLink);
     if (!id) { setToast({ ok: false, text: "That doesn’t look like a Notion page link. In Notion use Share, then Copy link." }); return; }
@@ -335,11 +337,16 @@ function ConnStep({ d, change, p, setToast, act, busy, seatBlock }: StepProps & 
       {c && (
         <div className="bf-panel" key={c.id}>
           <div className="row wrap" style={{ gap: 10 }}>
-            <span className="bf-ico sm" style={{ background: CONN_TINT[c.id] }}><Icon name={c.icon} size={14} /></span>
+            <span className="bf-ico sm" style={{ background: CONN_TINT[c.id] ?? "var(--soft)" }}><Icon name={c.icon} size={14} /></span>
             <b style={{ flex: 1 }}>{c.name}</b>
-            {!c.setUp && <Link href={`/connections?c=${c.id}`} className="pill sm" style={{ background: "var(--red-soft)", color: "var(--red-ink)" }}>Not set up · how</Link>}
+            {!c.setUp && <Link href={c.custom ? `/connections?s=${c.id}` : `/connections?c=${c.id}`} className="pill sm" style={{ background: "var(--red-soft)", color: "var(--red-ink)" }}>{c.custom ? `${c.sub} · fix` : "Not set up · how"}</Link>}
           </div>
           <span className="sub">{c.about}</span>
+          {c.custom && readsPrivate.length > 0 && (
+            <span className="sub" role="note" style={{ background: "var(--yel-soft)", color: "var(--ink)", padding: "8px 10px", borderRadius: 10 }}>
+              This agent also reads money or email ({readsPrivate.join(", ")}). Anything it puts in this server’s inputs leaves One Two. Pin the inputs that should never change, or give these tools to an agent that reads neither.
+            </span>
+          )}
           <span className="bf-k">Can read · looks only</span>
           {reads.map((t) => <OptRow key={t.id} t={t} on={d.tools.includes(t.id)} toggle={() => toggle(t.id)} blocked={seatBlock(t)} />)}
           {!reads.length && <span className="sub">Nothing to read here.</span>}
@@ -375,12 +382,12 @@ function ConnStep({ d, change, p, setToast, act, busy, seatBlock }: StepProps & 
           )}
           <span className="bf-k">Can do · always a card you approve</span>
           {dos.map((t) => <OptRow key={t.id} t={t} locked on={d.tools.includes(t.id)} toggle={() => toggle(t.id)} blocked={blockedFor(t, p.agentId, p.menu)} />)}
-          {!dos.length && <span className="sub">{c.id === "shopify" ? "Nothing. Shopify is read-only here." : "Nothing here yet."}</span>}
+          {!dos.length && <span className="sub">{c.id === "shopify" ? "Nothing. Shopify is read-only here." : c.custom ? "Nothing. Tools from a server you added only read." : "Nothing here yet."}</span>}
         </div>
       )}
       <div className="row wrap" style={{ gap: 10 }}>
         {p.dryRun && <button type="button" className="btn outline sm" disabled={busy} onClick={() => { setCheck({ ok: true, text: "Checking each ticked tool…" }); act(() => p.dryRun!(d), (r) => setCheck(r)); }}><Icon name="play" size={14} />See what it finds today · free</button>}
-        <span className="sub" style={{ flex: "1 1 240px" }}>Need something not listed, like Klaviyo? New connections are a code change on purpose, so a page or an email can never add one.</span>
+        <span className="sub" style={{ flex: "1 1 240px" }}>Need something not listed? Add its server by address on <Link href="/connections?s=new">Connections</Link> and turn on the tools you want; they show up here. Only you can add one, so a page or an email never can.</span>
       </div>
       {check && <div className="bf-check">{check.text.split(" · ").map((l, i) => <span key={i} style={{ color: l.startsWith("FAILED") ? "var(--red-ink)" : undefined }}>{l.replace(/^OK /, "✓ ").replace(/^FAILED /, "✕ ")}</span>)}</div>}
     </div>

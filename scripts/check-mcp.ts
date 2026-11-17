@@ -406,3 +406,26 @@ hostChecks.then(() => console.log("mcp: ok"), (e) => { console.error(e); process
   assert.match(client, /if \(custom\) await assertPublic\(p\.url\)/, "every session with a custom server checks its address first");
   assert.match(client, /redirect: strict \? "error" : "follow"/, "a custom server's discovery never follows a redirect");
 }
+
+// ---- Custom tools granted to agents (docs/custom-servers.md, slice 2)
+{
+  const id = C.customToolId("c_ab12cd34", "query_insights");
+  assert.equal(id, "c_ab12cd34__query_insights");
+  assert.ok(C.isCustomToolId(id) && C.serverOfToolId(id) === "c_ab12cd34");
+  const odd = C.customToolId("c_ab12cd34", "posthog/query.insights");
+  assert.ok(C.isCustomToolId(odd) && /^[a-zA-Z0-9_-]{1,128}$/.test(odd), "fits the Claude API's tool name rule");
+  assert.notEqual(odd, C.customToolId("c_ab12cd34", "posthog_query_insights"), "names made safe never collide with a name already safe");
+  assert.ok(!C.isCustomToolId("shopify_green_lots") && !C.isCustomToolId("c_ab12cd34") && C.serverOfToolId("klaviyo_lists") === null);
+
+  const inputs = C.readInputs({ type: "object", properties: { project_id: { type: "string" }, days: { type: "integer" }, live: { type: "boolean" }, kind: { type: "string", enum: ["trends", "funnels"] }, ids: { type: "array" } }, required: ["project_id"] });
+  const params = C.customParams(inputs, { project_id: "123" });
+  assert.deepEqual(params.map((p) => [p.name, p.type]), [["days", "number"], ["live", "bool"], ["kind", "enum"]], "pinned and non-plain inputs aren't offered to the agent");
+  const free = C.customParams(inputs, {});
+  assert.ok(free.some((p) => p.name === "project_id" && p.type === "text" && p.maxLength === 300 && !p.optional));
+
+  const a = C.customArgs(inputs, { project_id: "123" }, { project_id: "999", days: 7, live: "true" });
+  assert.deepEqual(a, { args: { project_id: "123", days: 7, live: true } }, "a pin always wins over what the agent sent");
+  assert.ok("problem" in C.customArgs(inputs, {}, { project_id: "x".repeat(3000) }), "inputs over 2 KB are refused");
+  assert.match(C.customReply("y".repeat(C.MAX_CUSTOM_REPLY + 50)), /\[cut, 50 more characters\]$/);
+  assert.equal(C.customReply({ a: 1 }), '{"a":1}');
+}

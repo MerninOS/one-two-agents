@@ -56,8 +56,10 @@ built, so no agent can send, pay or publish.
   a custom server by its address (`docs/custom-servers.md`): its profile is a row the owner edits
   (tools turned on, labels, pinned inputs), held to the limits in `core/custom-mcp-rules.ts`. On a
   custom server a tool does nothing until the owner turns it on; only tools the server marks
-  read-only, with plain inputs, can be turned on; any change to a turned-on tool pauses the server;
-  the address must be a public https host, checked before every request. Custom servers have no
+  read-only, with plain inputs, can be turned on; any change to a turned-on tool pauses the server,
+  checked right before every run that uses it; the owner grants a turned-on tool to an agent on
+  the builder's Tools step (never a proposal); the address must be a public https host, checked
+  before every request. Custom servers have no
   report or write tools. Custom write tools, if ever built, are approval cards that stay at Draft
   and are never promoted. A custom tool's reply is untrusted data and never chooses a recipient,
   URL, product or category. Hosted servers (Klaviyo, Mercury) are used where they fit;
@@ -65,7 +67,8 @@ built, so no agent can send, pay or publish.
   (Notion, Gmail with no send tool, Shopify with one fixed query per tool, Mercury receipt files).
   Each of our own servers is the only file that calls its service's API, and only
   `integrations/mcp.ts` reaches it (lint and `check:mcp` enforce both).
-- One tool path: agents read only through `callMcpTool` (read tools). Code writes reports into One
+- One tool path: agents read only through `callMcpTool` (read tools), or a turned-on custom tool
+  through `callCustomTool`, which only `core/tools/custom.ts` calls (lint enforces it). Code writes reports into One
   Two's own Notion only through report tools on our own servers, after a run, never by a model.
   Every other write is a profile's write tool, called only by `core/gateway` through
   `callWriteTool` after Zak approves (lint enforces it); it becomes a gateway action type.
