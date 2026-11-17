@@ -4,6 +4,7 @@
 // on the map as its steps arrive, next to what today's version handed you), then step 6, Go live
 // (unlocked only by a try of that version where every step worked: approve its routine and make it
 // the version that runs), then the versions to go back to.
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState, useTransition } from "react";
 import { mapOf, type MapInput, type MapStep } from "../agentMap";
@@ -168,6 +169,7 @@ export function TryLive(p: TryLiveProps) {
               <span className="tl-mark">{unlocked ? "✓" : "!"}</span>
               <span style={{ flex: "1 1 240px" }}><b>{unlocked ? "Every step worked. Go live is unlocked." : `Go live is locked: the latest try ${p.tried.why}.`}</b><span className="sub" style={{ display: "block" }}>{money(p.tried.costUsd)}{p.tried.secs != null ? ` · ${p.tried.secs}s` : ""}{unlocked ? "" : " · fix the step it names, or try again"}</span></span>
             </div>
+            <span className="sub">Did it lack something to read? <Link href={`/connections/find?agent=${encodeURIComponent(p.map.agentId)}`}>Find a tool</Link> for it.</span>
           </>
         )}
       </section>

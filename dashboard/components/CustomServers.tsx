@@ -4,6 +4,7 @@
 import Link from "next/link";
 import { CUSTOM_WARNING, cantTurnOn, type CustomServer, type CustomTool } from "@/core/custom-mcp-rules";
 import type { McpLogRow, McpStatus } from "@/integrations/mcp";
+import type { KnownServer } from "@/core/connector-rules";
 import { customAdd, customCheck, customKey, customPause, customRemove, customScopes, customToolOff, customToolOn } from "@/dashboard/connectionActions";
 import { when } from "@/dashboard/format";
 import { Icon } from "./Icon";
@@ -72,7 +73,8 @@ export function CustomTiles({ servers, statuses, sel }: { servers: CustomServer[
 const Warning = () => <span className="soft-box" style={{ fontSize: 12.5, lineHeight: 1.5, background: "var(--yel-soft)", color: "var(--yel-ink)" }}>{CUSTOM_WARNING}</span>;
 
 /** The add form, with what a custom server can and can't do. */
-export function AddServerCard({ controls }: { controls: boolean }) {
+/** `known`: a server from the list in code (core/connector-rules.ts), picked on Find a tool. */
+export function AddServerCard({ controls, known }: { controls: boolean; known?: KnownServer | null }) {
   return (
     <div className="card" style={{ gap: 14 }}>
       <span className="row" style={{ gap: 12 }}>
@@ -82,8 +84,14 @@ export function AddServerCard({ controls }: { controls: boolean }) {
       <span className="ink2" style={{ fontSize: 13.5, lineHeight: 1.55 }}>
         Most services publish an MCP server address in their docs. After you add it and sign in, you’ll see its tools, all off. You can turn on tools that only read; anything that might change something stays off. If a tool you turned on changes later, the server pauses until you look.
       </span>
+      {known?.url && (
+        <span className="soft-box" style={{ fontSize: 12.5, lineHeight: 1.5 }}>
+          Filled in with {known.name}’s address from our list. We haven’t vetted it: {known.name} runs it. {known.docs && <a href={known.docs} target="_blank" rel="noreferrer">Its docs ›</a>}
+        </span>
+      )}
       <Warning />
-      <AddServerForm add={customAdd} warning={CUSTOM_WARNING} controls={controls} />
+      <AddServerForm key={known?.key ?? "blank"} add={customAdd} warning={CUSTOM_WARNING} controls={controls} start={known?.url ? { name: known.name, url: known.url } : null} />
+      <span className="muted" style={{ fontSize: 12 }}>Don’t know its address? <Link href="/connections/find">Find a tool</Link> lists servers we know of.</span>
     </div>
   );
 }

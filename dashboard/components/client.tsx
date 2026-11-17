@@ -122,7 +122,8 @@ export function Modal({ c, busy, onCancel, onGo }: { c: Confirm; busy: boolean; 
 }
 
 /** A button that (optionally) confirms, runs a server action, then toasts the result and refreshes. The confirm closes as soon as it's accepted. */
-export function ActionButton({ action, confirm, className, children, disabled, title, busyLabel }: { action: Act; confirm?: Confirm; className?: string; children: React.ReactNode; disabled?: boolean; title?: string; busyLabel?: React.ReactNode }) {
+/** `follow`: on success, go to the in-app page the action names (its `href`), instead of staying. */
+export function ActionButton({ action, confirm, className, children, disabled, title, busyLabel, follow }: { action: Act; confirm?: Confirm; className?: string; children: React.ReactNode; disabled?: boolean; title?: string; busyLabel?: React.ReactNode; follow?: boolean }) {
   const [open, setOpen] = useState(false);
   const [toast, setToast] = useState<ActionResult | null>(null);
   const [busy, start] = useTransition();
@@ -132,7 +133,9 @@ export function ActionButton({ action, confirm, className, children, disabled, t
     start(async () => {
       let res: ActionResult;
       try { res = await action(); } catch (e) { res = { ok: false, text: e instanceof Error ? e.message : "Something went wrong." }; }
-      setToast(res); router.refresh();
+      setToast(res);
+      const href = (res as { href?: unknown }).href;
+      if (follow && res.ok && typeof href === "string" && href.startsWith("/") && !href.startsWith("//")) router.push(href); else router.refresh();
     });
   };
   return (

@@ -387,7 +387,7 @@ function ConnStep({ d, change, p, setToast, act, busy, seatBlock }: StepProps & 
       )}
       <div className="row wrap" style={{ gap: 10 }}>
         {p.dryRun && <button type="button" className="btn outline sm" disabled={busy} onClick={() => { setCheck({ ok: true, text: "Checking each ticked tool…" }); act(() => p.dryRun!(d), (r) => setCheck(r)); }}><Icon name="play" size={14} />See what it finds today · free</button>}
-        <span className="sub" style={{ flex: "1 1 240px" }}>Need something not listed? Add its server by address on <Link href="/connections?s=new">Connections</Link> and turn on the tools you want; they show up here. Only you can add one, so a page or an email never can.</span>
+        <span className="sub" style={{ flex: "1 1 240px" }}>Need something not listed? <Link href={`/connections/find${p.agentId ? `?agent=${encodeURIComponent(p.agentId)}` : ""}`}>Find a tool</Link>: use a connection you have, add a server by its address, or ask for a connector. Only you can add a server, so a page or an email never can.</span>
       </div>
       {check && <div className="bf-check">{check.text.split(" · ").map((l, i) => <span key={i} style={{ color: l.startsWith("FAILED") ? "var(--red-ink)" : undefined }}>{l.replace(/^OK /, "✓ ").replace(/^FAILED /, "✕ ")}</span>)}</div>}
     </div>

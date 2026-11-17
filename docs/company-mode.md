@@ -13,7 +13,7 @@ https://claude.ai/artifact/UtmdGkLKTTezQNGmg5oWHu. Status lives on the Build Boa
 1. Heads (not leads) give their specialists a weekly focus: a note that expires in 7 days, never
    authority. Leads still only watch. This changes the Nov 13 rule for heads only.
 2. Every goal needs a measure counted in code, picked from a list. A goal without one shows
-   "No measure yet" and the missing read goes on the build list.
+   "No measure yet" and the missing read goes to Find a tool.
 3. Zak's reactions save straight away as rules in his words, with Undo. Avery may suggest wording
    or scope; only his tap applies it. Lessons a lead or head proposes still wait for his Keep.
 4. Avery becomes the front door: a chat in the app that reads the company's data and can only file
@@ -162,15 +162,15 @@ out of the tool list so the tools and the measures share one copy), `agents/cfo`
 - **Needs you** says "2 proposals from your heads" and opens **Proposals** (`/proposals`). The
   Approvals item in the sidebar counts proposals too, and the Approvals page leads with a card for
   them when any wait.
-- **Proposals** (`/proposals`): Waiting on you, the **Build list** (new tools he said yes to, each
-  with a link to its Build Board card and **Mark built**), and Decided lately with what each yes or
-  no did.
+- **Proposals** (`/proposals`): Waiting on you, a link to the tools asked for on **Find a tool**,
+  and Decided lately with what each yes or no did. (The Build list and Mark built were replaced by
+  Find a tool in custom servers slice 3, `docs/custom-servers.md`.)
 - **A proposal's page** (`/proposals/[id]`, the Hire artboard): from whom, the department and when;
   **Why** in the head's words; the job (for a hire: seat, job, each run, good result, brain, reads,
   hands you) or what it asks; **What your yes does**; for a hire, the cost cap per run and what the
   department has spent on AI this month; **Checked in code** (name free, seat still open, every tool
   on the list and none an action, starts off duty); and three buttons:
-  - **Hire Tate, off duty** (or **Give Rowan "Goal progress"**, **Put it on the build list**,
+  - **Hire Tate, off duty** (or **Give Rowan "Goal progress"**, **Find a tool for it**,
     **Retire Rowan**, **Close the Follow-ups seat**), with a confirm. Off while a check fails.
   - **Change it first** (hires): the builder with everything filled in and the seat picked. Creating
     the agent there says yes to the proposal (and makes the new seat, if it asked for one).
@@ -192,16 +192,12 @@ in step 2, or slice 4 adds it to the heads' review runs.
 |---|---|---|
 | hire | name, seat (open, or new under the head), job, each run, good result, read tools (up to 8), brain | creates the agent off duty as v1 (`createBuiltAgent`, like New agent), seats it |
 | grant_tool | teammate, one read tool | saves a draft version with the tool added; it runs only after Try it and Go live |
-| new_tool | what to read and from where | puts it on the build list and adds a card in Up next on the Build Board (a tool is code: it comes as a PR) |
+| new_tool | what to read and from where | opens Find a tool (`/connections/find?for=<id>`): use a connection, add a server by address, or ask for a built-in connector (counted, one Build Board card per service) |
 | retire | teammate, or an empty seat | takes the agent off duty and opens its seat; or removes the empty seat |
 
-**The Build Board card.** A yes on a new tool also adds a row to the Notion "One Two Agents: Build
-Board" (`NOTION_BUILD_BOARD_DB_ID`, shared with the integration): Status Up next, Owner Claude,
-Track Agent builder, and a body in the board's card shape (Why with who asked, Where things stand
-today with a link to the proposal, What to build, Rules that apply, Needs from Zak, Done when,
-Before you start; `boardCard` in `core/proposal-rules.ts`), so any Claude thread can pick it up
-cold. The card's URL is the proposal's `result_ref`. **Mark built** moves the card to Done. A
-missing setting or a Notion error never stops the yes: the outcome says why there's no card.
+**After a yes on a new tool.** Nothing is granted and no card is made by the yes itself: it opens
+**Find a tool** with the proposal's words filled into the ask. An ask for a connector is counted on
+that service's request, which has one Build Board card (see `docs/custom-servers.md`, slice 3).
 
 Brains are Claude only: **quick** (Haiku, low effort, $0.10 cap a run) unless the job needs
 judgment, **thinking** (Sonnet, medium, $0.25). A hire gets 12 steps.
