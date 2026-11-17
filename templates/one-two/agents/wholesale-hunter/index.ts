@@ -5,8 +5,8 @@ import "server-only";
 // every lead in code before it is stored, and first emails are only ever draft cards.
 import { PL_BAGS, PL_MIN, PL_PACK, roastName, wholesaleOf } from "@/templates/one-two/domain/coffee";
 import { env } from "@/core/env";
-import { getInventoryLots } from "@/integrations/shopify/lots";
-import { fetchStockCoffees } from "@/integrations/shopify/stock";
+import { getInventoryLots } from "@/templates/one-two/shopify/lots";
+import { fetchStockCoffees } from "@/templates/one-two/shopify/stock";
 
 /** What One Two offers a wholesale customer, from Shopify. Rowan's emails may only claim these facts. */
 export async function offer() {

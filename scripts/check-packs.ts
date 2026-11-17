@@ -8,31 +8,39 @@ const importsOf = (f: string) => [...readFileSync(f, "utf8").matchAll(/from "([^
 
 // Outside templates/, only the registration points import a pack, and only through templates/index.ts.
 const REGISTRATION = new Set(["core/tools/catalog.ts", "core/measures.ts"]);
-// Not core and not yet in the pack: our own Shopify reads, whose fixed queries are One Two's green
-// lots and roast loss. They move into the pack with the installer slice; no new file may join them.
-const NOT_YET_MOVED = new Set(["integrations/shopify/lots.ts", "integrations/shopify/orders.ts", "integrations/shopify/settings.ts", "integrations/shopify/stock.ts"]);
 const outside = ["core", "agents", "dashboard", "app", "integrations", "scripts"].flatMap(files).filter((f) => !f.startsWith("scripts/check-"));
 let registered = 0;
 for (const f of outside) {
   for (const m of importsOf(f)) {
     if (!/^@\/templates(\/|$)|^\.\.\/templates\//.test(m)) continue;
     if (m === "@/templates") { assert.ok(REGISTRATION.has(f), `${f} imports @/templates: only ${[...REGISTRATION].join(" and ")} register packs`); registered++; continue; }
-    assert.ok(NOT_YET_MOVED.has(f) && m.startsWith("@/templates/one-two/domain/"), `${f} reaches into a pack (${m}); go through templates/index.ts`);
+    assert.fail(`${f} reaches into a pack (${m}); go through templates/index.ts`);
   }
 }
 assert.equal(registered, REGISTRATION.size, "the tool list and the goal measures register packs");
 assert.ok(!statSync("templates").isFile());
-for (const gone of ["domain", "agents/cfo", "agents/chief-of-staff", "agents/bookkeeper", "agents/wholesale-hunter", "core/green.ts"]) {
+for (const gone of ["domain", "agents/cfo", "agents/chief-of-staff", "agents/bookkeeper", "agents/wholesale-hunter", "core/green.ts", "integrations/shopify/lots.ts", "integrations/shopify/settings.ts", "integrations/shopify/stock.ts"]) {
   let there = true; try { statSync(gone); } catch { there = false; }
   assert.ok(!there, `${gone} moved into templates/one-two`);
 }
 
-// A pack reaches core only through core's public pieces, never the gateway's write path or the vault.
+// A pack reaches core only through core's public pieces: it reads through callMcpTool like core
+// does and proposes actions through core/gateway's front door (an approval card), never the vault,
+// the gateway's insides, a write tool, a custom tool or one of our servers directly.
 for (const f of files("templates")) {
   for (const m of importsOf(f)) {
-    assert.ok(!/core\/vault|integrations\/mcp"|callWriteTool/.test(m), `${f} imports ${m}`);
+    assert.ok(!/core\/vault|core\/gateway\/|shopify-server|gmail-server|notion-server|mercury-files-server/.test(m), `${f} imports ${m}`);
   }
-  assert.doesNotMatch(readFileSync(f, "utf8"), /\bcallWriteTool\b/, `${f} calls a write tool`);
+  assert.doesNotMatch(readFileSync(f, "utf8"), /\b(callWriteTool|callCustomTool|callLocalTool)\b/, `${f} calls past the read path`);
+}
+
+// A pack's own tables are tenant tables like any other, and only the pack reads or writes them.
+const tenancy = readFileSync("core/tenancy.ts", "utf8");
+const packTables = [...readFileSync("templates/one-two/index.ts", "utf8").matchAll(/tables: \[([^\]]*)\]/g)].flatMap((m) => [...m[1].matchAll(/"([a-z_]+)"/g)].map((x) => x[1]));
+assert.ok(packTables.length >= 4, "found the pack's tables");
+for (const t of packTables) {
+  assert.match(tenancy, new RegExp(`"${t}"`), `${t} is a pack table, so it needs a place in TENANT_TABLES`);
+  for (const f of outside) assert.doesNotMatch(readFileSync(f, "utf8"), new RegExp(`from\\("${t}"\\)`), `${f} reads ${t}, a pack table`);
 }
 
 // Pack tool ids are unique and don't clash with core's (catalog.ts also refuses this at load).
@@ -44,4 +52,4 @@ for (const id of one) assert.ok(!core.includes(id), `${id} is in core and the pa
 assert.equal(new Set(one).size, one.length, "pack tool ids are unique");
 assert.match(catalog, /\[\.\.\.TOOLS_LIST, \.\.\.packTools\(\)\]/, "the tool list adds pack tools");
 
-console.log(`check:packs ok (${one.length} pack tools, ${core.length} core tools)`);
+console.log(`check:packs ok (${one.length} pack tools, ${packTables.length} pack tables, ${core.length} core tools)`);
