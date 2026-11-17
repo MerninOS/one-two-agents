@@ -8,6 +8,7 @@
 // https host. Its profile is a row the owner edits (mcp_custom_servers); these limits are code.
 
 import { createHash } from "node:crypto";
+import type { Param } from "@/core/tools/types";
 
 /** A custom server's id: also its row in mcp_connections, so the vault, pause and log work as they do for built-in servers. */
 export const CUSTOM_ID = /^c_[a-z0-9]{8}$/;
@@ -288,4 +289,63 @@ export function checkServerName(s: string): { name: string } | { problem: string
   if (name.length > 60) return { problem: "Keep the name under 60 characters." };
   if (LINK.test(name)) return { problem: "Leave links out of the name." };
   return { name };
+}
+
+// ---- Slice 2: turned-on tools granted to agents. A granted tool is named by its server and its
+// name, and becomes a read tool on the tool list only for a run, from the row as accepted.
+
+/** Most calls to custom tools in one run, across every custom server. */
+export const MAX_CUSTOM_CALLS = 20;
+/** Most of one custom tool's reply an agent sees, in characters. */
+export const MAX_CUSTOM_REPLY = 20_000;
+/** Most a custom tool's inputs may weigh, pins included, as JSON bytes. */
+export const MAX_CUSTOM_ARGS = 2048;
+/** Most custom tools one agent may be granted. */
+export const MAX_CUSTOM_GRANTS = 20;
+
+const TOOL_ID = /^c_[a-z0-9]{8}__[A-Za-z0-9_-]{1,80}$/;
+/** A granted custom tool's id: its server's id, two underscores, and its name made safe for a tool name. */
+export const isCustomToolId = (id: string) => TOOL_ID.test(id);
+export function customToolId(server: string, name: string): string {
+  const slug = name.replace(/[^A-Za-z0-9_-]+/g, "_").slice(0, 60);
+  return `${server}__${slug === name ? slug : `${slug}_${createHash("sha256").update(name).digest("hex").slice(0, 6)}`}`;
+}
+/** The server a granted custom tool is on, or null when the id isn't one. */
+export const serverOfToolId = (id: string): string | null => (isCustomToolId(id) ? id.slice(0, 10) : null);
+
+/**
+ * The inputs an agent may fill: every input that isn't pinned and is a plain value, each checked
+ * in code like any tool's (text at most 300 characters and no links).
+ */
+export function customParams(inputs: readonly ToolInput[], pins: Record<string, unknown>): Param[] {
+  const out: Param[] = [];
+  for (const i of inputs) {
+    if (i.name in pins || i.kind === "other") continue;
+    const description = i.about ? i.about.slice(0, 200) : `The ${i.name} input.`;
+    const optional = !i.required;
+    if (i.kind === "text") out.push({ name: i.name, type: "text", maxLength: 300, optional, description });
+    else if (i.kind === "number" || i.kind === "integer") out.push({ name: i.name, type: "number", integer: i.kind === "integer", optional, description });
+    else if (i.kind === "boolean") out.push({ name: i.name, type: "bool", optional, description });
+    else if (i.kind === "choice" && i.options?.length) out.push({ name: i.name, type: "enum", options: i.options, optional, description });
+  }
+  return out;
+}
+
+/** What is sent to the server: the agent's checked inputs with every pin laid over them, within the size limit. */
+export function customArgs(inputs: readonly ToolInput[], pins: Record<string, string | number | boolean>, checked: Record<string, string | number>): { args: Record<string, string | number | boolean> } | { problem: string } {
+  const args: Record<string, string | number | boolean> = {};
+  for (const i of inputs) {
+    if (i.name in pins) { args[i.name] = pins[i.name]; continue; }
+    const v = checked[i.name];
+    if (v === undefined) continue;
+    args[i.name] = i.kind === "boolean" ? v === "true" : v;
+  }
+  if (Buffer.byteLength(JSON.stringify(args)) > MAX_CUSTOM_ARGS) return { problem: `the inputs are over ${MAX_CUSTOM_ARGS / 1024} KB` };
+  return { args };
+}
+
+/** A custom tool's reply as an agent sees it: text, cut to the limit. */
+export function customReply(data: unknown): string {
+  const s = typeof data === "string" ? data : JSON.stringify(data ?? null);
+  return s.length > MAX_CUSTOM_REPLY ? `${s.slice(0, MAX_CUSTOM_REPLY)}… [cut, ${s.length - MAX_CUSTOM_REPLY} more characters]` : s;
 }

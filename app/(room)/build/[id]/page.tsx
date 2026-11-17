@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { addStandard, dryRunBuilt, forgetMemoryLine, goBack, goLive, saveSpec, setBuiltBudget, tryBuilt } from "@/dashboard/actions";
-import { builderMenu, getBuilder } from "@/dashboard/builder";
+import { builderMenu, customMenuFor, getBuilder } from "@/dashboard/builder";
 import { getFloor, requireSession } from "@/dashboard/data";
 import { controlsOn } from "@/dashboard/session";
 import { when } from "@/dashboard/format";
@@ -28,7 +28,7 @@ export default async function BuildAgent({ params, searchParams }: { params: Pro
   const b = await getBuilder(id);
   if (!b) notFound();
   const f = await getFloor();
-  const menu = builderMenu(f.built, f.health);
+  const menu = builderMenu(f.built, f.health, await customMenuFor());
   const controls = controlsOn();
   const live = b.active;
   const working = b.draft ?? (live ? { ...live, active: true } : null);

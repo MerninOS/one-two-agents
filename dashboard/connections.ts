@@ -10,6 +10,8 @@ import type { IntegrationId } from "./crew";
 import type { McpId } from "@/core/mcp-rules";
 
 export type ConnId = "shopify" | "mercury" | "gmail" | "notion" | "klaviyo" | "email" | "web" | "agents" | "control_room" | "math";
+/** A server the owner added by its address (docs/custom-servers.md): its id is the connection's. */
+export type CustomConnId = `c_${string}`;
 
 /** One settings check. `tools` names the tools that need it when that isn't simply every tool of the connection. */
 export interface Check { key: IntegrationId; label: string; setup: string; tools?: string[] }
@@ -90,10 +92,12 @@ export const CONNECTIONS: Connection[] = [
 export const CONN_BY_ID = Object.fromEntries(CONNECTIONS.map((c) => [c.id, c])) as Record<ConnId, Connection>;
 
 /** Which connection each tool group belongs to. */
-const GROUP_CONN: Record<ToolGroup, ConnId> = {
+type BuiltInGroup = Exclude<ToolGroup, "custom">;
+const GROUP_CONN: Record<BuiltInGroup, ConnId> = {
   shopify: "shopify", mercury: "mercury", gmail: "gmail", klaviyo: "klaviyo", notion: "notion", email: "email", web: "web", agents: "agents", supabase: "control_room", calculate: "math",
 };
-export const connOf = (t: ToolDef): ConnId => GROUP_CONN[t.group];
+/** For tools on the list in code. A custom server's tools belong to that server (dashboard/builder.ts customMenuFor). */
+export const connOf = (t: ToolDef): ConnId => GROUP_CONN[t.group as BuiltInGroup];
 
 /** The settings behind the Control Room itself, not something an agent is granted. */
 export const BEHIND_THE_SCENES: { key: IntegrationId; name: string; icon: string; about: string; setup: string }[] = [

@@ -139,7 +139,9 @@ async function hireChecks(p: Extract<Resolved, { kind: "hire" }>, org: Org) {
 export function hireDraft(p: Extract<Resolved, { kind: "hire" }>) {
   const { spec, problems } = readSpec(hireSpec(p));
   const actions = spec.tools.filter((t) => TOOLS[t]?.kind === "action");
-  return { spec, problems: [...problems, ...actions.map((t) => `${toolLabel(t)} is an action, which a new agent can't have`)] };
+  // only the owner grants a tool from a server they added, on the builder's Tools step
+  const custom = spec.tools.filter((t) => !TOOLS[t]);
+  return { spec, problems: [...problems, ...actions.map((t) => `${toolLabel(t)} is an action, which a new agent can't have`), ...custom.map(() => "a tool from a server you added is granted only on the builder's Tools step")] };
 }
 
 /** Seats the hire: its open seat, or a new one under the proposer. Returns the seat's words. */

@@ -18,7 +18,7 @@ import { combined, stateLook, stateOf } from "@/dashboard/status";
 import { ActionButton, DryRun, MarkSeen } from "@/dashboard/components/client";
 import { Icon } from "@/dashboard/components/Icon";
 import { RunTable } from "@/dashboard/components/RunTable";
-import { builderMenu, mapFor } from "@/dashboard/builder";
+import { builderMenu, customMenuFor, mapFor } from "@/dashboard/builder";
 import { AgentTabs, Avatar, LockList, Pill, Summary } from "@/dashboard/components/ui";
 import { loadOrg, reportsTo, seatOf, seatPath } from "@/core/org";
 
@@ -111,7 +111,7 @@ export default async function AgentPage({ params, searchParams }: { params: Prom
 async function howItWorks(id: string): Promise<[string, string][] | null> {
   const m = await mapFor(id);
   if (!m) return null;
-  const { spec } = m, menu = builderMenu();
+  const { spec } = m, menu = builderMenu(undefined, undefined, await customMenuFor());
   const labels = (kinds: string[]) => spec.tools.map((t) => menu.tools.find((x) => x.id === t)).filter((t) => t && kinds.includes(t.kind)).map((t) => t!.label);
   const reads = labels(["read", "calculate"]), hands = labels(["report"]), does = labels(["action"]);
   const model = menu.models.find((x) => x.id === spec.model)?.label ?? spec.model;

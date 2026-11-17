@@ -9,6 +9,7 @@ import { ActionButton, KeyForm } from "@/dashboard/components/client";
 import { MCP_SERVERS, type McpId } from "@/core/mcp-rules";
 import { MCP_MISSING, VAULT_MISSING, getCustomServer, listCustomServers, mcpLog, mcpStatus, vaultState, type McpLogRow, type McpStatus, type VaultState } from "@/integrations/mcp";
 import { AddServerCard, CustomDetail, CustomTiles, SignInLog } from "@/dashboard/components/CustomServers";
+import { serverOfToolId } from "@/core/custom-mcp-rules";
 import { controlsOn } from "@/dashboard/session";
 import { klaviyoLists } from "@/integrations/klaviyo";
 import { mercuryOrgName } from "@/integrations/mercury";
@@ -248,7 +249,7 @@ export default async function Connections({ searchParams }: { searchParams: Prom
           <CustomTiles servers={customs} statuses={customStatuses} sel={custom?.id ?? (adding ? "new" : null)} />
         </div>
         {sel && <div className="conn-detail"><Detail c={sel} f={f} mcp={mcp} more={more} note={note} /></div>}
-        {custom && <div className="conn-detail"><CustomDetail c={custom} status={customStatuses[custom.id] ?? null} log={customLog} controls={controlsOn()} note={note} /></div>}
+        {custom && <div className="conn-detail"><CustomDetail c={custom} status={customStatuses[custom.id] ?? null} log={customLog} controls={controlsOn()} note={note} usedBy={Object.keys(f.grants).filter((a) => f.grants[a].some((t) => serverOfToolId(t) === custom.id)).map((a) => f.agents[a]?.name ?? a)} /></div>}
         {adding && <div className="conn-detail"><AddServerCard controls={controlsOn()} /></div>}
       </div>
       <div className="card dark" style={{ gap: 10 }}>

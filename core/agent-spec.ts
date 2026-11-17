@@ -6,6 +6,7 @@ import "server-only";
 import { db } from "@/core/db";
 import { modelDef } from "@/integrations/models";
 import { TOOLS } from "@/core/tools/catalog";
+import { MAX_CUSTOM_GRANTS, isCustomToolId } from "@/core/custom-mcp-rules";
 
 export const EFFORTS = ["low", "medium", "high"] as const;
 export type Effort = (typeof EFFORTS)[number];
@@ -63,6 +64,14 @@ export function readSpec(raw: unknown, agentId?: string): { spec: AgentSpec; pro
   const effort = (EFFORTS as readonly string[]).includes(r.effort as string) ? (r.effort as Effort) : "low";
   const tools: string[] = [];
   for (const id of Array.isArray(r.tools) ? r.tools : []) {
+    // a turned-on tool on a server the owner added: always a read tool. Whether it is still on, and
+    // its server connected and unchanged, is checked right before every run (core/tools/custom.ts).
+    if (typeof id === "string" && isCustomToolId(id)) {
+      if (tools.includes(id)) continue;
+      if (tools.filter(isCustomToolId).length >= MAX_CUSTOM_GRANTS) { problems.push(`at most ${MAX_CUSTOM_GRANTS} tools from servers you added`); continue; }
+      tools.push(id);
+      continue;
+    }
     const t = typeof id === "string" ? TOOLS[id] : undefined;
     if (!t) { problems.push(`tool "${String(id).slice(0, 40)}" is not on the tool list`); continue; }
     if (!GRANTABLE_KINDS.has(t.kind)) { problems.push(`${t.label} is a ${t.kind} tool, not available yet`); continue; }
@@ -135,6 +144,8 @@ export async function listSpecVersions(agentId: string): Promise<(SpecVersion & 
 export function specLooser(now: AgentSpec | null, next: AgentSpec): string[] {
   if (!now) return [];
   const out: string[] = [];
+  const added = next.tools.filter((id) => isCustomToolId(id) && !now.tools.includes(id)).length;
+  if (added) out.push(`adds ${added === 1 ? "a tool" : `${added} tools`} from a server you added`);
   for (const id of next.tools) {
     const t = TOOLS[id];
     if (t && (t.kind === "report" || t.kind === "action") && !now.tools.includes(id)) out.push(`adds ${t.kind === "action" ? "the action" : "the report"} “${t.label}”`);

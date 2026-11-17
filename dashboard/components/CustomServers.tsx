@@ -122,7 +122,7 @@ function ToolRow({ c, t, paused, controls }: { c: CustomServer; t: CustomTool; p
 }
 
 /** One custom server: sign-in, the tool check, its tools (all off to start) and its log. */
-export function CustomDetail({ c, status, log, controls, note }: { c: CustomServer; status: McpStatus | null; log: McpLogRow[]; controls: boolean; note: { ok: boolean; text: string } | null }) {
+export function CustomDetail({ c, status, log, controls, note, usedBy }: { c: CustomServer; status: McpStatus | null; log: McpLogRow[]; controls: boolean; note: { ok: boolean; text: string } | null; usedBy: string[] }) {
   const st = stateOf(status);
   const reason = status?.lastError ?? "";
   const toolsPause = st === "paused" && reason.startsWith("the server ");
@@ -174,7 +174,8 @@ export function CustomDetail({ c, status, log, controls, note }: { c: CustomServ
         <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
           <span style={{ display: "flex", flexDirection: "column", gap: 2 }}>
             <span style={{ fontSize: 15, fontWeight: 700 }}>Tools</span>
-            <span className="muted" style={{ fontSize: 12.5 }}>{c.tools.length} listed, {onCount} on. Every tool starts off. Turning one on gives it to no agent yet; giving custom tools to agents comes in the next update.</span>
+            <span className="muted" style={{ fontSize: 12.5 }}>{c.tools.length} listed, {onCount} on. Every tool starts off. Turning one on gives it to no agent: you give it to an agent on that agent’s Tools step in the builder, and it’s checked against the server before every run.</span>
+            <span className="ink2" style={{ fontSize: 12.5 }}>{usedBy.length ? `Given to ${usedBy.join(", ")}.` : "No agent has these tools yet."}</span>
           </span>
           {sorted.map((t) => <ToolRow key={t.name} c={c} t={t} paused={st === "paused"} controls={controls} />)}
           {!c.tools.length && <span className="muted" style={{ fontSize: 13 }}>No tools listed yet. Tap Check tools now.</span>}
