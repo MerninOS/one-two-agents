@@ -139,7 +139,11 @@ unique per org, set on first sign-in), `role` (owner, approver, viewer), `added_
 2. Supabase, Authentication > URL Configuration: Site URL `https://one-two-agents.vercel.app`;
    Redirect URLs `https://one-two-agents.vercel.app/auth/confirm` and
    `https://one-two-agents-*-astromall.vercel.app/auth/confirm` (previews).
-3. Supabase, Authentication > Emails > Magic Link: the link must carry the one-time code to our
+3. Supabase needs custom SMTP before its email templates can be edited. Use Resend (already used
+   for the brief): a Resend API key with sending access only; Supabase, Authentication > Emails >
+   SMTP Settings: host `smtp.resend.com`, port 465, username `resend`, password the key, sender on
+   the brief's verified domain.
+4. Supabase, Authentication > Emails > Magic Link: the link must carry the one-time code to our
    page: `<a href="{{ .RedirectTo }}&token_hash={{ .TokenHash }}&type=email">Sign in to the Control Room</a>`.
 
 ### Rolling it out
@@ -149,8 +153,7 @@ sign-in after the deploy makes `OPERATOR_OWNER_EMAIL` the owner. The old passwor
 working on deploy (new cookie name and secret). The migration was run on the local Postgres built
 from every migration (unique email per org, lowercase only, roles checked, org required).
 
-Supabase's built-in mailer sends a few emails an hour, enough for a handful of people. A custom
-sender (Resend SMTP in Supabase) can come later.
+Sign-in emails go through Resend SMTP; Supabase's own rate limit (Authentication > Rate Limits) still applies.
 
 ### Not in this slice
 
