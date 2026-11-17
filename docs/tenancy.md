@@ -12,7 +12,7 @@ Words: "org" here means the business that owns the data. It is not the org chart
 (`core/org.ts`, departments and seats) or the org switch (`policies.org`, which puts the crew on
 duty). Those keep their names; inside one business they still mean what they meant.
 
-Slices: 1 org id on every table, 2 people and roles, 2b row-level security policies, 3 queue and workers,
+Slices: 1 org id on every table, 2 people and roles, 2b the database refuses other orgs' rows, 3 queue and workers,
 4 vault keys per org, 5 One Two into a template pack, 6 traces and usage, 7 monorepo and
 self-host, 8 paid layer.
 
@@ -159,3 +159,50 @@ Sign-in emails go through Resend SMTP; Supabase's own rate limit (Authentication
 
 Row-level security policies and reading as the signed-in person (slice 2b), choosing between
 several orgs (when a second org exists), SSO (paid layer).
+
+## Slice 2b: the database refuses other orgs' rows
+
+Slice 1 keeps each org to its rows in code (`db()`). This slice adds a second lock in the database:
+even a bug in app code can't read or write another business's rows.
+
+### How
+
+- **Policies** (`20261204090000_org_policies.sql`): every tenant table gets `org_rows`, for role
+  `authenticated`: a row is visible and writable only when its `org_id` equals the `org_id` claim of
+  the request's token (`public.jwt_org_id()`). `orgs` gets `org_self` (read your own row only). A
+  token without the claim, such as a person's own Supabase session or the anon key, reaches nothing.
+- **Org tokens** (`core/org-token.ts`): for each org, a token (ES256, 1 hour, role
+  `authenticated`, `org_id` and `sub` set to the org) signed with our own key, which is imported into
+  Supabase as its signing key. A fresh one is made 5 minutes before the old one expires.
+- **`db()`**: when `SUPABASE_SIGNING_KEY` and `SUPABASE_PUBLISHABLE_KEY` are set, `from(table)` goes
+  through the current org's own client, which sends that org's token. The code's scoping still
+  applies on top. Files (storage) and sign-in (`authApi()`) stay on the service role; per-org file
+  paths come with slice 4.
+- **Off until set.** Without the two settings, tables use the service role exactly as before, so
+  merging changes nothing. Settings shows **Database lock: On / Off**.
+- **`npm run check:tenancy`** also checks that every tenant table has a policy holding it to
+  `jwt_org_id()` (a new table needs one in its own migration), that org tokens verify and carry
+  the right claims, and that tables go through the org's client while storage doesn't.
+
+Tested on a local Postgres built from every migration: with org B's token, org A's rows can't be
+read, inserted, updated, moved to another org or deleted; no claim or a malformed claim reads
+nothing; the home org's token sees exactly its own rows. The live database already grants
+`authenticated` the table privileges the policies need.
+
+### Setup (Zak, once)
+
+1. Make the key: in Terminal, `npx supabase gen signing-key --algorithm ES256`. It prints a JSON
+   key with a `kid`. Keep it secret.
+2. Supabase, Project Settings > JWT Keys: create a standby key by importing that JSON, then
+   **Rotate keys** so it becomes the current key. Existing sign-ins keep working.
+3. Vercel: add `SUPABASE_SIGNING_KEY` (the whole JSON) and `SUPABASE_PUBLISHABLE_KEY` (Project
+   Settings > API Keys, the publishable key). Redeploy.
+4. Settings in the Control Room shows **Database lock: On**.
+
+To turn it off, delete the two Vercel settings and redeploy. The policies stay; the service role
+ignores them.
+
+### Not in this slice
+
+Reading as the signed-in person (pages use the org token, and the role check in code decides what
+a person may do); per-org storage paths (slice 4).
