@@ -4,13 +4,14 @@ import { NextResponse, type NextRequest } from "next/server";
 import { revalidatePath } from "next/cache";
 import { SESSION_COOKIE, validSessionToken } from "@/dashboard/session";
 import { isMcpId } from "@/core/mcp-rules";
+import { isCustomId } from "@/core/custom-mcp-rules";
 import { PENDING_COOKIE, finishConnect } from "@/integrations/mcp";
 
 export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   if (!validSessionToken(req.cookies.get(SESSION_COOKIE)?.value)) return NextResponse.redirect(new URL("/login", req.url));
-  if (!isMcpId(id)) return NextResponse.redirect(new URL("/connections", req.url));
-  const back = new URL(`/connections?c=${encodeURIComponent(id)}`, req.url);
+  if (!isMcpId(id) && !isCustomId(id)) return NextResponse.redirect(new URL("/connections", req.url));
+  const back = new URL(`/connections?${isCustomId(id) ? "s" : "c"}=${encodeURIComponent(id)}`, req.url);
   const q = req.nextUrl.searchParams;
   try {
     await finishConnect(id, req.cookies.get(PENDING_COOKIE)?.value, { code: q.get("code"), state: q.get("state"), error: q.get("error") });

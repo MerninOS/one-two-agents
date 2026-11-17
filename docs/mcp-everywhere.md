@@ -8,6 +8,8 @@ the exact scopes to ask for, its read tools, and later its write tools with the 
 type each becomes. A business connects its own account with a Connect button and never edits a
 profile. Writes go through the gateway and start at Draft. Tenancy is a separate epic.
 
+Servers a business adds itself, by address, are in `docs/custom-servers.md`.
+
 Slices: 1 runner speaks only MCP, 2 credential vault, 3 profiles and connection registry,
 4 Notion, 5 Mercury, 6 Gmail (reads and drafts; send stays off), 7 Shopify on our own server,
 8 cleanup.

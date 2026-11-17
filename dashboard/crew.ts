@@ -88,6 +88,7 @@ export const HARD_RULES = [
   "Never writes to Shopify.",
   "Never deletes products, customers, orders or Klaviyo profiles.",
   "Never claims a fact about a lot, origin or certification that isn’t in Shopify.",
-  "Never lets a web page or inbound email choose a recipient, URL, product or category.",
+  "Never lets a web page, inbound email or a server you added choose a recipient, URL, product or category.",
+  "Uses a server you added only for tools you turned on that only read. If one changes, the server pauses until you look.",
   "Computes money, margins and counts in code, never by the model.",
 ];
