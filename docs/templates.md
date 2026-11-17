@@ -38,12 +38,15 @@ Tool ids, inputs and behaviour are unchanged, so every saved agent keeps its too
 
 ## Slices
 
-1. **Pack mechanism** (this one): the pack folder, registration of tools and measures, the check.
+1. **Pack mechanism** (done): the pack folder, registration of tools and measures, the check.
    No behaviour change.
-2. **Words**: core's hard rules and docs say "the owner", not Zak and One Two; One Two specifics
-   (cap start values, `BRIEF_TO`) become pack defaults or org settings. Zak approves the reworded
-   hard rules before it merges.
+2. **Words** (this one): the hard rules in CLAUDE.md say "the owner" and "the business", not Zak
+   and One Two, with the same meaning; Zak approves the wording before it merges. The cap start
+   values stay in core (`CAPS`), because each is also the most any org may set: a pack can't
+   loosen a hard rule. Text that models or people read in the app (prompts, Control Room copy)
+   is not changed here, since changing a prompt changes behaviour.
 3. **Installer**: our own Shopify reads (`integrations/shopify/*`, still importing the pack's
    coffee types and listed as not yet moved in `check:packs`), One Two's tables (`kpi_snapshots`,
    `trips`, `home_office`, `tax_packets`) and its crew, playbooks and goals move into the pack,
-   installed into an org; a new org starts empty or from a pack.
+   installed into an org; a new org starts empty or from a pack. `BRIEF_TO` becomes the org's
+   owner email, and app copy and the other docs say "the owner" as each piece moves.
