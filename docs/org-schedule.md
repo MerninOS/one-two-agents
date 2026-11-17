@@ -27,8 +27,8 @@ and per-agent control over when each agent runs and what that costs.
 
 - **The org switch** is the `policies` row `org` (`{"on": true|false, "at", "by"}`), read by
   `core/org-switch.ts`. A missing or unreadable row is off. While the org is off, nothing starts
-  on its own: the dispatcher (`app/api/dispatch`) starts no scheduled chain and no waiting step
-  of one, and a decided approval starts no chain (`approvalDecided`). The Run button and Run
+  on its own: the dispatcher (`app/api/dispatch`) starts no scheduled chain, the worker
+  (`app/api/jobs`) skips any step of a chain not started with Run chain, and a decided approval starts no chain (`approvalDecided`). The Run button and Run
   chain still work for agents on duty, because Zak pressed them.
 - **Turn on the org** (Controls on + a confirm that lists who wakes, each first run and the cost a
   month): every agent in the org goes on duty (`agents.enabled`), every chain whose agents are all

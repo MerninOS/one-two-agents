@@ -206,3 +206,51 @@ ignores them.
 
 Reading as the signed-in person (pages use the org token, and the role check in code decides what
 a person may do); per-org storage paths (slice 4).
+
+## Slice 3: a job queue, a scheduler and workers
+
+Work that runs on its own (a chain's steps today) is a job: a row in `jobs`, picked up by a worker
+request that runs it as the job's org. One scheduler serves every org.
+
+### How
+
+- **Jobs** (`20261205090000_jobs.sql`): `org_id`, `kind` (only `chain_step` so far), `payload`
+  (a chain step names a chain and a step of the saved flow, nothing else), `dedupe_key` (one job
+  per step of a chain), `run_after` (a step waiting for "not before 6:45" is a job due then),
+  `claimed_at`, `done_at` or `failed_at`, `outcome` in words, and the `run_id`. A plain table, not
+  pgmq: it carries `org_id` and the `org_rows` policy like every table and runs on any Postgres.
+  `chain_waits` is gone (it never had a row).
+- **Enqueue** (`core/jobs.ts`, `startStep` in `core/chain.ts`): a chain step is enqueued as the
+  current org and, unless it waits for a time, kicked straight away.
+- **Kick**: a signed request to `/api/jobs/<id>?org=<org>` (`CRON_SECRET` bearer). It resolves in
+  seconds, not when the work ends.
+- **Worker** (`app/api/jobs/[id]`): runs as `?org`, so the job is read through `db()` scoped to
+  that org and, with the database lock on, with that org's token: a job of another org can't be
+  claimed whatever the request says. It claims the job with a conditional update (a job runs once
+  however often it is kicked), answers, then runs it after the answer in its own 300 s limit:
+  reads the saved flow, checks the chain and the org are on (or the chain was started with Run
+  chain), runs the agent through `withRun`, enqueues the next step, and records the outcome.
+- **Scheduler** (`app/api/dispatch`, Vercel Schedule `dispatch`, every 15 minutes as before (this Vercel plan runs schedules up to 15 minutes late, so it can't be more often; a step that starts now is kicked straight away, so only a step waiting for a time waits on it)): for each org in
+  turn (`allOrgIds()` in `core/db.ts`, the only read across orgs: ids only), as that org: starts the
+  chains whose time came (`chain_fires`, unchanged), marks failed the jobs claimed more than 6
+  minutes ago that never finished (not retried: a run may have half happened), and kicks the jobs
+  that are due (a waiting step whose time came, or one whose kick was lost).
+- **Unchanged**: the Run button and Try still run inline; chains still never turn an agent on; the
+  agent route now refuses `trigger=chain`, so steps run only as jobs.
+- **`npm run check:jobs`** checks the payload rules (only a chain's own fields survive), the dedupe
+  key, that a job is called stale only after the worker's limit, and that the table's kinds match
+  the code.
+
+Tested on a local Postgres: a second job with the same key in an org is refused, a bad kind or a
+non-object payload is refused, a job is claimed once, and an org's token can't see, claim or update
+another org's job.
+
+### Setup (Zak, once)
+
+Apply `20261205090000_jobs.sql` (Supabase SQL editor) before merging. While the org is off nothing starts on its own, so the
+scheduler finds nothing to do.
+
+### Not in this slice
+
+Retries with backoff, a Jobs view in the Control Room, other kinds of job (agent schedules that
+aren't chains, inbound email), per-org concurrency limits, and workers outside Vercel functions.

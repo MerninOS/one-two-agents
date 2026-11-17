@@ -167,14 +167,15 @@ dispatcher in `app/api/dispatch`. Migration `20261112200000_crew_flow.sql`.
   until a time ("not before 6:45"); and read the step before's summary and numbers as facts
   (Avery only, so far). The hand-off is labelled as another agent's words, not instructions.
 - One Vercel Schedule, `dispatch`, every 15 minutes. It starts the chains whose time came in the
-  last hour (each firing once, `chain_fires`) and the waiting steps that are due (`chain_waits`).
+  last hour (each firing once, `chain_fires`) and kicks the steps that are due: each step is a job
+  (`jobs`, docs/tenancy.md slice 3), and a waiting step is a job due at its time.
   With every chain off it does nothing. The old `cfo` and `chief-of-staff` schedules are gone:
   version 1 of the flow is the Morning chain (Morgan at 5:30, then Avery on weekdays not before
   6:45, either way, with the hand-off), saved **off**.
-- Each step is its own signed request to `/api/agents/<id>?trigger=chain&...`, so it gets its own
-  time limit and goes through `withRun` (on duty, daily budget, setup, memory). The request only
-  names a chain and a step; the route reads the saved flow and checks the agent matches, so
-  nothing outside the flow (an email, a web page, a run's output) can choose what runs next.
+- Each step is a job run by its own worker request (`/api/jobs/<id>`), so it gets its own time
+  limit and goes through `withRun` (on duty, daily budget, setup, memory). The job only names a
+  chain and a step; the worker reads the saved flow for the agent, so nothing outside the flow (an
+  email, a web page, a run's output) can choose what runs next.
 - A skipped step (agent off duty or over budget) stops the chain. A chain never turns an agent on.
 - Rowan and Quinn run only by hand, so they can only be in a chain started with Run chain.
 - No loops: an agent appears once per chain.

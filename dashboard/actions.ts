@@ -14,6 +14,7 @@ import { applyApproved, decide, loadCaps, queueBookkeeperProposals, retry } from
 import { CAPS, capChange, fmtCap, type CapKey } from "@/core/gateway/policy";
 import { env } from "@/core/env";
 import { approvalDecided, startStep } from "@/core/chain";
+import { currentOrgId, withOrg } from "@/core/tenancy";
 import { activateFlow, flowLooser, flowProblems, listFlowVersions, loadFlow, saveFlowVersion, withAgentTime, DAY_WORDS, type AgentTime, type Flow } from "@/core/flow";
 import { ANNOTATE } from "@/core/gateway";
 import { BUDGET_CEILING, activateSpecVersion, createBuiltAgent, draftOf, listSpecVersions, loadSpec, readSpec, saveSpecVersion, specLooser, type AgentSpec } from "@/core/agent-spec";
@@ -187,17 +188,18 @@ async function selfOrigin() {
   return host ? `${h.get("x-forwarded-proto") ?? "https"}://${host}` : env.dashboardUrl ?? "";
 }
 
-/** Chains that start when an approval is decided (core/flow.ts). Runs after the answer, never blocks it. */
+/** Chains that start when an approval is decided (core/flow.ts). Runs after the answer, never blocks it, as this org. */
 async function fireApprovalChains(decision: "approve" | "reject") {
   const origin = await selfOrigin();
   if (!origin) return;
-  after(async () => {
+  const org = currentOrgId();
+  after(() => withOrg(org, async () => {
     try {
       const flow = await loadFlow(await loadCrew());
       const started = await approvalDecided(origin, flow.flow, ANNOTATE, decision);
       if (started.length) console.log(`[chains] approval ${decision} started ${started.join(", ")}`);
     } catch (e) { console.error("[chains] approval", e); }
-  });
+  }));
 }
 
 async function applyNow(ids?: string[]): Promise<ActionResult> {
@@ -398,7 +400,7 @@ export async function runChainNow(key: string): Promise<ActionResult> {
     const origin = await selfOrigin();
     if (!origin) return { ok: false, text: "Can’t work out this app’s address to start the chain." };
     const chainId = crypto.randomUUID();
-    after(() => startStep(origin, c, { chainId, key: c.key, step: 0, manual: true }));
+    await startStep(origin, c, { chainId, key: c.key, step: 0, manual: true });
     revalidatePath("/", "layout");
     const names = await Promise.all(c.steps.map((s) => nameOf(s.agent)));
     return { ok: true, text: `${c.name} started: ${names.join(", then ")}. An agent that is off duty is skipped and the chain stops there. Runs shows each step.` };

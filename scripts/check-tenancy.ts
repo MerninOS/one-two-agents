@@ -42,7 +42,7 @@ function fake() {
 }
 {
   const { calls, client } = fake();
-  scopeClient(client).from("chain_waits").delete().eq("id", "w1");
+  scopeClient(client).from("jobs").delete().eq("id", "w1");
   assert.deepEqual(calls.slice(1, 3), [["delete", undefined], ["eq", "org_id", HOME_ORG_ID]]);
 }
 

@@ -1,27 +1,40 @@
-import { NextResponse, after } from "next/server";
+import { NextResponse } from "next/server";
 import { loadCrew } from "@/agents/registry";
-import { claimDueWaits, claimFiring, startStep } from "@/core/chain";
+import { claimFiring, startStep } from "@/core/chain";
+import { allOrgIds } from "@/core/db";
 import { firingsBetween, loadFlow } from "@/core/flow";
-import { cronAuthorized } from "@/core/runs";
+import { dueJobs, failStale, kick } from "@/core/jobs";
 import { orgOn } from "@/core/org-switch";
+import { cronAuthorized } from "@/core/runs";
+import { withOrg } from "@/core/tenancy";
 
-export const maxDuration = 300;
+export const maxDuration = 60;
 
-// The one Vercel Schedule (vercel.json "dispatch", every 15 minutes). It starts the chains
-// whose schedule came due in the last hour (each firing once: chain_fires) and the waiting
-// steps whose "not before" time has come (chain_waits). Each step is its own request to
-// /api/agents/<id>, so it runs through withRun like any other run: an agent that is off duty
-// is skipped and its chain stops. While the org is off (core/org-switch.ts, docs/org-schedule.md)
-// it starts nothing on its own: only waiting steps of a chain Zak started with Run chain go on.
+// The scheduler: the one Vercel Schedule (vercel.json "dispatch", every 15 minutes; this plan's schedules run up to 15 minutes late, so it can't be more often). For each org in
+// turn, as that org (docs/tenancy.md, slice 3): it starts the chains whose schedule came due in the
+// last hour (each firing once: chain_fires), marks failed the jobs that never finished, and kicks
+// the jobs that are due (a step whose "not before" time has come, or one whose kick was lost). The
+// work itself runs in workers (/api/jobs/<id>), each its own request through withRun. While an org
+// is off (core/org-switch.ts, docs/org-schedule.md) no chain of it starts on its own; the worker
+// lets only steps of a chain Zak started with Run chain go on.
 export async function GET(req: Request) {
   if (!cronAuthorized(req)) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   const origin = new URL(req.url).origin;
   const now = Date.now();
-  const started: string[] = [];
-  let flow;
-  try { flow = await loadFlow(await loadCrew()); }
-  catch (e) { return NextResponse.json({ error: `Crew flow can't be read: ${e instanceof Error ? e.message : e}` }, { status: 500 }); }
+  const orgs: Record<string, unknown>[] = [];
+  let ids: string[];
+  try { ids = await allOrgIds(); }
+  catch (e) { return NextResponse.json({ error: `Orgs can't be read: ${e instanceof Error ? e.message : e}` }, { status: 500 }); }
+  for (const org of ids) {
+    try { orgs.push({ org, ...(await withOrg(org, () => schedule(origin, now))) }); }
+    catch (e) { console.error(`[dispatch] ${org}`, e); orgs.push({ org, error: e instanceof Error ? e.message : String(e) }); }
+  }
+  return NextResponse.json({ orgs });
+}
 
+async function schedule(origin: string, now: number) {
+  const started: string[] = [];
+  const flow = await loadFlow(await loadCrew());
   const on = await orgOn();
   for (const c of flow.flow.chains) {
     if (!on || !c.on) continue;
@@ -30,15 +43,11 @@ export async function GET(req: Request) {
       const chainId = crypto.randomUUID();
       if (!(await claimFiring(c.key, at, chainId))) continue;
       started.push(`${c.name} (${new Date(at).toISOString()})`);
-      after(() => startStep(origin, c, { chainId, key: c.key, step: 0 }));
+      await startStep(origin, c, { chainId, key: c.key, step: 0 });
     }
   }
-  for (const w of await claimDueWaits(now)) {
-    const c = flow.flow.chains.find((x) => x.key === w.key);
-    // the waiting step goes ahead only if the chain is still on and still has that step
-    if (!c || !c.steps[w.step] || ((!on || !c.on) && !w.manual)) continue;
-    started.push(`${c.name} step ${w.step + 1}`);
-    after(() => startStep(origin, c, { chainId: w.chainId, key: w.key, step: w.step, parent: w.parent ?? undefined, manual: w.manual }));
-  }
-  return NextResponse.json({ org: on ? "on" : "off", started, problems: flow.problems });
+  const stale = await failStale(now);
+  const due = await dueJobs(now);
+  await Promise.all(due.map((id) => kick(origin, id)));
+  return { on, started, kicked: due.length, stale, problems: flow.problems };
 }

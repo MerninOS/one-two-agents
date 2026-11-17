@@ -65,3 +65,16 @@ export function authApi(): SupabaseClient["auth"] {
   if (!env.supabaseUrl || !env.supabaseServiceKey) throw new Error("SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY must be set");
   return createClient(env.supabaseUrl, env.supabaseServiceKey, { auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false } }).auth;
 }
+
+/**
+ * Every org's id, for the scheduler (/api/dispatch, docs/tenancy.md slice 3), which then works as
+ * each org in turn with withOrg. The only read across orgs: ids only, on the service role, since an
+ * org's own token reaches only its own row.
+ */
+export async function allOrgIds(): Promise<string[]> {
+  if (!env.supabaseUrl || !env.supabaseServiceKey) throw new Error("SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY must be set");
+  client ??= createClient(env.supabaseUrl, env.supabaseServiceKey, { auth: { persistSession: false } });
+  const { data, error } = await client.from("orgs").select("id").order("created_at");
+  if (error) throw new Error(error.message);
+  return (data ?? []).map((r) => r.id as string);
+}

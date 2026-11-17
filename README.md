@@ -22,8 +22,8 @@ The old paths `/api/agents/brief` and `/api/agents/hunter` still work.
   `agent_runs` row, no Supabase, Notion or Gmail writes. Good for checking a deploy.
 - Schedules live in the crew flow (Control Room, Crew > Schedule; `docs/agent-setup.md`, slice 5),
   not in `vercel.json`. The one Vercel Schedule is `dispatch` (`/api/dispatch`, every 15
-  minutes, `America/Chicago`): it starts the chains that are on and due, and steps waiting for
-  their "not before" time, but only while the org is on (`policies.org`, the switch at the top of
+  minutes, `America/Chicago`): it starts the chains that are on and due, and kicks the steps that are
+  due (each step is a job run by `/api/jobs/<id>`; docs/tenancy.md slice 3), but only while the org is on (`policies.org`, the switch at the top of
   Crew > Schedule; docs/org-schedule.md). **The org stays off until launch**, so the dispatcher
   starts nothing. To stop it entirely:
   ```bash
