@@ -78,3 +78,15 @@ export async function allOrgIds(): Promise<string[]> {
   if (error) throw new Error(error.message);
   return (data ?? []).map((r) => r.id as string);
 }
+
+/**
+ * Makes a new org's row (core/install.ts newOrg), on the service role: orgs are never written
+ * through db(), and a new org has no token of its own yet. Returns the new org's id.
+ */
+export async function createOrgRow(slug: string, name: string): Promise<string> {
+  if (!env.supabaseUrl || !env.supabaseServiceKey) throw new Error("SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY must be set");
+  client ??= createClient(env.supabaseUrl, env.supabaseServiceKey, { auth: { persistSession: false } });
+  const { data, error } = await client.from("orgs").insert({ slug, name }).select("id").single();
+  if (error) throw new Error(/duplicate|unique/i.test(error.message) ? `An org called ${slug} already exists.` : error.message);
+  return data.id as string;
+}

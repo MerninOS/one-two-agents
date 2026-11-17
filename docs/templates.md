@@ -17,8 +17,27 @@ business can learn from.
   `home_office`, `tax_packets`). Each is still a tenant table with `org_id`, a place in
   `TENANT_TABLES` and an `org_rows` policy, and its migration stays in `supabase/migrations/` (one
   database). `check:packs` refuses core code that reads one.
-- Later (the installer): the pack's crew (agents, departments, heads), playbooks, goals and
-  standing orders, installed into an org, so a new org can start empty or from a pack.
+- **Crew**: a starting crew as data (`PackCrew`): departments, the org chart, agents with their
+  specs and playbooks, the chains and starting goals. `core/install.ts` installs it into a new,
+  empty org (see "The installer" below).
+
+## The installer (`core/install.ts`)
+
+`npm run org:new -- --slug acme --name "Acme" --owner owner@acme.example [--pack one-two]` makes a
+new org with its first owner, empty or from a pack's crew. What it installs is always switched off:
+
+- every agent off duty, every chain off, the org switch off (no row: off is the default);
+- every playbook proposed, so the owner approves each first playbook (the rule for every agent);
+- specs pass `readSpec` unchanged, so a pack only picks tools and limits that code offers;
+- goals active with no due date, for the owner to set;
+- no policies (every cap and setting starts at its default in code, `CAPS` at its start value), no
+  memory, vendors, people beyond the owner, or connections: the new org signs in to its own
+  accounts.
+
+It installs only into an org with no agents, departments or seats, and `check:install` refuses a
+crew with any problem (a tool that isn't in code, a playbook step outside the agent's tools, a seat
+with no parent or a loop, a chain that wouldn't load, a goal with no department or measure, a value
+the database would refuse). Signing in to an org other than the home org isn't built yet.
 
 ## The rule: core never reaches into a pack
 
@@ -39,6 +58,7 @@ through `core/gateway`'s front door (an approval card), never the vault, the gat
 | `green.ts` | Green use and days of cover |
 | `tools.ts` | Green lots, open orders, green use, cover and reorder, the daily snapshot, the wholesale offer, Morgan's saved numbers, and the reports that save the snapshot, send the brief and sync the books |
 | `measures.ts` | Lowest days of green cover |
+| `crew.json`, `crew.ts` | The starting crew: 5 departments, 28 seats, 10 agents with specs, 9 playbooks, 2 chains, 3 goals |
 
 Tool ids, inputs and behaviour are unchanged, so every saved agent keeps its tools.
 
@@ -51,11 +71,13 @@ Tool ids, inputs and behaviour are unchanged, so every saved agent keeps its too
    values stay in core (`CAPS`), because each is also the most any org may set: a pack can't
    loosen a hard rule. Text that models or people read in the app (prompts, Control Room copy)
    is not changed here, since changing a prompt changes behaviour.
-3. **Shopify reads and tables** (this one): the Shopify reads for One Two's storefront fields move
+3. **Shopify reads and tables** (done): the Shopify reads for One Two's storefront fields move
    into `templates/one-two/shopify/`; a day's orders (`integrations/shopify/orders.ts`, what core's
    goal measures count) stays in core. The pack declares its tables. No behaviour change, no
    migration. The fixed queries and the Shopify server's profile stay in core, because profiles
    are hard rules (`core/mcp-rules.ts`).
-4. **Installer**: One Two's crew, playbooks and goals move into the pack and are installed into
-   an org; a new org starts empty or from a pack. `BRIEF_TO` becomes the org's owner email, and
-   app copy and the other docs say "the owner" as each piece moves.
+4. **Installer** (this one): One Two's crew, playbooks and goals are a snapshot in the pack
+   (`crew.json`, matching the live specs and playbooks on 2026-11-17), installed into a new org by
+   `core/install.ts`. No migration, and One Two's own org is untouched. Still to come with signing
+   in to other orgs: `BRIEF_TO` becomes the org's owner email, and app copy and the other docs say
+   "the owner".

@@ -7,17 +7,18 @@ const files = (d: string): string[] => readdirSync(d).flatMap((f) => { const p =
 const importsOf = (f: string) => [...readFileSync(f, "utf8").matchAll(/from "([^"]+)"/g)].map((m) => m[1]);
 
 // Outside templates/, only the registration points import a pack, and only through templates/index.ts.
-const REGISTRATION = new Set(["core/tools/catalog.ts", "core/measures.ts"]);
+const REGISTRATION = new Set(["core/tools/catalog.ts", "core/measures.ts", "core/install.ts"]);
 const outside = ["core", "agents", "dashboard", "app", "integrations", "scripts"].flatMap(files).filter((f) => !f.startsWith("scripts/check-"));
 let registered = 0;
 for (const f of outside) {
   for (const m of importsOf(f)) {
     if (!/^@\/templates(\/|$)|^\.\.\/templates\//.test(m)) continue;
+    if (m === "@/templates/types") continue; // the shape of a pack, not a pack
     if (m === "@/templates") { assert.ok(REGISTRATION.has(f), `${f} imports @/templates: only ${[...REGISTRATION].join(" and ")} register packs`); registered++; continue; }
     assert.fail(`${f} reaches into a pack (${m}); go through templates/index.ts`);
   }
 }
-assert.equal(registered, REGISTRATION.size, "the tool list and the goal measures register packs");
+assert.equal(registered, REGISTRATION.size, "the tool list, the goal measures and the installer register packs");
 assert.ok(!statSync("templates").isFile());
 for (const gone of ["domain", "agents/cfo", "agents/chief-of-staff", "agents/bookkeeper", "agents/wholesale-hunter", "core/green.ts", "integrations/shopify/lots.ts", "integrations/shopify/settings.ts", "integrations/shopify/stock.ts"]) {
   let there = true; try { statSync(gone); } catch { there = false; }
