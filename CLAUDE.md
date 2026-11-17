@@ -10,20 +10,25 @@ This version of Next.js has breaking changes from older versions: read the guide
 
 ## Hard rules (from the agent system tech spec; never relax them in code)
 
+They hold for every business on OPERATOR. "The owner" is the business's owner (Zak, for One Two,
+the home org); "the business" is the org a run belongs to. "An approver" is the owner or a person
+the owner gave the approver role (`core/roles.ts`). A cap's start value is where every
+org begins and the most it can be set to (`CAPS` in `core/gateway/policy.ts`).
+
 The tool gateway (`core/gateway`) has two action types so far, both Draft: receipt, category
 and memo on an existing Mercury transaction (Bookkeeper and CFO), and a Gmail draft to a lead
-on the leads list (Rowan; Zak sends it from Gmail). No send, payment or publish action type is
+on the leads list (Rowan; the owner sends it from Gmail). No send, payment or publish action type is
 built, so no agent can send, pay or publish.
 
 
 - Sending, buying and posting are allowed only as gateway action types, and every new
-  action type starts at Draft: an approval card in the Control Room that Zak taps. An
+  action type starts at Draft: an approval card in the Control Room that an approver taps. An
   action type moves up (Draft, then Act with an undo window, then Act) only after 28 of
-  its last 30 approvals went through unedited and Zak confirms the promotion card. A
+  its last 30 approvals went through unedited and the owner confirms the promotion card. A
   "wrong" rejection, complaint, unsubscribe spike, cap breach or breaker trip drops it
   back to Draft. No code path may send, pay or post outside the gateway.
 - Money: only within `policies.max_purchase_usd` (start $500) and
-  `policies.max_monthly_spend_usd` (start $1,500), only to payees in `vendors` (Zak adds
+  `policies.max_monthly_spend_usd` (start $1,500), only to payees in `vendors` (the owner adds
   rows; a new payee is always Draft and never promoted), as Mercury send-money requests.
   No card actions, no transfers to personal accounts, no void or delete of a transaction,
   bill, invoice or account. Writes to existing transactions are limited to attachment,
@@ -35,10 +40,10 @@ built, so no agent can send, pay or publish.
   query per tool (`core/shopify-queries.ts`), a key with any write scope is refused, and
   `scripts/validate-graphql.mjs` fails on any mutation. An agent that needs Shopify writes gets
   its own separately scoped app.
-- Email: first contact with a person who has never heard from One Two is always Draft
+- Email: first contact with a person who has never heard from the business is always Draft
   and never promoted. Follow-ups and replies on an existing thread can be promoted. Daily
   cap `policies.max_emails_per_day` (start 20); an unsubscribe or "stop" reply ends all
-  messages to that person, in code. Emails to Zak (brief, alerts) are reports, not
+  messages to that person, in code. Emails to the owner (brief, alerts) are reports, not
   gateway actions: they go only through `integrations/email.ts`, which has no recipient
   argument and sends to `BRIEF_TO`.
 - Posts: publishing is Draft until promoted, the approval shows the exact caption and
@@ -68,19 +73,19 @@ built, so no agent can send, pay or publish.
   Each of our own servers is the only file that calls its service's API, and only
   `integrations/mcp.ts` reaches it (lint and `check:mcp` enforce both).
 - One tool path: agents read only through `callMcpTool` (read tools), or a turned-on custom tool
-  through `callCustomTool`, which only `core/tools/custom.ts` calls (lint enforces it). Code writes reports into One
-  Two's own Notion only through report tools on our own servers, after a run, never by a model.
+  through `callCustomTool`, which only `core/tools/custom.ts` calls (lint enforces it). Code writes reports into the
+  business's own Notion only through report tools on our own servers, after a run, never by a model.
   Every other write is a profile's write tool, called only by `core/gateway` through
-  `callWriteTool` after Zak approves (lint enforces it); it becomes a gateway action type.
+  `callWriteTool` after an approver approves (lint enforces it); it becomes a gateway action type.
 - One credential store: every sign-in and service key lives in the token vault (`core/vault.ts`),
   sealed with its org's own random data key and bound to that org; the data key is kept only
   wrapped by `MCP_SECRET_KEY` (never derived from another secret), connected on Connections.
   Only `integrations/mcp.ts` and `core/gateway` import the vault (lint enforces it). Settings in
-  Vercel hold only the app's own infrastructure (Supabase, Claude, Resend for emails to Zak, the
-  vault key, One Two's Google OAuth client) and non-secret ids. Ask for the profile's scopes only, and refuse a sign-in or key
+  Vercel hold only the app's own infrastructure (Supabase, Claude, Resend for emails to the owner, the
+  vault key, the app's Google OAuth client) and non-secret ids. Ask for the profile's scopes only, and refuse a sign-in or key
   that carries more (Google scopes, Shopify write scopes). No token in a prompt, log, error or the
   browser (`scrubSecrets`); requests carrying a token or code never follow redirects. A refused or
-  expired sign-in pauses until Zak signs in again. See `docs/mcp-everywhere.md`.
+  expired sign-in pauses until the owner signs in again. See `docs/mcp-everywhere.md`.
 - Every run goes through `withRun` so it is logged in `agent_runs` and respects
   `agents.enabled` and `agents.daily_budget_usd`.
 - Tenancy: every table has `org_id` (an org is a business; One Two is the home org). Every query
