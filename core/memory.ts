@@ -5,6 +5,7 @@ import "server-only";
 // the gateway, policies, caps and recipients live in code and in `policies` (lint keeps
 // core/gateway and integrations/ from importing it). A model writes only its own working
 // memory, through saveWorking, which caps it and refuses addresses, numbers and links.
+import { actor } from "@/core/actor";
 import { db } from "@/core/db";
 import { agentDepartment } from "@/core/org";
 import { notionPageId, notionPageText } from "@/integrations/notion";
@@ -278,7 +279,7 @@ export async function saveWorking(agentId: string, runId: string, lines: unknown
 
 // ---- Zak's edits, called from the Control Room (dashboard/actions.ts checks the login).
 
-const BY_ZAK = "zak (control room)";
+
 
 export interface TeachInput { agentId: string; text: string; keepAs: "note" | "standing_order" | "crew"; forget: Keep; notionLink?: string; /** Where it came from, e.g. `run:<id>` for a reaction. */ sourceTag?: string }
 
@@ -303,7 +304,7 @@ export async function teach(t: TeachInput): Promise<string> {
   };
   const { data, error } = await db().from("agent_memory").insert(row).select("id").single();
   if (error) throw new Error(error.message);
-  await logEvent({ memory_id: data.id, agent_id: row.agent_id, kind: "added", before: null, after: pageId ? `${text} (links Notion page ${pageId})` : text, by: BY_ZAK });
+  await logEvent({ memory_id: data.id, agent_id: row.agent_id, kind: "added", before: null, after: pageId ? `${text} (links Notion page ${pageId})` : text, by: actor() });
   return data.id as string;
 }
 
@@ -324,7 +325,7 @@ export async function editMemory(id: string, newText: string) {
   // Zak's edit makes the words his: a line he rewrites is no longer outside data
   const { error } = await db().from("agent_memory").update({ text, tokens: countTokens(text), source: r.source === "agent" ? "zak" : r.source, trust: "note", updated_at: new Date().toISOString() }).eq("id", id);
   if (error) throw new Error(error.message);
-  await logEvent({ memory_id: id, agent_id: r.agent_id, department_id: r.department_id, kind: "edited", before: r.text, after: text, by: BY_ZAK });
+  await logEvent({ memory_id: id, agent_id: r.agent_id, department_id: r.department_id, kind: "edited", before: r.text, after: text, by: actor() });
 }
 
 export async function forgetMemory(id: string) {
@@ -332,7 +333,7 @@ export async function forgetMemory(id: string) {
   if (r.state !== "kept") throw new Error("That line isn't kept, so there is nothing to forget.");
   const { error } = await db().from("agent_memory").update({ state: "forgotten", updated_at: new Date().toISOString() }).eq("id", id);
   if (error) throw new Error(error.message);
-  await logEvent({ memory_id: id, agent_id: r.agent_id, department_id: r.department_id, kind: "forgotten", before: r.text, after: null, by: BY_ZAK });
+  await logEvent({ memory_id: id, agent_id: r.agent_id, department_id: r.department_id, kind: "forgotten", before: r.text, after: null, by: actor() });
 }
 
 /** Everything the Memory tab shows for one agent: its kept and proposed lines, crew lines, and the timeline. */
@@ -370,7 +371,7 @@ export async function addDepartmentRule(deptId: string, raw: string, sourceTag?:
     tokens: countTokens(text), decided_at: new Date().toISOString(),
   }).select("id").single();
   if (error) throw new Error(error.message);
-  await logEvent({ memory_id: data.id, agent_id: null, department_id: deptId, kind: "added", before: null, after: text, by: BY_ZAK });
+  await logEvent({ memory_id: data.id, agent_id: null, department_id: deptId, kind: "added", before: null, after: text, by: actor() });
   return data.id as string;
 }
 
@@ -428,7 +429,7 @@ export async function keepLesson(id: string, forCrew = false) {
   const patch = forCrew ? { state: "kept", grp: "crew", agent_id: null, decided_at: now, updated_at: now } : { state: "kept", decided_at: now, updated_at: now };
   const { error } = await db().from("agent_memory").update(patch).eq("id", id).eq("state", "proposed");
   if (error) throw new Error(error.message);
-  await logEvent({ memory_id: id, agent_id: forCrew ? null : r.agent_id, kind: "kept", before: null, after: r.text, by: `${BY_ZAK}${forCrew ? ", for the crew" : ""}` });
+  await logEvent({ memory_id: id, agent_id: forCrew ? null : r.agent_id, kind: "kept", before: null, after: r.text, by: `${actor()}${forCrew ? ", for the crew" : ""}` });
 }
 
 export async function discardLesson(id: string) {
@@ -437,7 +438,7 @@ export async function discardLesson(id: string) {
   const now = new Date().toISOString();
   const { error } = await db().from("agent_memory").update({ state: "discarded", decided_at: now, updated_at: now }).eq("id", id).eq("state", "proposed");
   if (error) throw new Error(error.message);
-  await logEvent({ memory_id: id, agent_id: r.agent_id, kind: "discarded", before: r.text, after: null, by: BY_ZAK });
+  await logEvent({ memory_id: id, agent_id: r.agent_id, kind: "discarded", before: r.text, after: null, by: actor() });
 }
 
 /** Proposed lessons waiting on Zak, per agent. Empty when the table isn't there. */

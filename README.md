@@ -49,7 +49,7 @@ The dashboard at `/` ("mission control"): the crew, live floor, run log and repl
 matrix and integrations, built from the Claude Design file "Agent Control Room". Spec:
 `docs/control-room.md`.
 
-- Sign in with `DASHBOARD_PASSWORD`. Unset means nobody gets in. `/api/*` is unaffected.
+- Each person signs in with a link emailed to them and has a role (Settings > People; docs/tenancy.md). Needs `SESSION_SECRET`; `OPERATOR_OWNER_EMAIL` is the first owner. `/api/*` is unaffected.
 - It never starts anything on its own. Dry runs (free, write nothing) always work, and so do
   taking an agent off duty and "Pause all agents".
 - Real runs, putting an agent back on the crew and raising a budget need

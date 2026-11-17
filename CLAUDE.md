@@ -86,7 +86,8 @@ built, so no agent can send, pay or publish.
   goes through `db()`, which scopes it to the current org (`core/tenancy.ts`): reads, updates and
   deletes are filtered by org, inserts are stamped, another org's row is refused. Only `core/db.ts`
   makes a Supabase client (lint enforces it), and a new table needs `org_id` and a place in
-  `TENANT_TABLES` (`check:tenancy` enforces it). See `docs/tenancy.md`.
+  `TENANT_TABLES` (`check:tenancy` enforces it). People sign in as themselves and every server
+  action checks the member's role first with `asRole` (`check:roles` enforces it). See `docs/tenancy.md`.
 
 ## Checks
 

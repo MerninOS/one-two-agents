@@ -1,14 +1,19 @@
 import { cookies } from "next/headers";
 import Link from "next/link";
-import { addVendor, logout, setCap, suppressEmail } from "@/dashboard/actions";
-import { getFloor, getVendorsAndSuppressions } from "@/dashboard/data";
+import { addVendor, setCap, suppressEmail } from "@/dashboard/actions";
+import { signOut } from "@/dashboard/authActions";
+import { peopleAdd, peopleRemove, peopleSetRole } from "@/dashboard/peopleActions";
+import { getFloor, getVendorsAndSuppressions, requireSession } from "@/dashboard/data";
+import { listMembers } from "@/core/members";
+import { ROLE_LABELS, ROLE_WORDS } from "@/core/roles";
+import { People } from "@/dashboard/components/people";
 import { capLines } from "@/dashboard/guardrails";
 import { controlsOn } from "@/dashboard/session";
 import { ThemeToggle } from "@/dashboard/components/client";
 import { CapForm, SuppressForm, VendorForm } from "@/dashboard/components/settingsForms";
 
 export default async function Settings() {
-  const [f, caps, lists] = await Promise.all([getFloor(), capLines(), getVendorsAndSuppressions()]);
+  const [f, caps, lists, me, members] = await Promise.all([getFloor(), capLines(), getVendorsAndSuppressions(), requireSession(), listMembers().catch(() => null)]);
   const theme = (await cookies()).get("cr_theme")?.value === "dark" ? "dark" : "light";
   const line = (k: React.ReactNode, v: React.ReactNode, first?: boolean) => <div className={"row" + (first ? "" : " rule")} style={{ justifyContent: "space-between", padding: "14px 0", fontSize: 14, gap: 16 }}><span style={{ display: "flex", flexDirection: "column", gap: 2 }}>{k}</span>{v}</div>;
   return (
@@ -19,7 +24,18 @@ export default async function Settings() {
         {line("Theme", <ThemeToggle initial={theme} wide />)}
         {line(<>Controls<span className="muted" style={{ fontSize: 12 }}>Real runs, putting agents back on the crew and raising budgets. Set DASHBOARD_CONTROLS=on in Vercel to allow them.</span></>, <span className="pill sm" style={controlsOn() ? { background: "var(--mint-soft)", color: "var(--mint-ink)" } : { background: "var(--soft)", color: "var(--ink2)" }}>{controlsOn() ? "On" : "Off"}</span>)}
         {line(<>The org<span className="muted" style={{ fontSize: 12 }}>Turn every agent on or off at once on Crew &gt; Schedule.</span></>, <Link href="/crew?view=schedule" className="btn ghost sm">{f.org.on ? "On" : "Off"} · Open</Link>)}
-        {line("Sign out", <form action={logout}><button className="btn ghost sm">Sign out</button></form>)}
+        {line(<>Signed in as {me.email}<span className="muted" style={{ fontSize: 12 }}>{ROLE_LABELS[me.role]}: {ROLE_WORDS[me.role]}</span></>, <form action={signOut}><button className="btn ghost sm">Sign out</button></form>)}
+      </div>
+
+      <div className="card" style={{ padding: "16px 22px", gap: 6 }}>
+        <span className="card-t">People</span>
+        <span className="sub">Everyone who can sign in, and what they can do. Each person signs in with a link emailed to them. Viewers see every page; approvers also decide cards, teach agents and stop things; owners can do everything. At least one owner always remains.</span>
+        {members == null ? <span className="sub">The people migration (20261203090000_members.sql) isn’t applied yet.</span> : (
+          <People
+            people={members.map((m) => ({ id: m.id, email: m.email, role: m.role, you: m.id === me.id, lastSignIn: m.last_sign_in_at }))}
+            canEdit={me.role === "owner"} add={peopleAdd} setRole={peopleSetRole} remove={peopleRemove}
+          />
+        )}
       </div>
 
       <div className="card" style={{ padding: "16px 22px", gap: 0 }}>

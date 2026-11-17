@@ -50,7 +50,7 @@ At 860px and narrower (`app/globals.css`, last block): one sticky top bar with t
 
 ## 4. Safety rules for the UI
 
-- **Login required.** `DASHBOARD_PASSWORD` env var. Login sets an HMAC-signed, httpOnly cookie (30 days). If the variable is unset, the dashboard refuses everyone. `proxy.ts` guards pages, and every data function and server action checks the session again. `/api/*` keeps its bearer check and is not affected.
+- **Login required.** Each person signs in with an emailed link and has a role (viewer, approver, owner; see docs/tenancy.md, slice 2). Sign-in sets an HMAC-signed, httpOnly cookie (30 days, `SESSION_SECRET`). If the secret is unset, the dashboard refuses everyone. `proxy.ts` guards pages, and every data function and server action checks the session again. `/api/*` keeps its bearer check and is not affected.
 - **The dashboard never starts anything by itself.** No polling that triggers runs, no auto-run on load, nothing scheduled.
 - **Anything that can spend money or wake an agent is off by default.** Real runs, putting an agent back on the crew, and raising a budget only work when `DASHBOARD_CONTROLS=on`. Until then the buttons show but are disabled with the reason. Taking an agent off duty and turning off the org always work, since they only stop things.
 - Dry runs are allowed: they read real data, write nothing and call no model (existing `dryRun` path). They are not logged, as today.

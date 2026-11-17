@@ -2,6 +2,7 @@ import "server-only";
 // The org chart store (docs/org-chart.md): departments and seats in Supabase. The rules (tree,
 // limits, who reports to whom) are in core/org-rules.ts, which the browser can use too.
 // Callers check the login and that an agent id is one the Control Room knows.
+import { actor } from "@/core/actor";
 import { db } from "@/core/db";
 import { chicagoDate, offsetOn } from "@/core/time";
 import {
@@ -81,7 +82,7 @@ export async function removeDepartment(id: string) {
   const { data: rules } = await db().from("agent_memory").select("id, text").eq("grp", "department").eq("department_id", id).eq("state", "kept");
   for (const r of rules ?? []) {
     await db().from("agent_memory").update({ state: "forgotten", updated_at: new Date().toISOString() }).eq("id", r.id);
-    await db().from("memory_events").insert({ memory_id: r.id, agent_id: null, department_id: id, kind: "forgotten", before: r.text, after: null, by: `zak (control room), ${d.name} removed` });
+    await db().from("memory_events").insert({ memory_id: r.id, agent_id: null, department_id: id, kind: "forgotten", before: r.text, after: null, by: `${actor()}, ${d.name} removed` });
   }
   // deepest first, so no seat is removed while another still sits under it
   const order = [...seats].sort((a, b) => depthOf(o, b) - depthOf(o, a));

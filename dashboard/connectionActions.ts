@@ -11,13 +11,13 @@ import { askFor, closeRequest } from "@/core/connector-requests";
 import { controlsOn } from "./session";
 import { klaviyoLists } from "@/integrations/klaviyo";
 import type { ActionResult } from "./actions";
-import { requireSession } from "./data";
+import { asRole } from "./data";
 
 const fail = (e: unknown): ActionResult => ({ ok: false, text: e instanceof Error ? e.message : String(e) });
 const done = (text: string): ActionResult => { revalidatePath("/", "layout"); return { ok: true, text }; };
 
 export async function mcpDisconnect(id: string): Promise<ActionResult> {
-  await requireSession();
+  const { no } = await asRole("owner"); if (no) return no;
   if (!isMcpId(id)) return { ok: false, text: "Unknown connection." };
   try {
     const r = await disconnectMcp(id);
@@ -27,7 +27,7 @@ export async function mcpDisconnect(id: string): Promise<ActionResult> {
 
 /** Locks a pasted key in the vault, after the service says whose it is. The key is never sent back. */
 export async function mcpSaveKey(id: string, key: string): Promise<ActionResult> {
-  await requireSession();
+  const { no } = await asRole("owner"); if (no) return no;
   if (!isMcpId(id)) return { ok: false, text: "Unknown connection." };
   if (typeof key !== "string" || key.length > 300) return { ok: false, text: "That isn’t a key." };
   try {
@@ -38,7 +38,7 @@ export async function mcpSaveKey(id: string, key: string): Promise<ActionResult>
 
 /** Re-seals every saved sign-in with MCP_SECRET_KEY (after a new key is put in). */
 export async function vaultReseal(): Promise<ActionResult> {
-  await requireSession();
+  const { no } = await asRole("owner"); if (no) return no;
   try {
     const r = await resealAll();
     const bad = r.unreadable.length ? ` ${r.unreadable.join(", ")} couldn’t be unlocked with either key: sign in to ${r.unreadable.length === 1 ? "it" : "them"} again.` : "";
@@ -48,7 +48,7 @@ export async function vaultReseal(): Promise<ActionResult> {
 
 /** The list the Email list size measure counts, checked against Klaviyo's own lists. */
 export async function klaviyoPickList(listId: string): Promise<ActionResult> {
-  await requireSession();
+  const { no } = await asRole("owner"); if (no) return no;
   try {
     const lists = await klaviyoLists();
     const l = lists.find((x) => x.id === String(listId));
@@ -68,12 +68,12 @@ const unknown: ActionResult = { ok: false, text: "Unknown server." };
 
 /** Adds a server by address, all tools off. The text carries its id for the page to open. */
 export async function customAdd(name: string, url: string, auth: string): Promise<ActionResult & { id?: string }> {
-  await requireSession();
+  const { me, no } = await asRole("owner"); if (no) return no;
   if (!controlsOn()) return CONTROLS_OFF;
   try {
     const id = await addCustomServer({ name: String(name ?? ""), url: String(url ?? ""), auth: String(auth ?? "") });
     // adding a server counts as an ask for that service, so the most wanted get built in (never stops the add)
-    await askFor({ name: knownByAddress(String(url))?.name ?? String(name), what: "Added its server by address on Connections.", by: "Zak" }).catch(() => undefined);
+    await askFor({ name: knownByAddress(String(url))?.name ?? String(name), what: "Added its server by address on Connections.", by: me.email }).catch(() => undefined);
     revalidatePath("/", "layout");
     return { ok: true, text: auth === "oauth" ? "Added. Tick the scopes it should ask for, then connect." : "Added. Paste its key to connect.", id };
   } catch (e) { return fail(e); }
@@ -81,7 +81,7 @@ export async function customAdd(name: string, url: string, auth: string): Promis
 
 /** Saves the ticked scopes; the page then goes to the server's own sign-in page. */
 export async function customScopes(id: string, scopes: string[]): Promise<ActionResult> {
-  await requireSession();
+  const { no } = await asRole("owner"); if (no) return no;
   if (!controlsOn()) return CONTROLS_OFF;
   if (!isCustomId(id)) return unknown;
   if (!Array.isArray(scopes) || scopes.length > 30) return { ok: false, text: "Pick fewer scopes." };
@@ -89,7 +89,7 @@ export async function customScopes(id: string, scopes: string[]): Promise<Action
 }
 
 export async function customKey(id: string, key: string): Promise<ActionResult> {
-  await requireSession();
+  const { no } = await asRole("owner"); if (no) return no;
   if (!controlsOn()) return CONTROLS_OFF;
   if (!isCustomId(id)) return unknown;
   if (typeof key !== "string" || key.length > 900) return { ok: false, text: "That isn’t a key." };
@@ -101,7 +101,7 @@ export async function customKey(id: string, key: string): Promise<ActionResult> 
 
 /** Checks the turned-on tools against the server's list now, or (accept) takes the server's tools as they are now. */
 export async function customCheck(id: string, accept: boolean): Promise<ActionResult> {
-  await requireSession();
+  const { no } = await asRole("owner"); if (no) return no;
   if (!isCustomId(id)) return unknown;
   if (accept && !controlsOn()) return CONTROLS_OFF;
   try {
@@ -113,7 +113,7 @@ export async function customCheck(id: string, accept: boolean): Promise<ActionRe
 }
 
 export async function customToolOn(id: string, tool: string, label: string, line: string, pins: Record<string, string>): Promise<ActionResult> {
-  await requireSession();
+  const { no } = await asRole("owner"); if (no) return no;
   if (!controlsOn()) return CONTROLS_OFF;
   if (!isCustomId(id)) return unknown;
   if (typeof tool !== "string" || tool.length > 120 || !pins || typeof pins !== "object") return { ok: false, text: "That isn’t a tool." };
@@ -121,20 +121,21 @@ export async function customToolOn(id: string, tool: string, label: string, line
 }
 
 export async function customToolOff(id: string, tool: string): Promise<ActionResult> {
-  await requireSession();
+  const { no } = await asRole("owner"); if (no) return no;
   if (!isCustomId(id)) return unknown;
   try { await setCustomTool(id, String(tool), null); return done("Off."); } catch (e) { return fail(e); }
 }
 
 export async function customPause(id: string, paused: boolean): Promise<ActionResult> {
-  await requireSession();
+  // pausing a server is a stop, so approvers may; running it again is the owner's
+  const { no } = await asRole(paused ? "approver" : "owner"); if (no) return no;
   if (!isCustomId(id)) return unknown;
   if (!paused && !controlsOn()) return CONTROLS_OFF;
   try { await pauseCustom(id, !!paused); return done(paused ? "Paused for every agent." : "Running again."); } catch (e) { return fail(e); }
 }
 
 export async function customRemove(id: string): Promise<ActionResult> {
-  await requireSession();
+  const { no } = await asRole("owner"); if (no) return no;
   if (!isCustomId(id)) return unknown;
   try {
     const r = await removeCustomServer(id);
@@ -149,14 +150,14 @@ const PROPOSAL_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{1
 
 /** One ask for a built-in connector, in the owner's own words. */
 export async function connectorAsk(name: string, what: string, proposalId: string | null): Promise<ActionResult> {
-  await requireSession();
+  const { me, no } = await asRole("owner"); if (no) return no;
   const pid = typeof proposalId === "string" && PROPOSAL_ID.test(proposalId) ? proposalId : null;
-  try { return done(await askFor({ name: String(name ?? ""), what: String(what ?? ""), by: "Zak", proposalId: pid })); } catch (e) { return fail(e); }
+  try { return done(await askFor({ name: String(name ?? ""), what: String(what ?? ""), by: me.email, proposalId: pid })); } catch (e) { return fail(e); }
 }
 
 /** Closes a request: a built-in connector is ready, or it isn't needed. */
 export async function connectorClose(id: string, why: string): Promise<ActionResult> {
-  await requireSession();
+  const { no } = await asRole("owner"); if (no) return no;
   if (why !== "ready" && why !== "not_needed") return { ok: false, text: "Unknown choice." };
   try { return done(await closeRequest(String(id), why)); } catch (e) { return fail(e); }
 }

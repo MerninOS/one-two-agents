@@ -2,14 +2,18 @@
 // the sealed cookie, trades the code for a token, keeps it encrypted, and returns to Connections.
 import { NextResponse, type NextRequest } from "next/server";
 import { revalidatePath } from "next/cache";
-import { SESSION_COOKIE, validSessionToken } from "@/dashboard/session";
+import { SESSION_COOKIE } from "@/dashboard/session";
+import { memberFromCookie } from "@/dashboard/data";
+import { atLeast } from "@/core/roles";
 import { isMcpId } from "@/core/mcp-rules";
 import { isCustomId } from "@/core/custom-mcp-rules";
 import { PENDING_COOKIE, finishConnect } from "@/integrations/mcp";
 
 export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  if (!validSessionToken(req.cookies.get(SESSION_COOKIE)?.value)) return NextResponse.redirect(new URL("/login", req.url));
+  const me = await memberFromCookie(req.cookies.get(SESSION_COOKIE)?.value);
+  if (!me) return NextResponse.redirect(new URL("/login", req.url));
+  if (!atLeast(me.role, "owner")) return NextResponse.redirect(new URL("/connections", req.url));
   if (!isMcpId(id) && !isCustomId(id)) return NextResponse.redirect(new URL("/connections", req.url));
   const back = new URL(`/connections?${isCustomId(id) ? "s" : "c"}=${encodeURIComponent(id)}`, req.url);
   const q = req.nextUrl.searchParams;
