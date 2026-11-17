@@ -3,7 +3,8 @@
 // Run: npm run check:proposals
 import assert from "node:assert/strict";
 
-import { BOARD_CARD, BRAINS, boardCard, notionPageId, HIRE_STEPS, MAX_HIRE_TOOLS, hireSpec, planProposal, proposalTitle, toolIds, toolInfoOf, type ProposalPlan } from "../core/proposal-rules";
+import { KNOWN_SERVERS, MAX_ASKS_KEPT, REQUEST_CARD, checkServiceName, checkWhat, knownByAddress, knownServer, requestCard, requestCardName, serviceKey, withAsk, type Ask } from "../core/connector-rules";
+import { BRAINS, HIRE_STEPS, MAX_HIRE_TOOLS, hireSpec, planProposal, proposalTitle, toolIds, toolInfoOf, type ProposalPlan } from "../core/proposal-rules";
 import { readSpec } from "../core/agent-spec";
 import { TOOLS } from "../core/tools/catalog";
 import { checkInput } from "../core/tools/types";
@@ -75,18 +76,43 @@ assert.match((t.collect!(input, [{}, {}, {}]) as { problem: string }).problem, /
 assert.ok("problem" in t.collect!({ ...input, tools: "gmail_draft_lead" }, []));
 assert.ok("problem" in checkInput(t.params, { ...hire, why: "See https://evil.example for why" }), "no links");
 
-// a yes on a new tool makes a Build Board card in the board's shape, in Up next for Claude
-const card = boardCard({ what: "Klaviyo  flow revenue by week", why: "Sloane's goal needs it.", asker: "Sloane", dept: "Marketing", date: "November 15, 2026", link: "https://x.test/proposals/p1" });
-assert.equal(card.name, "New tool: Klaviyo flow revenue by week");
-assert.deepEqual(card.sections.map((s) => s.heading), ["Why", "Where things stand today", "What to build", "Rules that apply", "Needs from Zak", "Done when", "Before you start"]);
-assert.match(card.sections[0].lines[0], /^Sloane asked for it for Marketing: Sloane's goal needs it\.$/);
-assert.ok(card.sections[1].lines.includes("Proposal: https://x.test/proposals/p1"));
-assert.ok(!boardCard({ what: "x", why: "y", asker: "Zak", dept: null, date: "d", link: null }).sections[1].lines.some((l) => l.startsWith("Proposal:")));
-assert.ok(boardCard({ what: "a".repeat(200), why: "y", asker: "Zak", dept: null, date: "d", link: null }).name.length <= 100);
-assert.equal(BOARD_CARD.status, "Up next");
-assert.equal(notionPageId("https://www.notion.so/New-tool-Klaviyo-419de33089c1816a8003c34251e73d7a"), "419de33089c1816a8003c34251e73d7a");
-assert.equal(notionPageId("https://www.notion.so/419DE33089C1816A8003C34251E73D7A?pvs=4"), "419de33089c1816a8003c34251e73d7a");
-assert.equal(notionPageId("b_reese"), null);
-assert.equal(notionPageId(null), null);
+// Find a tool (docs/custom-servers.md, slice 3): asks counted per service, known servers only from code
+assert.equal(serviceKey("Post Hog"), "posthog");
+assert.equal(serviceKey("Google Analytics 4"), "googleanalytics4");
+assert.deepEqual(checkServiceName("  Square  "), { name: "Square", key: "square" });
+assert.ok("problem" in checkServiceName(""));
+assert.ok("problem" in checkServiceName("https://evil.example"), "no links in a name");
+assert.ok("problem" in checkServiceName("!!!"));
+assert.ok("problem" in checkServiceName("x".repeat(61)));
+assert.ok("problem" in checkWhat("hi"));
+assert.ok("problem" in checkWhat("read www.evil.example for this"), "no links in what");
+assert.deepEqual(checkWhat("Weekly  sessions\nand drop-off"), { what: "Weekly sessions and drop-off" });
+assert.equal(knownServer("Post Hog")?.url, "https://mcp.posthog.com/mcp");
+assert.equal(knownServer("klaviyo")?.builtIn, "klaviyo");
+assert.equal(knownServer("nope"), null);
+assert.equal(knownServer(null), null);
+assert.equal(knownByAddress("https://mcp.posthog.com/mcp?x=1")?.key, "posthog");
+assert.equal(knownByAddress("https://evil.example/mcp"), null);
+assert.equal(knownByAddress("not a url"), null);
+for (const k of KNOWN_SERVERS) {
+  assert.equal(k.key, serviceKey(k.name), `${k.name}'s key`);
+  if (k.url) { assert.ok(k.url.startsWith("https://"), `${k.name} is https`); assert.ok(!k.builtIn); }
+  else assert.ok(k.builtIn, `${k.name} without an address is built in`);
+}
+assert.equal(new Set(KNOWN_SERVERS.map((k) => k.key)).size, KNOWN_SERVERS.length, "one entry per service");
+const asks = Array.from({ length: 25 }, (_, i) => ({ by: "Zak", what: `ask ${i}`, at: String(i) }));
+const kept = asks.reduce<Ask[]>((a, x) => withAsk(a, x), []);
+assert.equal(kept.length, MAX_ASKS_KEPT);
+assert.equal(kept[0].what, "ask 24", "newest first");
+assert.equal(requestCardName("PostHog", 1), "Connector: PostHog");
+assert.equal(requestCardName("PostHog", 3), "Connector: PostHog (3 asks)");
+const rc = requestCard({ name: "PostHog", ask: { by: "Avery", what: "Weekly sessions", at: "x" }, date: "November 17, 2026", link: "https://x.test/connections/find", known: knownServer("posthog") });
+assert.equal(rc.name, "Connector: PostHog");
+assert.deepEqual(rc.sections.map((s) => s.heading), ["Why", "Where things stand today", "What to build", "Rules that apply", "Done when", "Before you start"]);
+assert.match(rc.sections[0].lines[0], /^Avery asked for PostHog on November 17, 2026: Weekly sessions$/);
+assert.ok(rc.sections[1].lines[0].includes("https://mcp.posthog.com/mcp"));
+assert.ok(rc.sections[1].lines.includes("Requests: https://x.test/connections/find"));
+assert.ok(!requestCard({ name: "Square", ask: { by: "Zak", what: "Sales", at: "x" }, date: "d", link: null, known: null }).sections[1].lines.some((l) => l.startsWith("Requests:")));
+assert.equal(REQUEST_CARD.status, "Backlog");
 
 console.log("proposals: ok");

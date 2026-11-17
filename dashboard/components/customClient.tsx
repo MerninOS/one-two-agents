@@ -10,9 +10,10 @@ import { Modal, Toast, type Confirm } from "./client";
 const input = { width: "100%", minWidth: 0, background: "var(--card)", border: "1px solid var(--bd)", fontSize: 14 } as const;
 
 /** Name, address and how it signs in. The warning is confirmed before anything is saved. */
-export function AddServerForm({ add, warning, controls }: { add: (name: string, url: string, auth: string) => Promise<ActionResult & { id?: string }>; warning: string; controls: boolean }) {
-  const [name, setName] = useState("");
-  const [url, setUrl] = useState("");
+/** `start` fills it in from a server on the known list in code (never from a page or an agent). */
+export function AddServerForm({ add, warning, controls, start: init }: { add: (name: string, url: string, auth: string) => Promise<ActionResult & { id?: string }>; warning: string; controls: boolean; start?: { name: string; url: string } | null }) {
+  const [name, setName] = useState(init?.name ?? "");
+  const [url, setUrl] = useState(init?.url ?? "");
   const [auth, setAuth] = useState<"oauth" | "key">("oauth");
   const [open, setOpen] = useState(false);
   const [toast, setToast] = useState<ActionResult | null>(null);

@@ -6,6 +6,8 @@ import { revalidatePath } from "next/cache";
 import { isMcpId } from "@/core/mcp-rules";
 import { addCustomServer, checkCustomServer, disconnectMcp, pauseCustom, removeCustomServer, resealAll, saveCustomKey, saveCustomScopes, saveMcpKey, saveMcpSetting, setCustomTool } from "@/integrations/mcp";
 import { isCustomId } from "@/core/custom-mcp-rules";
+import { knownByAddress } from "@/core/connector-rules";
+import { askFor, closeRequest } from "@/core/connector-requests";
 import { controlsOn } from "./session";
 import { klaviyoLists } from "@/integrations/klaviyo";
 import type { ActionResult } from "./actions";
@@ -70,6 +72,8 @@ export async function customAdd(name: string, url: string, auth: string): Promis
   if (!controlsOn()) return CONTROLS_OFF;
   try {
     const id = await addCustomServer({ name: String(name ?? ""), url: String(url ?? ""), auth: String(auth ?? "") });
+    // adding a server counts as an ask for that service, so the most wanted get built in (never stops the add)
+    await askFor({ name: knownByAddress(String(url))?.name ?? String(name), what: "Added its server by address on Connections.", by: "Zak" }).catch(() => undefined);
     revalidatePath("/", "layout");
     return { ok: true, text: auth === "oauth" ? "Added. Tick the scopes it should ask for, then connect." : "Added. Paste its key to connect.", id };
   } catch (e) { return fail(e); }
@@ -136,4 +140,23 @@ export async function customRemove(id: string): Promise<ActionResult> {
     const r = await removeCustomServer(id);
     return done(r.revoked ? "Removed, and the server cancelled the sign-in." : `Removed here. ${r.note ?? ""}`.trim());
   } catch (e) { return fail(e); }
+}
+
+// ---- Find a tool (docs/custom-servers.md, slice 3). Asking for a connector and closing a request
+// change no agent and reach no service but One Two's own Build Board, so neither needs Controls on.
+
+const PROPOSAL_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/** One ask for a built-in connector, in the owner's own words. */
+export async function connectorAsk(name: string, what: string, proposalId: string | null): Promise<ActionResult> {
+  await requireSession();
+  const pid = typeof proposalId === "string" && PROPOSAL_ID.test(proposalId) ? proposalId : null;
+  try { return done(await askFor({ name: String(name ?? ""), what: String(what ?? ""), by: "Zak", proposalId: pid })); } catch (e) { return fail(e); }
+}
+
+/** Closes a request: a built-in connector is ready, or it isn't needed. */
+export async function connectorClose(id: string, why: string): Promise<ActionResult> {
+  await requireSession();
+  if (why !== "ready" && why !== "not_needed") return { ok: false, text: "Unknown choice." };
+  try { return done(await closeRequest(String(id), why)); } catch (e) { return fail(e); }
 }

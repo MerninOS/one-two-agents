@@ -2,17 +2,15 @@ import "server-only";
 // Proposals store (docs/company-mode.md, slice 3). A head files proposals at the end of a run (the
 // `propose` report tool); Zak decides each one. Nothing a proposal says happens until his tap, and
 // then only through the app's own paths: a hire is created off duty with no actions (like New
-// agent), a tool grant becomes a draft version that still needs Try it and Go live, a new tool goes
-// on the build list, a retirement takes an agent off duty and opens its seat. Every check runs again
+// agent), a tool grant becomes a draft version that still needs Try it and Go live, a new tool opens
+// Find a tool (use a connection, add a server, or ask for a connector), a retirement takes an agent off duty and opens its seat. Every check runs again
 // at the tap, against the chart and the tool list as they are then.
 import { db } from "@/core/db";
 import { createBuiltAgent, draftOf, listSpecVersions, readSpec, saveSpecVersion } from "@/core/agent-spec";
 import { teach } from "@/core/memory";
 import { addSeat, agentNames, below, headOf, liveAgentIds, loadOrg, removeSeat, seatOf, setHolder, unseat, type Org, type Seat } from "@/core/org";
 import { TOOLS } from "@/core/tools/catalog";
-import { env } from "@/core/env";
-import { h2, li, notionConnected, notionRow, notionUpdateRow, prop } from "@/integrations/notion";
-import { BOARD_CARD, boardCard, notionPageId, hireSpec, planProposal, proposalTitle, toolInfoOf, type ProposalKind, type ProposalPlan } from "@/core/proposal-rules";
+import { hireSpec, planProposal, proposalTitle, toolInfoOf, type ProposalKind, type ProposalPlan } from "@/core/proposal-rules";
 
 export type ProposalState = "pending" | "accepted" | "declined" | "built" | "failed";
 export interface Proposal {
@@ -190,13 +188,9 @@ export async function acceptProposal(id: string, opts: { agentFromBuilder?: stri
       return { text: `Saved as draft v${v} with ${t.label}. Try it, then Go live; what runs today hasn’t changed.`, href: `/build/${p.agentId}` };
     }
     if (p.kind === "new_tool") {
-      const card = await addBoardCard(pr, p, org);
-      if ("url" in card) {
-        await close(id, "accepted", "On the build list, with a card in Up next on the Build Board.", card.url);
-        return { text: "On the build list, with a card in Up next on the Build Board. A tool is code, so it comes as a pull request.", href: "/proposals" };
-      }
-      await close(id, "accepted", `On the build list. No Build Board card: ${card.problem}`);
-      return { text: `On the build list. No Build Board card: ${card.problem}`, href: "/proposals" };
+      // a yes hands out nothing: Zak picks how on Find a tool, where an ask for a connector is counted
+      await close(id, "accepted", "Sent to Find a tool.");
+      return { text: "Pick how on Find a tool: a connection you have, a server you add, or an ask for a connector.", href: `/connections/find?for=${id}` };
     }
     // retire
     if (p.agentId) {
@@ -218,31 +212,6 @@ export async function acceptProposal(id: string, opts: { agentFromBuilder?: stri
   }
 }
 
-/**
- * The Build Board card for a new tool Zak said yes to. Never stops the yes: a missing setting or a
- * Notion error comes back as words for the outcome.
- */
-async function addBoardCard(pr: Proposal, p: Extract<Resolved, { kind: "new_tool" }>, org: Org): Promise<{ url: string } | { problem: string }> {
-  if (!env.notionBuildBoardDb) return { problem: "NOTION_BUILD_BOARD_DB_ID isn't set in Vercel." };
-  if (!(await notionConnected())) return { problem: "Notion isn't connected: paste its key on Connections." };
-  try {
-    const asker = pr.from_agent ? (await agentNames([pr.from_agent]).catch(() => ({} as Record<string, string>)))[pr.from_agent] ?? pr.from_agent
-      : pr.source === "claude" ? "Claude" : "Zak";
-    const c = boardCard({
-      what: p.what, why: pr.why, asker,
-      dept: org.departments.find((d) => d.id === pr.department_id)?.name ?? null,
-      date: new Date().toLocaleDateString("en-US", { timeZone: "America/Chicago", month: "long", day: "numeric", year: "numeric" }),
-      link: env.dashboardUrl ? `${env.dashboardUrl}/proposals/${pr.id}` : null,
-    });
-    const row = await notionRow(env.notionBuildBoardDb, {
-      Name: prop.title(c.name), Status: prop.status(BOARD_CARD.status), Owner: prop.select(BOARD_CARD.owner), Track: prop.select(BOARD_CARD.track),
-    }, c.sections.flatMap((s) => [h2(s.heading), ...s.lines.map(li)]));
-    return { url: row.url };
-  } catch (e) {
-    return { problem: (e instanceof Error ? e.message : String(e)).slice(0, 200) };
-  }
-}
-
 /** Zak's no. With words, they become a 30-day note for the head that proposed it. */
 export async function declineProposal(id: string, reason: string): Promise<string> {
   const pr = await getProposal(id);
@@ -257,17 +226,6 @@ export async function declineProposal(id: string, reason: string): Promise<strin
   }
   await close(id, "declined", words ? `Not now: ${words}` : "Not now.");
   return `Not now.${noted}`;
-}
-
-/** A build-list item (an accepted new tool) is built. */
-export async function markBuilt(id: string): Promise<void> {
-  const pr = await getProposal(id);
-  if (!pr || pr.kind !== "new_tool" || pr.state !== "accepted") throw new Error("That isn't on the build list.");
-  const { error } = await db().from("proposals").update({ state: "built", outcome: "Built.", decided_at: new Date().toISOString() }).eq("id", id);
-  if (error) throw new Error(error.message);
-  // its Build Board card moves to Done too (best effort: the board can be moved by hand)
-  const page = notionPageId(pr.result_ref);
-  if (page && (await notionConnected())) await notionUpdateRow(page, { Status: prop.status("Done") }).catch(() => undefined);
 }
 
 /** Pending proposals per seat, for the org chart: a hire on its seat (or the seat it goes under), a retirement on its seat. */
@@ -323,5 +281,5 @@ export async function proposalChecks(pr: Proposal, org: Org): Promise<Check[]> {
       { ok: !!s && !below(org, s.id).length, text: s && below(org, s.id).length ? "It has seats under it" : "No seats under it" },
     ];
   }
-  return [{ ok: true, text: "A tool is code: a yes puts it on the build list, and it arrives as a pull request" }];
+  return [{ ok: true, text: "A yes hands out nothing: it opens Find a tool, where you pick a connection, add a server, or ask for a connector" }];
 }

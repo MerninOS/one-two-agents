@@ -86,3 +86,48 @@ Only `core/tools/custom.ts` may import `callCustomTool` (lint). No migration.
 5. Tap **See what it finds today** to check it (a tool that needs inputs is tried only during a run).
 6. **Save**, then **Try it**. If the run looks right, tap **Go live**.
 
+
+## Slice 3: Find a tool and connector requests
+
+**Find a tool** (`/connections/find`) is where you go when an agent needs something no connection
+has. It is opened by a yes on a new-tool proposal (`?for=<proposal>`, which fills the proposal's
+words into the ask), by **Find a tool** under the builder's Tools step and under Try it
+(`?agent=<id>`, with a link back to that agent's Tools step), and from Connections. Three ways:
+
+1. **Use a connection you have.** The built-in connections that are set up, with what they read,
+   and your servers that are connected with tools turned on. You still grant on the Tools step.
+2. **Add a server by its address.** A short list of servers we know of (`KNOWN_SERVERS` in
+   `core/connector-rules.ts`), each marked **Not vetted**. **Add** opens Connections with the name
+   and address filled in (`/connections?s=new&known=<key>`); the address is looked up in that list
+   in code, never taken from the link, an agent or a page. The warning and every check still run.
+3. **Ask for a built-in connector.** Service name and what agents should read, your words only
+   (no links). One request per service (`connector_requests`, names compared as lowercase letters
+   and digits), counted, newest 20 asks kept. The first ask adds a Build Board card (Backlog, Owner
+   Claude, Track Agent builder, in the board's card shape); later asks raise the count in the
+   card's title ("Connector: PostHog (3 asks)"). Adding a server by address also counts as an ask
+   for that service (under the known name when the address is on the list).
+
+**Asked for** lists the requests, most asked first. **A built-in connector is ready** (shown when
+the service is a built-in connection in the list) and **Close** close a request and move its card
+to Done; a new ask opens it again. Neither changes any agent, so neither needs Controls on.
+
+Replaced: the Proposals page's **Build list** and **Mark built**, and the Build Board card a yes on
+a new tool used to make (`boardCard`). The one new tool already said yes to (website analytics,
+from Avery) moved to PostHog's request with its card.
+
+Migration `20261201090000_connector_requests.sql` (table, RLS on with no policies, and that one row).
+
+### Finding a tool (click by click)
+
+1. Open **Connections** and tap **Find a tool** in the line under the title (or tap **Find a tool**
+   under an agent's Tools step, or under its Try it result).
+2. If a connection you have covers it, tap it to see its tools, then grant it on the agent's
+   **Tools** step.
+3. If a server on the list fits, tap **Docs** to read about it, then **Add**. On Connections, check
+   the name and address, pick how it signs in, tap **Add server**, read the warning and tap **I trust
+   it, add it**. Then follow slice 1 and 2 above to sign in, turn tools on and grant them.
+4. Otherwise, under **Ask for a built-in connector**, type the service (like Square) and what agents
+   should read from it, and tap **Ask for it**. It shows under **Asked for**, with **Card** opening
+   its Build Board card.
+5. When a built-in connector for it is merged, tap **A built-in connector is ready** on its request
+   (or **Close** if you no longer need it).

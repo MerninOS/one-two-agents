@@ -10,6 +10,7 @@ import { MCP_SERVERS, type McpId } from "@/core/mcp-rules";
 import { MCP_MISSING, VAULT_MISSING, getCustomServer, listCustomServers, mcpLog, mcpStatus, vaultState, type McpLogRow, type McpStatus, type VaultState } from "@/integrations/mcp";
 import { AddServerCard, CustomDetail, CustomTiles, SignInLog } from "@/dashboard/components/CustomServers";
 import { serverOfToolId } from "@/core/custom-mcp-rules";
+import { knownServer } from "@/core/connector-rules";
 import { controlsOn } from "@/dashboard/session";
 import { klaviyoLists } from "@/integrations/klaviyo";
 import { mercuryOrgName } from "@/integrations/mercury";
@@ -202,7 +203,7 @@ function Detail({ c, f, mcp, more, note }: { c: Connection; f: Floor; mcp: McpVi
   );
 }
 
-export default async function Connections({ searchParams }: { searchParams: Promise<{ c?: string; s?: string; problem?: string; connected?: string }> }) {
+export default async function Connections({ searchParams }: { searchParams: Promise<{ c?: string; s?: string; known?: string; problem?: string; connected?: string }> }) {
   const f = await getFloor();
   const sp = await searchParams;
   const pick = sp.c;
@@ -238,7 +239,7 @@ export default async function Connections({ searchParams }: { searchParams: Prom
     <>
       <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
         <h1 className="h1">Connections</h1>
-        <span style={{ fontSize: 13.5 }} className="muted">{ok} of {outside.length} set up. Tap one to see what agents can read, do and hand you there, and who has it. This is shown here and given to an agent in its builder. Secrets are never shown.</span>
+        <span style={{ fontSize: 13.5 }} className="muted">{ok} of {outside.length} set up. Tap one to see what agents can read, do and hand you there, and who has it. This is shown here and given to an agent in its builder. Secrets are never shown. Looking for something else? <Link href="/connections/find">Find a tool</Link>.</span>
       </div>
       <div className="grid2" style={{ gridTemplateColumns: sel || custom || adding ? "minmax(0,0.9fr) minmax(0,1.3fr)" : "minmax(0,1fr)" }}>
         <div className="stack">
@@ -250,7 +251,7 @@ export default async function Connections({ searchParams }: { searchParams: Prom
         </div>
         {sel && <div className="conn-detail"><Detail c={sel} f={f} mcp={mcp} more={more} note={note} /></div>}
         {custom && <div className="conn-detail"><CustomDetail c={custom} status={customStatuses[custom.id] ?? null} log={customLog} controls={controlsOn()} note={note} usedBy={Object.keys(f.grants).filter((a) => f.grants[a].some((t) => serverOfToolId(t) === custom.id)).map((a) => f.agents[a]?.name ?? a)} /></div>}
-        {adding && <div className="conn-detail"><AddServerCard controls={controlsOn()} /></div>}
+        {adding && <div className="conn-detail"><AddServerCard controls={controlsOn()} known={knownServer(sp.known)} /></div>}
       </div>
       <div className="card dark" style={{ gap: 10 }}>
         <span className="row" style={{ gap: 8, fontSize: 15, fontWeight: 600 }}><Icon name="lock" size={15} />Always on, for every agent</span>
