@@ -89,5 +89,18 @@ export default defineConfig([
     files: ["scripts/check-mcp.ts"],
     rules: { "no-restricted-imports": ["error", { paths: [...MERCURY_PATHS, ...NAPI.paths, ...NSRV.paths, ...GAPI.paths, ...GSRV.paths, ...SAPI.paths, ...SSRV.paths, MCPW], patterns: [MERCURY_PATTERN, NAPI.pattern, NSRV.pattern, GAPI.pattern, GSRV.pattern, SAPI.pattern, SSRV.pattern] }] },
   },
+  // Tenancy (docs/tenancy.md): core/db.ts is the one file that makes a Supabase client, so every
+  // query goes through the org-scoped db(). A separate rule, so it doesn't replace the import rules above.
+  {
+    files: ["**/*.{ts,tsx,mjs,js}"],
+    ignores: ["core/db.ts"],
+    rules: {
+      "no-restricted-syntax": ["error",
+        { selector: "ImportDeclaration[source.value=/^@supabase/]", message: "Only core/db.ts makes a Supabase client: use db(), which scopes every query to the current org." },
+        { selector: "ImportExpression[source.value=/^@supabase/]", message: "Only core/db.ts makes a Supabase client: use db(), which scopes every query to the current org." },
+        { selector: "CallExpression[callee.name='require'][arguments.0.value=/^@supabase/]", message: "Only core/db.ts makes a Supabase client: use db(), which scopes every query to the current org." },
+      ],
+    },
+  },
   globalIgnores([".next/**", "out/**", "build/**", "next-env.d.ts", ".schemas/**"]),
 ]);
