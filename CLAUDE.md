@@ -82,6 +82,11 @@ built, so no agent can send, pay or publish.
   expired sign-in pauses until Zak signs in again. See `docs/mcp-everywhere.md`.
 - Every run goes through `withRun` so it is logged in `agent_runs` and respects
   `agents.enabled` and `agents.daily_budget_usd`.
+- Tenancy: every table has `org_id` (an org is a business; One Two is the home org). Every query
+  goes through `db()`, which scopes it to the current org (`core/tenancy.ts`): reads, updates and
+  deletes are filtered by org, inserts are stamped, another org's row is refused. Only `core/db.ts`
+  makes a Supabase client (lint enforces it), and a new table needs `org_id` and a place in
+  `TENANT_TABLES` (`check:tenancy` enforces it). See `docs/tenancy.md`.
 
 ## Checks
 
