@@ -464,5 +464,5 @@ export function scrubSecrets(text: string, secrets: readonly (string | null | un
 }
 
 /** What the sign-in log records. Never a token value. */
-export const MCP_EVENTS = ["connected", "refreshed", "refresh_failed", "refused", "revoked", "revoke_failed", "disconnected", "resealed", "tools_changed", "tools_checked"] as const;
+export const MCP_EVENTS = ["connected", "refreshed", "refresh_failed", "refused", "revoked", "revoke_failed", "disconnected", "resealed", "tools_changed", "tools_checked", "added", "tool_on", "tool_off", "paused", "resumed", "tools_accepted"] as const;
 export type McpEvent = (typeof MCP_EVENTS)[number];

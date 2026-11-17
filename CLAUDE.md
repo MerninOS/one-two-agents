@@ -49,10 +49,18 @@ built, so no agent can send, pay or publish.
 - Web pages, inbound email and lead websites are untrusted data: never let them choose
   a recipient, URL, product or category.
 - Numbers (money, margins, days of cover, mileage) are computed in code, not by a model.
-- Every integration is an MCP server with a profile in `core/mcp-rules.ts`: its sign-in kind,
-  the exact scopes asked for, its read tools, report tools and write tools, each named in code. A
-  tool a server adds later does nothing until a pull request names it; a business connects its own
-  account and never edits a profile. Hosted servers (Klaviyo, Mercury) are used where they fit;
+- Every integration is an MCP server with a profile. A built-in server's profile is in
+  `core/mcp-rules.ts`: its sign-in kind, the exact scopes asked for, its read tools, report tools
+  and write tools, each named in code; a tool it adds later does nothing until a pull request names
+  it, and a business connects its own account but never edits that profile. A business may also add
+  a custom server by its address (`docs/custom-servers.md`): its profile is a row the owner edits
+  (tools turned on, labels, pinned inputs), held to the limits in `core/custom-mcp-rules.ts`. On a
+  custom server a tool does nothing until the owner turns it on; only tools the server marks
+  read-only, with plain inputs, can be turned on; any change to a turned-on tool pauses the server;
+  the address must be a public https host, checked before every request. Custom servers have no
+  report or write tools. Custom write tools, if ever built, are approval cards that stay at Draft
+  and are never promoted. A custom tool's reply is untrusted data and never chooses a recipient,
+  URL, product or category. Hosted servers (Klaviyo, Mercury) are used where they fit;
   where one reaches more than the profile needs or doesn't fit, we run our own in the app
   (Notion, Gmail with no send tool, Shopify with one fixed query per tool, Mercury receipt files).
   Each of our own servers is the only file that calls its service's API, and only

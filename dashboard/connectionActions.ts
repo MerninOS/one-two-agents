@@ -4,7 +4,9 @@
 // tool: that stays a builder step.
 import { revalidatePath } from "next/cache";
 import { isMcpId } from "@/core/mcp-rules";
-import { disconnectMcp, resealAll, saveMcpKey, saveMcpSetting } from "@/integrations/mcp";
+import { addCustomServer, checkCustomServer, disconnectMcp, pauseCustom, removeCustomServer, resealAll, saveCustomKey, saveCustomScopes, saveMcpKey, saveMcpSetting, setCustomTool } from "@/integrations/mcp";
+import { isCustomId } from "@/core/custom-mcp-rules";
+import { controlsOn } from "./session";
 import { klaviyoLists } from "@/integrations/klaviyo";
 import type { ActionResult } from "./actions";
 import { requireSession } from "./data";
@@ -52,5 +54,86 @@ export async function klaviyoPickList(listId: string): Promise<ActionResult> {
     await saveMcpSetting("klaviyo", "emailListId", l.id);
     await saveMcpSetting("klaviyo", "emailListName", l.name);
     return done(`Email list size now counts “${l.name}”.`);
+  } catch (e) { return fail(e); }
+}
+
+// ---- Custom servers (docs/custom-servers.md, slice 1). Adding a server, connecting it and turning a
+// tool on need Controls on; turning a tool off, pausing and removing never do, so the owner can
+// always stop a server. None of these grants a tool to an agent: that stays a builder step.
+
+const CONTROLS_OFF: ActionResult = { ok: false, text: "Controls are off. Set DASHBOARD_CONTROLS=on in Vercel to add or change custom servers." };
+const unknown: ActionResult = { ok: false, text: "Unknown server." };
+
+/** Adds a server by address, all tools off. The text carries its id for the page to open. */
+export async function customAdd(name: string, url: string, auth: string): Promise<ActionResult & { id?: string }> {
+  await requireSession();
+  if (!controlsOn()) return CONTROLS_OFF;
+  try {
+    const id = await addCustomServer({ name: String(name ?? ""), url: String(url ?? ""), auth: String(auth ?? "") });
+    revalidatePath("/", "layout");
+    return { ok: true, text: auth === "oauth" ? "Added. Tick the scopes it should ask for, then connect." : "Added. Paste its key to connect.", id };
+  } catch (e) { return fail(e); }
+}
+
+/** Saves the ticked scopes; the page then goes to the server's own sign-in page. */
+export async function customScopes(id: string, scopes: string[]): Promise<ActionResult> {
+  await requireSession();
+  if (!controlsOn()) return CONTROLS_OFF;
+  if (!isCustomId(id)) return unknown;
+  if (!Array.isArray(scopes) || scopes.length > 30) return { ok: false, text: "Pick fewer scopes." };
+  try { await saveCustomScopes(id, scopes.map(String)); return { ok: true, text: "Saved." }; } catch (e) { return fail(e); }
+}
+
+export async function customKey(id: string, key: string): Promise<ActionResult> {
+  await requireSession();
+  if (!controlsOn()) return CONTROLS_OFF;
+  if (!isCustomId(id)) return unknown;
+  if (typeof key !== "string" || key.length > 900) return { ok: false, text: "That isn’t a key." };
+  try {
+    const r = await saveCustomKey(id, key);
+    return done(`Key locked in the vault. The server lists ${r.tools} tool${r.tools === 1 ? "" : "s"}, all off.`);
+  } catch (e) { return fail(e); }
+}
+
+/** Checks the turned-on tools against the server's list now, or (accept) takes the server's tools as they are now. */
+export async function customCheck(id: string, accept: boolean): Promise<ActionResult> {
+  await requireSession();
+  if (!isCustomId(id)) return unknown;
+  if (accept && !controlsOn()) return CONTROLS_OFF;
+  try {
+    const r = await checkCustomServer(id, !!accept);
+    if (!r.ok) return { ok: false, text: `Paused: ${r.note}. Look at the change below, then accept it if it’s fine.` };
+    revalidatePath("/", "layout");
+    return { ok: true, text: accept ? `Accepted.${r.turnedOff.length ? ` Turned off ${r.turnedOff.join(", ")}: gone, or no longer read-only.` : ""}` : `Tools checked: the turned-on ones are as you accepted them. ${r.tools} listed.` };
+  } catch (e) { return fail(e); }
+}
+
+export async function customToolOn(id: string, tool: string, label: string, line: string, pins: Record<string, string>): Promise<ActionResult> {
+  await requireSession();
+  if (!controlsOn()) return CONTROLS_OFF;
+  if (!isCustomId(id)) return unknown;
+  if (typeof tool !== "string" || tool.length > 120 || !pins || typeof pins !== "object") return { ok: false, text: "That isn’t a tool." };
+  try { await setCustomTool(id, tool, { label: String(label ?? ""), line: String(line ?? ""), pins }); return done("On. No agent can use it yet: giving custom tools to agents comes in the next update."); } catch (e) { return fail(e); }
+}
+
+export async function customToolOff(id: string, tool: string): Promise<ActionResult> {
+  await requireSession();
+  if (!isCustomId(id)) return unknown;
+  try { await setCustomTool(id, String(tool), null); return done("Off."); } catch (e) { return fail(e); }
+}
+
+export async function customPause(id: string, paused: boolean): Promise<ActionResult> {
+  await requireSession();
+  if (!isCustomId(id)) return unknown;
+  if (!paused && !controlsOn()) return CONTROLS_OFF;
+  try { await pauseCustom(id, !!paused); return done(paused ? "Paused for every agent." : "Running again."); } catch (e) { return fail(e); }
+}
+
+export async function customRemove(id: string): Promise<ActionResult> {
+  await requireSession();
+  if (!isCustomId(id)) return unknown;
+  try {
+    const r = await removeCustomServer(id);
+    return done(r.revoked ? "Removed, and the server cancelled the sign-in." : `Removed here. ${r.note ?? ""}`.trim());
   } catch (e) { return fail(e); }
 }

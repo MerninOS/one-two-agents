@@ -7,7 +7,9 @@ import { Icon } from "@/dashboard/components/Icon";
 import { Avatar, LockList } from "@/dashboard/components/ui";
 import { ActionButton, KeyForm } from "@/dashboard/components/client";
 import { MCP_SERVERS, type McpId } from "@/core/mcp-rules";
-import { MCP_MISSING, VAULT_MISSING, mcpLog, mcpStatus, vaultState, type McpLogRow, type McpStatus, type VaultState } from "@/integrations/mcp";
+import { MCP_MISSING, VAULT_MISSING, getCustomServer, listCustomServers, mcpLog, mcpStatus, vaultState, type McpLogRow, type McpStatus, type VaultState } from "@/integrations/mcp";
+import { AddServerCard, CustomDetail, CustomTiles, SignInLog } from "@/dashboard/components/CustomServers";
+import { controlsOn } from "@/dashboard/session";
 import { klaviyoLists } from "@/integrations/klaviyo";
 import { mercuryOrgName } from "@/integrations/mercury";
 import { klaviyoPickList, mcpDisconnect, mcpSaveKey, vaultReseal } from "@/dashboard/connectionActions";
@@ -16,11 +18,6 @@ import { when } from "@/dashboard/format";
 /** An MCP connection's state for its panel: signed in or not, and Klaviyo's lists to pick the counted one from. */
 interface McpView { status: McpStatus | null; lists: { id: string; name: string }[] | null; listsProblem: string | null; log: McpLogRow[]; vault: VaultState | null; org?: string | null; orgProblem?: string | null }
 
-const EVENT_LABEL: Record<McpLogRow["event"], string> = {
-  connected: "Connected", refreshed: "Sign-in renewed", refresh_failed: "Renewal failed, paused", refused: "Server refused the sign-in, paused",
-  revoked: "Cancelled at the server", revoke_failed: "Cancel not confirmed by the server", disconnected: "Disconnected", resealed: "Re-locked with the current key",
-  tools_changed: "Tools changed, paused", tools_checked: "Tools checked",
-};
 
 /** The vault's state: is MCP_SECRET_KEY set, and is every sign-in locked with it. */
 function VaultNote({ v }: { v: VaultState | null }) {
@@ -111,17 +108,7 @@ function McpPanel({ c: base, id, v }: { c: Connection; id: McpId; v: McpView }) 
           <span className="muted" style={{ fontSize: 12 }}>{srv.signInHint} {c.name} is asked whose key it is before it is kept.</span>
         </span>
       )}
-      {v.log.length > 0 && (
-        <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-          <span style={{ fontSize: 13, fontWeight: 700 }}>Sign-in log</span>
-          {v.log.map((e, i) => (
-            <span key={i} className="row" style={{ gap: 8, fontSize: 12.5 }}>
-              <span className="muted" style={{ flex: "none", minWidth: 92 }}>{when(e.at)}</span>
-              <span className="ink2">{EVENT_LABEL[e.event] ?? e.event}{e.detail && e.event !== "resealed" ? `: ${e.detail}` : ""}</span>
-            </span>
-          ))}
-        </div>
-      )}
+      <SignInLog log={v.log} />
     </div>
   );
 }
@@ -214,12 +201,18 @@ function Detail({ c, f, mcp, more, note }: { c: Connection; f: Floor; mcp: McpVi
   );
 }
 
-export default async function Connections({ searchParams }: { searchParams: Promise<{ c?: string; problem?: string; connected?: string }> }) {
+export default async function Connections({ searchParams }: { searchParams: Promise<{ c?: string; s?: string; problem?: string; connected?: string }> }) {
   const f = await getFloor();
   const sp = await searchParams;
   const pick = sp.c;
-  const sel = pick && pick in CONN_BY_ID ? CONN_BY_ID[pick as ConnId] : null;
-  const note = sp.problem ? { ok: false, text: sp.problem.slice(0, 300) } : sp.connected ? { ok: true, text: `Connected. Give an agent its read tools in the builder${sel?.mcp === "klaviyo" ? ", and pick the list Email list size counts below" : ""}.` } : null;
+  // a custom server (s=<id>) or the add form (s=new) takes the detail pane instead of a built-in connection
+  const customs = await listCustomServers();
+  const custom = sp.s && sp.s !== "new" ? await getCustomServer(sp.s).catch(() => null) : null;
+  const adding = sp.s === "new";
+  const sel = !custom && !adding && pick && pick in CONN_BY_ID ? CONN_BY_ID[pick as ConnId] : null;
+  const customStatuses = Object.fromEntries(await Promise.all(customs.map(async (c) => [c.id, await mcpStatus(c.id)] as const)));
+  const customLog = custom ? await mcpLog(custom.id, 10) : [];
+  const note = sp.problem ? { ok: false, text: sp.problem.slice(0, 300) } : sp.connected ? { ok: true, text: custom ? "Connected. Its tools are listed below, all off." : `Connected. Give an agent its read tools in the builder${sel?.mcp === "klaviyo" ? ", and pick the list Email list size counts below" : ""}.` } : null;
   let mcp: McpView | null = null;
   if (sel?.mcp) {
     const [status, log, vault] = await Promise.all([mcpStatus(sel.mcp), mcpLog(sel.mcp), vaultState()]);
@@ -246,13 +239,17 @@ export default async function Connections({ searchParams }: { searchParams: Prom
         <h1 className="h1">Connections</h1>
         <span style={{ fontSize: 13.5 }} className="muted">{ok} of {outside.length} set up. Tap one to see what agents can read, do and hand you there, and who has it. This is shown here and given to an agent in its builder. Secrets are never shown.</span>
       </div>
-      <div className="grid2" style={{ gridTemplateColumns: sel ? "minmax(0,0.9fr) minmax(0,1.3fr)" : "minmax(0,1fr)" }}>
+      <div className="grid2" style={{ gridTemplateColumns: sel || custom || adding ? "minmax(0,0.9fr) minmax(0,1.3fr)" : "minmax(0,1fr)" }}>
         <div className="stack">
           {grid(outside)}
           <span className="side-label" style={{ padding: "4px 2px 0" }}>Built in</span>
           {grid(CONNECTIONS.filter((c) => c.builtIn))}
+          <span className="side-label" style={{ padding: "4px 2px 0" }}>Your servers</span>
+          <CustomTiles servers={customs} statuses={customStatuses} sel={custom?.id ?? (adding ? "new" : null)} />
         </div>
         {sel && <div className="conn-detail"><Detail c={sel} f={f} mcp={mcp} more={more} note={note} /></div>}
+        {custom && <div className="conn-detail"><CustomDetail c={custom} status={customStatuses[custom.id] ?? null} log={customLog} controls={controlsOn()} note={note} /></div>}
+        {adding && <div className="conn-detail"><AddServerCard controls={controlsOn()} /></div>}
       </div>
       <div className="card dark" style={{ gap: 10 }}>
         <span className="row" style={{ gap: 8, fontSize: 15, fontWeight: 600 }}><Icon name="lock" size={15} />Always on, for every agent</span>
