@@ -2,6 +2,7 @@ import "server-only";
 // Run plumbing shared by every agent: the run log, the enabled flag, the daily budget and
 // department budget checks, and the cron bearer check.
 import { db } from "@/core/db";
+import { agentSpend } from "@/core/usage";
 import { env } from "@/core/env";
 import { agentDepartment, claimBudgetAlert, deptBudgetBlock } from "@/core/org";
 import { emailZak, hasEmail } from "@/integrations/email";
@@ -36,8 +37,7 @@ async function blockedReason(agentId: string, trigger: string) {
   if (!agent) return "Agent is not in the agents table.";
   if (!agent.enabled && trigger !== "preview") return "Agent is disabled.";
   const since = new Date(); since.setUTCHours(0, 0, 0, 0);
-  const { data: runs } = await db().from("agent_runs").select("cost_usd").eq("agent_id", agentId).gte("started_at", since.toISOString());
-  const spent = (runs ?? []).reduce((a, r) => a + Number(r.cost_usd), 0);
+  const spent = await agentSpend(agentId, since.toISOString());
   if (spent >= Number(agent.daily_budget_usd)) return `Daily budget of $${agent.daily_budget_usd} reached ($${spent.toFixed(2)} spent).`;
   return deptBlocked(agentId);
 }
