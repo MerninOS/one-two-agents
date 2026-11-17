@@ -3,7 +3,7 @@
   "framework": "nextjs",
   "schedules": {
     "dispatch": {
-      "schedule": "*/15 * * * *",
+      "schedule": "* * * * *",
       "timezone": "America/Chicago",
       "path": "/api/dispatch",
       "requestMethod": "GET"

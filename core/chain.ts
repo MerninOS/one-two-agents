@@ -1,64 +1,73 @@
 import "server-only";
-// Running chains (core/flow.ts): starting a chain's first step, and going on to the next step
-// when a run ends. Each step is its own request to /api/agents/<id>, signed with CRON_SECRET,
-// so every run gets its own time limit and goes through withRun like any other. The request
-// only names a chain and a step of the SAVED flow; the route checks that the agent matches, so
+// Running chains (core/flow.ts): each step is a job (core/jobs.ts, docs/tenancy.md slice 3), run by
+// a worker request as the job's org, with its own time limit and through withRun like any other run.
+// A job only names a chain and a step of the SAVED flow; the worker reads the flow for the agent, so
 // nothing outside the flow (an inbound email, a web page, a run's output) can choose what runs.
+import { loadCrew, resolveAgent } from "@/agents/registry";
 import { db } from "@/core/db";
-import { env } from "@/core/env";
-import { afterStep, type Chain, type Ended } from "@/core/flow";
+import { afterStep, loadFlow, type Chain, type Ended } from "@/core/flow";
+import { chainDedupe, chainPayload, type ChainCtx } from "@/core/job-rules";
+import { enqueue, kick } from "@/core/jobs";
 import { orgOn } from "@/core/org-switch";
+import { withRun } from "@/core/runs";
 
-export interface ChainCtx {
-  chainId: string;
-  key: string;
-  step: number;
-  /** The run of the step before, for the hand-off and the replay. */
-  parent?: string;
-  /** Started with the Run chain button: later steps go on even while the chain is off. */
-  manual?: boolean;
-}
-
-const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-
-/** The chain part of a step request's query string, checked; null when there is none or it is malformed. */
-export function readCtx(url: URL): ChainCtx | null {
-  const chainId = url.searchParams.get("chain") ?? "", key = url.searchParams.get("key") ?? "", step = Number(url.searchParams.get("step"));
-  const parent = url.searchParams.get("parent") ?? undefined;
-  if (!UUID.test(chainId) || !/^[a-z0-9_-]{1,40}$/.test(key) || !Number.isInteger(step) || step < 0 || step > 9) return null;
-  if (parent !== undefined && !UUID.test(parent)) return null;
-  return { chainId, key, step, parent, manual: url.searchParams.get("manual") === "1" };
-}
+export type { ChainCtx } from "@/core/job-rules";
 
 /**
- * Starts one step: a signed request to the agent's own route. Resolves when that run has ended
- * (the route answers after withRun), so callers wrap it in after().
+ * Starts one step: enqueues it as a job of the current org and, unless it waits for a time,
+ * kicks a worker for it. Resolves in seconds; the run itself happens in the worker.
  */
-export async function startStep(origin: string, c: Chain, ctx: ChainCtx): Promise<void> {
-  const agent = c.steps[ctx.step]?.agent;
-  if (!agent || !env.cronSecret) return;
-  const q = new URLSearchParams({ trigger: "chain", chain: ctx.chainId, key: ctx.key, step: String(ctx.step), ...(ctx.parent ? { parent: ctx.parent } : {}), ...(ctx.manual ? { manual: "1" } : {}) });
-  try {
-    const res = await fetch(`${origin}/api/agents/${agent}?${q}`, { headers: { authorization: `Bearer ${env.cronSecret}` }, cache: "no-store" });
-    if (!res.ok) console.error(`[chain ${ctx.key}] step ${ctx.step + 1} (${agent}) answered ${res.status}`);
-  } catch (e) { console.error(`[chain ${ctx.key}] step ${ctx.step + 1} (${agent}) could not start`, e); }
+export async function startStep(origin: string, c: Chain, ctx: ChainCtx, runAfter?: number): Promise<void> {
+  if (!c.steps[ctx.step]) return;
+  const id = await enqueue("chain_step", chainPayload(ctx), chainDedupe(ctx), runAfter);
+  if (id && !runAfter) await kick(origin, id);
 }
 
 /**
- * After a chain run ends: start the next step now, park it until its "not before" time (the
- * dispatcher picks it up), or stop. Returns what happened, in words, for the log.
+ * After a chain run ends: start the next step now, enqueue it for its "not before" time (the
+ * scheduler kicks it then), or stop. Returns what happened, in words, for the log.
  */
 export async function continueChain(origin: string, c: Chain, ctx: ChainCtx, runId: string, ended: Ended): Promise<string> {
   const next = afterStep(c, ctx.step, ended);
   if (!next.go) return next.why;
   const nctx: ChainCtx = { chainId: ctx.chainId, key: ctx.key, step: next.step, parent: runId, manual: ctx.manual };
-  if (next.at) {
-    const { error } = await db().from("chain_waits").insert({ chain_id: ctx.chainId, chain_key: ctx.key, step: next.step, parent_run_id: runId, manual: !!ctx.manual, due_at: new Date(next.at).toISOString() });
-    if (error && error.code !== "23505") throw new Error(error.message);
-    return `Step ${next.step + 1} waits until ${new Date(next.at).toISOString()}.`;
+  await startStep(origin, c, nctx, next.at ?? undefined);
+  return next.at ? `Step ${next.step + 1} waits until ${new Date(next.at).toISOString()}.` : `Step ${next.step + 1} started.`;
+}
+
+/**
+ * Runs one chain step for the worker, as the current org. The chain and agent come from the saved
+ * flow. A chain that is off, or any chain while the org is off, runs only when it was started with
+ * the Run chain button. Returns what happened, and the run when there was one.
+ */
+export async function runChainStep(origin: string, ctx: ChainCtx): Promise<{ outcome: string; runId?: string; failed?: boolean }> {
+  const flow = await loadFlow(await loadCrew());
+  const c = flow.flow.chains.find((x) => x.key === ctx.key);
+  const step = c?.steps[ctx.step];
+  if (!c || !step) return { outcome: "Skipped: that step isn't in the saved crew flow." };
+  if (!ctx.manual && !c.on) return { outcome: `Skipped: the ${c.name} chain is off.` };
+  if (!ctx.manual && !(await orgOn())) return { outcome: "Skipped: the org is off." };
+  const found = await resolveAgent(step.agent);
+  if (!found) return { outcome: `Skipped: ${step.agent} isn't an agent.` };
+  // a manual-only agent runs in a chain only when Zak pressed Run chain
+  if (found.manualOnly && !ctx.manual) return { outcome: "Skipped: this agent runs only by hand; start its chain with Run chain." };
+  const handoff = step.passAlong ? await handoffFrom(ctx.parent) : null;
+  const log = (w: string) => console.log(`[chain ${c.key}] ${w}`);
+  try {
+    const res = await withRun(found.id, "chain", (runId, memory) => found.job({ runId, memory, handoff }), { chain: { chainId: ctx.chainId, key: ctx.key, step: ctx.step, parent: ctx.parent } });
+    const then = await continueChain(origin, c, ctx, res.runId, { status: res.status, metrics: res.metrics }).catch((e) => `The next step couldn't start: ${e instanceof Error ? e.message : e}`);
+    log(then);
+    return { outcome: `Run ${res.status}. ${then}`, runId: res.runId };
+  } catch (e) {
+    const why = e instanceof Error ? e.message : String(e);
+    console.error(`[chain ${c.key}] step ${ctx.step + 1}`, why);
+    // a failed step can still lead somewhere (a step with when "failed" or "any")
+    const { data } = await db().from("agent_runs").select("id").eq("chain_id", ctx.chainId).eq("chain_step", ctx.step).order("started_at", { ascending: false }).limit(1).maybeSingle();
+    let then = "";
+    if (data) then = await continueChain(origin, c, ctx, data.id as string, { status: "failed" }).catch((x) => `The next step couldn't start: ${x instanceof Error ? x.message : x}`);
+    if (then) log(then);
+    return { outcome: `Run failed: ${why} ${then}`.trim(), runId: data?.id as string | undefined, failed: true };
   }
-  await startStep(origin, c, nctx);
-  return `Step ${next.step + 1} started.`;
 }
 
 /** Claims a scheduled firing; false when another call already started it. */
@@ -67,18 +76,6 @@ export async function claimFiring(key: string, at: number, chainId: string): Pro
   if (!error) return true;
   if (error.code === "23505") return false;
   throw new Error(error.message);
-}
-
-/** Waiting steps that are due, each claimed so only one call starts it. */
-export async function claimDueWaits(now = Date.now()): Promise<{ chainId: string; key: string; step: number; parent: string | null; manual: boolean }[]> {
-  const { data, error } = await db().from("chain_waits").select("id, chain_id, chain_key, step, parent_run_id, manual").is("started_at", null).lte("due_at", new Date(now).toISOString()).limit(20);
-  if (error) throw new Error(error.message);
-  const out = [];
-  for (const w of data ?? []) {
-    const { data: got } = await db().from("chain_waits").update({ started_at: new Date().toISOString() }).eq("id", w.id).is("started_at", null).select("id").maybeSingle();
-    if (got) out.push({ chainId: w.chain_id as string, key: w.chain_key as string, step: w.step as number, parent: (w.parent_run_id as string | null) ?? null, manual: !!w.manual });
-  }
-  return out;
 }
 
 /** The run before, handed to the next agent as facts: who it was, how it ended, its summary and numbers. */

@@ -88,7 +88,9 @@ built, so no agent can send, pay or publish.
   makes a Supabase client (lint enforces it), and a new table needs `org_id` and a place in
   `TENANT_TABLES` and an `org_rows` policy (`check:tenancy` enforces it); with the database lock on,
   tables are read with a token for the current org, so the database refuses other orgs' rows. People sign in as themselves and every server
-  action checks the member's role first with `asRole` (`check:roles` enforces it). See `docs/tenancy.md`.
+  action checks the member's role first with `asRole` (`check:roles` enforces it). Work that runs on
+  its own is a job (`core/jobs.ts`), run by a worker (`/api/jobs`) as the job's org; only the
+  scheduler reads across orgs, and only their ids (`allOrgIds`). See `docs/tenancy.md`.
 
 ## Checks
 
