@@ -32,7 +32,7 @@ assert.deepEqual(deptNamed(undefined, reach.departments), { id: null });
 assert.ok("problem" in deptNamed("Legal", reach.departments));
 
 // the prompt: earlier turns (at most HISTORY_TURNS), then the new message
-const hist = Array.from({ length: 14 }, (_, i) => ({ role: (i % 2 ? "avery" : "zak") as "zak" | "avery", text: `line ${i}` }));
+const hist = Array.from({ length: 14 }, (_, i) => ({ role: (i % 2 ? "avery" : "owner") as "owner" | "avery", text: `line ${i}` }));
 const p = chatPrompt(hist, "How's Sales?", "Sunday, Nov 15, 2026-11-15");
 assert.match(p, /Their new message:\nHow's Sales\?/);
 assert.ok(!p.includes("line 3"), "older turns are dropped");

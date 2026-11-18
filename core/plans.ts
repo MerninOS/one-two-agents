@@ -70,7 +70,7 @@ export async function savePlan(headId: string, runId: string | null, summary: st
     department_id: r.deptId, head_agent: headId, week_of: week, summary: clip(summary, 2000) || null, items, run_id: runId, updated_at: new Date().toISOString(),
   }, { onConflict: "department_id,week_of" });
   if (error) throw new Error(missing(error.message));
-  const jobs = items.filter((i) => i.kind === "zak").length;
+  const jobs = items.filter((i) => i.kind === "owner").length;
   return `plan for the week of ${week}: ${items.length} line${items.length === 1 ? "" : "s"}, ${focused} focus note${focused === 1 ? "" : "s"}, ${jobs} job${jobs === 1 ? "" : "s"} for the owner${dropped.length ? `; left out: ${dropped.join("; ")}` : ""}`;
 }
 
@@ -99,7 +99,7 @@ export async function setJobDone(planId: string, n: number, done: boolean): Prom
   const { data, error } = await db().from("plans").select("items").eq("id", planId).maybeSingle();
   if (error || !data) throw new Error("That plan is gone.");
   const items = (data.items ?? []) as PlanItem[];
-  const it = items.find((i) => i.n === n && i.kind === "zak");
+  const it = items.find((i) => i.n === n && i.kind === "owner");
   if (!it) throw new Error("That job isn't on the plan.");
   if (done) it.doneAt = new Date().toISOString(); else delete it.doneAt;
   const { error: e2 } = await db().from("plans").update({ items, updated_at: new Date().toISOString() }).eq("id", planId);
@@ -122,9 +122,9 @@ export async function weekView(agentId: string) {
         : "This week's plan exists: review it. Hand in no lines; your result is the review of how your team did against the plan.",
       team: r.team.map((t) => t.name),
       openSeats: r.openSeats.map((s) => s.title),
-      plan: plan ? { words: plan.summary, lines: plan.items.map((i) => ({ title: i.title, who: i.who, words: i.words, done: i.kind === "zak" ? !!i.doneAt : undefined })), review: plan.review } : null,
+      plan: plan ? { words: plan.summary, lines: plan.items.map((i) => ({ title: i.title, who: i.who, words: i.words, done: i.kind === "owner" ? !!i.doneAt : undefined })), review: plan.review } : null,
     },
-    numbers: { plan_lines: plan?.items.length ?? 0, jobs_for_zak_open: plan ? openJobs(plan.items).length : 0 },
+    numbers: { plan_lines: plan?.items.length ?? 0, jobs_for_owner_open: plan ? openJobs(plan.items).length : 0 },
   };
 }
 

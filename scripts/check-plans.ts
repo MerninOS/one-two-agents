@@ -28,8 +28,8 @@ assert.match(no({ title: "Call (512) 555-0101", who: "the owner", words: "Call t
 
 // who: the owner, a teammate under the head, or an open seat in its department; nobody else
 const reach = { team: [{ id: "wholesale_hunter", name: "Rowan" }], openSeats: [{ id: "s-fu", title: "Follow-ups" }] };
-assert.deepEqual(resolveWho("the owner", reach), { kind: "zak" });
-assert.deepEqual(resolveWho("you", reach), { kind: "zak" });
+assert.deepEqual(resolveWho("the owner", reach), { kind: "owner" });
+assert.deepEqual(resolveWho("you", reach), { kind: "owner" });
 assert.deepEqual(resolveWho("rowan", reach), { kind: "agent", agentId: "wholesale_hunter", name: "Rowan" });
 assert.deepEqual(resolveWho("follow-ups", reach), { kind: "seat", seatId: "s-fu", title: "Follow-ups" });
 assert.ok("problem" in resolveWho("Quinn", reach), "an agent in another department");
@@ -44,7 +44,7 @@ const lines = [
   { title: "Quinn's job", who: "Quinn", words: "Not on this team." },
 ];
 const { items, dropped } = planItems(lines, reach);
-assert.deepEqual(items.map((i) => [i.n, i.kind, i.who]), [[1, "agent", "Rowan"], [2, "seat", "Follow-ups"], [3, "zak", "You"]]);
+assert.deepEqual(items.map((i) => [i.n, i.kind, i.who]), [[1, "agent", "Rowan"], [2, "seat", "Follow-ups"], [3, "owner", "You"]]);
 assert.equal(dropped.length, 2);
 assert.match(dropped.join(" "), /already has a focus/);
 assert.match(dropped.join(" "), /Quinn isn't a teammate/);

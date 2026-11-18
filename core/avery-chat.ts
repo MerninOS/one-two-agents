@@ -28,7 +28,7 @@ import { weekOf } from "@/core/plan-rules";
 import { MAX_FILED, MAX_REPLY, MAX_RULES, chatPrompt, deptNamed, inOwnWords, resolveRuleWho, savedLines, type ChatLine, type ChatReach } from "@/core/chat-rules";
 
 export const CHAT_MISSING = "The chat table isn’t in Supabase yet: apply the migration 20261124090000_avery_chat.sql. Until then Avery answers but the conversation isn’t kept.";
-export interface ChatRow { id: string; role: "zak" | "avery"; text: string; run_id: string | null; notes: string[]; created_at: string }
+export interface ChatRow { id: string; role: "owner" | "avery"; text: string; run_id: string | null; notes: string[]; created_at: string }
 
 /** The latest messages, oldest first. Null when the table isn't there. */
 export async function chatHistory(limit = 30): Promise<ChatRow[] | null> {
@@ -41,11 +41,11 @@ export async function chatHistory(limit = 30): Promise<ChatRow[] | null> {
 export async function askedIn(runId: string): Promise<string | null> {
   const { data: reply } = await db().from("avery_chat").select("created_at").eq("run_id", runId).eq("role", "avery").maybeSingle();
   if (!reply) return null;
-  const { data } = await db().from("avery_chat").select("text").eq("role", "zak").lt("created_at", reply.created_at).order("created_at", { ascending: false }).limit(1).maybeSingle();
+  const { data } = await db().from("avery_chat").select("text").eq("role", "owner").lt("created_at", reply.created_at).order("created_at", { ascending: false }).limit(1).maybeSingle();
   return (data?.text as string | undefined) ?? null;
 }
 
-async function keep(row: { role: "zak" | "avery"; text: string; run_id?: string | null; notes?: string[] }): Promise<boolean> {
+async function keep(row: { role: "owner" | "avery"; text: string; run_id?: string | null; notes?: string[] }): Promise<boolean> {
   const { error } = await db().from("avery_chat").insert({ role: row.role, text: row.text.slice(0, 4000), run_id: row.run_id ?? null, notes: row.notes ?? [] });
   return !error;
 }
@@ -92,11 +92,11 @@ function crewNowTool(org: Org): ToolDef {
         const p = (plans.data ?? []).find((x) => x.department_id === deptId);
         if (!p) return null;
         const items = (Array.isArray(p.items) ? p.items : []) as { title: string; who: string; kind: string; doneAt?: string }[];
-        return { words: p.summary, lines: items.map((i) => ({ job: i.title, who: i.who, ...(i.kind === "zak" ? { done: !!i.doneAt } : {}) })), review: p.review };
+        return { words: p.summary, lines: items.map((i) => ({ job: i.title, who: i.who, ...(i.kind === "owner" ? { done: !!i.doneAt } : {}) })), review: p.review };
       };
       const departments = org.departments.map((d) => ({
         department: d.name,
-        seats: org.seats.filter((s) => s.departmentId === d.id).map((s) => ({ seat: s.title, head: s.parentId == null, holder: s.holder === "agent" ? who(s.agentId) : s.holder === "zak" ? "a person" : "open" })),
+        seats: org.seats.filter((s) => s.departmentId === d.id).map((s) => ({ seat: s.title, head: s.parentId == null, holder: s.holder === "agent" ? who(s.agentId) : s.holder === "owner" ? "a person" : "open" })),
         planThisWeek: planOf(d.id),
       }));
       const loose = ids.filter((id) => !seatOf(org, id)).map((id) => who(id));
@@ -185,7 +185,7 @@ export async function askAvery(message: string): Promise<ChatAnswer> {
   if ("problem" in door) return { ok: false, reply: door.problem, notes: [], runId: null, costUsd: 0, kept: false };
   const { org, agentId, spec: base } = door;
   const history = (await chatHistory(12)) ?? [];
-  const kept = await keep({ role: "zak", text: message });
+  const kept = await keep({ role: "owner", text: message });
   const live = await liveAgentIds();
   const names = await agentNames([...live]);
   const reach: ChatReach = { agents: [...live].map((id) => ({ id, name: names[id] ?? id })), departments: org.departments.map((d) => ({ id: d.id, name: d.name })) };

@@ -13,7 +13,7 @@ export const MAX_PLAN_LINES = 8;
 export const FOCUS_DAYS = 7;
 export const MAX_FOCUS = 280;
 
-export type LineKind = "agent" | "seat" | "zak";
+export type LineKind = "agent" | "seat" | "owner";
 export interface PlanItem {
   n: number;
   title: string;
@@ -57,8 +57,8 @@ export function checkLine(input: Record<string, unknown>): { line: { title: stri
 export interface Reach { team: { id: string; name: string }[]; openSeats: { id: string; title: string }[] }
 
 /** Who a line names, matched against the head's team and its department's open seats. */
-export function resolveWho(who: string, reach: Reach): { kind: "zak" } | { kind: "agent"; agentId: string; name: string } | { kind: "seat"; seatId: string; title: string } | { problem: string } {
-  if (OWNER.test(who.trim())) return { kind: "zak" };
+export function resolveWho(who: string, reach: Reach): { kind: "owner" } | { kind: "agent"; agentId: string; name: string } | { kind: "seat"; seatId: string; title: string } | { problem: string } {
+  if (OWNER.test(who.trim())) return { kind: "owner" };
   const a = reach.team.find((t) => same(t.name, who) || same(t.id, who));
   if (a) return { kind: "agent", agentId: a.id, name: a.name };
   const s = reach.openSeats.find((x) => same(x.title, who));
@@ -79,7 +79,7 @@ export function planItems(lines: { title: string; who: string; words: string }[]
     const w = resolveWho(l.who, reach);
     if ("problem" in w) { dropped.push(`${l.title}: ${w.problem}`); continue; }
     const base = { n: items.length + 1, title: l.title, words: l.words };
-    if (w.kind === "zak") items.push({ ...base, kind: "zak", who: "You" });
+    if (w.kind === "owner") items.push({ ...base, kind: "owner", who: "You" });
     else if (w.kind === "agent") {
       if (items.some((i) => i.agentId === w.agentId)) { dropped.push(`${l.title}: ${w.name} already has a focus this week`); continue; }
       items.push({ ...base, kind: "agent", who: w.name, agentId: w.agentId });
@@ -92,4 +92,4 @@ export function planItems(lines: { title: string; who: string; words: string }[]
 export const runMode = (hasPlan: boolean): "plan" | "review" => (hasPlan ? "review" : "plan");
 
 /** The jobs a plan gives the owner that nobody has marked done. */
-export const openJobs = (items: PlanItem[]) => items.filter((i) => i.kind === "zak" && !i.doneAt);
+export const openJobs = (items: PlanItem[]) => items.filter((i) => i.kind === "owner" && !i.doneAt);

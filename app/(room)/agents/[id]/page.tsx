@@ -447,6 +447,6 @@ async function placeOf(id: string, f: Floor): Promise<[string, string] | null> {
   const seat = seatOf(org, id);
   if (!seat) return ["Org chart", "Not on the chart yet. Put it in a seat on Crew."];
   const up = reportsTo(org, seat);
-  const boss = !up ? "you" : up.holder === "zak" ? "you" : up.holder === "agent" && up.agentId ? (f.byId[up.agentId]?.name ?? up.agentId) : `${up.title} (open seat)`;
+  const boss = !up ? "you" : up.holder === "owner" ? "you" : up.holder === "agent" && up.agentId ? (f.byId[up.agentId]?.name ?? up.agentId) : `${up.title} (open seat)`;
   return ["Org chart", `${seatPath(org, seat)} · reports to ${boss}`];
 }

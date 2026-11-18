@@ -34,7 +34,7 @@ export interface PackCrew {
   /** Each agent's playbook steps, installed as a proposed version 1 for the owner to approve. */
   playbooks: Record<string, { tool: string; input: Record<string, unknown> }[]>;
   /** The org chart. `key` and `parent` are names inside this list; new ids are made at install. */
-  seats: { key: string; parent: string | null; department: string | null; title: string; sub: string; holder: "open" | "zak" | "agent"; agent: string | null; sort: number }[];
+  seats: { key: string; parent: string | null; department: string | null; title: string; sub: string; holder: "open" | "owner" | "agent"; agent: string | null; sort: number }[];
   /** The chains (core/flow-rules.ts), installed with every chain off. */
   flow: unknown;
   /** Starting goals, installed active with no due date for the owner to set. */

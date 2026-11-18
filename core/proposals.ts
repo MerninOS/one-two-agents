@@ -14,7 +14,7 @@ import { hireSpec, planProposal, proposalTitle, toolInfoOf, type ProposalKind, t
 
 export type ProposalState = "pending" | "accepted" | "declined" | "built" | "failed";
 export interface Proposal {
-  id: string; kind: ProposalKind; title: string; source: "agent" | "claude" | "zak";
+  id: string; kind: ProposalKind; title: string; source: "agent" | "claude" | "owner";
   from_agent: string | null; department_id: string | null; run_id: string | null;
   payload: Resolved; why: string; state: ProposalState; outcome: string | null; result_ref: string | null;
   decided_at: string | null; created_at: string;

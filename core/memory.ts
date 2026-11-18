@@ -21,7 +21,7 @@ export interface MemoryRow {
   department_id: string | null;
   grp: MemoryGroup;
   text: string;
-  source: "zak" | "approval" | "agent";
+  source: "owner" | "approval" | "agent";
   source_tag: string | null;
   notion_page_id: string | null;
   trust: "note" | "data";
@@ -296,7 +296,7 @@ export async function teach(t: TeachInput): Promise<string> {
   const row = {
     agent_id: t.keepAs === "crew" ? null : t.agentId,
     grp: t.keepAs,
-    text, source: "zak", source_tag: t.sourceTag ?? null, trust: "note", state: "kept", keep: forget, notion_page_id: pageId,
+    text, source: "owner", source_tag: t.sourceTag ?? null, trust: "note", state: "kept", keep: forget, notion_page_id: pageId,
     runs_left: forget === "next_run" ? 1 : null,
     expires_at: forget === "days_30" ? new Date(Date.now() + 30 * 864e5).toISOString() : null,
     tokens: countTokens(text),
@@ -323,7 +323,7 @@ export async function editMemory(id: string, newText: string) {
   if (r.state !== "kept" && r.state !== "proposed") throw new Error("Only a kept or proposed line can be edited.");
   if (r.text === text) return;
   // The owner's edit makes the words theirs: a line they rewrite is no longer outside data
-  const { error } = await db().from("agent_memory").update({ text, tokens: countTokens(text), source: r.source === "agent" ? "zak" : r.source, trust: "note", updated_at: new Date().toISOString() }).eq("id", id);
+  const { error } = await db().from("agent_memory").update({ text, tokens: countTokens(text), source: r.source === "agent" ? "owner" : r.source, trust: "note", updated_at: new Date().toISOString() }).eq("id", id);
   if (error) throw new Error(error.message);
   await logEvent({ memory_id: id, agent_id: r.agent_id, department_id: r.department_id, kind: "edited", before: r.text, after: text, by: actor() });
 }
@@ -367,7 +367,7 @@ export async function addDepartmentRule(deptId: string, raw: string, sourceTag?:
   if (!text) throw new Error("Write the rule first.");
   if (text.length > MAX_LINE) throw new Error(`Keep it to ${MAX_LINE} characters (this is ${text.length}).`);
   const { data, error } = await db().from("agent_memory").insert({
-    agent_id: null, department_id: deptId, grp: "department", text, source: "zak", source_tag: sourceTag ?? null, trust: "note", state: "kept", keep: "always",
+    agent_id: null, department_id: deptId, grp: "department", text, source: "owner", source_tag: sourceTag ?? null, trust: "note", state: "kept", keep: "always",
     tokens: countTokens(text), decided_at: new Date().toISOString(),
   }).select("id").single();
   if (error) throw new Error(error.message);

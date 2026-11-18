@@ -176,7 +176,7 @@
     { "key": "insights", "parent": "retention", "department": "marketing", "title": "Insights", "sub": "Surveys, reviews", "holder": "open", "agent": null, "sort": 3 },
     { "key": "brand", "parent": "marketing_head", "department": "marketing", "title": "Brand lead", "sub": "Voice, content", "holder": "open", "agent": null, "sort": 3 },
     { "key": "trend_scout", "parent": "brand", "department": "marketing", "title": "Trend scout", "sub": "Social trends", "holder": "agent", "agent": "content_scout", "sort": 1 },
-    { "key": "content", "parent": "brand", "department": "marketing", "title": "Content", "sub": "Shoots, edits", "holder": "zak", "agent": null, "sort": 2 },
+    { "key": "content", "parent": "brand", "department": "marketing", "title": "Content", "sub": "Shoots, edits", "holder": "owner", "agent": null, "sort": 2 },
     { "key": "community", "parent": "brand", "department": "marketing", "title": "Community", "sub": "Comments, DMs", "holder": "agent", "agent": "concierge", "sort": 3 },
     { "key": "growth_ops", "parent": "marketing_head", "department": "marketing", "title": "Growth ops lead", "sub": "Site and data", "holder": "open", "agent": null, "sort": 4 },
     { "key": "site_cro", "parent": "growth_ops", "department": "marketing", "title": "Site and CRO", "sub": "Conversion tests", "holder": "agent", "agent": "conversion_optimizer", "sort": 1 },

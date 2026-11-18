@@ -97,7 +97,7 @@ export async function setGoalState(id: string, state: GoalState): Promise<void> 
 export function ownerOf(org: Org, deptId: string): { agentId: string | null; label: string } {
   const h = headOf(org, deptId);
   if (h?.holder === "agent" && h.agentId) return { agentId: h.agentId, label: h.title };
-  if (h?.holder === "zak") return { agentId: null, label: "you" };
+  if (h?.holder === "owner") return { agentId: null, label: "you" };
   return { agentId: null, label: "an open head seat" };
 }
 
