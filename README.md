@@ -94,3 +94,7 @@ the `one-two-agents` project. The first two were applied by hand from the storef
 npm run check   # tsc + eslint + every GraphQL document validated (and read-only)
 npm run build
 ```
+
+## Self-hosting
+
+`docker compose up` runs the app, its scheduler and the migrations against a Supabase project (Supabase's open-source self-host stack or Supabase Cloud). See `docs/self-host.md`.
