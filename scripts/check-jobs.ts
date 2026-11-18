@@ -1,6 +1,7 @@
 // The job queue's rules (core/job-rules.ts, docs/tenancy.md slice 3). Run: npm run check:jobs
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
+import { migration } from "./lib/schema";
 import { join } from "node:path";
 import { JOB_KINDS, STALE_MS, chainDedupe, chainPayload, isUuid, outcomeText, readChainPayload } from "../core/job-rules";
 
@@ -25,11 +26,13 @@ const limit = Number(/maxDuration = (\d+)/.exec(worker)?.[1]);
 assert.ok(limit > 0 && STALE_MS > limit * 1000, "STALE_MS is longer than the worker's maxDuration");
 
 // the table allows exactly the kinds the code knows, and holds each job to its org
-const sql = readFileSync(join(process.cwd(), "supabase/migrations/20261205090000_jobs.sql"), "utf8");
-const kinds = /kind text not null check \(kind in \(([^)]*)\)\)/.exec(sql)?.[1].split(",").map((s) => s.trim().replace(/'/g, ""));
-assert.deepEqual(kinds, [...JOB_KINDS]);
-assert.match(sql, /unique \(org_id, dedupe_key\)/);
-assert.match(sql, /create policy org_rows on jobs/);
+const sql = migration("20261205090000_jobs.sql"); // check:baseline checks the kinds in the public repo
+if (sql) {
+  const kinds = /kind text not null check \(kind in \(([^)]*)\)\)/.exec(sql)?.[1].split(",").map((s) => s.trim().replace(/'/g, ""));
+  assert.deepEqual(kinds, [...JOB_KINDS]);
+  assert.match(sql, /unique \(org_id, dedupe_key\)/);
+  assert.match(sql, /create policy org_rows on jobs/);
+}
 
 // chain steps reach agents only as jobs: the agent route refuses trigger=chain, and nothing calls it for a step
 const agentRoute = readFileSync(join(process.cwd(), "app/api/agents/[agent]/route.ts"), "utf8");

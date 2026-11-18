@@ -4,11 +4,14 @@
 // bucket and an empty home org that the owner names on Settings.
 //
 //   npx supabase start   (applies supabase/migrations to a local database)
-//   docker exec supabase_db_<project> pg_dump -U postgres --schema-only --schema=public --no-owner --no-comments postgres \
-//     | node scripts/baseline.mjs > supabase/baseline/operator_baseline.sql
+//   docker exec supabase_db_<project> pg_dump -U postgres --schema-only --schema=public --no-owner --no-comments \
+//     -T public.<pack table> ... postgres | node scripts/baseline.mjs > supabase/baseline/operator_baseline.sql
 //
-// `npm run check:baseline` fails when a migration adds a table the baseline doesn't have.
+// Leave out each template pack's own tables with -T (the `tables` in templates/<pack>/index.ts): they
+// are the pack's, not core's. `npm run check:baseline` fails when the baseline has a table core
+// doesn't, or misses one it does.
 import { readFileSync } from "node:fs";
+import { brandWords } from "./lib/brand.mjs";
 
 const raw = readFileSync(0, "utf8");
 const body = raw
@@ -27,7 +30,8 @@ const body = raw
   .trim();
 
 if (/^(INSERT INTO|COPY) /m.test(body)) throw new Error("the dump has rows in it: take it with --schema-only");
-if (/zak|one two|onetwo|0e1a7c4e/i.test(body)) throw new Error("the dump names a business: check the migrations' defaults and checks");
+const named = brandWords().find((re) => re.test(body));
+if (named || /0e1a7c4e/.test(body)) throw new Error(`the dump names a business (${named ?? "the home org id"}): check the migrations' defaults and checks`);
 
 const HOME = "0e1a7c4e-0001-4000-8000-000000000001";
 process.stdout.write(`-- OPERATOR's starting schema: every migration up to this point, squashed, with no business's rows.

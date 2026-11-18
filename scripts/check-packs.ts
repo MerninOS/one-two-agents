@@ -2,6 +2,7 @@
 import assert from "node:assert/strict";
 import { readFileSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
+import { packDirs, packTables } from "./lib/schema";
 
 const files = (d: string): string[] => readdirSync(d).flatMap((f) => { const p = join(d, f); return statSync(p).isDirectory() ? files(p) : /\.tsx?$/.test(f) ? [p] : []; });
 const importsOf = (f: string) => [...readFileSync(f, "utf8").matchAll(/from "([^"]+)"/g)].map((m) => m[1]);
@@ -36,7 +37,6 @@ for (const f of files("templates")) {
 }
 
 // Every pack under templates/ (a folder with an index.ts). There may be none.
-const packDirs = readdirSync("templates").filter((d) => statSync(join("templates", d)).isDirectory()).filter((d) => { try { return statSync(join("templates", d, "index.ts")).isFile(); } catch { return false; } });
 const registry = readFileSync("templates/index.ts", "utf8");
 const catalog = readFileSync("core/tools/catalog.ts", "utf8");
 const ids = (s: string) => [...s.matchAll(/^\s+id: "([a-z_]+)"/gm)].map((m) => m[1]);
@@ -46,15 +46,15 @@ assert.match(catalog, /\[\.\.\.TOOLS_LIST, \.\.\.packTools\(\)\]/, "the tool lis
 const tenancy = readFileSync("core/tenancy.ts", "utf8");
 let tables = 0, tools = 0;
 const seenTools = new Set<string>();
-for (const d of packDirs) {
+for (const d of packDirs()) {
   assert.match(registry, new RegExp(`from "\\./${d}"`), `templates/${d} is a pack, so templates/index.ts registers it`);
   // A pack's own tables are tenant tables like any other, and only the pack reads or writes them.
-  const packTables = [...readFileSync(join("templates", d, "index.ts"), "utf8").matchAll(/tables: \[([^\]]*)\]/g)].flatMap((m) => [...m[1].matchAll(/"([a-z_]+)"/g)].map((x) => x[1]));
-  for (const t of packTables) {
+  const own = packTables(d);
+  for (const t of own) {
     assert.match(tenancy, new RegExp(`"${t}"`), `${t} is a pack table, so it needs a place in TENANT_TABLES`);
     for (const f of outside) assert.doesNotMatch(readFileSync(f, "utf8"), new RegExp(`from\\("${t}"\\)`), `${f} reads ${t}, a pack table`);
   }
-  tables += packTables.length;
+  tables += own.length;
   // Pack tool ids are unique and don't clash with core's (catalog.ts also refuses this at load).
   let packSrc = ""; try { packSrc = readFileSync(join("templates", d, "tools.ts"), "utf8"); } catch { /* a pack with no tools */ }
   for (const id of ids(packSrc)) {
@@ -64,4 +64,4 @@ for (const d of packDirs) {
   }
 }
 
-console.log(`check:packs ok (${packDirs.length} packs, ${tools} pack tools, ${tables} pack tables, ${core.length} core tools)`);
+console.log(`check:packs ok (${packDirs().length} packs, ${tools} pack tools, ${tables} pack tables, ${core.length} core tools)`);

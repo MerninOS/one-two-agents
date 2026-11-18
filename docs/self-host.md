@@ -57,10 +57,16 @@ ships one squashed migration instead, `supabase/baseline/operator_baseline.sql`:
 (tables, checks, row level security, policies, grants, functions), the private receipts bucket and
 an empty home org called "My business", and no business's rows. `scripts/baseline.mjs` makes it from
 a schema-only dump of a database with every migration applied (the steps are in the script), and
-`npm run check:baseline` fails when a migration adds or drops a table it doesn't have.
+`npm run check:baseline` fails when a migration adds or drops a table it doesn't have. A template
+pack's own tables (its `tables` list) stay out of the baseline: they belong to the pack.
+
+In the public repo the baseline is the first file in `supabase/migrations`, and later migrations
+follow it. Checks that read one file of this repo's history (`check:jobs`, `check:mcp`,
+`check:audit`, `check:status`, the history part of `check:tenancy`) skip it there, and
+`check:baseline` checks the same things in the baseline (`scripts/lib/schema.ts`).
 
 Tested 2026-11-18: a fresh Supabase database built from the baseline alone dumps byte for byte the
-same public schema as one built from every migration, and the the business template installed into its
+same public schema as one built from every migration, and a template pack's crew installed into its
 empty home org (5 departments, 10 agents, all off duty) and refused a second install.
 
 ## Not yet

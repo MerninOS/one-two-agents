@@ -50,7 +50,7 @@ A fourth label, Database, marks a value that is a row in Supabase but has no scr
 - Only models with a price in `integrations/anthropic.ts` may be listed in a menu, so cost is
   always computed in code. An agent refuses to run on a model (or fallback model) without a price
   before it reads or sends anything.
-- The safety block is locked. It lives in the agent's code (`templates/one-two/agents/chief-of-staff/prompt.ts`,
+- The safety block is locked. It lives in the agent's code (`core/runner.ts`,
   `SAFETY`), is sent first on every model call, and a setup can only replace the instructions
   after it. The canvas shows it so nothing is hidden.
 - Loosening means a costlier model, a costlier fallback or more effort. Saving or rolling back to

@@ -121,7 +121,7 @@ reaction). `proposeLesson` stays for a lead's or head's send-back.
 | Wholesale accounts won | total, by a date | `wholesale_leads` at stage Won |
 | Revenue this month | month | Shopify orders this Chicago month, cancelled left out |
 | Orders this month | month | the same orders, counted |
-| Lowest days of green cover | floor | each listed lot: on hand ÷ use per day over 30 days (`templates/one-two/green.ts`) |
+| Lowest days of green cover | floor | each listed lot: on hand ÷ use per day over 30 days (`templates/<pack>/green.ts`) |
 | Months of runway | floor | Mercury cash ÷ net burn per 30 days over 90 days (`core/money.ts`) |
 | Email list size | total, by a date | profiles on the list picked on Connections › Klaviyo, read over Klaviyo's MCP server (slice 6) |
 
@@ -146,8 +146,8 @@ target, `start_value`, `due_on`, state active / paused / done / dropped, `paced_
 department removes its goals. Until it's applied, Crew and Today say so and Set a goal refuses.
 
 **Code.** `core/goal-rules.ts` (pure: the list, `planGoal`, `progress`), `core/measures.ts`,
-`core/goals.ts` (store, `goalProgress` for the tool), `templates/one-two/green.ts` and `core/money.ts` (moved
-out of the tool list so the tools and the measures share one copy), `templates/one-two/agents/cfo` `ordersBetween`,
+`core/goals.ts` (store, `goalProgress` for the tool), `templates/<pack>/green.ts` and `core/money.ts` (moved
+out of the tool list so the tools and the measures share one copy), `templates/<pack>/agents/cfo` `ordersBetween`,
 `dashboard/goals.ts`, `dashboard/goalActions.ts`, `dashboard/components/goals.tsx`,
 `dashboard/components/GoalForm.tsx`, `app/(room)/goals/`.
 

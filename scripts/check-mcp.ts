@@ -1,6 +1,7 @@
 // MCP connection rules (docs/company-mode.md, slice 6): `npm run check:mcp`. Pure: no network.
 import assert from "node:assert/strict";
 import { readFileSync, readdirSync, statSync } from "node:fs";
+import { migration } from "./lib/schema";
 import { join } from "node:path";
 import { CTX_META, callThrough, createHost, listThrough, served } from "../core/tools/mcp-host";
 import type { ToolDef } from "../core/tools/types";
@@ -144,8 +145,8 @@ for (const bad of ["eyJhbGciOi.abc", "rt_123456789", "abcdefghijkl12", "xyz789",
 assert.ok(clean.includes("state=s") && clean.includes("401"), "the rest stays readable");
 assert.deepEqual([...MCP_EVENTS].sort(), ["connected", "disconnected", "refresh_failed", "refreshed", "refused", "resealed", "revoke_failed", "revoked", "tools_changed", "tools_checked", "added", "tool_on", "tool_off", "paused", "resumed", "tools_accepted"].sort());
 // the log's database check lists the same events
-const lastSql = readFileSync("supabase/migrations/20261130090000_custom_mcp_servers.sql", "utf8");
-for (const e of MCP_EVENTS) assert.ok(lastSql.includes(`'${e}'`), `migration allows ${e}`);
+const lastSql = migration("20261130090000_custom_mcp_servers.sql"); // check:baseline checks the events in the public repo
+if (lastSql) for (const e of MCP_EVENTS) assert.ok(lastSql.includes(`'${e}'`), `migration allows ${e}`);
 
 // ---- profiles and the tool check (slice 3)
 for (const srv of Object.values(MCP_SERVERS) as McpServer[]) {
@@ -433,9 +434,8 @@ hostChecks.then(() => console.log("mcp: ok"), (e) => { console.error(e); process
 // custom servers: the table exists in a migration, the client checks addresses before every request,
 // and nothing outside integrations/mcp.ts reaches a custom server
 {
-  const sql = readFileSync("supabase/migrations/20261130090000_custom_mcp_servers.sql", "utf8");
-  assert.match(sql, /create table mcp_custom_servers/);
-  assert.match(sql, /enable row level security/);
+  const sql = migration("20261130090000_custom_mcp_servers.sql");
+  if (sql) { assert.match(sql, /create table mcp_custom_servers/); assert.match(sql, /enable row level security/); }
   const client = readFileSync("integrations/mcp.ts", "utf8");
   assert.match(client, /if \(custom\) await assertPublic\(p\.url\)/, "every session with a custom server checks its address first");
   assert.match(client, /redirect: strict \? "error" : "follow"/, "a custom server's discovery never follows a redirect");

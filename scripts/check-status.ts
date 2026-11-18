@@ -1,6 +1,7 @@
 // Status and alerts (docs/usage.md, slice 4): `npm run check:status`. Pure: no database, no email.
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
+import { migration } from "./lib/schema";
 import { alertEmail, alertsDue, statusProblems, type StatusFacts } from "../core/status-rules";
 
 const now = Date.parse("2026-11-18T12:00:00Z");
@@ -39,6 +40,6 @@ assert.match(alertEmail(ps.slice(0, 3), "https://a.b").subject, /3 things need a
 const src = readFileSync("core/status.ts", "utf8");
 assert.match(src, /currentOrgId\(\) !== HOME_ORG_ID \|\| !hasEmail\(\)/);
 assert.match(readFileSync("app/api/dispatch/route.ts", "utf8"), /sendStatusAlerts\(origin, now\)\.catch/);
-const sql = readFileSync("supabase/migrations/20261209090000_status_alerts.sql", "utf8");
-assert.match(sql, /create policy org_rows on status_alerts/);
+const sql = migration("20261209090000_status_alerts.sql"); // check:baseline checks every policy in the public repo
+if (sql) assert.match(sql, /create policy org_rows on status_alerts/);
 console.log("check:status ok");
