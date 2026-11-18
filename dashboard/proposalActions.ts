@@ -2,6 +2,7 @@
 // Proposal actions (docs/company-mode.md, slice 3). Each checks the login again. None of them runs,
 // sends or spends: a yes creates an agent off duty, saves a draft version, or opens Find a tool,
 // through the same code paths as the builder and the org chart.
+import { audit } from "@/core/audit";
 import { revalidatePath } from "next/cache";
 import { withActor } from "@/core/actor";
 import { acceptProposal, declineProposal, getProposal } from "@/core/proposals";
@@ -14,16 +15,16 @@ const fail = (e: unknown): ActionResult => ({ ok: false, text: e instanceof Erro
 const done = (text: string): ActionResult => { revalidatePath("/", "layout"); return { ok: true, text }; };
 
 export async function proposalAccept(id: string): Promise<ActionResult & { href?: string }> {
-  const { no } = await asRole("owner"); if (no) return no;
+  const { me, no } = await asRole("owner"); if (no) return no;
   if (!UUID.test(String(id))) return { ok: false, text: "Unknown proposal." };
-  try { const r = await acceptProposal(id); return { ...done(r.text), href: r.href ?? undefined }; } catch (e) { return fail(e); }
+  try { const r = await acceptProposal(id); await audit(me, "accept_proposal", id); return { ...done(r.text), href: r.href ?? undefined }; } catch (e) { return fail(e); }
 }
 
 /** Not now, with the reason Zak typed (optional). */
 export async function proposalDecline(id: string, reason: string): Promise<ActionResult> {
   const { me, no } = await asRole("owner"); if (no) return no;
   if (!UUID.test(String(id))) return { ok: false, text: "Unknown proposal." };
-  try { return done(await withActor(me.email, () => declineProposal(id, String(reason ?? "")))); } catch (e) { return fail(e); }
+  try { const t = await withActor(me.email, () => declineProposal(id, String(reason ?? ""))); await audit(me, "decline_proposal", id); return done(t); } catch (e) { return fail(e); }
 }
 
 /**

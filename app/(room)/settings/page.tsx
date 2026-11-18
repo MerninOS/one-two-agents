@@ -5,6 +5,7 @@ import { signOut } from "@/dashboard/authActions";
 import { peopleAdd, peopleRemove, peopleSetRole } from "@/dashboard/peopleActions";
 import { getFloor, getVendorsAndSuppressions, requireSession } from "@/dashboard/data";
 import { listMembers } from "@/core/members";
+import { listAudit } from "@/core/audit";
 import { dbLock } from "@/core/db";
 import { ROLE_LABELS, ROLE_WORDS } from "@/core/roles";
 import { People } from "@/dashboard/components/people";
@@ -15,6 +16,9 @@ import { CapForm, SuppressForm, VendorForm } from "@/dashboard/components/settin
 
 export default async function Settings() {
   const [f, caps, lists, me, members] = await Promise.all([getFloor(), capLines(), getVendorsAndSuppressions(), requireSession(), listMembers().catch(() => null)]);
+  const audit = await listAudit(100).then((rows) => ({ rows, problem: null as string | null }), (e: unknown) => ({ rows: [], problem: e instanceof Error ? e.message : String(e) }));
+  const when = (at: string) => new Date(at).toLocaleString("en-US", { timeZone: "America/Chicago", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
+  const facts = (d: Record<string, unknown> | null) => (d ? Object.entries(d).map(([k, v]) => `${k.replace(/_/g, " ")} ${typeof v === "string" ? v : JSON.stringify(v)}`).join(" · ") : "");
   const theme = (await cookies()).get("cr_theme")?.value === "dark" ? "dark" : "light";
   const line = (k: React.ReactNode, v: React.ReactNode, first?: boolean) => <div className={"row" + (first ? "" : " rule")} style={{ justifyContent: "space-between", padding: "14px 0", fontSize: 14, gap: 16 }}><span style={{ display: "flex", flexDirection: "column", gap: 2 }}>{k}</span>{v}</div>;
   return (
@@ -73,6 +77,13 @@ export default async function Settings() {
             <SuppressForm suppress={suppressEmail} />
           </>
         )}
+      </div>
+      <div className="card" style={{ padding: "16px 22px", gap: 6 }}>
+        <span className="card-t">Audit log</span>
+        <span className="sub">Who did what: approvals, the org switch and duty, real runs, caps and vendors, Connections, people and roles, agents, routines and chains. Nobody can change or delete a line, not even an owner. The latest 100.</span>
+        {audit.problem ? <span className="sub">{/audit_log|relation|schema cache/.test(audit.problem) ? "The audit log migration (20261208090000_audit_log.sql) isn’t applied yet." : audit.problem}</span>
+          : audit.rows.length === 0 ? <span className="sub">Nothing yet. Each change from now on lands here.</span>
+          : <div>{audit.rows.map((r, i) => <div key={i}>{line(<>{r.action.replace(/_/g, " ")}{r.target ? <span className="ink2"> · {r.target}</span> : null}<span className="muted" style={{ fontSize: 12 }}>{r.actor}{r.detail ? ` · ${facts(r.detail)}` : ""}</span></>, <span className="sub" style={{ whiteSpace: "nowrap" }}>{when(r.at)}</span>, i === 0)}</div>)}</div>}
       </div>
     </div>
   );

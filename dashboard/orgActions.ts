@@ -3,6 +3,7 @@
 // no Controls: the chart decides where an agent sits, never what it can read or do, and nothing
 // here runs. Department limits (slice 2) are like the company caps: tightening is always allowed,
 // loosening needs DASHBOARD_CONTROLS=on and a confirm.
+import { audit } from "@/core/audit";
 import { revalidatePath } from "next/cache";
 import { withActor } from "@/core/actor";
 import { db } from "@/core/db";
@@ -61,26 +62,28 @@ export async function orgRemoveSeat(id: string): Promise<ActionResult> {
 
 /** Who sits in a seat: "open", "zak" or "agent:<id>". An agent moves from any seat it had. */
 export async function orgSetHolder(seatId: string, who: string): Promise<ActionResult> {
-  const { no } = await asRole("owner"); if (no) return no;
+  const { me, no } = await asRole("owner"); if (no) return no;
   if (!UUID.test(String(seatId))) return { ok: false, text: "Unknown seat." };
   const w = String(who ?? "");
   try {
-    if (w === "open" || w === "zak") { await setHolder(seatId, w, null); return done(w === "open" ? "The seat is open." : "That seat is yours."); }
+    if (w === "open" || w === "zak") { await setHolder(seatId, w, null); await audit(me, "set_seat_holder", seatId, { who }); return done(w === "open" ? "The seat is open." : "That seat is yours."); }
     const id = w.startsWith("agent:") ? w.slice(6) : "";
     if (!(await knownAgent(id))) return { ok: false, text: "Unknown agent." };
     await setHolder(seatId, "agent", id);
+    await audit(me, "set_seat_holder", seatId, { who });
     return done(`${(await getFloor()).byId[id]?.name ?? "The agent"} sits there now. Its old seat, if it had one, is open.`);
   } catch (e) { return fail(e); }
 }
 
 /** From the builder's step 1: put an agent in a seat, or take it off the chart (null). */
 export async function placeAgent(agentId: string, seatId: string | null): Promise<ActionResult> {
-  const { no } = await asRole("owner"); if (no) return no;
+  const { me, no } = await asRole("owner"); if (no) return no;
   if (!(await knownAgent(String(agentId)))) return { ok: false, text: "Unknown agent." };
   try {
-    if (seatId == null) { await unseat(agentId); return done("Off the chart. Its seat is open."); }
+    if (seatId == null) { await unseat(agentId); await audit(me, "place_agent", agentId, { seat: seatId }); return done("Off the chart. Its seat is open."); }
     if (!UUID.test(String(seatId))) return { ok: false, text: "Unknown seat." };
     await setHolder(seatId, "agent", agentId);
+    await audit(me, "place_agent", agentId, { seat: seatId });
     return done("Placed on the chart.");
   } catch (e) { return fail(e); }
 }
@@ -103,7 +106,7 @@ async function dept(id: string) {
 
 /** A department's monthly AI budget. Raising or removing it needs Controls on and a confirm. */
 export async function orgSetDeptBudget(id: string, value: number | string | null, confirmed = false): Promise<ActionResult> {
-  const { no } = await asRole("owner"); if (no) return no;
+  const { me, no } = await asRole("owner"); if (no) return no;
   try {
     const d = await dept(String(id));
     const next = limitOf(value);
@@ -114,13 +117,14 @@ export async function orgSetDeptBudget(id: string, value: number | string | null
     const to = next == null ? "no budget" : `$${next.toFixed(2)} a month`;
     if (ch.looser && !confirmed) return { ok: false, text: `Confirm first: ${d.name} from ${from} to ${to}.` };
     await setDeptBudget(d.id, next);
+    await audit(me, "set_department_budget", id, { value: next });
     return done(next == null ? `${d.name} has no department budget now. Each agent’s daily budget still applies.` : `${d.name}: ${to}. Its agents check it before every run.`);
   } catch (e) { return fail(e); }
 }
 
 /** A department's email cap, never above the company cap. Raising or removing it needs Controls on and a confirm. */
 export async function orgSetDeptEmails(id: string, value: number | string | null, confirmed = false): Promise<ActionResult> {
-  const { no } = await asRole("owner"); if (no) return no;
+  const { me, no } = await asRole("owner"); if (no) return no;
   try {
     const d = await dept(String(id));
     const next = limitOf(value);
@@ -131,6 +135,7 @@ export async function orgSetDeptEmails(id: string, value: number | string | null
     const to = next == null ? `the company cap (${company})` : `${next} a day`;
     if (ch.looser && !confirmed) return { ok: false, text: `Confirm first: ${d.name}’s emails up to ${to}.` };
     await setDeptEmailCap(d.id, next, company);
+    await audit(me, "set_department_emails", id, { value: to });
     return done(`${d.name}’s emails: ${to}.`);
   } catch (e) { return fail(e); }
 }
@@ -163,10 +168,11 @@ export async function orgForgetDeptRule(ruleId: string): Promise<ActionResult> {
 
 /** "Lead checks drafts first" on or off. Neither way loosens a cap: Zak's tap stays the only approval. */
 export async function orgSetLeadChecks(id: string, on: boolean): Promise<ActionResult> {
-  const { no } = await asRole("owner"); if (no) return no;
+  const { me, no } = await asRole("owner"); if (no) return no;
   try {
     const d = await dept(String(id));
     await setLeadChecks(d.id, !!on);
+    await audit(me, "set_lead_checks", d.id, { on: !!on });
     return done(on ? `${d.name}: drafts go to the agent above them first, for up to a day.` : `${d.name}: drafts come straight to you.`);
   } catch (e) { return fail(e); }
 }

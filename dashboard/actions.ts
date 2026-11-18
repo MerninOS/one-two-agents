@@ -1,6 +1,7 @@
 "use server";
 // Control Room actions. Each one checks the signed-in member's role first (asRole, docs/tenancy.md). Anything that can spend money
 // or wake an agent also needs DASHBOARD_CONTROLS=on; stopping things never does.
+import { audit } from "@/core/audit";
 import { headers } from "next/headers";
 import { revalidatePath } from "next/cache";
 import { withActor } from "@/core/actor";
@@ -58,7 +59,7 @@ export async function dryRun(agentId: string): Promise<ActionResult> {
  * dashboard stays usable; the layout polls until the row finishes. A skip or a failure to start comes back at once.
  */
 export async function realRun(agentId: string): Promise<ActionResult> {
-  const { no } = await asRole("owner"); if (no) return no;
+  const { me, no } = await asRole("owner"); if (no) return no;
   if (!controlsOn()) return { ok: false, text: CONTROLS_OFF };
   const who = await crewAgent(agentId);
   if (!who) return { ok: false, text: "Unknown agent." };
@@ -73,6 +74,7 @@ export async function realRun(agentId: string): Promise<ActionResult> {
     .then((res) => ({ res }), (err: unknown) => { console.error(`[control-room] ${agentId} run failed`, err); return { err }; });
   after(run);
   const first = await Promise.race([started, run]);
+  await audit(me, "run_now", agentId);
   revalidatePath("/", "layout");
   if (first === null) return { ok: true, text: `${name} is working. Keep using the app; ${name} pulses until the run is done.` };
   if ("err" in first) return fail(first.err);
@@ -81,7 +83,7 @@ export async function realRun(agentId: string): Promise<ActionResult> {
 
 export async function setEnabled(agentId: string, on: boolean): Promise<ActionResult> {
   // taking an agent off duty is a stop, so approvers may; putting one back is the owner's
-  const { no } = await asRole(on ? "owner" : "approver"); if (no) return no;
+  const { me, no } = await asRole(on ? "owner" : "approver"); if (no) return no;
   const who = await crewAgent(agentId);
   if (!who) return { ok: false, text: "Unknown agent." };
   if (on && !controlsOn()) return { ok: false, text: CONTROLS_OFF };
@@ -89,6 +91,7 @@ export async function setEnabled(agentId: string, on: boolean): Promise<ActionRe
   if (error) return fail(error.message);
   revalidatePath("/", "layout");
   const name = who.name;
+  await audit(me, on ? "put_on_duty" : "take_off_duty", agentId);
   return { ok: true, text: on ? `${name} is back on the crew.` : `${name} is off duty. Every run is skipped at $0.` };
 }
 
@@ -123,6 +126,7 @@ export async function setAgentTime(agentId: string, t: AgentTime | null, confirm
     if (JSON.stringify(r.flow) !== JSON.stringify(flow.flow)) await saveFlowVersion(r.flow, t ? `${who.name}: ${schedWords({ kind: t.days, time: t.time })}` : `${who.name}: by hand`, me.email, flow.version);
     if (!t) { const { error } = await db().from("agents").update({ manual_only: true }).eq("id", agentId); if (error) return fail(error.message); }
     revalidatePath("/", "layout");
+    await audit(me, "set_agent_time", agentId, { when: t ? schedWords({ kind: t.days, time: t.time }) : "by hand" });
     return { ok: true, text: t ? `${who.name} runs ${schedWords({ kind: t.days, time: t.time })}, while the org is on.` : `${who.name} runs only when you press Run now.` };
   } catch (e) { return fail(e); }
 }
@@ -156,6 +160,7 @@ export async function turnOnOrg(confirmed: boolean): Promise<ActionResult> {
     await setOrg(true, me.email);
     revalidatePath("/", "layout");
     const first = plan.wake.find((w) => w.firstRun);
+    await audit(me, "turn_on_org", null, { agents: ids.length });
     return { ok: true, text: `The org is on. ${ids.length} agent${ids.length === 1 ? " is" : "s are"} on duty${first ? `; first up, ${first.name} at ${when(first.firstRun!)} CT` : ""}.` };
   } catch (e) { return fail(e); }
 }
@@ -169,6 +174,7 @@ export async function turnOffOrg(): Promise<ActionResult> {
     const { error } = await db().from("agents").update({ enabled: false }).eq("enabled", true);
     if (error) return fail(error.message);
     revalidatePath("/", "layout");
+    await audit(me, "turn_off_org");
     return { ok: true, text: "The org is off. Every agent is off duty and nothing runs on its own." };
   } catch (e) { return fail(e); }
 }
@@ -217,6 +223,7 @@ export async function approve(approvalId: string): Promise<ActionResult> {
     const res = await applyNow([actionId]);
     await fireApprovalChains("approve");
     revalidatePath("/", "layout");
+    await audit(me, "approve", approvalId);
     return res;
   } catch (e) { revalidatePath("/", "layout"); return fail(e); }
 }
@@ -242,6 +249,7 @@ export async function reject(approvalId: string, reason?: string, scope?: string
     // an agent on a playbook that proposed this goes back to needing approval for its next playbook
     try { if (ap && await holdAfterRejection(ap.agent_id, ap.title)) more += " Its next playbook will wait for your approval."; } catch { /* no playbook tables yet */ }
     revalidatePath("/", "layout");
+    await audit(me, "reject", approvalId, why ? { reason: why } : undefined);
     return { ok: true, text: `Rejected.${more}` };
   } catch (e) { return fail(e); }
 }
@@ -255,6 +263,7 @@ export async function approveAll(approvalIds: string[]): Promise<ActionResult> {
     const res = actionIds.length ? await applyNow(actionIds) : { ok: false, text: "Nothing left to approve." };
     if (actionIds.length) await fireApprovalChains("approve");
     revalidatePath("/", "layout");
+    if (actionIds.length) await audit(me, "approve_all", null, { approved: actionIds.length });
     return actionIds.length ? { ok: res.ok, text: `Approved ${actionIds.length}. ${res.text}` } : res;
   } catch (e) { revalidatePath("/", "layout"); return fail(e); }
 }
@@ -266,13 +275,14 @@ export async function applyWaiting(): Promise<ActionResult> {
 }
 
 export async function retryAction(actionId: string): Promise<ActionResult> {
-  const { no } = await asRole("approver"); if (no) return no;
+  const { me, no } = await asRole("approver"); if (no) return no;
   if (!UUID.test(actionId)) return { ok: false, text: "Unknown action." };
   try {
     const back = await retry(actionId);
     if (!back) return { ok: false, text: "Only a failed change can be retried." };
     const res = await applyNow([actionId]);
     revalidatePath("/", "layout");
+    await audit(me, "retry_action", actionId);
     return res;
   } catch (e) { return fail(e); }
 }
@@ -364,12 +374,13 @@ export async function saveCrewFlow(flow: unknown, note: string, confirmed: boole
     if (looser.length && !confirmed) return { ok: false, text: `Confirm first: ${looser.join("; ")}.` };
     const v = await saveFlowVersion(got.flow, why, me.email, now.version);
     revalidatePath("/", "layout");
+    await audit(me, "save_flow", null, { version: v });
     return { ok: true, text: `Saved as flow v${v}.${got.flow.chains.some((c) => c.on) ? " Chains that are on start at their next time; agents that are off duty are skipped." : " Every chain is off, so nothing runs on its own."}` };
   } catch (e) { return fail(e); }
 }
 
 export async function rollBackFlow(version: number, confirmed: boolean): Promise<ActionResult> {
-  const { no } = await asRole("owner"); if (no) return no;
+  const { me, no } = await asRole("owner"); if (no) return no;
   if (!Number.isInteger(version) || version < 1) return { ok: false, text: "Unknown version." };
   try {
     const crew = await loadCrew();
@@ -382,6 +393,7 @@ export async function rollBackFlow(version: number, confirmed: boolean): Promise
     if (looser.length && !confirmed) return { ok: false, text: `Confirm first: ${looser.join("; ")}.` };
     await activateFlow(version, now.version);
     revalidatePath("/", "layout");
+    await audit(me, "roll_back_flow", null, { version });
     return { ok: true, text: `Flow v${version} is active again.` };
   } catch (e) { return fail(e); }
 }
@@ -391,7 +403,7 @@ export async function rollBackFlow(version: number, confirmed: boolean): Promise
  * profile). Real runs, so DASHBOARD_CONTROLS=on; each agent still needs to be on duty.
  */
 export async function runChainNow(key: string): Promise<ActionResult> {
-  const { no } = await asRole("owner"); if (no) return no;
+  const { me, no } = await asRole("owner"); if (no) return no;
   if (!controlsOn()) return { ok: false, text: CONTROLS_OFF };
   try {
     const flow = await loadFlow(await loadCrew());
@@ -401,6 +413,7 @@ export async function runChainNow(key: string): Promise<ActionResult> {
     if (!origin) return { ok: false, text: "Can’t work out this app’s address to start the chain." };
     const chainId = crypto.randomUUID();
     await startStep(origin, c, { chainId, key: c.key, step: 0, manual: true });
+    await audit(me, "run_chain_now", c.key, { chain: c.name });
     revalidatePath("/", "layout");
     const names = await Promise.all(c.steps.map((s) => nameOf(s.agent)));
     return { ok: true, text: `${c.name} started: ${names.join(", then ")}. An agent that is off duty is skipped and the chain stops there. Runs shows each step.` };
@@ -460,6 +473,7 @@ export async function setCap(key: string, value: number, confirmed: boolean): Pr
     if (error) return fail(error.message);
     await db().from("policy_log").insert({ key, old_value: caps[key as CapKey].raw ?? null, new_value: v, changed_by: me.email });
     revalidatePath("/", "layout");
+    await audit(me, "set_cap", key, { value });
     return { ok: true, text: `${CAPS[key as CapKey].label}: ${fmtCap(key as CapKey, v)}. The gateway uses it from the next check.` };
   } catch (e) { return fail(e); }
 }
@@ -478,6 +492,7 @@ export async function addVendor(form: { name: string; kind: string; mercuryRecip
   const { error } = await db().from("vendors").insert({ name, kind, mercury_recipient_id: rid || null, contact_email: email || null, added_by: me.email });
   if (error) return fail(error.code === "23505" ? "That Mercury recipient is already a vendor." : error.message);
   revalidatePath("/settings");
+  await audit(me, "add_vendor", form.name, { kind: form.kind });
   return { ok: true, text: `${name} added to vendors.${rid ? "" : " Add its Mercury recipient id before anything can be paid to it."}` };
 }
 
@@ -489,6 +504,7 @@ export async function suppressEmail(address: string, reason: string): Promise<Ac
   const { error } = await db().from("email_suppressions").upsert({ email, reason: String(reason ?? "").trim().slice(0, 200) || `Added by ${me.email}`, source: "zak" });
   if (error) return fail(error.message);
   revalidatePath("/settings");
+  await audit(me, "suppress_email", address);
   return { ok: true, text: `No agent will email ${email}.` };
 }
 
@@ -549,6 +565,7 @@ export async function createBuilt(draft: unknown, seatId?: string | null): Promi
       } else seated = " That seat was taken meanwhile, so it isn’t on the chart yet.";
     }
     revalidatePath("/", "layout");
+    await audit(me, "create_agent", id, { name: spec.name });
     return { ok: true, text: `${spec.name} is saved as v1, off duty.${seated}`, id };
   } catch (e) { return fail(e); }
 }
@@ -566,13 +583,14 @@ export async function saveSpec(agentId: string, draft: unknown, note: string): P
     if (base && JSON.stringify(base.spec) === JSON.stringify(got.spec)) return { ok: false, text: `Nothing changed from v${base.version}.` };
     const v = await saveSpecVersion(agentId, got.spec, why, me.email);
     revalidatePath("/", "layout");
+    await audit(me, "save_spec", agentId, { version: v });
     return { ok: true, text: `Saved as draft v${v}. Try it, then go live; what runs today hasn’t changed.` };
   } catch (e) { return fail(e); }
 }
 
 /** Goes back to an earlier version in one tap. Anything that lets it do or spend more needs Controls on and a confirm. */
 export async function goBack(agentId: string, version: number, confirmed: boolean): Promise<ActionResult> {
-  const { no } = await asRole("owner"); if (no) return no;
+  const { me, no } = await asRole("owner"); if (no) return no;
   if (!Number.isInteger(version) || version < 1) return { ok: false, text: "Unknown version." };
   try {
     const now = await builtAgent(agentId);
@@ -585,13 +603,14 @@ export async function goBack(agentId: string, version: number, confirmed: boolea
     if (looser.length && !confirmed) return { ok: false, text: `Confirm first: ${looser.join("; ")}.` };
     await activateSpecVersion(agentId, version);
     revalidatePath("/", "layout");
+    await audit(me, "go_back", agentId, { version });
     return { ok: true, text: `Back on v${version}. The next run uses it.` };
   } catch (e) { return fail(e); }
 }
 
 /** A built agent's daily budget. Lowering is always allowed; raising needs DASHBOARD_CONTROLS=on. */
 export async function setBuiltBudget(agentId: string, value: number): Promise<ActionResult> {
-  const { no } = await asRole("owner"); if (no) return no;
+  const { me, no } = await asRole("owner"); if (no) return no;
   if (!(Number.isFinite(value) && value >= 0 && value <= BUDGET_CEILING)) return { ok: false, text: `Pick a budget between $0 and $${BUDGET_CEILING} a day. $${BUDGET_CEILING} is the ceiling in code.` };
   try {
     await builtAgent(agentId);
@@ -602,6 +621,7 @@ export async function setBuiltBudget(agentId: string, value: number): Promise<Ac
     const { error } = await db().from("agents").update({ daily_budget_usd: v }).eq("id", agentId);
     if (error) return fail(error.message);
     revalidatePath("/", "layout");
+    await audit(me, "set_agent_budget", agentId, { usd: v });
     return { ok: true, text: `Budget saved: $${v.toFixed(2)} a day.` };
   } catch (e) { return fail(e); }
 }
@@ -640,7 +660,7 @@ export async function dryRunBuilt(agentId: string, draft?: unknown): Promise<Act
  * code drafts or updates the routine (core/playbook.ts), which Go live approves.
  */
 export async function tryBuilt(agentId: string, fresh = false): Promise<ActionResult & { runId?: string }> {
-  const { no } = await asRole("owner"); if (no) return no;
+  const { me, no } = await asRole("owner"); if (no) return no;
   if (!controlsOn()) return { ok: false, text: `${CONTROLS_OFF} A try makes real model calls.` };
   try {
     await builtAgent(agentId);
@@ -663,6 +683,7 @@ export async function tryBuilt(agentId: string, fresh = false): Promise<ActionRe
     let note = "";
     if (got) { try { note = ` ${await afterRun(agentId, rid, got)}`; } catch (e) { note = ` (Routine not updated: ${e instanceof Error ? e.message : String(e)})`; } }
     revalidatePath("/", "layout");
+    await audit(me, "try_agent", agentId, { version: target.version, cost_usd: res.costUsd ?? 0 });
     return { ok: res.status === "ok", text: `Try of v${target.version} done ($${(res.costUsd ?? 0).toFixed(4)}).${note}`, runId: rid ?? undefined };
   } catch (e) { revalidatePath("/", "layout"); return fail(e); }
 }
@@ -695,6 +716,7 @@ export async function goLive(agentId: string, version: number, keep: number[] | 
     } else if (!activePlaybook(all)) return { ok: false, text: "No routine yet: try it fresh, so code can save the calls that worked." };
     if (!target.active) await activateSpecVersion(agentId, version);
     revalidatePath("/", "layout");
+    await audit(me, "go_live", agentId, { version, playbook: routine ? "approved" : "unchanged" });
     return { ok: true, text: `v${version} is live.${routine} On or off duty hasn’t changed.` };
   } catch (e) { return fail(e); }
 }
