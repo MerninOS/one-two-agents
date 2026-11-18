@@ -10,9 +10,9 @@ https://claude.ai/artifact/8ec8poMoGrDtE3XY1axWrj, phase 6. With many orgs and q
    read from it.
 2. **Audit log** (done): an append-only row for each person's action (approvals, Connections changes, the
    org switch, promotions, people and roles), shown in Settings.
-3. **Traces** (this one): OpenTelemetry spans per job and run step (org, run, agent, tool), exportable to any
+3. **Traces** (done): OpenTelemetry spans per job and run step (org, run, agent, tool), exportable to any
    OTel backend or a Vercel drain, scrubbed like every log.
-4. **Status and alerts**: dead jobs, paused custom servers, expired sign-ins, cap breaches and
+4. **Status and alerts** (this one): dead jobs, paused custom servers, expired sign-ins, cap breaches and
    queue depth on one page, with alert emails to the owner through `integrations/email.ts`.
 
 ## The usage ledger (`supabase/migrations/20261207090000_usage_ledger.sql`, `core/usage.ts`)
@@ -68,3 +68,23 @@ https://claude.ai/artifact/8ec8poMoGrDtE3XY1axWrj, phase 6. With many orgs and q
   sent and spans cost nothing.
 - Tracing never changes or stops the work: a span that can't be made or tagged is skipped.
 - `npm run check:traces` tests the filtering and cleaning, and that the four kinds of work are wrapped.
+
+## Status and alerts (`core/status.ts`, `core/status-rules.ts`, `/status`, `supabase/migrations/20261209090000_status_alerts.sql`)
+
+- **One page, Status** (sidebar, above Settings), for everyone who can sign in. It lists what needs
+  a look, worst first, each with a link to where it's fixed, and tiles for the counts.
+- **Alerts** (red): jobs that failed in the last day; jobs still waiting more than 45 minutes past
+  their time (the scheduler runs every 15 minutes, up to 15 late, so this means it isn't running);
+  each paused connection (a sign-in that stopped working, or a custom server that changed a tool).
+- **Warnings** (grey, page only): runs that failed in the last day, gateway proposals refused in
+  the last day (over a cap, an unknown payee, a suppressed address), and facts that couldn't be
+  read (a migration not applied).
+- **Alert emails.** The scheduler (`/api/dispatch`), after each round's work, emails the owner the
+  alerts that are new, in one email, through `integrations/email.ts` (no recipient argument:
+  `BRIEF_TO`). Each problem goes out once, then at most every 24 hours while it lasts:
+  `status_alerts` holds when each was last sent, marked before the send so two rounds can't both
+  send. An alert that can't be sent never stops the scheduler.
+- **Home org only, for now.** `BRIEF_TO` is the home org's owner, so another org's problems show on
+  its Status page but aren't emailed until each org has its own address (not built).
+- Cap breaches show as refused proposals; circuit breakers aren't built yet (core/gateway/README.md).
+- `npm run check:status` tests which facts are problems, the alert timing and the email.
