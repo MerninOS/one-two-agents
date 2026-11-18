@@ -18,6 +18,7 @@ import { ownSettings, settings } from "@/core/settings";
 import { NO_SETTINGS, type BusinessSettings } from "@/core/settings-rules";
 import { loadBusiness } from "@/core/business";
 import { UNKNOWN_BUSINESS } from "@/core/business-rules";
+import { extensions } from "@/core/extensions";
 
 export default async function Settings() {
   const [f, caps, lists, me, members, biz] = await Promise.all([getFloor(), capLines(), getVendorsAndSuppressions(), requireSession(), listMembers().catch(() => null), loadBusiness().catch(() => UNKNOWN_BUSINESS)]);
@@ -30,6 +31,8 @@ export default async function Settings() {
   const when = (at: string) => new Date(at).toLocaleString("en-US", { timeZone: "America/Chicago", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
   const facts = (d: Record<string, unknown> | null) => (d ? Object.entries(d).map(([k, v]) => `${k.replace(/_/g, " ")} ${typeof v === "string" ? v : JSON.stringify(v)}`).join(" · ") : "");
   const theme = (await cookies()).get("cr_theme")?.value === "dark" ? "dark" : "light";
+  // the paid layer's cards (billing, seats) in the cloud edition; none in the open edition
+  const Extra = extensions.SettingsCards;
   const line = (k: React.ReactNode, v: React.ReactNode, first?: boolean) => <div className={"row" + (first ? "" : " rule")} style={{ justifyContent: "space-between", padding: "14px 0", fontSize: 14, gap: 16 }}><span style={{ display: "flex", flexDirection: "column", gap: 2 }}>{k}</span>{v}</div>;
   return (
     <div className="stack" style={{ maxWidth: 760 }}>
@@ -107,6 +110,8 @@ export default async function Settings() {
           : audit.rows.length === 0 ? <span className="sub">Nothing yet. Each change from now on lands here.</span>
           : <div>{audit.rows.map((r, i) => <div key={i}>{line(<>{r.action.replace(/_/g, " ")}{r.target ? <span className="ink2"> · {r.target}</span> : null}<span className="muted" style={{ fontSize: 12 }}>{r.actor}{r.detail ? ` · ${facts(r.detail)}` : ""}</span></>, <span className="sub" style={{ whiteSpace: "nowrap" }}>{when(r.at)}</span>, i === 0)}</div>)}</div>}
       </div>
+
+      {Extra && <Extra />}
     </div>
   );
 }

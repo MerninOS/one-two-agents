@@ -32,6 +32,7 @@ import { planOrgOn } from "./orgPlan";
 import { when } from "./format";
 import { schedWords } from "./schedule";
 import { setOrg } from "@/core/org-switch";
+import { planBlock } from "@/core/extensions";
 import { controlsOn } from "./session";
 
 export interface ActionResult { ok: boolean; text: string }
@@ -89,6 +90,7 @@ export async function setEnabled(agentId: string, on: boolean): Promise<ActionRe
   const who = await crewAgent(agentId);
   if (!who) return { ok: false, text: "Unknown agent." };
   if (on && !controlsOn()) return { ok: false, text: CONTROLS_OFF };
+  if (on) { const plan = await planBlock({ kind: "agent_on", agentIds: [agentId] }); if (plan) return { ok: false, text: plan }; }
   const { error } = await db().from("agents").update({ enabled: on }).eq("id", agentId);
   if (error) return fail(error.message);
   revalidatePath("/", "layout");
@@ -155,6 +157,7 @@ export async function turnOnOrg(confirmed: boolean): Promise<ActionResult> {
     const { flow, plan } = await orgPlanNow();
     if (!plan.wake.length) return { ok: false, text: "No agent is in the org yet." };
     const ids = plan.wake.map((w) => w.id);
+    const block = await planBlock({ kind: "agent_on", agentIds: ids }); if (block) return { ok: false, text: block };
     const { error } = await db().from("agents").update({ enabled: true }).in("id", ids);
     if (error) return fail(error.message);
     if (plan.chainsOn.length) await saveFlowVersion({ chains: plan.chains }, `Turned on the org: ${plan.chainsOn.join(", ")} on`, me.email, flow.version);
