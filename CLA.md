@@ -3,7 +3,7 @@
 Draft for legal review. Modelled on the Apache Software Foundation's Individual Contributor License
 Agreement. Contributors sign it once, through CLA Assistant, by commenting on their first pull request.
 
-Thank you for contributing to OPERATOR ("the Project"), maintained by [COPYRIGHT HOLDER] ("we"). This
+Thank you for contributing to OPERATOR ("the Project"), maintained by Operator Enterprises and Technologies, LLC ("we"). This
 agreement makes clear what rights you grant us in what you contribute. You keep your copyright and
 may use your contributions for any other purpose.
 
