@@ -44,12 +44,6 @@ async function readOne(key: MeasureKey, today: string, shared: { month?: ReturnT
       const m = await shared.month;
       return { reading: { value: key === "orders_month" ? m.count : m.revenue }, detail: null };
     }
-    case "lowest_cover_days": {
-      // a template pack's measure (templates/index.ts packMeasure)
-      const read = packMeasure(key);
-      if (!read) return { reading: { error: "no installed template pack counts this" }, detail: null };
-      return read();
-    }
     case "runway_months": {
       const b = await burnRate(90);
       if (b.cashUsd == null) return { reading: { error: "cash isn't set up (MERCURY_ACCOUNT_IDS)" }, detail: null };
@@ -62,6 +56,12 @@ async function readOne(key: MeasureKey, today: string, shared: { month?: ReturnT
       const list = k.settings.emailListId;
       if (!list) return { reading: { error: "pick the email list on Connections › Klaviyo" }, detail: null };
       return { reading: { value: (await klaviyoListSize(list)).profiles }, detail: null };
+    }
+    default: {
+      // a template pack's measure (templates/index.ts packMeasure)
+      const read = packMeasure(key);
+      if (!read) return { reading: { error: "no installed template pack counts this" }, detail: null };
+      return read();
     }
   }
 }

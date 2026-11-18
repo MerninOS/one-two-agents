@@ -8,6 +8,7 @@
 // are never called; a write would become a gateway action type that starts at Draft.
 
 import { createHash } from "node:crypto";
+import { SHOPIFY_TOOLS } from "@/core/shopify-queries";
 
 /**
  * A server's profile (docs/mcp-everywhere.md, slice 3). It ships with the app and only a pull
@@ -121,11 +122,12 @@ export const MCP_SERVERS = {
     name: "Shopify",
     // Our own server (integrations/shopify-server.ts) over the Admin GraphQL API with the read-only
     // custom app (for example "Agents (read)"). Shopify's own MCP servers are for storefronts and app building, not
-    // a read-only Admin view (slice 7). Each tool runs one fixed query (core/shopify-queries.ts); no
+    // a read-only Admin view (slice 7). Each tool runs one fixed query (core/shopify-queries.ts lists core's and each pack's); no
     // tool takes GraphQL, no mutation can run, and a key whose app has any write scope is refused.
+    // A template pack may add read tools, each one fixed read query in its code (templates/registry.ts).
     auth: "token",
     url: "https://shopify.dev/docs/api/admin-graphql",
-    readTools: ["shopify_green_lots", "shopify_stock_coffees", "shopify_shop_settings", "shopify_recent_orders", "shopify_board_orders", "shopify_orders_between"],
+    readTools: SHOPIFY_TOOLS,
     reportTools: [],
     scopes: ["the read-only app’s read scopes (a key with any write scope is refused)"],
     writeTools: [],

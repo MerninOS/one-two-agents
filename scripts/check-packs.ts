@@ -9,17 +9,21 @@ const importsOf = (f: string) => [...readFileSync(f, "utf8").matchAll(/from "([^
 
 // Outside templates/, only the registration points import a pack, and only through templates/index.ts.
 const REGISTRATION = new Set(["core/tools/catalog.ts", "core/measures.ts", "core/install.ts"]);
+// The pure registry (Shopify reads, goal measure definitions) is listed by core's pure rules.
+const PURE_REGISTRATION = new Set(["core/shopify-queries.ts", "core/goal-rules.ts"]);
 const outside = ["core", "agents", "dashboard", "app", "integrations", "scripts"].flatMap(files).filter((f) => !f.startsWith("scripts/check-"));
-let registered = 0;
+let registered = 0, pure = 0;
 for (const f of outside) {
   for (const m of importsOf(f)) {
     if (!/^@\/templates(\/|$)|^\.\.\/templates\//.test(m)) continue;
     if (m === "@/templates/types") continue; // the shape of a pack, not a pack
+    if (m === "@/templates/registry") { assert.ok(PURE_REGISTRATION.has(f), `${f} imports @/templates/registry: only ${[...PURE_REGISTRATION].join(" and ")} list pure pack parts`); pure++; continue; }
     if (m === "@/templates") { assert.ok(REGISTRATION.has(f), `${f} imports @/templates: only ${[...REGISTRATION].join(" and ")} register packs`); registered++; continue; }
     assert.fail(`${f} reaches into a pack (${m}); go through templates/index.ts`);
   }
 }
 assert.equal(registered, REGISTRATION.size, "the tool list, the goal measures and the installer register packs");
+assert.equal(pure, PURE_REGISTRATION.size, "the Shopify tools and the goal picker list pure pack parts");
 assert.ok(!statSync("templates").isFile());
 for (const gone of ["domain", "agents/cfo", "agents/chief-of-staff", "agents/bookkeeper", "agents/wholesale-hunter", "core/green.ts", "integrations/shopify/lots.ts", "integrations/shopify/settings.ts", "integrations/shopify/stock.ts"]) {
   let there = true; try { statSync(gone); } catch { there = false; }
@@ -37,7 +41,7 @@ for (const f of files("templates")) {
 }
 
 // Every pack under templates/ (a folder with an index.ts). There may be none.
-const registry = readFileSync("templates/index.ts", "utf8");
+const registry = readFileSync("templates/index.ts", "utf8"), pureRegistry = readFileSync("templates/registry.ts", "utf8");
 const catalog = readFileSync("core/tools/catalog.ts", "utf8");
 const ids = (s: string) => [...s.matchAll(/^\s+id: "([a-z_]+)"/gm)].map((m) => m[1]);
 const core = ids(catalog);
@@ -48,6 +52,7 @@ let tables = 0, tools = 0;
 const seenTools = new Set<string>();
 for (const d of packDirs()) {
   assert.match(registry, new RegExp(`from "\\./${d}"`), `templates/${d} is a pack, so templates/index.ts registers it`);
+  assert.match(pureRegistry, new RegExp(`from "\\./${d}/`), `templates/${d} is a pack, so templates/registry.ts lists its pure parts`);
   // A pack's own tables are tenant tables like any other, and only the pack reads or writes them.
   const own = packTables(d);
   for (const t of own) {

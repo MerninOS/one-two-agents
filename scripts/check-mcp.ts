@@ -6,7 +6,7 @@ import { join } from "node:path";
 import { CTX_META, callThrough, createHost, listThrough, served } from "../core/tools/mcp-host";
 import type { ToolDef } from "../core/tools/types";
 import { checkNotionArgs, looksLikeNotionKey, notionPageId } from "../core/notion-blocks";
-import { SHOPIFY_DOCS, WHO, assertReadOnly, shopifyKeyKind, shopifyVariables, writeScopes } from "../core/shopify-queries";
+import { SHOPIFY_DOCS, SHOPIFY_QUERIES, WHO, assertReadOnly, shopifyKeyKind, shopifyVariables, writeScopes } from "../core/shopify-queries";
 import { checkGmailArgs, draftRaw, isPlainAddress, readMail } from "../core/gmail-rules";
 import { checkReceiptArgs, looksLikeMercuryToken } from "../core/mercury-rules";
 import { cashOf, readAccounts, readCategories, readOneTxn, readOrgName, readTxnPage } from "../core/mercury-rules";
@@ -261,17 +261,17 @@ assert.equal(shopifyKeyKind("shpat_" + "a1".repeat(16)), "token");
 assert.equal(shopifyKeyKind("shpss_" + "b2".repeat(16)), "secret");
 assert.equal(shopifyKeyKind("ntn_short"), null);
 assert.equal(shopifyKeyKind("shpat_abc def"), null);
-assert.deepEqual(shopifyVariables("shopify_green_lots", { query: "status:any" }, "our-coffees"), { tool: "shopify_green_lots", variables: { query: "tag:blended-green AND -status:archived" } }, "a caller never writes the search");
-assert.deepEqual(shopifyVariables("shopify_stock_coffees", { handle: "secret-drops" }, "our-coffees"), { tool: "shopify_stock_coffees", variables: { handle: "our-coffees" } }, "the collection comes from settings");
-assert.deepEqual(shopifyVariables("shopify_board_orders", { since: "2026-08-18" }, "x"), { tool: "shopify_board_orders", variables: { query: "tag:blended created_at:>=2026-08-18", after: null } });
-const btw = shopifyVariables("shopify_orders_between", { start: "2026-11-15", end: "2026-11-16", after: "eyJsYXN0X2lkIjo1fQ==" }, "x");
+const ctx = { stockCollection: "" };
+const btw = shopifyVariables("shopify_orders_between", { start: "2026-11-15", end: "2026-11-16", after: "eyJsYXN0X2lkIjo1fQ==" }, ctx);
 assert.ok(!("problem" in btw) && /created_at:>='2026-11-15T00:00:00-06:00' created_at:<'2026-11-16T00:00:00-06:00'/.test(String(btw.variables.query)) && btw.variables.after === "eyJsYXN0X2lkIjo1fQ==");
 for (const [tool, args, why] of [
-  ["shopify_recent_orders", { since: "2026-11-01 OR tag:x" }, /since/],
-  ["shopify_board_orders", { since: "2026-11-01", after: "x' OR '1" }, /after/],
   ["shopify_orders_between", { start: "2026-11-16", end: "2026-11-15" }, /end after start/],
+  ["shopify_orders_between", { start: "2026-11-15", end: "2026-11-16", after: "x' OR '1" }, /after/],
+  ["shopify_orders_between", { start: "2026-11-15 OR tag:x", end: "2026-11-16" }, /start and end/],
   ["shopify_graphql", { query: "{ shop { name } }" }, /isn't a Shopify tool/],
-] as const) { const r = shopifyVariables(tool, args, "our-coffees"); assert.ok("problem" in r && why.test(r.problem), tool); }
+] as const) { const r = shopifyVariables(tool, args, ctx); assert.ok("problem" in r && why.test(r.problem), tool); }
+// every tool, core's or a pack's, is named shopify_… and has an input schema and a description
+for (const q of SHOPIFY_QUERIES) assert.ok(q.description.length > 20 && q.inputSchema && /^shopify_/.test(q.tool), q.tool);
 
 // ---- Gmail on our own server, signed in with Google (slice 6)
 const RO = "https://www.googleapis.com/auth/gmail.readonly", COMPOSE = "https://www.googleapis.com/auth/gmail.compose";
@@ -449,7 +449,7 @@ hostChecks.then(() => console.log("mcp: ok"), (e) => { console.error(e); process
   const odd = C.customToolId("c_ab12cd34", "posthog/query.insights");
   assert.ok(C.isCustomToolId(odd) && /^[a-zA-Z0-9_-]{1,128}$/.test(odd), "fits the Claude API's tool name rule");
   assert.notEqual(odd, C.customToolId("c_ab12cd34", "posthog_query_insights"), "names made safe never collide with a name already safe");
-  assert.ok(!C.isCustomToolId("shopify_green_lots") && !C.isCustomToolId("c_ab12cd34") && C.serverOfToolId("klaviyo_lists") === null);
+  assert.ok(!C.isCustomToolId("shopify_orders_between") && !C.isCustomToolId("c_ab12cd34") && C.serverOfToolId("klaviyo_lists") === null);
 
   const inputs = C.readInputs({ type: "object", properties: { project_id: { type: "string" }, days: { type: "integer" }, live: { type: "boolean" }, kind: { type: "string", enum: ["trends", "funnels"] }, ids: { type: "array" } }, required: ["project_id"] });
   const params = C.customParams(inputs, { project_id: "123" });

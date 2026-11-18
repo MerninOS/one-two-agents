@@ -198,9 +198,11 @@ No migration.
 Shopify's own MCP servers are for storefronts and building apps, not a read-only Admin view of one
 store, so Shopify runs on our own server in the app, like Notion and Gmail:
 
-- **`core/shopify-queries.ts`** (pure) holds every query that may run, one per tool, and builds each
-  tool's variables from checked inputs (`shopifyVariables`). No tool takes GraphQL or a search
-  string: the green-lot search and the stock collection are fixed in code and settings, dates must
+- **`core/shopify-rules.ts`** (pure) holds the rules and core's queries (a day's orders); a template
+  pack adds its own fixed queries in its code, listed in `templates/registry.ts`.
+  **`core/shopify-queries.ts`** lists them all, one per tool, and builds each tool's variables from
+  checked inputs (`shopifyVariables`). No tool takes GraphQL or a search string: a pack's searches
+  and settings are fixed in its code, dates must
   be `YYYY-MM-DD`, cursors must look like cursors. `assertReadOnly` refuses anything but a single
   named query, and `scripts/validate-graphql.mjs` still checks every document against Shopify's
   schema. Order reads carry no customer names, emails or addresses.

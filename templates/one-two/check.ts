@@ -8,6 +8,11 @@ import { ONE_TWO_CREW as crew } from "./crew";
 import { ONE_TWO_PLANNED as PLANNED } from "./planned";
 import { parseJudgment } from "./agents/chief-of-staff";
 import { deptLine, replyUrl } from "./agents/chief-of-staff/email";
+import { MEASURES, planGoal, progress, type GoalRow } from "../../core/goal-rules";
+import { MCP_SERVERS } from "../../core/mcp-rules";
+import { SHOPIFY_TOOLS, assertReadOnly, shopifyVariables } from "../../core/shopify-queries";
+import { ONE_TWO_SHOPIFY } from "./shopify/queries";
+import { ONE_TWO_MEASURE_DEFS } from "./measure-defs";
 
 // the crew installs cleanly, switched off, exactly as written
 assert.deepEqual(crewProblems(crew), [], "the One Two pack's crew installs cleanly");
@@ -38,5 +43,35 @@ const id = "3f1c2a4e-5b6d-4e7f-8a9b-0c1d2e3f4a5b";
 assert.equal(replyUrl({ dashboardUrl: "https://cr.example", runId: id }), `https://cr.example/runs/${id}#react`);
 assert.equal(replyUrl({ dashboardUrl: "https://cr.example" }), undefined);
 assert.equal(replyUrl({ runId: id }), undefined);
+
+// the storefront reads: served by our Shopify server, read-only, no customer details, no caller writes the search
+for (const q of ONE_TWO_SHOPIFY) {
+  assert.ok(SHOPIFY_TOOLS.includes(q.tool) && (MCP_SERVERS.shopify.readTools as readonly string[]).includes(q.tool), `${q.tool} is on the Shopify profile`);
+  assert.doesNotThrow(() => assertReadOnly(q.doc), q.tool);
+  assert.ok(!/\b(email|phone|address|firstName|lastName|displayName)\b/.test(q.doc), `${q.tool} reads no customer details`);
+}
+const ctx = { stockCollection: "" };
+assert.deepEqual(shopifyVariables("shopify_green_lots", { query: "status:any" }, ctx), { tool: "shopify_green_lots", doc: ONE_TWO_SHOPIFY[0].doc, variables: { query: "tag:blended-green AND -status:archived" } }, "a caller never writes the search");
+const stock = shopifyVariables("shopify_stock_coffees", { handle: "secret-drops" }, ctx);
+assert.ok(!("problem" in stock) && stock.variables.handle === "our-coffees", "the collection comes from settings");
+const stock2 = shopifyVariables("shopify_stock_coffees", {}, { stockCollection: "fall-coffees" });
+assert.ok(!("problem" in stock2) && stock2.variables.handle === "fall-coffees");
+const board = shopifyVariables("shopify_board_orders", { since: "2026-08-18" }, ctx);
+assert.ok(!("problem" in board) && board.variables.query === "tag:blended created_at:>=2026-08-18" && board.variables.after === null);
+const green = shopifyVariables("shopify_green_orders_between", { start: "2026-11-15", end: "2026-11-16" }, ctx);
+assert.ok(!("problem" in green) && /created_at:>='2026-11-15T00:00:00-06:00'/.test(String(green.variables.query)));
+for (const [tool, args, why] of [
+  ["shopify_recent_orders", { since: "2026-11-01 OR tag:x" }, /since/],
+  ["shopify_board_orders", { since: "2026-11-01", after: "x' OR '1" }, /after/],
+  ["shopify_green_orders_between", { start: "2026-11-16", end: "2026-11-15" }, /end after start/],
+] as const) { const r = shopifyVariables(tool, args, ctx); assert.ok("problem" in r && why.test(r.problem), tool); }
+
+// the green-cover goal: listed in the picker, a floor in days
+for (const m of ONE_TWO_MEASURE_DEFS) assert.ok(MEASURES.some((x) => x.key === m.key), `${m.key} is in the goal picker`);
+assert.ok("plan" in planGoal({ title: "Never run out", measure: "lowest_cover_days", target: 45 }, "2026-11-18"));
+const cover: GoalRow = { measure: "lowest_cover_days", target: 45, start_value: null, due_on: null, state: "active", paced_from: "2026-11-01T18:00:00Z" };
+assert.equal(progress(cover, { value: 62 }, "2026-11-18").status, "on_track");
+const behind = progress(cover, { value: 40 }, "2026-11-18");
+assert.deepEqual([behind.status, behind.line], ["behind", "40 days, at least 45 days"]);
 
 console.log(`check:pack-one-two ok (${crew.agents.length} agents, ${PLANNED.length} planned seats)`);

@@ -20,7 +20,7 @@ assert.deepEqual(ok(planGoal({ title: "  Land 5   wholesale accounts ", measure:
 assert.deepEqual(ok(planGoal({ title: "Sell more", measure: "revenue_month", target: "$3,000.456", dueOn: "2027-01-01" }, today)),
   { title: "Sell more", measure: "revenue_month", target: 3000.46, dueOn: null });
 // a floor goal: a date is optional
-assert.equal(ok(planGoal({ title: "Never run out", measure: "lowest_cover_days", target: 45 }, today)).dueOn, null);
+assert.equal(ok(planGoal({ title: "Stay funded", measure: "runway_months", target: 12 }, today)).dueOn, null);
 // Email list size (Klaviyo, slice 6) counts now: a total, so it needs a target and a date
 assert.deepEqual(ok(planGoal({ title: "Grow the list", measure: "email_list_size", target: "1000", dueOn: "2027-01-01" }, today)),
   { title: "Grow the list", measure: "email_list_size", target: 1000, dueOn: "2027-01-01" });
@@ -67,11 +67,10 @@ assert.equal(progress(rev, { value: 1600 }, today).status, "on_track");
 assert.equal(progress(rev, { value: 3100 }, today).status, "reached");
 
 // a floor goal
-const cover: GoalRow = { measure: "lowest_cover_days", target: 45, start_value: null, due_on: null, state: "active", paced_from: "2026-11-01T18:00:00Z" };
-assert.equal(progress(cover, { value: 62 }, today).status, "on_track");
-p = progress(cover, { value: 40 }, today);
-assert.deepEqual([p.status, p.line], ["behind", "40 days, at least 45 days"]);
-const runway: GoalRow = { ...cover, measure: "runway_months", target: 12 };
+const runway: GoalRow = { measure: "runway_months", target: 12, start_value: null, due_on: null, state: "active", paced_from: "2026-11-01T18:00:00Z" };
+assert.equal(progress(runway, { value: 14 }, today).status, "on_track");
+p = progress(runway, { value: 8 }, today);
+assert.equal(p.status, "behind");
 assert.equal(progress(runway, { value: 0, unbounded: true }, today).status, "on_track", "no burn, no runway limit");
 
 // no measure yet

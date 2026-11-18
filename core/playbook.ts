@@ -40,7 +40,7 @@ export function draftSteps(steps: Step[]): PlaybookStep[] {
 
 const stepKey = (s: PlaybookStep) => `${s.tool}(${Object.keys(s.input).sort().map((k) => `${k}=${s.input[k]}`).join(",")})`;
 
-/** "Green lots on hand", or "Green use per week (days 30)". */
+/** "Cash balance", or "Burn rate and runway (days 90)". */
 export function stepLabel(s: PlaybookStep): string {
   const ins = Object.entries(s.input).map(([k, v]) => `${k.replace(/_/g, " ")} ${v}`).join(", ");
   return `${TOOLS[s.tool]?.label ?? s.tool}${ins ? ` (${ins})` : ""}`;
