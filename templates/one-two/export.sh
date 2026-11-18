@@ -51,7 +51,7 @@ echo "export: tree ok ($(git -C "$SRC" rev-parse --short "$REF"), pack tables le
 
 # 4. Optionally, every check and the build, on the exported tree
 if [ "$CHECK" = "--check" ]; then
-  ln -s "$SRC/node_modules" node_modules
+  cp -al "$SRC/node_modules" node_modules 2>/dev/null || cp -r "$SRC/node_modules" node_modules
   cp -r "$SRC/.schemas" . 2>/dev/null || true
   npm run -s check && npm run -s check:all && npm run -s build >/dev/null && echo "export: checks and build ok"
   rm -rf node_modules .next .schemas tsconfig.tsbuildinfo
