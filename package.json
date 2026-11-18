@@ -26,6 +26,7 @@
     "check:jobs": "npx --yes tsx scripts/check-jobs.ts",
     "check:packs": "npx --yes tsx scripts/check-packs.ts",
     "check:install": "npx --yes tsx --conditions=react-server scripts/check-install.ts",
+    "check:audit": "npx --yes tsx scripts/check-audit.ts",
     "org:new": "npx --yes tsx --conditions=react-server --env-file=.env.local scripts/new-org.ts",
     "check": "npm run typecheck && npm run lint && npm run validate:graphql"
   },

@@ -2,6 +2,7 @@
 // MCP connection actions (docs/company-mode.md, slice 6). Each checks the login again. Disconnect
 // forgets the token; the email list is a choice for the Email list size measure. Neither grants a
 // tool: that stays a builder step.
+import { audit } from "@/core/audit";
 import { revalidatePath } from "next/cache";
 import { isMcpId } from "@/core/mcp-rules";
 import { addCustomServer, checkCustomServer, disconnectMcp, pauseCustom, removeCustomServer, resealAll, saveCustomKey, saveCustomScopes, saveMcpKey, saveMcpSetting, setCustomTool } from "@/integrations/mcp";
@@ -17,44 +18,48 @@ const fail = (e: unknown): ActionResult => ({ ok: false, text: e instanceof Erro
 const done = (text: string): ActionResult => { revalidatePath("/", "layout"); return { ok: true, text }; };
 
 export async function mcpDisconnect(id: string): Promise<ActionResult> {
-  const { no } = await asRole("owner"); if (no) return no;
+  const { me, no } = await asRole("owner"); if (no) return no;
   if (!isMcpId(id)) return { ok: false, text: "Unknown connection." };
   try {
     const r = await disconnectMcp(id);
+    await audit(me, "disconnect", id);
     return done(r.revoked ? "Disconnected, and the server cancelled the sign-in. Agents can’t read it until you connect again." : `Disconnected here. ${r.note ?? ""}`.trim());
   } catch (e) { return fail(e); }
 }
 
 /** Locks a pasted key in the vault, after the service says whose it is. The key is never sent back. */
 export async function mcpSaveKey(id: string, key: string): Promise<ActionResult> {
-  const { no } = await asRole("owner"); if (no) return no;
+  const { me, no } = await asRole("owner"); if (no) return no;
   if (!isMcpId(id)) return { ok: false, text: "Unknown connection." };
   if (typeof key !== "string" || key.length > 300) return { ok: false, text: "That isn’t a key." };
   try {
     const who = await saveMcpKey(id, key);
+    await audit(me, "save_key", id);
     return done(`Key locked in the vault. It belongs to “${who.name}”${who.workspace ? ` in ${who.workspace}` : ""}. Agents see only the pages shared with it.`);
   } catch (e) { return fail(e); }
 }
 
 /** Re-seals every saved sign-in with MCP_SECRET_KEY (after a new key is put in). */
 export async function vaultReseal(): Promise<ActionResult> {
-  const { no } = await asRole("owner"); if (no) return no;
+  const { me, no } = await asRole("owner"); if (no) return no;
   try {
     const r = await resealAll();
     const bad = r.unreadable.length ? ` ${r.unreadable.join(", ")} couldn’t be unlocked with either key: sign in to ${r.unreadable.length === 1 ? "it" : "them"} again.` : "";
+    await audit(me, "vault_reseal", null, { moved: r.moved, unreadable: r.unreadable.length });
     return done(`${r.moved} sign-in${r.moved === 1 ? "" : "s"} moved onto the current key.${bad}${r.unreadable.length ? "" : " You can remove MCP_SECRET_KEY_OLD now."}`);
   } catch (e) { return fail(e); }
 }
 
 /** The list the Email list size measure counts, checked against Klaviyo's own lists. */
 export async function klaviyoPickList(listId: string): Promise<ActionResult> {
-  const { no } = await asRole("owner"); if (no) return no;
+  const { me, no } = await asRole("owner"); if (no) return no;
   try {
     const lists = await klaviyoLists();
     const l = lists.find((x) => x.id === String(listId));
     if (!l) return { ok: false, text: "That list isn’t in Klaviyo any more." };
     await saveMcpSetting("klaviyo", "emailListId", l.id);
     await saveMcpSetting("klaviyo", "emailListName", l.name);
+    await audit(me, "pick_klaviyo_list", listId);
     return done(`Email list size now counts “${l.name}”.`);
   } catch (e) { return fail(e); }
 }
@@ -75,26 +80,28 @@ export async function customAdd(name: string, url: string, auth: string): Promis
     // adding a server counts as an ask for that service, so the most wanted get built in (never stops the add)
     await askFor({ name: knownByAddress(String(url))?.name ?? String(name), what: "Added its server by address on Connections.", by: me.email }).catch(() => undefined);
     revalidatePath("/", "layout");
+    await audit(me, "custom_add", id);
     return { ok: true, text: auth === "oauth" ? "Added. Tick the scopes it should ask for, then connect." : "Added. Paste its key to connect.", id };
   } catch (e) { return fail(e); }
 }
 
 /** Saves the ticked scopes; the page then goes to the server's own sign-in page. */
 export async function customScopes(id: string, scopes: string[]): Promise<ActionResult> {
-  const { no } = await asRole("owner"); if (no) return no;
+  const { me, no } = await asRole("owner"); if (no) return no;
   if (!controlsOn()) return CONTROLS_OFF;
   if (!isCustomId(id)) return unknown;
   if (!Array.isArray(scopes) || scopes.length > 30) return { ok: false, text: "Pick fewer scopes." };
-  try { await saveCustomScopes(id, scopes.map(String)); return { ok: true, text: "Saved." }; } catch (e) { return fail(e); }
+  try { await saveCustomScopes(id, scopes.map(String)); await audit(me, "custom_scopes", id, { scopes: scopes.length }); return { ok: true, text: "Saved." }; } catch (e) { return fail(e); }
 }
 
 export async function customKey(id: string, key: string): Promise<ActionResult> {
-  const { no } = await asRole("owner"); if (no) return no;
+  const { me, no } = await asRole("owner"); if (no) return no;
   if (!controlsOn()) return CONTROLS_OFF;
   if (!isCustomId(id)) return unknown;
   if (typeof key !== "string" || key.length > 900) return { ok: false, text: "That isn’t a key." };
   try {
     const r = await saveCustomKey(id, key);
+    await audit(me, "custom_key", id);
     return done(`Key locked in the vault. The server lists ${r.tools} tool${r.tools === 1 ? "" : "s"}, all off.`);
   } catch (e) { return fail(e); }
 }
@@ -113,32 +120,33 @@ export async function customCheck(id: string, accept: boolean): Promise<ActionRe
 }
 
 export async function customToolOn(id: string, tool: string, label: string, line: string, pins: Record<string, string>): Promise<ActionResult> {
-  const { no } = await asRole("owner"); if (no) return no;
+  const { me, no } = await asRole("owner"); if (no) return no;
   if (!controlsOn()) return CONTROLS_OFF;
   if (!isCustomId(id)) return unknown;
   if (typeof tool !== "string" || tool.length > 120 || !pins || typeof pins !== "object") return { ok: false, text: "That isn’t a tool." };
-  try { await setCustomTool(id, tool, { label: String(label ?? ""), line: String(line ?? ""), pins }); return done("On. No agent can use it yet: giving custom tools to agents comes in the next update."); } catch (e) { return fail(e); }
+  try { await setCustomTool(id, tool, { label: String(label ?? ""), line: String(line ?? ""), pins }); await audit(me, "custom_tool_on", id, { tool }); return done("On. No agent can use it yet: giving custom tools to agents comes in the next update."); } catch (e) { return fail(e); }
 }
 
 export async function customToolOff(id: string, tool: string): Promise<ActionResult> {
-  const { no } = await asRole("owner"); if (no) return no;
+  const { me, no } = await asRole("owner"); if (no) return no;
   if (!isCustomId(id)) return unknown;
-  try { await setCustomTool(id, String(tool), null); return done("Off."); } catch (e) { return fail(e); }
+  try { await setCustomTool(id, String(tool), null); await audit(me, "custom_tool_off", id, { tool }); return done("Off."); } catch (e) { return fail(e); }
 }
 
 export async function customPause(id: string, paused: boolean): Promise<ActionResult> {
   // pausing a server is a stop, so approvers may; running it again is the owner's
-  const { no } = await asRole(paused ? "approver" : "owner"); if (no) return no;
+  const { me, no } = await asRole(paused ? "approver" : "owner"); if (no) return no;
   if (!isCustomId(id)) return unknown;
   if (!paused && !controlsOn()) return CONTROLS_OFF;
-  try { await pauseCustom(id, !!paused); return done(paused ? "Paused for every agent." : "Running again."); } catch (e) { return fail(e); }
+  try { await pauseCustom(id, !!paused); await audit(me, paused ? "custom_pause" : "custom_resume", id); return done(paused ? "Paused for every agent." : "Running again."); } catch (e) { return fail(e); }
 }
 
 export async function customRemove(id: string): Promise<ActionResult> {
-  const { no } = await asRole("owner"); if (no) return no;
+  const { me, no } = await asRole("owner"); if (no) return no;
   if (!isCustomId(id)) return unknown;
   try {
     const r = await removeCustomServer(id);
+    await audit(me, "custom_remove", id);
     return done(r.revoked ? "Removed, and the server cancelled the sign-in." : `Removed here. ${r.note ?? ""}`.trim());
   } catch (e) { return fail(e); }
 }

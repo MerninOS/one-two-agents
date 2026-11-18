@@ -8,6 +8,7 @@ import { atLeast } from "@/core/roles";
 import { isMcpId } from "@/core/mcp-rules";
 import { isCustomId } from "@/core/custom-mcp-rules";
 import { PENDING_COOKIE, finishConnect } from "@/integrations/mcp";
+import { audit } from "@/core/audit";
 
 export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -19,6 +20,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
   const q = req.nextUrl.searchParams;
   try {
     await finishConnect(id, req.cookies.get(PENDING_COOKIE)?.value, { code: q.get("code"), state: q.get("state"), error: q.get("error") });
+    await audit(me, "connect", id);
     back.searchParams.set("connected", "1");
     revalidatePath("/", "layout");
   } catch (e) {
