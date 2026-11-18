@@ -1,0 +1,37 @@
+# Self-hosted OPERATOR (docs/self-host.md). Runs the app, the scheduler and a one-off migration step
+# against a Supabase project: Supabase's open-source self-host stack on your own machine, or a
+# Supabase Cloud project. Settings come from .env (copy .env.example).
+services:
+  migrate:
+    image: postgres:16-alpine
+    entrypoint: ["/bin/sh", "/selfhost/migrate.sh"]
+    environment:
+      DATABASE_URL: ${DATABASE_URL:?set DATABASE_URL in .env}
+    volumes:
+      - ./supabase/migrations:/migrations:ro
+      - ./selfhost:/selfhost:ro
+    restart: "no"
+
+  web:
+    build: .
+    env_file: .env
+    environment:
+      DASHBOARD_URL: ${APP_URL:-http://localhost:3000}
+    ports:
+      - "3000:3000"
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    restart: unless-stopped
+
+  scheduler:
+    image: alpine:3.20
+    entrypoint: ["/bin/sh", "/selfhost/scheduler.sh"]
+    environment:
+      APP_URL: http://web:3000
+      CRON_SECRET: ${CRON_SECRET:?set CRON_SECRET in .env}
+    volumes:
+      - ./selfhost:/selfhost:ro
+    depends_on:
+      - web
+    restart: unless-stopped
