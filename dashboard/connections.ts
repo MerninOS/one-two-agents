@@ -101,8 +101,7 @@ export const connOf = (t: ToolDef): ConnId => GROUP_CONN[t.group as BuiltInGroup
 
 /** The settings behind the Control Room itself, not something an agent is granted. */
 export const BEHIND_THE_SCENES: { key: IntegrationId; name: string; icon: string; about: string; setup: string }[] = [
-  { key: "claude", name: "Claude API", icon: "cpu", about: "The models agents think with. Spend is read from the run log.", setup: "Set ANTHROPIC_API_KEY." },
-  { key: "supabase", name: "Supabase", icon: "database", about: "The agents’ database. Service role, server only.", setup: "Set SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY." },
+    { key: "supabase", name: "Supabase", icon: "database", about: "The agents’ database. Service role, server only.", setup: "Set SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY." },
   { key: "vault", name: "Token vault", icon: "lock", about: "Locks every sign-in made with a Connect button, with a key of its own. Tokens are never shown, logged or given to a model.", setup: "Set MCP_SECRET_KEY (at least 32 characters, made with openssl rand -base64 32). Until then nothing can be connected." },
 ];
 

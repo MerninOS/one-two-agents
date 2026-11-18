@@ -381,3 +381,16 @@ its own on **Settings > Where things go** (owners only), stored as the `business
 App infrastructure stays in Vercel: Supabase, Claude, Resend and its sender (`BRIEF_FROM`), the
 vault key, the app's Google OAuth client, `SHOPIFY_API_VERSION`. The One Two pack's
 `SHOPIFY_STOCK_COLLECTION` and the Build Board's `NOTION_BUILD_BOARD_DB_ID` stay app-wide too.
+
+## Slice 8.1c: each org's own Claude key
+
+Every model call used the app's one `ANTHROPIC_API_KEY`, so every org's agents would have billed
+to whoever runs the deployment. Now an owner pastes the business's own Claude API key on
+**Connections > Claude API**. It is checked with Anthropic (a read of the model list, no redirects),
+sealed in the vault with the org's data key on its own connection row (`anthropic_key`), and
+never shown, logged or put in a prompt.
+
+`claude()` (`integrations/anthropic.ts`) is async: it uses the org's own key when there is one;
+without one, **only the home org** falls back to the app's key, and any other org's run stops with
+a note to paste a key. Managed credits (card 128, slice 4) will let an org with credits use the
+app's key, metered. Only `integrations/anthropic.ts` opens the key (`check:mcp`).

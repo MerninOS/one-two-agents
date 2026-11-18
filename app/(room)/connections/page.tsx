@@ -1,13 +1,15 @@
 import Link from "next/link";
 import { HARD_RULES } from "@/dashboard/crew";
-import { getFloor, type Floor } from "@/dashboard/data";
+import { getFloor, requireSession, type Floor } from "@/dashboard/data";
 import { BEHIND_THE_SCENES, CONNECTIONS, CONN_BY_ID, isSetUp, toolsOf, usersOf, type ConnId, type Connection } from "@/dashboard/connections";
 import type { ToolDef } from "@/core/tools/types";
 import { Icon } from "@/dashboard/components/Icon";
 import { Avatar, LockList } from "@/dashboard/components/ui";
 import { ActionButton, KeyForm } from "@/dashboard/components/client";
+import { claudeRemoveKey, claudeSaveKey } from "@/dashboard/connectionActions";
+import { HOME_ORG_ID, orgId } from "@/core/tenancy";
 import { MCP_SERVERS, type McpId } from "@/core/mcp-rules";
-import { MCP_MISSING, VAULT_MISSING, getCustomServer, listCustomServers, mcpLog, mcpStatus, vaultState, type McpLogRow, type McpStatus, type VaultState } from "@/integrations/mcp";
+import { CLAUDE_KEY_ID, MCP_MISSING, VAULT_MISSING, getCustomServer, listCustomServers, mcpLog, mcpStatus, vaultState, type McpLogRow, type McpStatus, type VaultState } from "@/integrations/mcp";
 import { AddServerCard, CustomDetail, CustomTiles, SignInLog } from "@/dashboard/components/CustomServers";
 import { serverOfToolId } from "@/core/custom-mcp-rules";
 import { knownServer } from "@/core/connector-rules";
@@ -204,7 +206,7 @@ function Detail({ c, f, mcp, more, note }: { c: Connection; f: Floor; mcp: McpVi
 }
 
 export default async function Connections({ searchParams }: { searchParams: Promise<{ c?: string; s?: string; known?: string; problem?: string; connected?: string }> }) {
-  const f = await getFloor();
+  const [f, me] = await Promise.all([getFloor(), requireSession()]);
   const sp = await searchParams;
   const pick = sp.c;
   // a custom server (s=<id>) or the add form (s=new) takes the detail pane instead of a built-in connection
@@ -257,6 +259,7 @@ export default async function Connections({ searchParams }: { searchParams: Prom
         <span className="row" style={{ gap: 8, fontSize: 15, fontWeight: 600 }}><Icon name="lock" size={15} />Always on, for every agent</span>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))", columnGap: 24 }}><LockList rules={HARD_RULES} dark /></div>
       </div>
+      <ClaudeKeyCard owner={me.role === "owner"} />
       <div className="card" style={{ gap: 10 }}>
         <span className="card-t">Behind the scenes</span>
         {BEHIND_THE_SCENES.map((b) => (
@@ -268,5 +271,28 @@ export default async function Connections({ searchParams }: { searchParams: Prom
         ))}
       </div>
     </>
+  );
+}
+
+/** The business's own Claude API key (docs/tenancy.md, slice 8.1c): agents' model calls are billed to it. */
+async function ClaudeKeyCard({ owner }: { owner: boolean }) {
+  const [st, org] = await Promise.all([mcpStatus(CLAUDE_KEY_ID), orgId()]);
+  const own = !!st?.connected, paused = !!st?.paused;
+  const appKey = org === HOME_ORG_ID && !!process.env.ANTHROPIC_API_KEY;
+  const ok = (own && !paused) || appKey;
+  return (
+    <div className="card" style={{ gap: 10 }}>
+      <span className="row" style={{ gap: 8, justifyContent: "space-between" }}>
+        <span className="row" style={{ gap: 8, fontSize: 15, fontWeight: 600 }}><Icon name="cpu" size={15} />Claude API</span>
+        <span className="pill sm" style={{ background: ok ? "var(--mint-soft)" : "var(--red-soft)", color: ok ? "var(--mint-ink)" : "var(--red-ink)" }}>{ok ? "Set up" : "Not set up"}</span>
+      </span>
+      <span className="ink2" style={{ fontSize: 12.5 }}>
+        {own ? (paused ? `Paused: ${st?.lastError ?? "Anthropic stopped accepting the key"}. Paste a new one.` : "Agents think with this business’s own Claude key, locked in the vault. Anthropic bills it directly; spend also shows in the run log.")
+          : appKey ? "Agents use the app’s own Claude key (ANTHROPIC_API_KEY in Vercel). Paste this business’s key to bill model calls to it instead."
+            : "Paste a Claude API key from the Claude Console (Settings > API keys). Until then agents can’t think, so runs stop with a note."}
+      </span>
+      {owner && <KeyForm label="Claude API key" save={claudeSaveKey} placeholder="sk-ant-…" replace={own} />}
+      {owner && own && <ActionButton className="btn outline sm" action={claudeRemoveKey} confirm={{ title: "Forget the Claude key?", body: "The key is forgotten here. Delete it in the Claude Console too if it shouldn’t work anywhere.", confirmLabel: "Forget it", kind: "danger" }}>Forget the key</ActionButton>}
+    </div>
   );
 }

@@ -3,6 +3,8 @@ import "server-only";
 // integrations/models.ts (every provider's prices live there).
 import Anthropic from "@anthropic-ai/sdk";
 import { modelDef } from "./models";
+import { claudeKey } from "./mcp";
+import { HOME_ORG_ID, orgId } from "@/core/tenancy";
 
 export { Anthropic };
 
@@ -19,7 +21,20 @@ export const WEB_SEARCH_USD = 0.01; // per search
 /** $ per token in and out, for estimates shown in the Control Room. Null for a model without a price. */
 export const priceOf = (id: string): { in: number; out: number } | null => { const m = modelDef(id); return m ? { in: m.in, out: m.out } : null; };
 
-export const claude = () => new Anthropic(); // reads ANTHROPIC_API_KEY
+export const NO_CLAUDE_KEY = "This business has no Claude API key yet. Paste one on Connections > Claude API.";
+
+/**
+ * The Claude client for the current business (docs/tenancy.md, slice 8.1c): its own key from the
+ * vault when it pasted one, so Anthropic bills it directly. Without one, only the home org may use
+ * the app's own key (ANTHROPIC_API_KEY); any other org is refused rather than run on our bill.
+ * Managed credits (card 128, slice 4) will let an org with credits use the app's key, metered.
+ */
+export async function claude(): Promise<Anthropic> {
+  const own = await claudeKey();
+  if (own) return new Anthropic({ apiKey: own });
+  if ((await orgId()) !== HOME_ORG_ID) throw new Error(NO_CLAUDE_KEY);
+  return new Anthropic(); // reads ANTHROPIC_API_KEY
+}
 
 /** Every input token a response billed, cache reads and writes included. */
 export const inputTokens = (u: Anthropic.Beta.BetaUsage | Anthropic.Usage) =>

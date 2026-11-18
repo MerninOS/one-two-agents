@@ -14,7 +14,8 @@ import { reactionTally, reactionsOf, reactionsOnRun, type Reaction } from "@/cor
 import type { Tally } from "@/core/reaction-rules";
 import { APPROVAL_LABELS, APPROVAL_TOOLS, MAX_CHAINS, MAX_STEPS, METRICS, listFlowVersions, loadFlow, nextFirings, readFlow, type Chain, type Crew } from "@/core/flow";
 import { TOOLS } from "@/core/tools/catalog";
-import { mcpStatus, vaultReady } from "@/integrations/mcp";
+import { CLAUDE_KEY_ID, mcpStatus, vaultReady } from "@/integrations/mcp";
+import { HOME_ORG_ID, orgId, withOrg } from "@/core/tenancy";
 import { MCP_IDS } from "@/core/mcp-rules";
 import { orgState, type OrgState } from "@/core/org-switch";
 import type { CrewMember, IntegrationId } from "./crew";
@@ -22,7 +23,6 @@ import { avgCostOf, buildCrew, memberOf, type RosterRow, type RosterSpec } from 
 import { plannedSeats } from "@/core/install";
 import type { CrewAgent, CrewCanvasData } from "./components/CrewCanvas";
 import { SESSION_COOKIE, controlsOn, sessionOf } from "./session";
-import { withOrg } from "@/core/tenancy";
 import { memberById } from "@/core/members";
 import { atLeast, refusal, type Member, type Role } from "@/core/roles";
 
@@ -181,6 +181,9 @@ export const getFloor = cache(async (): Promise<Floor> => {
   // every server in the registry: set up when signed in and not paused (Notion also needs its parent page, Mercury its accounts)
   const s = await settings();
   if (!s.ownerEmail) h.email = false;
+  // Claude: the business's own key, or for the home org only, the app's (integrations/anthropic.ts)
+  const ck = await mcpStatus(CLAUDE_KEY_ID);
+  h.claude = (!!ck?.connected && !ck.paused) || (h.claude && (await orgId()) === HOME_ORG_ID);
   const extra: Partial<Record<string, boolean>> = { shopify: !!s.shopifyDomain, notion: !!s.notionBriefParent, mercury: s.mercuryAccountIds.length > 0 };
   for (const [id, st] of mcp) if (st?.connected && !st.paused && extra[id] !== false) h[id] = true;
   if (a.error || r.error) return { ...empty, problem: `Supabase: ${(a.error ?? r.error)?.message}` };

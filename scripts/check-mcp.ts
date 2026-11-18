@@ -463,3 +463,18 @@ hostChecks.then(() => console.log("mcp: ok"), (e) => { console.error(e); process
   assert.match(C.customReply("y".repeat(C.MAX_CUSTOM_REPLY + 50)), /\[cut, 50 more characters\]$/);
   assert.equal(C.customReply({ a: 1 }), '{"a":1}');
 }
+
+// ---- The business's own Claude key (docs/tenancy.md, slice 8.1c)
+{
+  const anth = readFileSync("integrations/anthropic.ts", "utf8");
+  assert.match(anth, /const own = await claudeKey\(\);\n\s+if \(own\) return new Anthropic\(\{ apiKey: own \}\);\n\s+if \(\(await orgId\(\)\) !== HOME_ORG_ID\) throw new Error\(NO_CLAUDE_KEY\);/, "only the home org may fall back to the app's Claude key");
+  const save = mcpSrc.slice(mcpSrc.indexOf("export async function saveClaudeKey"), mcpSrc.indexOf("export async function removeClaudeKey"));
+  assert.ok(save.includes("id: CLAUDE_KEY_ID, secret: await sealSecret({ key } satisfies KeySecret)") && save.includes('await logEvent(CLAUDE_KEY_ID, "connected", "Claude API key", [key]);'), "the Claude key is sealed in the vault and never logged");
+  assert.match(mcpSrc, /redirect: "error"[^\n]*\n\s+\} catch \(e\) \{ throw new Error\(`Anthropic couldn't be reached/, "checking the key never follows a redirect");
+  // only integrations/anthropic.ts opens it
+  const walkTs = (d: string): string[] => readdirSync(d).flatMap((f) => { const p = join(d, f); return statSync(p).isDirectory() ? (f === "node_modules" || f.startsWith(".") ? [] : walkTs(p)) : /\.(ts|tsx)$/.test(f) ? [p] : []; });
+  for (const dir of ["app", "core", "dashboard", "integrations", "templates"]) for (const f of walkTs(dir)) {
+    if (f === "integrations/mcp.ts" || f === "integrations/anthropic.ts") continue;
+    assert.ok(!/\bclaudeKey\b/.test(readFileSync(f, "utf8")), `${f} must not open the Claude key`);
+  }
+}

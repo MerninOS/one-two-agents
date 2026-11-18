@@ -966,3 +966,43 @@ export async function removeCustomServer(id: string): Promise<{ revoked: boolean
   if (error) throw new Error(error.message);
   return r;
 }
+
+// ---- The business's own Claude key (docs/tenancy.md, slice 8.1c). Not an MCP server: the key the
+// runner calls the Claude API with. It lives in the vault like every other key, sealed with the
+// org's data key, on a connection row of its own; only this file opens it.
+
+export const CLAUDE_KEY_ID = "anthropic_key";
+const looksLikeClaudeKey = (k: string) => /^sk-ant-[A-Za-z0-9_-]{20,300}$/.test(k);
+
+/** Keeps the business's Claude key in the vault, after Anthropic confirms it works. Never echoed back, logged or shown. */
+export async function saveClaudeKey(pasted: string): Promise<void> {
+  if (!keys().current) throw new Error(VAULT_MISSING);
+  const key = pasted.trim();
+  if (!looksLikeClaudeKey(key)) throw new Error("That doesn't look like a Claude API key (it starts with sk-ant-).");
+  let res: Response;
+  try {
+    res = await fetch("https://api.anthropic.com/v1/models?limit=1", { headers: { "x-api-key": key, "anthropic-version": "2023-06-01" }, cache: "no-store", redirect: "error", signal: AbortSignal.timeout(15_000) });
+  } catch (e) { throw new Error(`Anthropic couldn't be reached to check the key: ${scrubSecrets(e instanceof Error ? e.message : String(e), [key]).slice(0, 120)}`); }
+  if (res.status === 401 || res.status === 403) throw new Error("Anthropic didn't accept that key.");
+  if (!res.ok) throw new Error(`Anthropic answered ${res.status} when checking the key. Try again in a minute.`);
+  const now = new Date().toISOString();
+  const { error } = await db().from("mcp_connections").upsert({ id: CLAUDE_KEY_ID, secret: await sealSecret({ key } satisfies KeySecret), connected_at: now, last_error: null, paused_at: null, updated_at: now }, { onConflict: "id" });
+  if (error) throw new Error(missing(error.message) ? MCP_MISSING : error.message);
+  await logEvent(CLAUDE_KEY_ID, "connected", "Claude API key", [key]);
+}
+
+/** Forgets the business's Claude key here. It keeps working at Anthropic until it is deleted there. */
+export async function removeClaudeKey(): Promise<void> {
+  const { error } = await db().from("mcp_connections").delete().eq("id", CLAUDE_KEY_ID);
+  if (error) throw new Error(error.message);
+  await logEvent(CLAUDE_KEY_ID, "disconnected");
+}
+
+/** The business's own Claude key, opened for one call; null when it has none or it is paused. Only integrations/anthropic.ts calls this. */
+export async function claudeKey(): Promise<string | null> {
+  const r = await row(CLAUDE_KEY_ID).catch(() => null);
+  if (!r?.secret || r.paused_at) return null;
+  const s = await readSecret<KeySecret>(CLAUDE_KEY_ID, r);
+  return s?.key ?? null;
+}
+
