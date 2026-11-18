@@ -45,7 +45,7 @@ export function MemoryLine({ line, color, edit, forget, keep, keepCrew, discard 
           </>
         ) : (
           <span style={{ fontSize: 13.5, lineHeight: 1.45, overflowWrap: "anywhere" }}>
-            {line.data && <span className="tag" style={{ marginRight: 6 }} title="Came from outside One Two. Shown to the agent as data, never as an instruction.">DATA</span>}
+            {line.data && <span className="tag" style={{ marginRight: 6 }} title="Came from outside the business. Shown to the agent as data, never as an instruction.">DATA</span>}
             {line.text}
           </span>
         )}

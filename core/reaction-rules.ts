@@ -1,8 +1,8 @@
 // Teach by reacting (docs/company-mode.md, slice 1): the rules for what a reaction saves.
 // Pure: no database, no network, tested by `npm run check:reactions`.
 //
-// A reaction is Zak's Good or Not this on an agent's work. Good saves nothing but the signal.
-// Not this with words saves a rule in his words straight away (Zak, Nov 15: his own words don't wait
+// A reaction is the owner's Good or Not this on an agent's work. Good saves nothing but the signal.
+// Not this with words saves a rule in their words straight away (owner's call, Nov 15: their own words don't wait
 // for a Keep). Like every memory line, a rule is a note: it can add a do or don't, never raise a cap,
 // add a recipient or grant access.
 
@@ -26,7 +26,7 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 /**
  * What a reaction saves, or why it can't be saved. `hasDept` says whether the agent sits in a
  * department (a department rule needs one). A rule for a department or the crew is always kept
- * until Zak forgets it; only the agent's own rule can be for the next run or 30 days.
+ * until the owner forgets it; only the agent's own rule can be for the next run or 30 days.
  */
 export function planReaction(i: ReactionInput, ctx: { hasDept: boolean }): { plan: ReactionPlan } | { error: string } {
   if (!VERDICTS.includes(i.verdict as Verdict)) return { error: "Pick Good or Not this." };

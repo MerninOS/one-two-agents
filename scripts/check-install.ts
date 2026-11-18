@@ -7,7 +7,7 @@ import { ONE_TWO_CREW } from "../templates/one-two/crew";
 import type { PackCrew } from "../templates/types";
 
 const crew = ONE_TWO_CREW;
-assert.deepEqual(crewProblems(crew), [], "One Two's crew installs cleanly");
+assert.deepEqual(crewProblems(crew), [], "the One Two pack's crew installs cleanly");
 
 let n = 0;
 const rows = installRows("one-two", crew, () => `00000000-0000-4000-8000-${String(++n).padStart(12, "0")}`);

@@ -6,7 +6,7 @@ import { avgCostOf, buildCrew, costLabel, hueFor, memberOf, scheduleOf, sinceLab
 import { PLANNED } from "../dashboard/crew";
 import { flowProblems, type Chain, type Crew } from "../core/flow-rules";
 
-const tools = { team_report: { label: "Your team", kind: "read" }, report_email_zak: { label: "Email Zak the result", kind: "report" }, gmail_draft_lead: { label: "Draft an email to a lead", kind: "action" } };
+const tools = { team_report: { label: "Your team", kind: "read" }, report_email_zak: { label: "Email the owner the result", kind: "report" }, gmail_draft_lead: { label: "Draft an email to a lead", kind: "action" } };
 const morning: Chain = { key: "morning", name: "Morning", on: true, start: { type: "schedule", days: "daily", time: "05:30" }, steps: [{ agent: "cfo" }, { agent: "b_reese", days: "weekdays", notBefore: "06:45" }] };
 
 // an agent built in the app looks like any other: name from its live version, role from its seat
@@ -20,7 +20,7 @@ assert.equal(reese.tier, "Report");
 assert.equal(reese.icon, "cpu");
 assert.equal(reese.hue, hueFor("b_reese"));
 assert.equal(reese.estCostLabel, "Up to $0.25");
-assert.equal(reese.writes, "Email Zak the result");
+assert.equal(reese.writes, "Email the owner the result");
 assert.equal(reese.since, "Nov 14");
 assert.equal(reese.manualOnly, true);
 assert.deepEqual(reese.schedule, { kind: "weekdays", time: "06:45", chain: "Morning" });

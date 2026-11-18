@@ -2,7 +2,7 @@ import "server-only";
 // Goals store (docs/company-mode.md, slice 2): a department's goals in Supabase, each with a measure
 // from the list in code. The rules (what a goal may hold, pace, status) are in core/goal-rules.ts;
 // the counting is in core/measures.ts. Callers check the login. A goal decides nothing an agent may
-// do: it is what Zak wants, read by heads (goal_progress) and shown on Crew, the home page and its own page.
+// do: it is what the owner wants, read by heads (goal_progress) and shown on Crew, the home page and its own page.
 import { db } from "@/core/db";
 import { chicagoDate } from "@/core/time";
 import { MAX_GOALS_PER_DEPT, measureOf, planGoal, progress, STATUS_WORDS, type GoalInput, type GoalRow, type GoalState, type Progress } from "@/core/goal-rules";
@@ -93,7 +93,7 @@ export async function setGoalState(id: string, state: GoalState): Promise<void> 
   if (error) throw new Error(error.message);
 }
 
-/** Who owns a department's goals: the agent (or Zak) in its head seat. */
+/** Who owns a department's goals: the agent (or the owner) in its head seat. */
 export function ownerOf(org: Org, deptId: string): { agentId: string | null; label: string } {
   const h = headOf(org, deptId);
   if (h?.holder === "agent" && h.agentId) return { agentId: h.agentId, label: h.title };
@@ -128,5 +128,5 @@ export async function goalProgress(agentId: string) {
     };
   });
   numbers.goals_behind = rows.filter((r) => r.progress.status === "behind" || r.progress.status === "missed").length;
-  return { data: { scope: seat.departmentId ? "your department" : "every department", goals: data, note: data.length ? undefined : "No goals set yet. Zak sets them on Crew." }, numbers };
+  return { data: { scope: seat.departmentId ? "your department" : "every department", goals: data, note: data.length ? undefined : "No goals set yet. The owner sets them on Crew." }, numbers };
 }

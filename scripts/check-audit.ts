@@ -17,6 +17,8 @@ const AUDITED = [
   "mcpDisconnect", "mcpSaveKey", "vaultReseal", "klaviyoPickList", "customAdd", "customScopes", "customKey", "customToolOn", "customToolOff", "customPause", "customRemove",
   // people and roles
   "peopleAdd", "peopleSetRole", "peopleRemove",
+  // the business's own words, which every agent is told
+  "saveBusinessProfile",
   // the org chart: budgets, email caps, who holds a seat, drafts routing
   "orgSetDeptBudget", "orgSetDeptEmails", "placeAgent", "orgSetHolder", "orgSetLeadChecks",
   // proposals change an agent's spec or routine

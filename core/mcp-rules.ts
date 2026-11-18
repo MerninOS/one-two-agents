@@ -20,7 +20,7 @@ export interface McpServer {
    * How it is signed in. "oauth": the server's own sign-in page (Connect). "token": a key pasted
    * once on Connections, for a server we run ourselves in the app (integrations/mcp.ts LOCAL), used
    * where the service's hosted server would reach more than the profile needs. "google": a server we
-   * run ourselves, signed in on Google's own page (Connect) with One Two's own Google OAuth client
+   * run ourselves, signed in on Google's own page (Connect) with the business's own Google OAuth client
    * (GMAIL_CLIENT_ID and GMAIL_CLIENT_SECRET), asking for the profile's one scope only.
    */
   auth: "oauth" | "token" | "google";
@@ -29,15 +29,15 @@ export interface McpServer {
   /** The only tools code may call on it, by the server's own names. Read tools only. */
   readTools: readonly string[];
   /**
-   * Report tools: writes into One Two's own workspace (a page or row Zak reads), made by code after a
-   * run, like an email to Zak. A model never calls one. Only a server we run ourselves has them.
+   * Report tools: writes into the business's own workspace (a page or row the owner reads), made by code after a
+   * run, like an email to the owner. A model never calls one. Only a server we run ourselves has them.
    */
   reportTools: readonly string[];
   /** The sign-in scopes asked for: only what the read tools need, never the server's whole list. For a token server, what the key reaches, in words. */
   scopes: readonly string[];
   /**
    * Write tools, each with the gateway action type it becomes (starting at Draft). Code never calls
-   * one directly: only core/gateway may, after Zak approves. Empty until a slice builds one.
+   * one directly: only core/gateway may, after an approver approves. Empty until a slice builds one.
    */
   writeTools: readonly { tool: string; actionType: string }[];
   /** Who should sign in, shown next to Connect. */
@@ -71,13 +71,13 @@ export const MCP_SERVERS = {
     reportTools: [],
     scopes: ["read", "offline_access"],
     writeTools: [],
-    signInHint: "Sign in as an admin of One Two’s business org, and pick One Two (not the household account) on Mercury’s page.",
+    signInHint: "Sign in as an admin of the business’s Mercury org, and pick the business (not a personal or household account) on Mercury’s page.",
   },
   mercury_write: {
     id: "mercury_write",
     name: "Mercury writes",
     // A second sign-in to the same server, held only by the gateway (slice 5b). It asks for
-    // transactions:update alone: a charge's category and memo, after Zak approves. No payment,
+    // transactions:update alone: a charge's category and memo, after an approver approves. No payment,
     // transfer, receipt, budget or reimbursement scope, so its token can't use those tools.
     // Receipt files are mercury_files below: Mercury's MCP can't attach a file to a chosen charge.
     auth: "oauth",
@@ -86,13 +86,13 @@ export const MCP_SERVERS = {
     reportTools: [],
     scopes: ["transactions:update", "offline_access"],
     writeTools: [{ tool: "updateTransaction", actionType: "mercury_annotate" }],
-    signInHint: "Sign in to One Two’s business org again. This sign-in asks only to change a charge’s category and memo, and only the gateway uses it, after you approve.",
+    signInHint: "Sign in to the business’s Mercury org again. This sign-in asks only to change a charge’s category and memo, and only the gateway uses it, after you approve.",
   },
   mercury_files: {
     id: "mercury_files",
     name: "Mercury receipt files",
     // Our own small server (integrations/mercury-files-server.ts) for the one write Mercury's MCP
-    // can't do: attach a file to the charge Zak approved. Its key is a Mercury Custom token with
+    // can't do: attach a file to the charge an approver approved. Its key is a Mercury Custom token with
     // transaction write scope, pasted on Connections into the vault; only the gateway uses it.
     auth: "token",
     url: "https://api.mercury.com/api/v1",
@@ -107,7 +107,7 @@ export const MCP_SERVERS = {
     name: "Notion",
     // Our own server over Notion's REST API with the agents' internal integration key. Notion's hosted
     // MCP server signs in as a person and reaches their whole workspace with write tools on; this
-    // key reaches only the pages shared with the integration (slice 4, Zak's choice 2026-11-16).
+    // key reaches only the pages shared with the integration (slice 4, the owner's choice 2026-11-16).
     auth: "token",
     url: "https://api.notion.com/v1",
     readTools: ["notion_page_text", "notion_row_on"],
@@ -120,7 +120,7 @@ export const MCP_SERVERS = {
     id: "shopify",
     name: "Shopify",
     // Our own server (integrations/shopify-server.ts) over the Admin GraphQL API with the read-only
-    // app "One Two Agents (read)". Shopify's own MCP servers are for storefronts and app building, not
+    // custom app (for example "Agents (read)"). Shopify's own MCP servers are for storefronts and app building, not
     // a read-only Admin view (slice 7). Each tool runs one fixed query (core/shopify-queries.ts); no
     // tool takes GraphQL, no mutation can run, and a key whose app has any write scope is refused.
     auth: "token",
@@ -144,21 +144,21 @@ export const MCP_SERVERS = {
     reportTools: [],
     scopes: ["https://www.googleapis.com/auth/gmail.readonly"],
     writeTools: [],
-    signInHint: "Sign in as the One Two mailbox the receipts come to, and leave the one box Google shows ticked.",
+    signInHint: "Sign in as the business mailbox the receipts come to, and leave the one box Google shows ticked.",
   },
   gmail: {
     id: "gmail",
     name: "Gmail drafts",
     // A second Google sign-in, held only by the gateway: gmail.compose, used for one tool, a plain
-    // draft to the address on a lead's row after Zak approves. There is no send tool on our server,
-    // so a draft is only ever sent by Zak from Gmail.
+    // draft to the address on a lead's row after an approver approves. There is no send tool on our server,
+    // so a draft is only ever sent by the owner from Gmail.
     auth: "google",
     url: "https://gmail.googleapis.com/gmail/v1",
     readTools: [],
     reportTools: [],
     scopes: ["https://www.googleapis.com/auth/gmail.compose"],
     writeTools: [{ tool: "gmail_create_draft", actionType: "gmail.create_draft" }],
-    signInHint: "Sign in as the same One Two mailbox. Only the gateway uses this sign-in, to put an email you approved in Drafts; you send it from Gmail.",
+    signInHint: "Sign in as the same business mailbox. Only the gateway uses this sign-in, to put an email you approved in Drafts; you send it from Gmail.",
   },
 } as const satisfies Record<string, McpServer>;
 export type McpId = keyof typeof MCP_SERVERS;
@@ -170,7 +170,7 @@ export function mayCall(id: string, tool: string): boolean {
   return isMcpId(id) && (MCP_SERVERS[id].readTools as readonly string[]).includes(tool);
 }
 
-/** A server's write tools: only core/gateway calls one, after Zak approves (integrations/mcp.ts callWriteTool). */
+/** A server's write tools: only core/gateway calls one, after an approver approves (integrations/mcp.ts callWriteTool). */
 export function mayWrite(id: string, tool: string): boolean {
   return isMcpId(id) && (MCP_SERVERS[id].writeTools as readonly { tool: string }[]).some((w) => w.tool === tool);
 }
@@ -178,7 +178,7 @@ export function mayWrite(id: string, tool: string): boolean {
 /** Every tool the tool check watches on a server: its read tools and its write tools. */
 export const checkedTools = (id: McpId): string[] => [...MCP_SERVERS[id].readTools, ...(MCP_SERVERS[id].writeTools as readonly { tool: string }[]).map((w) => w.tool)];
 
-/** Report tools: code-delivered writes into One Two's own workspace, only on a server we run. */
+/** Report tools: code-delivered writes into the business's own workspace, only on a server we run. */
 export function mayReport(id: string, tool: string): boolean {
   return isMcpId(id) && MCP_SERVERS[id].auth === "token" && (MCP_SERVERS[id].reportTools as readonly string[]).includes(tool);
 }
@@ -290,7 +290,7 @@ export const REPORT_PERIODS = ["last_7_days", "last_30_days", "last_90_days", "l
 export const REPORT_STATS = ["recipients", "delivered", "opens_unique", "clicks_unique", "conversions", "unsubscribes"] as const;
 export interface ReportRow { name: string; channel: string; sent: string; recipients: number; delivered: number; opens: number; clicks: number; orders: number; revenue: number; unsubscribes: number }
 
-/** One row per campaign or flow message, with the counts it reported. Names are One Two's own words, still shown as data. */
+/** One row per campaign or flow message, with the counts it reported. Names are the business's own words, still shown as data. */
 export function reportRows(payload: unknown, kind: "campaign" | "flow"): ReportRow[] {
   return arr(obj(obj(obj(payload).data).attributes).results).map((x) => {
     const r = obj(x), s = obj(r.statistics), g = obj(r.groupings);
@@ -357,7 +357,7 @@ export function readAuthServer(j: unknown): AuthServer | null {
   };
 }
 
-/** The address Zak's browser goes to, to say yes on the server's own sign-in page. */
+/** The address the owner's browser goes to, to say yes on the server's own sign-in page. */
 export function authorizeUrl(a: AuthServer, o: { clientId: string; redirectUri: string; challenge: string; state: string; resource?: string; scope?: string; extra?: Record<string, string> }): string {
   const u = new URL(a.authorization_endpoint);
   u.searchParams.set("response_type", "code");
@@ -409,7 +409,7 @@ export interface ToolCheck { missing: string[]; changed: string[]; seen: Record<
 /**
  * Compares the profile's read tools with what the server lists now. `missing`: gone from the
  * server. `changed`: inputs differ from the last accepted fingerprint. `seen`: the fingerprints now,
- * saved when the check passes or Zak signs in again.
+ * saved when the check passes or the owner signs in again.
  */
 export function checkTools(readTools: readonly string[], listed: readonly ListedTool[], accepted: Record<string, string> | null): ToolCheck {
   const by = new Map(listed.map((t) => [t.name, t]));

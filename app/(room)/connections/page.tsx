@@ -76,12 +76,12 @@ function McpPanel({ c: base, id, v }: { c: Connection; id: McpId; v: McpView }) 
           </span>
           {google && !s.paused && (
             <span className="soft-box" style={{ fontSize: 12.5, lineHeight: 1.45 }}>
-              {s.settings.mailbox ? <>Signed in as <b>{s.settings.mailbox}</b>. If that isn’t One Two’s mailbox, tap Disconnect, then Connect again with the right Google account.</> : "Couldn’t read which mailbox this is."}
+              {s.settings.mailbox ? <>Signed in as <b>{s.settings.mailbox}</b>. If that isn’t the business’s mailbox, tap Disconnect, then Connect again with the right Google account.</> : "Couldn’t read which mailbox this is."}
             </span>
           )}
           {id === "mercury" && !s.paused && (
             <span className="soft-box" style={{ fontSize: 12.5, lineHeight: 1.45 }}>
-              {v.org ? <>Signed in to <b>{v.org}</b>. If that isn’t One Two’s business org, tap Disconnect, then Connect again and pick One Two on Mercury’s page.</> : `Couldn’t read which organization this is${v.orgProblem ? `: ${v.orgProblem}` : ""}.`}
+              {v.org ? <>Signed in to <b>{v.org}</b>. If that isn’t the business’s Mercury org, tap Disconnect, then Connect again and pick the business on Mercury’s page.</> : `Couldn’t read which organization this is${v.orgProblem ? `: ${v.orgProblem}` : ""}.`}
             </span>
           )}
           {id === "klaviyo" && (
@@ -156,7 +156,7 @@ function ToolRow({ t, f, locked }: { t: ToolDef; f: Floor; locked?: boolean }) {
       <span className="row" style={{ gap: 8, alignItems: "flex-start" }}>
         {locked && <Icon name="lock" size={14} style={{ marginTop: 2, flex: "none", opacity: 0.6 }} />}
         <span style={{ flex: 1, fontSize: 14, fontWeight: 600 }}>{t.label}</span>
-        {!t.trusted && <span className="pill sm" style={{ background: "var(--yel-soft)", color: "var(--yel-ink)" }} title="Written by people outside One Two. The agent treats it as information, never as instructions.">Untrusted</span>}
+        {!t.trusted && <span className="pill sm" style={{ background: "var(--yel-soft)", color: "var(--yel-ink)" }} title="Written by people outside the business. The agent treats it as information, never as instructions.">Untrusted</span>}
       </span>
       <span className="ink2" style={{ fontSize: 12.5, lineHeight: 1.5 }}>{t.detail}</span>
       {only && <span className="muted" style={{ fontSize: 12 }}>Only {only.join(" and ")} may ask for this. That rule is in code.</span>}

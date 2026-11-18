@@ -6,7 +6,7 @@ priority.
 ## Reporting a vulnerability
 
 Report privately through GitHub's "Report a vulnerability" (Security tab), or email
-[SECURITY EMAIL]. Please don't open a public issue. Include what you found, how to reproduce it and
+earlybiirrd@gmail.com. Please don't open a public issue. Include what you found, how to reproduce it and
 what it could lead to. We reply within 3 working days and keep you posted until it's fixed.
 
 ## In scope

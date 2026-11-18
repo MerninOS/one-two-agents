@@ -5,7 +5,7 @@ import "./globals.css";
 
 const sans = Plus_Jakarta_Sans({ subsets: ["latin"], weight: ["400", "500", "600", "700"], variable: "--font-sans" });
 
-export const metadata: Metadata = { title: "Control Room · One Two", description: "Mission control for One Two Coffee Lab’s agents", robots: { index: false, follow: false } };
+export const metadata: Metadata = { title: "Control Room · OPERATOR", description: "Mission control for a business’s agents", robots: { index: false, follow: false } };
 
 export default async function RootLayout({ children }: { children: React.ReactNode }) {
   const theme = (await cookies()).get("cr_theme")?.value === "dark" ? "dark" : "light";

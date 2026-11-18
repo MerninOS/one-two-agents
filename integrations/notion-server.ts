@@ -6,7 +6,7 @@ import "server-only";
 // Why our own: Notion's hosted server signs in as a person, reaches their whole workspace and has
 // no read-only switch. This one uses the agents' internal integration key, so it sees only pages
 // shared with that integration, and it offers only the tools named in core/mcp-rules.ts: two read
-// tools, and four report tools that code (never a model) uses to write pages and rows Zak reads.
+// tools, and four report tools that code (never a model) uses to write pages and rows the owner reads.
 // Every request is checked again here (checkNotionArgs) before anything reaches Notion.
 import { MCP_PROTOCOL, MCP_SERVERS } from "@/core/mcp-rules";
 import { checkNotionArgs } from "@/core/notion-blocks";

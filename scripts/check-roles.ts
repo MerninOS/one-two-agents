@@ -11,7 +11,7 @@ assert.match(refusal("viewer", "approver"), /Approvers and owners only: you’re
 assert.match(refusal("approver", "owner"), /Owners only: you’re signed in as an approver/);
 
 // emails
-assert.equal(normalEmail("  Zak@Example.COM "), "zak@example.com");
+assert.equal(normalEmail("  Sam@Example.COM "), "sam@example.com");
 for (const bad of ["", "zak", "zak@", "@x.co", "a b@x.co", "x".repeat(250) + "@x.co", null]) assert.equal(normalEmail(bad), null);
 
 // at least one owner always remains

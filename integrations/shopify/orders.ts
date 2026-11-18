@@ -1,7 +1,7 @@
 import "server-only";
 // A day's orders, read-only, for any business on Shopify: what core's goal measures count
 // (core/measures.ts). Read through our Shopify MCP server (integrations/shopify-server.ts): each
-// read is one fixed query there. One Two's green ledger and roasting board are its pack's
+// read is one fixed query there. the business's green ledger and roasting board are its pack's
 // (templates/one-two/shopify/orders.ts).
 import { callMcpTool } from "@/integrations/mcp";
 

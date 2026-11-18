@@ -2,7 +2,7 @@
 // Crew > Schedule, slice 2 (docs/org-schedule.md): the org's day (every agent's run on one timeline,
 // by department), the cost table (cost a run and a month, Scheduled or By hand, the total) and one
 // agent's schedule (days, time, on duty). Numbers come from dashboard/orgDay.ts, worked out in code
-// on the server; this only shows them and sends Zak's choices to the server actions, which check
+// on the server; this only shows them and sends the owner's choices to the server actions, which check
 // everything again.
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";

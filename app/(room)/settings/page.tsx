@@ -12,10 +12,13 @@ import { People } from "@/dashboard/components/people";
 import { capLines } from "@/dashboard/guardrails";
 import { controlsOn } from "@/dashboard/session";
 import { ThemeToggle } from "@/dashboard/components/client";
-import { CapForm, SuppressForm, VendorForm } from "@/dashboard/components/settingsForms";
+import { BusinessForm, CapForm, SuppressForm, VendorForm } from "@/dashboard/components/settingsForms";
+import { saveBusinessProfile } from "@/dashboard/orgActions";
+import { loadBusiness } from "@/core/business";
+import { UNKNOWN_BUSINESS } from "@/core/business-rules";
 
 export default async function Settings() {
-  const [f, caps, lists, me, members] = await Promise.all([getFloor(), capLines(), getVendorsAndSuppressions(), requireSession(), listMembers().catch(() => null)]);
+  const [f, caps, lists, me, members, biz] = await Promise.all([getFloor(), capLines(), getVendorsAndSuppressions(), requireSession(), listMembers().catch(() => null), loadBusiness().catch(() => UNKNOWN_BUSINESS)]);
   const audit = await listAudit(100).then((rows) => ({ rows, problem: null as string | null }), (e: unknown) => ({ rows: [], problem: e instanceof Error ? e.message : String(e) }));
   const when = (at: string) => new Date(at).toLocaleString("en-US", { timeZone: "America/Chicago", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
   const facts = (d: Record<string, unknown> | null) => (d ? Object.entries(d).map(([k, v]) => `${k.replace(/_/g, " ")} ${typeof v === "string" ? v : JSON.stringify(v)}`).join(" · ") : "");
@@ -31,6 +34,12 @@ export default async function Settings() {
         {line(<>The org<span className="muted" style={{ fontSize: 12 }}>Turn every agent on or off at once on Crew &gt; Schedule.</span></>, <Link href="/crew?view=schedule" className="btn ghost sm">{f.org.on ? "On" : "Off"} · Open</Link>)}
         {(() => { const lock = dbLock(); return line(<>Database lock<span className="muted" style={{ fontSize: 12 }}>{lock.on ? "The database itself only lets this business’s rows through, on top of the app’s own checks." : lock.problem ?? "Off: the app’s own checks keep each business to its rows. Turn on with SUPABASE_SIGNING_KEY and SUPABASE_PUBLISHABLE_KEY in Vercel (docs/tenancy.md, slice 2b)."}</span></>, <span className="pill sm" style={lock.on ? { background: "var(--mint-soft)", color: "var(--mint-ink)" } : { background: "var(--soft)", color: "var(--ink2)" }}>{lock.on ? "On" : "Off"}</span>); })()}
         {line(<>Signed in as {me.email}<span className="muted" style={{ fontSize: 12 }}>{ROLE_LABELS[me.role]}: {ROLE_WORDS[me.role]}</span></>, <form action={signOut}><button className="btn ghost sm">Sign out</button></form>)}
+      </div>
+
+      <div className="card" style={{ padding: "16px 22px", gap: 10 }}>
+        <span className="card-t">The business</span>
+        <span className="sub">What every agent is told about who it works for, at the top of each run. Keep it to facts you’d put on your website.</span>
+        <BusinessForm initial={{ name: biz.name, about: biz.about ?? "", ownerName: biz.ownerName ?? "" }} canEdit={me.role === "owner"} save={saveBusinessProfile} />
       </div>
 
       <div className="card" style={{ padding: "16px 22px", gap: 6 }}>

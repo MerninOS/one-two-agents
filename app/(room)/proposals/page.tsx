@@ -6,7 +6,7 @@ import { PROPOSALS_MISSING, listProposals, type Proposal } from "@/core/proposal
 import { KIND_WORDS } from "@/core/proposal-rules";
 import { agentNames, loadOrg } from "@/core/org";
 
-// Proposals (docs/company-mode.md, slice 3): what heads handed Zak to decide and what he decided
+// Proposals (docs/company-mode.md, slice 3): what heads handed the owner to decide and what was decided
 // lately. Each opens its own page to decide. A yes on a new tool opens Find a tool, where asks for
 // connectors are counted (docs/custom-servers.md, slice 3).
 

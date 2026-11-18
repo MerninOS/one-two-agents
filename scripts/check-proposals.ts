@@ -100,7 +100,7 @@ for (const k of KNOWN_SERVERS) {
   else assert.ok(k.builtIn, `${k.name} without an address is built in`);
 }
 assert.equal(new Set(KNOWN_SERVERS.map((k) => k.key)).size, KNOWN_SERVERS.length, "one entry per service");
-const asks = Array.from({ length: 25 }, (_, i) => ({ by: "Zak", what: `ask ${i}`, at: String(i) }));
+const asks = Array.from({ length: 25 }, (_, i) => ({ by: "Sam", what: `ask ${i}`, at: String(i) }));
 const kept = asks.reduce<Ask[]>((a, x) => withAsk(a, x), []);
 assert.equal(kept.length, MAX_ASKS_KEPT);
 assert.equal(kept[0].what, "ask 24", "newest first");
@@ -112,7 +112,7 @@ assert.deepEqual(rc.sections.map((s) => s.heading), ["Why", "Where things stand 
 assert.match(rc.sections[0].lines[0], /^Avery asked for PostHog on November 17, 2026: Weekly sessions$/);
 assert.ok(rc.sections[1].lines[0].includes("https://mcp.posthog.com/mcp"));
 assert.ok(rc.sections[1].lines.includes("Requests: https://x.test/connections/find"));
-assert.ok(!requestCard({ name: "Square", ask: { by: "Zak", what: "Sales", at: "x" }, date: "d", link: null, known: null }).sections[1].lines.some((l) => l.startsWith("Requests:")));
+assert.ok(!requestCard({ name: "Square", ask: { by: "Sam", what: "Sales", at: "x" }, date: "d", link: null, known: null }).sections[1].lines.some((l) => l.startsWith("Requests:")));
 assert.equal(REQUEST_CARD.status, "Backlog");
 
 console.log("proposals: ok");

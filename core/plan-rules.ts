@@ -5,8 +5,8 @@ import { OUTSIDE_POINTER } from "./pointer";
 //
 // A plan is the head's words (its run's result) plus up to 8 lines. Each line names who does it:
 // a teammate under the head (the line becomes a 7-day focus note for that teammate, never
-// authority), an open seat (a job nobody holds yet; the head proposes a hire separately), or Zak
-// (a person's job; the head only suggests, Zak marks it done). Who is matched in code against the
+// authority), an open seat (a job nobody holds yet; the head proposes a hire separately), or the owner
+// (a person's job; the head only suggests, the owner marks it done). Who is matched in code against the
 // chart, never taken from the model as an id.
 
 export const MAX_PLAN_LINES = 8;
@@ -18,11 +18,11 @@ export interface PlanItem {
   n: number;
   title: string;
   kind: LineKind;
-  /** The teammate or open seat, by name, as the chart had it. "You" for Zak. */
+  /** The teammate or open seat, by name, as the chart had it. "You" for the owner. */
   who: string;
   agentId?: string;
   seatId?: string;
-  /** The focus for the teammate, or the note for Zak. */
+  /** The focus for the teammate, or the note for the owner. */
   words: string;
   /** The focus note saved for the teammate. */
   memoryId?: string;
@@ -31,7 +31,7 @@ export interface PlanItem {
 
 const one = (v: unknown, max: number) => String(v ?? "").replace(/\s+/g, " ").trim().slice(0, max);
 const same = (a: string, b: string) => a.trim().toLowerCase() === b.trim().toLowerCase();
-const ZAK = /^(zak|you|me|the owner)$/i;
+const OWNER = /^(you|me|owner|the owner|a person)$/i;
 
 /** The Monday (Chicago calendar date) of the week a date is in. */
 export function weekOf(date: string): string {
@@ -47,7 +47,7 @@ export function checkLine(input: Record<string, unknown>): { line: { title: stri
   const title = one(input.title, 120);
   if (title.length < 3) return { problem: "title must say what the job is" };
   const who = one(input.who, 60);
-  if (!who) return { problem: "who must name a teammate under you, an open seat, or Zak" };
+  if (!who) return { problem: "who must name a teammate under you, an open seat, or the owner" };
   const words = one(input.words, MAX_FOCUS);
   if (words.length < 10) return { problem: "words must say what to focus on, in a sentence" };
   if (OUTSIDE_POINTER.test(title) || OUTSIDE_POINTER.test(words)) return { problem: "a plan line can't hold an address, a phone number or a link" };
@@ -58,12 +58,12 @@ export interface Reach { team: { id: string; name: string }[]; openSeats: { id: 
 
 /** Who a line names, matched against the head's team and its department's open seats. */
 export function resolveWho(who: string, reach: Reach): { kind: "zak" } | { kind: "agent"; agentId: string; name: string } | { kind: "seat"; seatId: string; title: string } | { problem: string } {
-  if (ZAK.test(who.trim())) return { kind: "zak" };
+  if (OWNER.test(who.trim())) return { kind: "zak" };
   const a = reach.team.find((t) => same(t.name, who) || same(t.id, who));
   if (a) return { kind: "agent", agentId: a.id, name: a.name };
   const s = reach.openSeats.find((x) => same(x.title, who));
   if (s) return { kind: "seat", seatId: s.id, title: s.title };
-  return { problem: `${who} isn't a teammate under you, an open seat in your department, or Zak` };
+  return { problem: `${who} isn't a teammate under you, an open seat in your department, or the owner` };
 }
 
 /** The 7-day focus note a teammate carries into its runs. */
@@ -91,5 +91,5 @@ export function planItems(lines: { title: string; who: string; words: string }[]
 /** "Plan" when the department has no plan this week yet, else "review". Shown to the head by the This week tool. */
 export const runMode = (hasPlan: boolean): "plan" | "review" => (hasPlan ? "review" : "plan");
 
-/** The jobs a plan gives Zak that he hasn't marked done. */
+/** The jobs a plan gives the owner that nobody has marked done. */
 export const openJobs = (items: PlanItem[]) => items.filter((i) => i.kind === "zak" && !i.doneAt);

@@ -31,7 +31,7 @@ export interface SeatView {
   agent: SeatAgent | null;
   /** Seats under this one, in order. */
   kids: SeatView[];
-  /** Proposals waiting on Zak about this seat: a hire for it (or under it), a retirement (company mode slice 3). */
+  /** Proposals waiting on the owner about this seat: a hire for it (or under it), a retirement (company mode slice 3). */
   proposals: { id: string; text: string }[];
 }
 export interface DeptView {
@@ -146,9 +146,9 @@ export async function mapOrgOf(org: Org | null, agentId: string): Promise<MapOrg
   const names = await agentNames([...team, ...(up?.agentId ? [up.agentId] : [])]).catch(() => ({} as Record<string, string>));
   const name = (id: string) => names[id] ?? id;
   const box: MapOrg["reportsTo"] = !up
-    ? { title: "Zak", sub: "The company seat reports to you, in the morning brief", agentId: null, open: false }
+    ? { title: "You", sub: "The company seat reports to you, in the morning brief", agentId: null, open: false }
     : up.holder === "agent" && up.agentId ? { title: name(up.agentId), sub: seatPath(org, up), agentId: up.agentId, open: false }
-    : up.holder === "zak" ? { title: "Zak", sub: seatPath(org, up), agentId: null, open: false }
+    : up.holder === "zak" ? { title: "You", sub: seatPath(org, up), agentId: null, open: false }
     : { title: up.title, sub: "No one sits here yet, so its result waits", agentId: null, open: true };
   return { reportsTo: box, team: team.map((id) => ({ id, name: name(id) })) };
 }

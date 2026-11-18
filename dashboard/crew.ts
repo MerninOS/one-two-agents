@@ -12,7 +12,7 @@ export interface Schedule {
   kind: "manual" | Days;
   /** "HH:MM" in Central Time */
   time?: string;
-  /** The crew flow chain (core/flow.ts) that runs it on this schedule. Off until Zak turns the chain on. */
+  /** The crew flow chain (core/flow.ts) that runs it on this schedule. Off until the owner turns the chain on. */
   chain?: string;
 }
 
@@ -66,7 +66,7 @@ export const PLANNED: CrewMember[] = [
     mandate: "I’ll sort customer email and draft replies. You send them." },
   { id: "conversion_optimizer", name: "Ellis", role: "Conversion Optimizer", icon: "flask-conical", built: false, phase: 4, tier: "Draft",
     trigger: "First Monday of each month, 8:00 AM CT, plus a weekly code-only check Mondays 7:30 AM CT",
-    job: "Runs one experiment at a time on onetwocoffeelab.com and drafts each change as a pull request you review and merge. About $3 to $6 a month.",
+    job: "Runs one experiment at a time on the store's website and drafts each change as a pull request you review and merge. About $3 to $6 a month.",
     mandate: "I’ll run one experiment at a time on the site and draft each change as a pull request. You merge it. I never do." },
   { id: "content_scout", name: "Kit", role: "Content Scout", icon: "clapperboard", built: false, phase: 4, tier: "Report", trigger: "Trigger set when built",
     job: "Social content research, weekly ideas, creator briefs.",
@@ -75,7 +75,7 @@ export const PLANNED: CrewMember[] = [
 
 export const TIERS: Record<Tier, string> = {
   Report: "Report: reads only, writes a report.",
-  Draft: "Draft: proposes actions that Zak approves.",
+  Draft: "Draft: proposes actions that an approver approves.",
   Act: "Act: carries out allow-listed, reversible actions within limits.",
 };
 

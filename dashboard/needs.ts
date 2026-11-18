@@ -1,11 +1,11 @@
-// "Needs you": things on the floor that want Zak, worked out from real runs and settings.
+// "Needs you": things on the floor that want the owner, worked out from real runs and settings.
 import { CONNECTIONS, usersOfCheck } from "./connections";
 import type { Floor } from "./data";
 import type { Seen } from "./seen";
 import { stateOf } from "./status";
 
 export type Priority = "High" | "Medium" | "Low";
-/** `run` marks an alert about one run. Those clear once Zak opens the agent or the run; the rest stay until fixed. */
+/** `run` marks an alert about one run. Those clear once the owner opens the agent or the run; the rest stay until fixed. */
 export interface Need { pri: Priority; title: string; sub: string; href: string; agentId?: string; run?: boolean }
 
 export function needs(f: Floor, now = Date.now(), seen: Seen = {}): Need[] {

@@ -4,7 +4,7 @@ import { deptChoices } from "@/dashboard/goals";
 import { goalCreate } from "@/dashboard/goalActions";
 import { GoalForm } from "@/dashboard/components/GoalForm";
 
-// Set a goal (docs/company-mode.md, slice 2): a department, the goal in Zak's words, a measure from
+// Set a goal (docs/company-mode.md, slice 2): a department, the goal in the owner's words, a measure from
 // the list in code, a target and a date.
 
 export default async function NewGoal({ searchParams }: { searchParams: Promise<{ dept?: string }> }) {

@@ -9,7 +9,7 @@ import { G_PER_LB } from "@/templates/one-two/domain/coffee";
 import { db } from "@/core/db";
 import { env } from "@/core/env";
 import { chicagoDate, dayTitle } from "@/core/time";
-import { emailZak, hasEmail } from "@/integrations/email";
+import { emailOwner, hasEmail } from "@/integrations/email";
 import { h2, li, notionArchive, notionPage, notionRow, notionConnected, notionRowOn, notionUpdateRow, p, prop, type Block, type Props } from "@/integrations/notion";
 import { getInventoryLots } from "@/templates/one-two/shopify/lots";
 import { getBoardOrders, greenLedger } from "@/templates/one-two/shopify/orders";
@@ -220,7 +220,7 @@ async function sendBrief(f: Facts, judgment: Judgment, sections: readonly string
   let sent = "";
   if (email) {
     const m = briefEmail(view(url));
-    const id = await emailZak(m.subject, m.html, m.text);
+    const id = await emailOwner(m.subject, m.html, m.text);
     sent = `Brief emailed (${id}).`;
     // the row is written before the send, so it is only marked once the email has gone
     if (rowId) await notionUpdateRow(rowId, { Emailed: prop.check(true) }).catch(() => { notionError += " The row's Emailed box could not be ticked."; });

@@ -1,24 +1,24 @@
 // Checks Avery's chat and the Desk (core/chat-rules.ts, dashboard/desk.ts): a rule is saved only in
-// Zak's words, who a rule is for, the prompt, and the Desk's summary line. No database, no network.
+// the person's words, who a rule is for, the prompt, and the Desk's summary line. No database, no network.
 // Run: npm run check:chat
 import assert from "node:assert/strict";
 
-import { HISTORY_TURNS, MAX_MESSAGE, chatPrompt, cleanMessage, deptNamed, inZaksWords, resolveRuleWho, savedLines } from "../core/chat-rules";
+import { HISTORY_TURNS, MAX_MESSAGE, chatPrompt, cleanMessage, deptNamed, inOwnWords, resolveRuleWho, savedLines } from "../core/chat-rules";
 import { deskLine, firstSentence } from "../dashboard/desk";
 
-// what Zak typed: tidied, never empty, never too long
+// what the person typed: tidied, never empty, never too long
 assert.deepEqual(cleanMessage("  Rowan's leads were too generic.\r\n\r\n\r\nSkip chains.  "), { text: "Rowan's leads were too generic.\n\nSkip chains." });
 assert.ok("problem" in cleanMessage("   "));
 assert.ok("problem" in cleanMessage("x".repeat(MAX_MESSAGE + 1)));
 
-// a rule is saved only in Zak's own words, copied from this message
+// a rule is saved only in the person's own words, copied from this message
 const msg = "Rowan's leads this week were too generic. Skip chains.";
-assert.ok(inZaksWords("Skip chains.", msg));
-assert.ok(inZaksWords("skip   chains", msg), "case, spacing and the full stop don't matter");
-assert.ok(inZaksWords("“Skip chains”", msg), "quotes don't matter");
-assert.ok(!inZaksWords("Never contact chain coffee shops", msg), "Avery's own wording is refused");
-assert.ok(!inZaksWords("Skip chains and franchises", msg), "adding words is refused");
-assert.ok(!inZaksWords("go", "go"), "too short to be a rule");
+assert.ok(inOwnWords("Skip chains.", msg));
+assert.ok(inOwnWords("skip   chains", msg), "case, spacing and the full stop don't matter");
+assert.ok(inOwnWords("“Skip chains”", msg), "quotes don't matter");
+assert.ok(!inOwnWords("Never contact chain coffee shops", msg), "Avery's own wording is refused");
+assert.ok(!inOwnWords("Skip chains and franchises", msg), "adding words is refused");
+assert.ok(!inOwnWords("go", "go"), "too short to be a rule");
 
 // who a rule is for: an agent, a department, or everyone; nobody else
 const reach = { agents: [{ id: "wholesale_hunter", name: "Rowan" }, { id: "bookkeeper", name: "Quinn" }], departments: [{ id: "sales", name: "Sales" }] };
@@ -34,9 +34,9 @@ assert.ok("problem" in deptNamed("Legal", reach.departments));
 // the prompt: earlier turns (at most HISTORY_TURNS), then the new message
 const hist = Array.from({ length: 14 }, (_, i) => ({ role: (i % 2 ? "avery" : "zak") as "zak" | "avery", text: `line ${i}` }));
 const p = chatPrompt(hist, "How's Sales?", "Sunday, Nov 15, 2026-11-15");
-assert.match(p, /Zak's new message:\nHow's Sales\?/);
+assert.match(p, /Their new message:\nHow's Sales\?/);
 assert.ok(!p.includes("line 3"), "older turns are dropped");
-assert.equal((p.match(/^(Zak|You): line/gm) ?? []).length, HISTORY_TURNS);
+assert.equal((p.match(/^(Them|You): line/gm) ?? []).length, HISTORY_TURNS);
 assert.doesNotMatch(chatPrompt([], "Hi", "today"), /Earlier/);
 
 // what code says it saved: only real notes, split one per line

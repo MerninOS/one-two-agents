@@ -81,13 +81,13 @@ export interface Floor {
   health: Record<IntegrationId, boolean>;
   /** Charges waiting on a receipt photo (Quinn); null when expense_docs isn't there yet. */
   photosWaiting: number | null;
-  /** Approvals waiting on Zak; null when the approvals table isn't there yet. */
+  /** Approvals waiting on the owner; null when the approvals table isn't there yet. */
   approvalsPending: number | null;
-  /** Proposals from heads waiting on Zak (company mode slice 3); null when the proposals table isn't there yet. */
+  /** Proposals from heads waiting on the owner (company mode slice 3); null when the proposals table isn't there yet. */
   proposalsPending: number | null;
-  /** Person's jobs from this week's head plans that Zak hasn't marked done (slice 4). */
+  /** Person's jobs from this week's head plans that the owner hasn't marked done (slice 4). */
   jobsForYou: { planId: string; head: string | null; title: string; href: string }[];
-  /** Proposed lessons waiting for Zak's Keep, per agent; empty until the memory tables exist. */
+  /** Proposed lessons waiting for the owner's Keep, per agent; empty until the memory tables exist. */
   lessonsWaiting: Record<string, number>;
   /** Tool ids in each agent's active saved setup (agent_defs), by agent id; empty before the runner migration. */
   grants: Record<string, string[]>;
@@ -155,7 +155,7 @@ export const getFloor = cache(async (): Promise<Floor> => {
       .then((x) => (x.error ? db().from("agents").select("id, name, model, enabled, daily_budget_usd") : x)),
     db().from("agent_runs").select(RUN_COLS).gte("started_at", since).order("started_at", { ascending: false }).limit(1000),
     db().from("expense_docs").select("id", { count: "exact", head: true }).eq("status", "needs_photo"),
-    // drafts still with their lead (slice 4) aren't waiting on Zak yet; the older shape until that migration is applied
+    // drafts still with their lead (slice 4) aren't waiting on the owner yet; the older shape until that migration is applied
     db().from("approvals").select("id", { count: "exact", head: true }).eq("status", "pending").or("review_status.is.null,review_status.neq.waiting")
       .then((x) => (x.error ? db().from("approvals").select("id", { count: "exact", head: true }).eq("status", "pending") : x)),
     db().from("proposals").select("id", { count: "exact", head: true }).eq("state", "pending"),
@@ -251,14 +251,14 @@ export async function getReactRules(agentId: string): Promise<ReactRules> {
   } catch { return empty; }
 }
 
-/** Zak's reactions on one run, keyed by item id ("" for the run). */
+/** The owner's reactions on one run, keyed by item id ("" for the run). */
 export async function getRunReactions(runId: string): Promise<Record<string, Reaction>> {
   await requireSession();
   if (!UUID.test(runId) || !health().supabase) return {};
   return reactionsOnRun(runId);
 }
 
-/** An agent's scorecard from Zak (last 30 days) and its latest reactions, for the Overview. */
+/** An agent's scorecard from the owner (last 30 days) and its latest reactions, for the Overview. */
 export async function getReactionsFor(agentId: string): Promise<{ tally: Tally | undefined; latest: Reaction[] }> {
   await requireSession();
   if (!health().supabase) return { tally: undefined, latest: [] };
@@ -307,7 +307,7 @@ export interface ApprovalItem {
   preview: { date?: string; merchant?: string; amount_usd?: number; receipt_path?: string | null; category?: string | null; note?: string | null; charge?: string; to?: string; subject?: string; body?: string; why?: string };
   /** The gateway tool: a Mercury change or a Gmail draft. */
   tool: string;
-  /** A 10-minute signed link to the receipt file, so Zak can check it before approving. */
+  /** A 10-minute signed link to the receipt file, so the owner can check it before approving. */
   receipt_url: string | null;
   action_status: string;
   action_reason: string | null;
@@ -322,7 +322,7 @@ export interface ApprovalItem {
 export interface GatewayAction { id: string; agent_id: string; tool: string; action_type: string; target: string; status: string; reason: string | null; created_at: string; executed_at: string | null; run_id: string | null; exec_run_id: string | null }
 export interface ApprovalsView {
   pending: ApprovalItem[];
-  /** Pending, still waiting for the lead's check (Zak can decide them anyway). */
+  /** Pending, still waiting for the lead's check (the owner can decide them anyway). */
   withLead: ApprovalItem[];
   waiting: ApprovalItem[]; decided: ApprovalItem[]; log: GatewayAction[]; staleHours: number;
   /** Names of the agents on these cards that the crew list doesn't know (agents built in the app, leads). */

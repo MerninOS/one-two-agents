@@ -1,5 +1,5 @@
 import "server-only";
-// Teach by reacting (docs/company-mode.md, slice 1). Zak's Good or Not this on an agent's work.
+// Teach by reacting (docs/company-mode.md, slice 1). The owner's Good or Not this on an agent's work.
 // The rules for what a reaction saves are pure and live in core/reaction-rules.ts.
 //
 // A reaction never decides what an agent may do: a rule it saves is a memory line (a note, never
@@ -15,7 +15,7 @@ export interface Reaction { id: string; agent_id: string; run_id: string | null;
 const deptOf = async (agentId: string) => { try { return (await agentDepartment(agentId))?.dept ?? null; } catch { return null; } };
 
 /**
- * Saves one rule in Zak's words as a memory line: the agent's own (a standing order, or a note for
+ * Saves one rule in the owner's words as a memory line: the agent's own (a standing order, or a note for
  * the next run or 30 days), its department's, or the whole crew's. Used by reactions and by Avery's
  * chat (core/avery-chat.ts). Returns the memory line's id.
  */
@@ -31,7 +31,7 @@ export async function saveRule(r: { scope: "agent" | "department" | "crew"; agen
 /**
  * Saves a reaction: the rule first (so a failed save never loses the old rule), then forgets the
  * rule it replaces, then records the reaction itself (one per thing reacted to). Returns what to
- * tell Zak. The caller has checked the login and that the target belongs to this agent.
+ * tell the owner. The caller has checked the login and that the target belongs to this agent.
  */
 export async function saveReaction(agentId: string, name: string, target: ReactTarget, input: ReactionInput): Promise<string> {
   if (!target.runId && !target.approvalId) throw new Error("React to a run or an approval.");
@@ -81,7 +81,7 @@ export async function saveReaction(agentId: string, name: string, target: ReactT
   return said;
 }
 
-/** Zak's reactions on one run, keyed by item id ("" for the run itself). Empty when the table isn't there. */
+/** The owner's reactions on one run, keyed by item id ("" for the run itself). Empty when the table isn't there. */
 export async function reactionsOnRun(runId: string): Promise<Record<string, Reaction>> {
   const { data, error } = await db().from("reactions").select("*").eq("run_id", runId).limit(200);
   if (error) return {};

@@ -3,7 +3,7 @@
 //
 // A department holds seats. Each department has one head seat (no parent); every other seat sits
 // under a seat in the same department. One company seat (Avery's) sits above every head. A seat
-// is held by an agent, by Zak, or nobody yet. Where an agent sits gives it nothing: what it can
+// is held by an agent, by the owner, or nobody yet. Where an agent sits gives it nothing: what it can
 // read or do is still its saved setup, checked in code.
 
 export const MAX_DEPARTMENTS = 12;
@@ -21,7 +21,7 @@ export interface Department {
   monthlyBudgetUsd: number | null;
   /** Outbound emails a day from the agents seated here; null for the company cap alone. */
   maxEmailsPerDay: number | null;
-  /** Drafts from the agents seated here wait for the agent above them (slice 4) before they reach Zak. */
+  /** Drafts from the agents seated here wait for the agent above them (slice 4) before they reach the owner. */
   leadChecksDrafts: boolean;
 }
 export interface Seat {
@@ -215,14 +215,14 @@ export function companyBlock(o: Org, agentId: string | null): string | null {
 /** A department's email cap as enforced: never above the company cap, whatever the row says. */
 export const deptEmailCap = (d: Department, companyCap: number) => (d.maxEmailsPerDay == null ? companyCap : Math.max(0, Math.min(companyCap, d.maxEmailsPerDay)));
 
-/** How long a draft waits for its lead before it goes to Zak anyway (docs/org-chart.md, slice 4). */
+/** How long a draft waits for its lead before it goes to the owner anyway (docs/org-chart.md, slice 4). */
 export const LEAD_REVIEW_HOURS = 24;
 
 /**
  * Who checks an agent's drafts first: the nearest seat above it held by another live agent that has
  * Check a team draft (canCheck), inside
  * its department, when the department has "Lead checks drafts first" on. Null otherwise (the draft
- * goes straight to Zak). The company seat never checks drafts: Avery reports, it doesn't review.
+ * goes straight to the owner). The company seat never checks drafts: Avery reports, it doesn't review.
  */
 export function checkerOf(o: Org, agentId: string, live: ReadonlySet<string>, canCheck: ReadonlySet<string>): { reviewer: string; departmentId: string } | null {
   const seat = seatOf(o, agentId);

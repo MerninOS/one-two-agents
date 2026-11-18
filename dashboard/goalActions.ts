@@ -1,6 +1,6 @@
 "use server";
 // Goal actions (docs/company-mode.md, slice 2). Each checks the login again. Goals need no Controls:
-// a goal is what Zak wants, never something an agent may do, and nothing here runs, sends or spends.
+// a goal is what the owner wants, never something an agent may do, and nothing here runs, sends or spends.
 import { revalidatePath } from "next/cache";
 import { createGoal, editGoal, setGoalState } from "@/core/goals";
 import { setJobDone } from "@/core/plans";
@@ -36,7 +36,7 @@ export async function goalSetState(id: string, state: GoalState): Promise<Action
   try { await setGoalState(id, state); return done(words[state]); } catch (e) { return fail(e); }
 }
 
-/** A person's job from a head's plan (slice 4): Zak marks it done, or not done. */
+/** A person's job from a head's plan (slice 4): the owner marks it done, or not done. */
 export async function planJobDone(planId: string, n: number, isDone: boolean): Promise<ActionResult> {
   const { no } = await asRole("approver"); if (no) return no;
   if (!UUID.test(String(planId)) || !Number.isInteger(n)) return { ok: false, text: "Unknown job." };

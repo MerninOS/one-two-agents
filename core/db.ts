@@ -90,3 +90,15 @@ export async function createOrgRow(slug: string, name: string): Promise<string> 
   if (error) throw new Error(/duplicate|unique/i.test(error.message) ? `An org called ${slug} already exists.` : error.message);
   return data.id as string;
 }
+
+/**
+ * Saves an org's own words on its row (core/business.ts, Settings), on the service role, since
+ * orgs are never written through db(). Only the name, the about line and the owner's name.
+ */
+export async function updateOrgRow(orgId: string, fields: { name: string; about: string | null; owner_name: string | null }): Promise<void> {
+  if (!env.supabaseUrl || !env.supabaseServiceKey) throw new Error("SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY must be set");
+  client ??= createClient(env.supabaseUrl, env.supabaseServiceKey, { auth: { persistSession: false } });
+  const { name, about, owner_name } = fields;
+  const { error } = await client.from("orgs").update({ name, about, owner_name }).eq("id", orgId);
+  if (error) throw new Error(/about|owner_name/.test(error.message) ? "The org profile migration (20261210090000_org_profile.sql) isn’t applied yet." : error.message);
+}

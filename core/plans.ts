@@ -1,7 +1,7 @@
 import "server-only";
 // Plans store (docs/company-mode.md, slice 4). A head plans its department's week with the Plan
 // and review tool: its run's result is the plan's words and each line it hands in names a
-// teammate (a 7-day focus note), an open seat, or Zak (a person's job). A run that hands in no
+// teammate (a 7-day focus note), an open seat, or the owner (a person's job). A run that hands in no
 // lines while this week's plan exists is the review. Who a line names is matched against the chart
 // in code; a plan grants nothing, and nothing here runs, sends or spends.
 import { db } from "@/core/db";
@@ -71,7 +71,7 @@ export async function savePlan(headId: string, runId: string | null, summary: st
   }, { onConflict: "department_id,week_of" });
   if (error) throw new Error(missing(error.message));
   const jobs = items.filter((i) => i.kind === "zak").length;
-  return `plan for the week of ${week}: ${items.length} line${items.length === 1 ? "" : "s"}, ${focused} focus note${focused === 1 ? "" : "s"}, ${jobs} job${jobs === 1 ? "" : "s"} for Zak${dropped.length ? `; left out: ${dropped.join("; ")}` : ""}`;
+  return `plan for the week of ${week}: ${items.length} line${items.length === 1 ? "" : "s"}, ${focused} focus note${focused === 1 ? "" : "s"}, ${jobs} job${jobs === 1 ? "" : "s"} for the owner${dropped.length ? `; left out: ${dropped.join("; ")}` : ""}`;
 }
 
 /** Saves a head's review of its team on this week's plan. With no plan yet, the words become the plan. */
@@ -93,7 +93,7 @@ export async function saveReview(headId: string, runId: string | null, words: st
   return `review saved on the week of ${week}`;
 }
 
-/** Zak marks a person's job from a plan done (or not done). */
+/** The owner marks a person's job from a plan done (or not done). */
 export async function setJobDone(planId: string, n: number, done: boolean): Promise<void> {
   if (!UUID.test(planId)) throw new Error("Unknown plan.");
   const { data, error } = await db().from("plans").select("items").eq("id", planId).maybeSingle();
@@ -118,7 +118,7 @@ export async function weekView(agentId: string) {
     data: {
       today, weekOf: week, weekday: new Date(`${today}T12:00:00Z`).toLocaleDateString("en-US", { weekday: "long", timeZone: "UTC" }),
       thisRun: mode === "plan"
-        ? "There is no plan for this week yet: plan it. Hand in one line per job with Plan and review (who: a teammate under you, an open seat, or Zak), and write the plan in your result."
+        ? "There is no plan for this week yet: plan it. Hand in one line per job with Plan and review (who: a teammate under you, an open seat, or the owner), and write the plan in your result."
         : "This week's plan exists: review it. Hand in no lines; your result is the review of how your team did against the plan.",
       team: r.team.map((t) => t.name),
       openSeats: r.openSeats.map((s) => s.title),
@@ -128,7 +128,7 @@ export async function weekView(agentId: string) {
   };
 }
 
-/** Jobs from this week's plans that Zak hasn't marked done, for Needs you, with the department's goal page to open. Empty when the table isn't there. */
+/** Jobs from this week's plans that the owner hasn't marked done, for Needs you, with the department's goal page to open. Empty when the table isn't there. */
 export async function openJobsThisWeek(): Promise<{ planId: string; head: string | null; title: string; href: string }[]> {
   const { data, error } = await db().from("plans").select("id, department_id, head_agent, items").eq("week_of", weekOf(chicagoDate(0)));
   if (error || !data?.length) return [];

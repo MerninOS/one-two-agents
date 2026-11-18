@@ -5,9 +5,9 @@
 
 /**
  * read: fetches data. calculate: plain code that works numbers out, no model, so numbers are
- * always computed in code. report: delivers a finished run's result to Zak or our own stores;
+ * always computed in code. report: delivers a finished run's result to the owner or our own stores;
  * code does it after the run, the model never calls it. action: a proposal the model makes,
- * queued by code at core/gateway after the run, as an approval card for Zak.
+ * queued by code at core/gateway after the run, as an approval card for the owner.
  */
 export type ToolKind = "read" | "calculate" | "report" | "action";
 
@@ -100,7 +100,7 @@ export interface ToolDef {
   /** When the inputs depend on the spec (Notion pages the spec allows), this replaces params. */
   paramsFor?: (ctx: ToolCtx) => Param[];
   /**
-   * False when what comes back is written by people outside One Two (web pages, emails, merchant
+   * False when what comes back is written by people outside the business (web pages, emails, merchant
    * names, lead websites, another agent's summary). The runner labels it as untrusted data, and
    * slice 5 stops a run that read it from choosing a recipient, URL, product or category.
    */

@@ -1,6 +1,6 @@
 "use client";
 // Teach by reacting (docs/company-mode.md, slice 1): Good / Not this on a run or one item of it, and the
-// rule picker that Reject on an approval card shares. Zak's words save straight away as a rule.
+// rule picker that Reject on an approval card shares. The owner's words save straight away as a rule.
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 import type { ActionResult } from "../actions";
@@ -71,7 +71,7 @@ type Save = (verdict: "good" | "not", text: string, scope: Scope, keep: ReactKee
 /** Good and Not this on a run (or one item of it). Good saves at once; Not this opens the rule picker. */
 export function ReactBar({ name, rules, save, current, compact, disabled, why }: {
   name: string; rules: ReactRulesView; save: Save;
-  /** What Zak said last time, if anything. */
+  /** What the owner said last time, if anything. */
   current?: { verdict: "good" | "not"; text: string | null } | null;
   compact?: boolean; disabled?: boolean; why?: string;
 }) {
@@ -113,7 +113,7 @@ export function ReactBar({ name, rules, save, current, compact, disabled, why }:
 }
 
 /**
- * Reject on an approval card. Words are optional; when given they save as a rule in Zak's words,
+ * Reject on an approval card. Words are optional; when given they save as a rule in the owner's words,
  * straight away, for whoever he picks (the same picker as Not this on a run).
  */
 export function RejectButton({ reject, agentName, rules }: { reject: (reason: string, scope: Scope, keep: ReactKeep, replaces: string | null) => Promise<ActionResult>; agentName: string; rules: ReactRulesView }) {

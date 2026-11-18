@@ -15,7 +15,7 @@ export interface Burn {
 
 export async function burnRate(days: number): Promise<Burn> {
   const [txns, cash] = await Promise.all([mercuryTransactions(chicagoDate(days), chicagoDate(0)), mercuryCash()]);
-  // money moving between One Two's own accounts is neither spend nor income
+  // money moving between the business's own accounts is neither spend nor income
   const real = txns.filter((t) => !/internal|treasury/i.test(t.kind ?? ""));
   const out = real.filter((t) => t.amount < 0).reduce((s, t) => s - t.amount, 0);
   const inn = real.filter((t) => t.amount > 0).reduce((s, t) => s + t.amount, 0);

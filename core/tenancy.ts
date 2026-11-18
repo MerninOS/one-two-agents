@@ -6,7 +6,7 @@
 // switch (core/org-switch.ts).
 import { AsyncLocalStorage } from "node:async_hooks";
 
-/** One Two Coffee Lab, the first org (supabase/migrations/20261202090000_orgs.sql). */
+/** The home org: the first org, made by the migrations, that the app signs in to today. */
 export const HOME_ORG_ID = "0e1a7c4e-0001-4000-8000-000000000001";
 
 /**

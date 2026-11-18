@@ -35,7 +35,7 @@ import {
 const TIMEOUT_MS = 25_000;
 /** A custom server gets less time per call than a built-in one. */
 const CUSTOM_TIMEOUT_MS = 15_000;
-const CLIENT_NAME = "One Two Control Room";
+const CLIENT_NAME = "OPERATOR Control Room";
 
 // ---- The vault's keys.
 
@@ -192,7 +192,7 @@ async function store(id: string, s: Secret | KeySecret) {
   if (error) throw new Error(missing(error.message) ? MCP_MISSING : error.message);
 }
 
-/** Stops a connection until Zak signs in again, so a dead sign-in isn't retried on every call. */
+/** Stops a connection until the owner signs in again, so a dead sign-in isn't retried on every call. */
 async function pause(id: string, e: string, event: McpEvent, secrets: (string | null | undefined)[]) {
   const text = scrubSecrets(e, secrets).slice(0, 300);
   await db().from("mcp_connections").update({ last_error: text, paused_at: new Date().toISOString(), updated_at: new Date().toISOString() }).eq("id", id);
@@ -378,7 +378,7 @@ interface Pending { id: string; state: string; verifier: string; clientId: strin
 export const PENDING_COOKIE = "cr_mcp_pending";
 export const PENDING_MINUTES = 10;
 
-/** Registers the Control Room with the server and returns where to send Zak, plus the sealed pending state. */
+/** Registers the Control Room with the server and returns where to send the owner, plus the sealed pending state. */
 export async function startConnect(id: string, redirectUri: string): Promise<{ url: string; pending: string }> {
   const prof = await profOf(id);
   if (usesKey(prof)) throw new Error(`${prof.name} is connected by pasting its key on Connections.`);
@@ -388,7 +388,7 @@ export async function startConnect(id: string, redirectUri: string): Promise<{ u
   const state = b64url(randomBytes(18));
   if (prof.kind === "google") {
     // our own Google OAuth client: its secret stays in Vercel and is never put in the cookie or the vault
-    if (!env.gmailClientId || !env.gmailClientSecret) throw new Error("set GMAIL_CLIENT_ID and GMAIL_CLIENT_SECRET in Vercel (One Two's Google OAuth client) first");
+    if (!env.gmailClientId || !env.gmailClientSecret) throw new Error("set GMAIL_CLIENT_ID and GMAIL_CLIENT_SECRET in Vercel (the business's Google OAuth client) first");
     const url = authorizeUrl(GOOGLE_AUTH, { clientId: env.gmailClientId, redirectUri, challenge, state, scope: prof.scopes.join(" "), extra: { access_type: "offline", prompt: "consent", include_granted_scopes: "false" } });
     const p: Pending = { id, state, verifier, clientId: env.gmailClientId, clientSecret: null, tokenEndpoint: GOOGLE_AUTH.token_endpoint, revocationEndpoint: GOOGLE_AUTH.revocation_endpoint ?? null, redirectUri, at: Date.now() };
     return { url, pending: seal(p) };
@@ -568,7 +568,7 @@ async function listRaw(call: Call): Promise<unknown[]> {
 /**
  * The tool check (slice 3): the profile's read tools must still be on the server, with the inputs
  * accepted last time. `accept` (signing in) takes the inputs as they are now. A failed check pauses
- * the server with what changed, until Zak signs in again.
+ * the server with what changed, until the owner signs in again.
  */
 async function toolCheck(id: McpId, accept: boolean): Promise<void> {
   await withSession(builtIn(id), async (call, r) => {
@@ -603,7 +603,7 @@ export async function callMcpTool(id: McpId, tool: string, args: Record<string, 
 
 /**
  * Calls one of a server's write tools. Only core/gateway imports this (lint enforces it), and only
- * after Zak approved the action and the gateway re-checked it against live data.
+ * after an approver approved the action and the gateway re-checked it against live data.
  */
 export async function callWriteTool(id: McpId, tool: string, args: Record<string, unknown>): Promise<unknown> {
   if (!mayWrite(id, tool)) throw new Error(`${tool} isn't a write tool the gateway may call on ${MCP_SERVERS[id].name}.`);
@@ -689,7 +689,7 @@ let localSeq = 0;
  */
 export const callLocalTool = (id: McpId, tool: string, args: Record<string, unknown>) => localCall(id, tool, args, false);
 
-/** `write`: only callWriteTool passes true, for a profile's write tool (the gateway, after Zak approves). */
+/** `write`: only callWriteTool passes true, for a profile's write tool (the gateway, after an approver approves). */
 async function localCall(id: McpId, tool: string, args: Record<string, unknown>, write: boolean): Promise<unknown> {
   const name = MCP_SERVERS[id].name;
   const l = LOCAL[id];

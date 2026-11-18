@@ -1,6 +1,6 @@
 import "server-only";
 // Proposals store (docs/company-mode.md, slice 3). A head files proposals at the end of a run (the
-// `propose` report tool); Zak decides each one. Nothing a proposal says happens until his tap, and
+// `propose` report tool); the owner decides each one. Nothing a proposal says happens until their tap, and
 // then only through the app's own paths: a hire is created off duty with no actions (like New
 // agent), a tool grant becomes a draft version that still needs Try it and Go live, a new tool opens
 // Find a tool (use a connection, add a server, or ask for a connector), a retirement takes an agent off duty and opens its seat. Every check runs again
@@ -41,7 +41,7 @@ const scope = (org: Org, seat: Seat | null) => org.seats.filter((s) => s.departm
 
 /**
  * Resolves names in a plan to seats and agents on the chart, within the proposer's reach. `seat`
- * null means Zak or Claude filed it: any department.
+ * null means the owner or Claude filed it: any department.
  */
 async function resolve(org: Org, plan: ProposalPlan, seat: Seat | null, deptId: string | null): Promise<{ r: Resolved; dept: string | null } | { problem: string }> {
   const seats = scope(org, seat);
@@ -52,7 +52,7 @@ async function resolve(org: Org, plan: ProposalPlan, seat: Seat | null, deptId: 
   if (plan.kind === "hire") {
     const open = seats.find((s) => s.holder === "open" && same(s.title, plan.seat));
     if (open) return { r: { ...plan, seatId: open.id, parentSeatId: null }, dept: open.departmentId };
-    // a new seat goes under the proposer's own seat; Zak and Claude name an open seat or a department head
+    // a new seat goes under the proposer's own seat; the owner and Claude name an open seat or a department head
     const parent = seat?.departmentId ? seat : deptId ? headOf(org, deptId) : null;
     if (!parent) return { problem: `there is no open seat called “${plan.seat}”` };
     return { r: { ...plan, seatId: null, parentSeatId: parent.id }, dept: parent.departmentId };
@@ -69,7 +69,7 @@ async function resolve(org: Org, plan: ProposalPlan, seat: Seat | null, deptId: 
       if (!id) return { problem: `${plan.agent} isn't an agent in your department` };
       if (id === seat?.agentId) return { problem: "a head can't propose retiring itself" };
       const at = seats.find((s) => s.agentId === id);
-      if (at?.parentId == null) return { problem: "a department head isn't retired by a proposal; Zak does that on Crew" };
+      if (at?.parentId == null) return { problem: "a department head isn't retired by a proposal; the owner does that on Crew" };
       return { r: { ...plan, agentId: id }, dept: at.departmentId };
     }
     const s = seats.find((x) => same(x.title, plan.seat ?? ""));
@@ -97,10 +97,10 @@ export async function fileProposal(input: Record<string, unknown>, from: { agent
   const { data: open, error: e1 } = await db().from("proposals").select("id, title").eq("state", "pending").eq("source", from.source).limit(200);
   if (e1) throw new Error(/proposals/.test(e1.message) ? PROPOSALS_MISSING : e1.message);
   const mine = (open ?? []) as { id: string; title: string }[];
-  if (mine.some((p) => same(p.title, title))) throw new Error(`“${title}” is already waiting for Zak`);
+  if (mine.some((p) => same(p.title, title))) throw new Error(`“${title}” is already waiting for the owner`);
   if (from.agentId) {
     const { count } = await db().from("proposals").select("id", { count: "exact", head: true }).eq("state", "pending").eq("from_agent", from.agentId);
-    if ((count ?? 0) >= MAX_PENDING_PER_AGENT) throw new Error(`${MAX_PENDING_PER_AGENT} proposals are already waiting for Zak; wait for his answers`);
+    if ((count ?? 0) >= MAX_PENDING_PER_AGENT) throw new Error(`${MAX_PENDING_PER_AGENT} proposals are already waiting for the owner; wait for an answer`);
   }
   const { data, error } = await db().from("proposals").insert({
     kind: got.plan.kind, title, source: from.source, from_agent: from.agentId, department_id: res.dept, run_id: from.runId ?? null, payload: res.r, why: got.why,
@@ -150,7 +150,7 @@ async function seatHire(p: Extract<Resolved, { kind: "hire" }>, agentId: string)
 }
 
 /**
- * Zak's yes. Each kind goes through the app's own path, checked again now. `agentFromBuilder` is
+ * The owner's yes. Each kind goes through the app's own path, checked again now. `agentFromBuilder` is
  * set when he changed a hire first in the builder, which already created the agent off duty.
  */
 export async function acceptProposal(id: string, opts: { agentFromBuilder?: string } = {}): Promise<{ text: string; href: string | null }> {
@@ -188,7 +188,7 @@ export async function acceptProposal(id: string, opts: { agentFromBuilder?: stri
       return { text: `Saved as draft v${v} with ${t.label}. Try it, then Go live; what runs today hasn’t changed.`, href: `/build/${p.agentId}` };
     }
     if (p.kind === "new_tool") {
-      // a yes hands out nothing: Zak picks how on Find a tool, where an ask for a connector is counted
+      // a yes hands out nothing: the owner picks how on Find a tool, where an ask for a connector is counted
       await close(id, "accepted", "Sent to Find a tool.");
       return { text: "Pick how on Find a tool: a connection you have, a server you add, or an ask for a connector.", href: `/connections/find?for=${id}` };
     }
@@ -212,7 +212,7 @@ export async function acceptProposal(id: string, opts: { agentFromBuilder?: stri
   }
 }
 
-/** Zak's no. With words, they become a 30-day note for the head that proposed it. */
+/** The owner's no. With words, they become a 30-day note for the head that proposed it. */
 export async function declineProposal(id: string, reason: string): Promise<string> {
   const pr = await getProposal(id);
   if (!pr || pr.state !== "pending") throw new Error("That proposal isn't waiting any more.");
@@ -220,7 +220,7 @@ export async function declineProposal(id: string, reason: string): Promise<strin
   let noted = "";
   if (pr.from_agent && words) {
     try {
-      await teach({ agentId: pr.from_agent, text: `Zak said not now to “${pr.title}”: ${words}`.slice(0, 280), keepAs: "note", forget: "days_30", sourceTag: `proposal:${id}` });
+      await teach({ agentId: pr.from_agent, text: `The owner said not now to “${pr.title}”: ${words}`.slice(0, 280), keepAs: "note", forget: "days_30", sourceTag: `proposal:${id}` });
       noted = " Your words are a 30-day note for the head that asked.";
     } catch { noted = " (Your words couldn’t be saved as a note.)"; }
   }

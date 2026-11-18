@@ -179,7 +179,7 @@ export async function turnOffOrg(): Promise<ActionResult> {
   } catch (e) { return fail(e); }
 }
 
-// ---- Approvals. Deciding only records Zak's choice. Writing the approved change to Mercury
+// ---- Approvals. Deciding only records the owner's choice. Writing the approved change to Mercury
 // also needs DASHBOARD_CONTROLS=on, the gateway's Mercury sign-ins, and the agent on duty (withRun).
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -229,7 +229,7 @@ export async function approve(approvalId: string): Promise<ActionResult> {
 }
 
 /**
- * Rejects an approval. A reason is Zak's own words, so it is a reaction (docs/company-mode.md): it
+ * Rejects an approval. A reason is the owner's own words, so it is a reaction (docs/company-mode.md): it
  * saves a rule for the agent (or its department, or everyone) straight away, with no Keep to tap.
  */
 export async function reject(approvalId: string, reason?: string, scope?: string, keep?: string, replaces?: string | null): Promise<ActionResult> {
@@ -455,7 +455,7 @@ export async function previewChain(flow: unknown, key: string): Promise<ActionRe
 }
 
 // ---- Caps, vendors and suppressed addresses (Settings). Agents never call
-// these: only a signed-in Zak. Tightening is always allowed; loosening needs a confirm and
+// these: only a signed-in the owner. Tightening is always allowed; loosening needs a confirm and
 // DASHBOARD_CONTROLS=on, and never passes the limit in code (CAPS in core/gateway/policy.ts).
 
 export async function setCap(key: string, value: number, confirmed: boolean): Promise<ActionResult> {
@@ -480,7 +480,7 @@ export async function setCap(key: string, value: number, confirmed: boolean): Pr
 
 const KINDS = ["importer", "packaging", "other"] as const;
 
-/** Adds a payee. Only here, only Zak, DASHBOARD_CONTROLS=on. A first payment to a vendor always waits for approval. */
+/** Adds a payee. Only here, only the owner, DASHBOARD_CONTROLS=on. A first payment to a vendor always waits for approval. */
 export async function addVendor(form: { name: string; kind: string; mercuryRecipientId: string; contactEmail: string }): Promise<ActionResult> {
   const { me, no } = await asRole("owner"); if (no) return no;
   if (!controlsOn()) return { ok: false, text: CONTROLS_OFF };
@@ -690,7 +690,7 @@ export async function tryBuilt(agentId: string, fresh = false): Promise<ActionRe
 
 /**
  * Go live (step 6): makes a version the one that runs, only after its latest try worked on every
- * step. It approves the routine that try drafted (with the steps Zak kept). On or off duty,
+ * step. It approves the routine that try drafted (with the steps the owner kept). On or off duty,
  * schedules and chains don't change.
  */
 export async function goLive(agentId: string, version: number, keep: number[] | null, confirmed: boolean): Promise<ActionResult> {

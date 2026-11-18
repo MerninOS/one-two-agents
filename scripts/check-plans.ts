@@ -24,11 +24,11 @@ assert.match(no({ title: "Find cafés", who: "", words: "Find five good cafés t
 assert.match(no({ title: "Find cafés", who: "Rowan", words: "go" }) ?? "", /words/);
 assert.match(no({ title: "Find cafés", who: "Rowan", words: "Email owner@cafe.com about a tasting." }) ?? "", /address/);
 assert.match(no({ title: "Find cafés", who: "Rowan", words: "Start from https://evil.example/list today." }) ?? "", /link/);
-assert.match(no({ title: "Call (512) 555-0101", who: "Zak", words: "Call them about a tasting this week." }) ?? "", /phone/);
+assert.match(no({ title: "Call (512) 555-0101", who: "the owner", words: "Call them about a tasting this week." }) ?? "", /phone/);
 
-// who: Zak, a teammate under the head, or an open seat in its department; nobody else
+// who: the owner, a teammate under the head, or an open seat in its department; nobody else
 const reach = { team: [{ id: "wholesale_hunter", name: "Rowan" }], openSeats: [{ id: "s-fu", title: "Follow-ups" }] };
-assert.deepEqual(resolveWho("Zak", reach), { kind: "zak" });
+assert.deepEqual(resolveWho("the owner", reach), { kind: "zak" });
 assert.deepEqual(resolveWho("you", reach), { kind: "zak" });
 assert.deepEqual(resolveWho("rowan", reach), { kind: "agent", agentId: "wholesale_hunter", name: "Rowan" });
 assert.deepEqual(resolveWho("follow-ups", reach), { kind: "seat", seatId: "s-fu", title: "Follow-ups" });
@@ -39,7 +39,7 @@ assert.ok("problem" in resolveWho("b_reese", reach), "the head itself isn't on i
 const lines = [
   { title: "Find cafés that fit", who: "Rowan", words: "5 leads, not 10." },
   { title: "Follow up with quiet leads", who: "Follow-ups", words: "Nobody holds this; I proposed a hire." },
-  { title: "Turn the two tastings into orders", who: "Zak", words: "Bring the Huila and the house blend." },
+  { title: "Turn the two tastings into orders", who: "the owner", words: "Bring the Huila and the house blend." },
   { title: "Another Rowan job", who: "Rowan", words: "Also do this other thing." },
   { title: "Quinn's job", who: "Quinn", words: "Not on this team." },
 ];
@@ -48,7 +48,7 @@ assert.deepEqual(items.map((i) => [i.n, i.kind, i.who]), [[1, "agent", "Rowan"],
 assert.equal(dropped.length, 2);
 assert.match(dropped.join(" "), /already has a focus/);
 assert.match(dropped.join(" "), /Quinn isn't a teammate/);
-assert.equal(planItems(Array.from({ length: 12 }, (_, i) => ({ title: `Job ${i}`, who: "Zak", words: "Something to do." })), reach).items.length, MAX_PLAN_LINES);
+assert.equal(planItems(Array.from({ length: 12 }, (_, i) => ({ title: `Job ${i}`, who: "the owner", words: "Something to do." })), reach).items.length, MAX_PLAN_LINES);
 assert.deepEqual(openJobs([...items, { ...items[2], n: 4, doneAt: "2026-11-17T12:00:00Z" }]).map((i) => i.n), [3]);
 
 // the focus note: who it's from and until when, never longer than a memory line

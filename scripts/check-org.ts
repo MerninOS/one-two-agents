@@ -21,7 +21,7 @@ assert.equal(depthOf(org, org.seats[3]), 3);
 assert.equal(depthOf(org, org.seats[0]), 0);
 assert.equal(reportsTo(org, org.seats[1])?.id, "c", "a head reports to the company seat");
 assert.equal(reportsTo(org, org.seats[3])?.id, "l");
-assert.equal(reportsTo(org, org.seats[0]), null, "the company seat reports to Zak");
+assert.equal(reportsTo(org, org.seats[0]), null, "the company seat reports to the owner");
 assert.equal(seatPath(org, org.seats[3]), "Marketing › Head of marketing › Retention lead › Subscriptions");
 assert.deepEqual(below(org, "h").map((s) => s.id), ["l", "s"]);
 assert.equal(deptSlug("Customer care"), "customer_care");
@@ -101,11 +101,11 @@ assert.equal(seatToolBlocks(team, "nope", live).team, teamBlock(team, null, live
 // Slice 4: the lead checks drafts first, only where the department has it on
 const on: Org = { ...team, departments: [{ ...mk, leadChecksDrafts: true }] };
 const checkers = new Set(["b_head", "b_lead"]);
-assert.equal(checkerOf(team, "b_sub", live, checkers), null, "off by default: drafts go straight to Zak");
+assert.equal(checkerOf(team, "b_sub", live, checkers), null, "off by default: drafts go straight to an approver");
 assert.deepEqual(checkerOf(on, "b_sub", live, checkers), { reviewer: "b_lead", departmentId: "marketing" }, "the nearest agent above");
 assert.deepEqual(checkerOf(on, "b_sub", live, new Set(["b_head"])), { reviewer: "b_head", departmentId: "marketing" }, "skips an agent above that can't check drafts");
 assert.deepEqual(checkerOf(on, "b_sub", new Set(["b_sub", "b_head"]), checkers), { reviewer: "b_head", departmentId: "marketing" }, "skips an agent that isn't live");
-assert.equal(checkerOf(on, "b_head", live, checkers), null, "a head's own drafts go to Zak: the company seat never checks");
+assert.equal(checkerOf(on, "b_head", live, checkers), null, "a head's own drafts go to an approver: the company seat never checks");
 assert.equal(checkerOf(on, "chief_of_staff", live, checkers), null);
 assert.equal(checkerOf(on, "nobody", live, checkers), null);
 assert.equal(LEAD_REVIEW_HOURS, 24);
