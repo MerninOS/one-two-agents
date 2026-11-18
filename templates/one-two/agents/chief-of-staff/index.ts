@@ -8,6 +8,7 @@ import "server-only";
 import { G_PER_LB } from "@/templates/one-two/domain/coffee";
 import { db } from "@/core/db";
 import { env } from "@/core/env";
+import { settings } from "@/core/settings";
 import { chicagoDate, dayTitle } from "@/core/time";
 import { emailOwner, hasEmail } from "@/integrations/email";
 import { h2, li, notionArchive, notionPage, notionRow, notionConnected, notionRowOn, notionUpdateRow, p, prop, type Block, type Props } from "@/integrations/notion";
@@ -190,14 +191,15 @@ const briefView = (f: Facts, j: Judgment, sections: readonly string[], notionUrl
 });
 
 /**
- * Where the brief goes. Email only to BRIEF_TO (integrations/email.ts has no recipient). The
- * Notion copy goes to NOTION_BRIEFS_DB_ID, else a page under NOTION_BRIEF_PARENT_ID.
+ * Where the brief goes. Email only to the owner email (integrations/email.ts has no recipient). The
+ * Notion copy goes to the briefs database, else a page under the briefs page (Settings).
  */
 async function destinations(): Promise<{ email: boolean; notion: { kind: "database" | "page"; id: string } | null }> {
-  const email = hasEmail();
+  const email = await hasEmail();
   if (!(await notionConnected())) return { email, notion: null };
-  if (env.notionBriefsDb) return { email, notion: { kind: "database", id: env.notionBriefsDb } };
-  if (env.notionBriefParent) return { email, notion: { kind: "page", id: env.notionBriefParent } };
+  const s = await settings();
+  if (s.notionBriefsDb) return { email, notion: { kind: "database", id: s.notionBriefsDb } };
+  if (s.notionBriefParent) return { email, notion: { kind: "page", id: s.notionBriefParent } };
   return { email, notion: null };
 }
 
@@ -205,7 +207,7 @@ async function destinations(): Promise<{ email: boolean; notion: { kind: "databa
 async function sendBrief(f: Facts, judgment: Judgment, sections: readonly string[] = SECTIONS, runId: string | null = null): Promise<string> {
   const view = (notionUrl?: string) => briefView(f, judgment, sections, notionUrl, runId);
   const { email, notion: target } = await destinations();
-  if (!email && !target) throw new Error("Nowhere to send the brief: email needs RESEND_API_KEY, BRIEF_FROM and BRIEF_TO; Notion needs its key pasted on Connections and NOTION_BRIEFS_DB_ID or NOTION_BRIEF_PARENT_ID");
+  if (!email && !target) throw new Error("Nowhere to send the brief: email needs RESEND_API_KEY, BRIEF_FROM and an owner email on Settings; Notion needs its key pasted on Connections and a briefs database or page on Settings");
 
   // Notion first, so the email can link to its copy. A Notion failure never stops the email.
   let url: string | undefined, rowId: string | undefined, notionError = "";

@@ -113,7 +113,7 @@ const RECEIPT_SCHEMA = {
 };
 
 async function structured<T>(step: Reader, system: string, content: Anthropic.ContentBlockParam[], schema: Record<string, unknown>, u: Usage, maxTokens = 1024): Promise<T | null> {
-  const res = await claude().messages.create({
+  const res = await (await claude()).messages.create({
     model: step.model,
     max_tokens: maxTokens,
     system,

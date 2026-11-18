@@ -72,4 +72,4 @@ empty home org (5 departments, 10 agents, all off duty) and refused a second ins
 ## Not yet
 
 - Building the image needs network access to npm from inside Docker.
-- Alert emails go only to `BRIEF_TO` (one address per install) until each org has its own.
+- Alert emails go to each business's owner email (Settings > Where things go). `BRIEF_TO` is only the home org's starting value.

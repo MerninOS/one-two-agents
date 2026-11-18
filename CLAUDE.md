@@ -48,7 +48,8 @@ built, so no agent can send, pay or publish.
   cap `policies.max_emails_per_day` (start 20); an unsubscribe or "stop" reply ends all
   messages to that person, in code. Emails to the owner (brief, alerts) are reports, not
   gateway actions: they go only through `integrations/email.ts`, which has no recipient
-  argument and sends to `BRIEF_TO`.
+  argument and sends to the business's owner email (Settings, always one of its owners' sign-in
+  addresses).
 - Posts: publishing is Draft until promoted, the approval shows the exact caption and
   media, and no agent edits or deletes a published post. No agent signs or accepts terms.
 - No deletes of products, customers, orders or Klaviyo profiles.

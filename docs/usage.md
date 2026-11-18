@@ -80,11 +80,11 @@ https://claude.ai/artifact/8ec8poMoGrDtE3XY1axWrj, phase 6. With many orgs and q
   the last day (over a cap, an unknown payee, a suppressed address), and facts that couldn't be
   read (a migration not applied).
 - **Alert emails.** The scheduler (`/api/dispatch`), after each round's work, emails the owner the
-  alerts that are new, in one email, through `integrations/email.ts` (no recipient argument:
-  `BRIEF_TO`). Each problem goes out once, then at most every 24 hours while it lasts:
+  alerts that are new, in one email, through `integrations/email.ts` (no recipient argument: the
+  business's owner email on Settings). Each problem goes out once, then at most every 24 hours while it lasts:
   `status_alerts` holds when each was last sent, marked before the send so two rounds can't both
   send. An alert that can't be sent never stops the scheduler.
-- **Home org only, for now.** `BRIEF_TO` is the home org's owner, so another org's problems show on
-  its Status page but aren't emailed until each org has its own address (not built).
+- **Every org.** Each business's alerts go to its own owner email (Settings > Where things go,
+  docs/tenancy.md slice 8.1b). An org with no owner email sees its problems on its Status page only.
 - Cap breaches show as refused proposals; circuit breakers aren't built yet (core/gateway/README.md).
 - `npm run check:status` tests which facts are problems, the alert timing and the email.

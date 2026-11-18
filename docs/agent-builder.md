@@ -132,7 +132,7 @@ from the tools the spec grants, code runs them, hard limits stop it.
 ## Slice 5: reports and actions (built)
 
 - **Report tools** (kind `report`): `report_email_zak` (through `integrations/email.ts`, which has
-  no recipient argument, so only `BRIEF_TO`) and `report_notion_page` (a new page under the page
+  no recipient argument, so only the owner email on Settings) and `report_notion_page` (a new page under the page
   picked on the builder screen, `reportPage` in the spec, stored by id). The model is never offered
   a report tool. After a run that **finishes**, code delivers the result and its traced numbers to
   every ticked report; a run that stops early sends nothing. Each delivery is a step in Replay.

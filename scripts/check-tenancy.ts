@@ -5,7 +5,7 @@ import { createPublicKey, generateKeyPairSync, verify } from "node:crypto";
 import { REFRESH_MS, TOKEN_MS, orgToken, parseSigningKey } from "../core/org-token";
 import { join } from "node:path";
 import { hasHistory } from "./lib/schema";
-import { HOME_ORG_ID, ORGS_TABLE, TENANT_TABLES, conflictColumns, currentOrgId, scopeClient, stampRows, updateValues, withOrg } from "../core/tenancy";
+import { HOME_ORG_ID, ORGS_TABLE, TENANT_TABLES, conflictColumns, orgId, scopeClient, setRequestOrg, stampRows, updateValues, withOrg } from "../core/tenancy";
 
 const OTHER = "0e1a7c4e-0002-4000-8000-000000000002";
 
@@ -93,7 +93,7 @@ assert.throws(() => updateValues({ org_id: OTHER }, HOME_ORG_ID), /can't be chan
 // slice 2b: with tablesFor, tables go through the org's own client; storage stays on the base client
 {
   const base = fake(), mine = fake(), theirs = fake();
-  const db = scopeClient(base.client, currentOrgId, (org) => (org === HOME_ORG_ID ? mine.client : theirs.client));
+  const db = scopeClient(base.client, (org) => (org === HOME_ORG_ID ? mine.client : theirs.client));
   db.from("agents").select("id");
   withOrg(OTHER, () => db.from("agents").select("id"));
   assert.deepEqual(base.calls, [], "tables never use the base client");
@@ -123,22 +123,49 @@ assert.throws(() => updateValues({ org_id: OTHER }, HOME_ORG_ID), /can't be chan
 }
 
 // the current org: home by default, withOrg for the work inside it (sync and async), nested, then restored
-assert.equal(currentOrgId(), HOME_ORG_ID);
 assert.throws(() => withOrg("not-a-uuid", () => 1), /uuid/);
 const asyncCheck = (async () => {
+  assert.equal(await orgId(), HOME_ORG_ID);
   const { calls, client } = fake();
   const db = scopeClient(client);
   await withOrg(OTHER, async () => {
     await new Promise((r) => setTimeout(r, 5));
-    assert.equal(currentOrgId(), OTHER);
+    assert.equal(await orgId(), OTHER);
     db.from("goals").select("id");
     withOrg(HOME_ORG_ID, () => db.from("goals").select("id"));
     db.from("goals").insert({ id: "g" });
   });
-  assert.equal(currentOrgId(), HOME_ORG_ID);
+  assert.equal(await orgId(), HOME_ORG_ID);
   assert.deepEqual(calls.filter((c) => c[0] === "eq" || c[0] === "insert"), [
     ["eq", "org_id", OTHER], ["eq", "org_id", HOME_ORG_ID], ["insert", { id: "g", org_id: OTHER }, undefined],
   ]);
+
+  // slice 8.1: in a request, the org comes from the signed-in member's session, read when the query
+  // is awaited; withOrg still wins; a request with nobody signed in runs as the home org
+  let fromCookie: string | null = OTHER;
+  setRequestOrg(async () => fromCookie);
+  const r = fake();
+  const rdb = scopeClient(r.client);
+  const q = rdb.from("agents").select("id").eq("id", "cfo");
+  assert.deepEqual(r.calls, [], "nothing runs until the query is awaited");
+  await q;
+  assert.deepEqual(r.calls, [["from", "agents"], ["select", "id"], ["eq", "org_id", OTHER], ["eq", "id", "cfo"]]);
+  r.calls.length = 0;
+  await rdb.from("goals").insert({ id: "g2" }).select("id");
+  assert.deepEqual(r.calls[1], ["insert", { id: "g2", org_id: OTHER }, undefined], "inserts are stamped with the member's org");
+  await assert.rejects(async () => { await rdb.from("goals").insert({ id: "g3", org_id: HOME_ORG_ID }); }, /another org/);
+  r.calls.length = 0;
+  withOrg(HOME_ORG_ID, () => rdb.from("goals").select("id"));
+  assert.deepEqual(r.calls.slice(0, 3), [["from", "goals"], ["select", "id"], ["eq", "org_id", HOME_ORG_ID]], "withOrg runs at once, as before");
+  assert.equal(await orgId(), OTHER);
+  fromCookie = null;
+  assert.equal(await orgId(), HOME_ORG_ID, "nobody signed in: the home org");
+  fromCookie = "not-a-uuid";
+  assert.equal(await orgId(), HOME_ORG_ID);
+  // no file guesses the org synchronously
+  for (const f of ["core/jobs.ts", "core/business.ts", "core/trace.ts", "core/status.ts", "integrations/mcp.ts", "dashboard/actions.ts"]) {
+    assert.ok(!/currentOrgId/.test(readFileSync(f, "utf8")), `${f} reads the org with await orgId()`);
+  }
 })();
 
 // The migration history (the public repo ships only the baseline: check:baseline covers it there)

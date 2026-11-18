@@ -5,7 +5,7 @@
 import { audit } from "@/core/audit";
 import { revalidatePath } from "next/cache";
 import { isMcpId } from "@/core/mcp-rules";
-import { addCustomServer, checkCustomServer, disconnectMcp, pauseCustom, removeCustomServer, resealAll, saveCustomKey, saveCustomScopes, saveMcpKey, saveMcpSetting, setCustomTool } from "@/integrations/mcp";
+import { addCustomServer, checkCustomServer, disconnectMcp, removeClaudeKey, saveClaudeKey, pauseCustom, removeCustomServer, resealAll, saveCustomKey, saveCustomScopes, saveMcpKey, saveMcpSetting, setCustomTool } from "@/integrations/mcp";
 import { isCustomId } from "@/core/custom-mcp-rules";
 import { knownByAddress } from "@/core/connector-rules";
 import { askFor, closeRequest } from "@/core/connector-requests";
@@ -36,6 +36,26 @@ export async function mcpSaveKey(id: string, key: string): Promise<ActionResult>
     const who = await saveMcpKey(id, key);
     await audit(me, "save_key", id);
     return done(`Key locked in the vault. It belongs to “${who.name}”${who.workspace ? ` in ${who.workspace}` : ""}. Agents see only the pages shared with it.`);
+  } catch (e) { return fail(e); }
+}
+
+/** The business's own Claude key (Connections > Claude API): locked in the vault after Anthropic accepts it. */
+export async function claudeSaveKey(key: string): Promise<ActionResult> {
+  const { me, no } = await asRole("owner"); if (no) return no;
+  if (typeof key !== "string" || key.length > 300) return { ok: false, text: "That isn’t a key." };
+  try {
+    await saveClaudeKey(key);
+    await audit(me, "save_key", "anthropic_key");
+    return done("Claude key locked in the vault. Agents’ model calls are billed to it from their next run.");
+  } catch (e) { return fail(e); }
+}
+
+export async function claudeRemoveKey(): Promise<ActionResult> {
+  const { me, no } = await asRole("owner"); if (no) return no;
+  try {
+    await removeClaudeKey();
+    await audit(me, "disconnect", "anthropic_key");
+    return done("Claude key forgotten here. Delete it in the Claude Console too if it shouldn’t work anywhere.");
   } catch (e) { return fail(e); }
 }
 

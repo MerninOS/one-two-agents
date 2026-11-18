@@ -19,7 +19,7 @@ import {
   type AuthServer, type McpEvent, type McpId, type Tokens,
 } from "@/core/mcp-rules";
 import { MIN_SECRET_CHARS, envWrapper, isBound, keyIdOf, newDataKey, open as openWith, seal as sealWith, vaultKey, type KeyWrapper, type VaultKey } from "@/core/vault";
-import { currentOrgId } from "@/core/tenancy";
+import { orgId } from "@/core/tenancy";
 import { looksLikeNotionKey } from "@/core/notion-blocks";
 import { checkNotionKey, notionServer } from "./notion-server";
 import { checkShopifyKey, shopifyServer } from "./shopify-server";
@@ -98,7 +98,7 @@ async function unwrapRow(row: OrgKeyRow, org: string): Promise<VaultKey | null> 
  * Null when the org has none yet, or no wrapping key opens it.
  */
 async function orgKey(make: boolean): Promise<VaultKey | null> {
-  const org = currentOrgId();
+  const org = await orgId();
   const hit = orgKeyCache.get(org);
   if (hit && Date.now() - hit.at < ORG_KEY_MS) return hit.key;
   let row = await readOrgKeyRow();
@@ -120,14 +120,14 @@ async function orgKey(make: boolean): Promise<VaultKey | null> {
 async function sealSecret(value: unknown): Promise<string> {
   const k = await orgKey(true);
   if (!k) throw new Error("This org's vault key can't be opened with MCP_SECRET_KEY or MCP_SECRET_KEY_OLD.");
-  return sealWith(value, k, currentOrgId());
+  return sealWith(value, k, await orgId());
 }
 
 /** Opens a saved sign-in: the org's data key for a v3 value, the env keys for one sealed before slice 4. */
 async function openSecret<T>(sealed: string): Promise<T | null> {
   if (!isBound(sealed)) return openWith<T>(sealed, keys().all);
   const k = await orgKey(false);
-  return k ? openWith<T>(sealed, [k], currentOrgId()) : null;
+  return k ? openWith<T>(sealed, [k], await orgId()) : null;
 }
 
 // ---- Who a connection is for: a built-in server's profile in code, or a custom server's row.
@@ -251,7 +251,7 @@ export async function resealAll(): Promise<{ moved: number; unreadable: string[]
     if (isBound(r.secret) && keyIdOf(r.secret) === k.id) continue;
     const s = await openSecret<Secret>(r.secret);
     if (!s) { unreadable.push(r.id); continue; }
-    const u = await db().from("mcp_connections").update({ secret: sealWith(s, k, currentOrgId()), updated_at: new Date().toISOString() }).eq("id", r.id);
+    const u = await db().from("mcp_connections").update({ secret: sealWith(s, k, await orgId()), updated_at: new Date().toISOString() }).eq("id", r.id);
     if (u.error) throw new Error(u.error.message);
     await logEvent(r.id, "resealed", `moved onto this org's key ${k.id}`);
     moved++;
@@ -966,3 +966,43 @@ export async function removeCustomServer(id: string): Promise<{ revoked: boolean
   if (error) throw new Error(error.message);
   return r;
 }
+
+// ---- The business's own Claude key (docs/tenancy.md, slice 8.1c). Not an MCP server: the key the
+// runner calls the Claude API with. It lives in the vault like every other key, sealed with the
+// org's data key, on a connection row of its own; only this file opens it.
+
+export const CLAUDE_KEY_ID = "anthropic_key";
+const looksLikeClaudeKey = (k: string) => /^sk-ant-[A-Za-z0-9_-]{20,300}$/.test(k);
+
+/** Keeps the business's Claude key in the vault, after Anthropic confirms it works. Never echoed back, logged or shown. */
+export async function saveClaudeKey(pasted: string): Promise<void> {
+  if (!keys().current) throw new Error(VAULT_MISSING);
+  const key = pasted.trim();
+  if (!looksLikeClaudeKey(key)) throw new Error("That doesn't look like a Claude API key (it starts with sk-ant-).");
+  let res: Response;
+  try {
+    res = await fetch("https://api.anthropic.com/v1/models?limit=1", { headers: { "x-api-key": key, "anthropic-version": "2023-06-01" }, cache: "no-store", redirect: "error", signal: AbortSignal.timeout(15_000) });
+  } catch (e) { throw new Error(`Anthropic couldn't be reached to check the key: ${scrubSecrets(e instanceof Error ? e.message : String(e), [key]).slice(0, 120)}`); }
+  if (res.status === 401 || res.status === 403) throw new Error("Anthropic didn't accept that key.");
+  if (!res.ok) throw new Error(`Anthropic answered ${res.status} when checking the key. Try again in a minute.`);
+  const now = new Date().toISOString();
+  const { error } = await db().from("mcp_connections").upsert({ id: CLAUDE_KEY_ID, secret: await sealSecret({ key } satisfies KeySecret), connected_at: now, last_error: null, paused_at: null, updated_at: now }, { onConflict: "id" });
+  if (error) throw new Error(missing(error.message) ? MCP_MISSING : error.message);
+  await logEvent(CLAUDE_KEY_ID, "connected", "Claude API key", [key]);
+}
+
+/** Forgets the business's Claude key here. It keeps working at Anthropic until it is deleted there. */
+export async function removeClaudeKey(): Promise<void> {
+  const { error } = await db().from("mcp_connections").delete().eq("id", CLAUDE_KEY_ID);
+  if (error) throw new Error(error.message);
+  await logEvent(CLAUDE_KEY_ID, "disconnected");
+}
+
+/** The business's own Claude key, opened for one call; null when it has none or it is paused. Only integrations/anthropic.ts calls this. */
+export async function claudeKey(): Promise<string | null> {
+  const r = await row(CLAUDE_KEY_ID).catch(() => null);
+  if (!r?.secret || r.paused_at) return null;
+  const s = await readSecret<KeySecret>(CLAUDE_KEY_ID, r);
+  return s?.key ?? null;
+}
+

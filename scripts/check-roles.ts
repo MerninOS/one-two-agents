@@ -31,22 +31,43 @@ for (const bad of ["https://evil.example", "//evil.example", "/\\evil.example", 
 const ID = "0e1a7c4e-00aa-4000-8000-0000000000aa";
 const run = async () => {
   delete process.env.SESSION_SECRET;
-  const s = await import("../dashboard/session");
+  const s = await import("../core/session");
+  const ORG = "0e1a7c4e-0002-4000-8000-000000000002", HOME = "0e1a7c4e-0001-4000-8000-000000000001";
   assert.equal(s.loginConfigured(), false);
-  assert.throws(() => s.newSessionToken(ID), /SESSION_SECRET/);
+  assert.throws(() => s.newSessionToken(ID, ORG), /SESSION_SECRET/);
   process.env.SESSION_SECRET = "short";
   assert.equal(s.loginConfigured(), false, "a short secret signs nobody in");
   process.env.SESSION_SECRET = "a".repeat(44);
   const now = Date.parse("2026-11-17T12:00:00Z");
-  const t = s.newSessionToken(ID, now);
+  const t = s.newSessionToken(ID, ORG, now);
+  assert.deepEqual(s.sessionOf(t, now + 1000), { memberId: ID, orgId: ORG }, "a session names the member and their org");
   assert.equal(s.sessionMemberId(t, now + 1000), ID);
-  assert.equal(s.sessionMemberId(t, now + 31 * 864e5), null, "expires after 30 days");
-  assert.throws(() => s.newSessionToken("cfo", now), /member id/);
-  const [v, , exp, mac] = t.split(".");
-  assert.equal(s.sessionMemberId(`${v}.0e1a7c4e-00bb-4000-8000-0000000000bb.${exp}.${mac}`, now), null, "another member id fails the signature");
-  assert.equal(s.sessionMemberId(`v1.${Date.now() + 1e9}.${mac}`, now), null, "old password cookies don't work");
+  assert.equal(s.sessionOf(t, now + 31 * 864e5), null, "expires after 30 days");
+  assert.throws(() => s.newSessionToken("cfo", ORG, now), /member id/);
+  assert.throws(() => s.newSessionToken(ID, "home", now), /org id/);
+  const [v, , , exp, mac] = t.split(".");
+  assert.equal(v, "v3");
+  assert.equal(s.sessionOf(`v3.${ID}.${HOME}.${exp}.${mac}`, now), null, "another org fails the signature");
+  assert.equal(s.sessionOf(`v3.0e1a7c4e-00bb-4000-8000-0000000000bb.${ORG}.${exp}.${mac}`, now), null, "another member id fails the signature");
+  assert.equal(s.sessionOf(`v1.${Date.now() + 1e9}.${mac}`, now), null, "old password cookies don't work");
+  // a cookie from before orgs had their own sign-in still works, for the home org
+  const { createHash, createHmac } = await import("node:crypto");
+  const k = createHash("sha256").update(`operator-session:${"a".repeat(44)}`).digest();
+  const v2 = `v2.${ID}.${now + 864e5}`;
+  assert.deepEqual(s.sessionOf(`${v2}.${createHmac("sha256", k).update(v2).digest("base64url")}`, now), { memberId: ID, orgId: HOME });
+  // the pick cookie: signed, short-lived, only the memberships it lists
+  const pick = s.newPickToken([{ memberId: ID, orgId: ORG }, { memberId: ID, orgId: HOME }], now);
+  assert.deepEqual(s.pickChoices(pick, now + 1000), [{ memberId: ID, orgId: ORG }, { memberId: ID, orgId: HOME }]);
+  assert.deepEqual(s.pickChoices(pick, now + 11 * 6e4), [], "a pick expires after 10 minutes");
+  assert.deepEqual(s.pickChoices(pick.replace(ORG, HOME), now), [], "a changed pick fails the signature");
+  assert.equal(s.sessionOf(pick, now), null, "a pick is not a session");
   process.env.SESSION_SECRET = "b".repeat(44);
-  assert.equal(s.sessionMemberId(t, now + 1000), null, "a new secret signs everyone out");
+  assert.equal(s.sessionOf(t, now + 1000), null, "a new secret signs everyone out");
+
+  // finishing a sign-in takes a verified address: it lives outside "use server" files, so the browser can't call it
+  const authSrc = readFileSync("dashboard/authActions.ts", "utf8");
+  assert.deepEqual([...authSrc.matchAll(/^export async function (\w+)/gm)].map((m) => m[1]).sort(), ["confirmSignIn", "pickBusiness", "signIn", "signOut"]);
+  assert.ok(!/^"use server"/.test(readFileSync("dashboard/signin.ts", "utf8")) && readFileSync("dashboard/signin.ts", "utf8").startsWith('import "server-only";'));
 
   // every server action checks a role; sign-in is the only exception
   const files = ["dashboard/actions.ts", "dashboard/orgActions.ts", "dashboard/connectionActions.ts", "dashboard/goalActions.ts", "dashboard/proposalActions.ts", "dashboard/chatActions.ts", "dashboard/peopleActions.ts"];

@@ -6,6 +6,7 @@ import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { db } from "@/core/db";
 import { env } from "@/core/env";
+import { settings } from "@/core/settings";
 import { openJobsThisWeek } from "@/core/plans";
 import { DEFAULT_BUDGET, loadMemory, memoryView, proposedLessons, readPages, type MemoryEvent, type MemoryLoad, type MemoryRow, type PageLoad } from "@/core/memory";
 import { agentDepartment, agentNames, loadOrg } from "@/core/org";
@@ -13,26 +14,34 @@ import { reactionTally, reactionsOf, reactionsOnRun, type Reaction } from "@/cor
 import type { Tally } from "@/core/reaction-rules";
 import { APPROVAL_LABELS, APPROVAL_TOOLS, MAX_CHAINS, MAX_STEPS, METRICS, listFlowVersions, loadFlow, nextFirings, readFlow, type Chain, type Crew } from "@/core/flow";
 import { TOOLS } from "@/core/tools/catalog";
-import { mcpStatus, vaultReady } from "@/integrations/mcp";
+import { CLAUDE_KEY_ID, mcpStatus, vaultReady } from "@/integrations/mcp";
+import { HOME_ORG_ID, orgId, withOrg } from "@/core/tenancy";
 import { MCP_IDS } from "@/core/mcp-rules";
 import { orgState, type OrgState } from "@/core/org-switch";
 import type { CrewMember, IntegrationId } from "./crew";
 import { avgCostOf, buildCrew, memberOf, type RosterRow, type RosterSpec } from "./roster";
 import { plannedSeats } from "@/core/install";
 import type { CrewAgent, CrewCanvasData } from "./components/CrewCanvas";
-import { SESSION_COOKIE, controlsOn, sessionMemberId } from "./session";
+import { SESSION_COOKIE, controlsOn, sessionOf } from "./session";
 import { memberById } from "@/core/members";
 import { atLeast, refusal, type Member, type Role } from "@/core/roles";
 
-/** The member a session cookie names, read again from the database; null when signed out or removed. */
-export async function memberFromCookie(token: string | undefined): Promise<Member | null> {
-  const id = sessionMemberId(token);
-  const m = id ? await memberById(id) : null;
-  return m ? { id: m.id, email: m.email, role: m.role } : null;
+/** A signed-in member: who they are and the org this session is in. */
+export type SessionMember = Member & { orgId: string };
+
+/**
+ * The member a session cookie names, read again from the database inside the org the cookie names;
+ * null when signed out or removed from that org.
+ */
+export async function memberFromCookie(token: string | undefined): Promise<SessionMember | null> {
+  const s = sessionOf(token);
+  if (!s) return null;
+  const m = await withOrg(s.orgId, () => memberById(s.memberId));
+  return m ? { id: m.id, email: m.email, role: m.role, orgId: s.orgId } : null;
 }
 
 /** The signed-in member (any role), once per request; anyone else goes to sign-in. */
-export const requireSession = cache(async (): Promise<Member> => {
+export const requireSession = cache(async (): Promise<SessionMember> => {
   const jar = await cookies();
   const me = await memberFromCookie(jar.get(SESSION_COOKIE)?.value);
   if (!me) redirect("/login");
@@ -43,7 +52,7 @@ export const requireSession = cache(async (): Promise<Member> => {
  * For an action: the signed-in member when their role reaches `min`, else a refusal to return.
  * `const { me, no } = await asRole("owner"); if (no) return no;`
  */
-export async function asRole(min: Role): Promise<{ me: Member; no?: undefined } | { me?: undefined; no: { ok: false; text: string } }> {
+export async function asRole(min: Role): Promise<{ me: SessionMember; no?: undefined } | { me?: undefined; no: { ok: false; text: string } }> {
   const me = await requireSession();
   return atLeast(me.role, min) ? { me } : { no: { ok: false, text: refusal(me.role, min) } };
 }
@@ -121,7 +130,8 @@ export function health(): Record<IntegrationId, boolean> {
     mercury: false,
     // signed in on Connections (its key in the vault): getFloor reads mcp_connections
     notion: false,
-    email: !!(env.resendKey && env.briefFrom && env.briefTo),
+    // and the business has an owner email (Settings): getFloor checks that
+    email: !!(env.resendKey && env.briefFrom),
     // both Gmail sign-ins (read only, drafts) are made on Connections: getFloor reads mcp_connections
     gmail: false,
     gmail_read: false,
@@ -169,7 +179,12 @@ export const getFloor = cache(async (): Promise<Floor> => {
     orgState(),
   ]);
   // every server in the registry: set up when signed in and not paused (Notion also needs its parent page, Mercury its accounts)
-  const extra: Partial<Record<string, boolean>> = { shopify: !!env.shopifyDomain, notion: !!env.notionBriefParent, mercury: env.mercuryAccountIds.length > 0 };
+  const s = await settings();
+  if (!s.ownerEmail) h.email = false;
+  // Claude: the business's own key, or for the home org only, the app's (integrations/anthropic.ts)
+  const ck = await mcpStatus(CLAUDE_KEY_ID);
+  h.claude = (!!ck?.connected && !ck.paused) || (h.claude && (await orgId()) === HOME_ORG_ID);
+  const extra: Partial<Record<string, boolean>> = { shopify: !!s.shopifyDomain, notion: !!s.notionBriefParent, mercury: s.mercuryAccountIds.length > 0 };
   for (const [id, st] of mcp) if (st?.connected && !st.paused && extra[id] !== false) h[id] = true;
   if (a.error || r.error) return { ...empty, problem: `Supabase: ${(a.error ?? r.error)?.message}` };
   const rows = (a.data ?? []) as (AgentRow & RosterRow)[];

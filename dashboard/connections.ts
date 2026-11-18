@@ -64,8 +64,8 @@ export const CONNECTIONS: Connection[] = [
   },
   {
     id: "email", name: "Email to you", sub: "Briefs and alerts", icon: "inbox", builtIn: false,
-    about: "Sends through Resend to one address fixed in settings (BRIEF_TO). The code has no way to name anyone else.",
-    checks: [{ key: "email", label: "Email", setup: "Set RESEND_API_KEY, BRIEF_FROM (a sender on a domain verified in Resend) and BRIEF_TO." }],
+    about: "Sends through Resend to the owner email on Settings > Where things go, always one of this business’s owners. The code has no way to name anyone else.",
+    checks: [{ key: "email", label: "Email", setup: "Set RESEND_API_KEY and BRIEF_FROM (a sender on a domain verified in Resend) in Vercel, and pick the owner email on Settings > Where things go." }],
   },
   {
     id: "web", name: "The web", sub: "Search and read pages", icon: "globe", builtIn: false,
@@ -101,8 +101,7 @@ export const connOf = (t: ToolDef): ConnId => GROUP_CONN[t.group as BuiltInGroup
 
 /** The settings behind the Control Room itself, not something an agent is granted. */
 export const BEHIND_THE_SCENES: { key: IntegrationId; name: string; icon: string; about: string; setup: string }[] = [
-  { key: "claude", name: "Claude API", icon: "cpu", about: "The models agents think with. Spend is read from the run log.", setup: "Set ANTHROPIC_API_KEY." },
-  { key: "supabase", name: "Supabase", icon: "database", about: "The agents’ database. Service role, server only.", setup: "Set SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY." },
+    { key: "supabase", name: "Supabase", icon: "database", about: "The agents’ database. Service role, server only.", setup: "Set SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY." },
   { key: "vault", name: "Token vault", icon: "lock", about: "Locks every sign-in made with a Connect button, with a key of its own. Tokens are never shown, logged or given to a model.", setup: "Set MCP_SECRET_KEY (at least 32 characters, made with openssl rand -base64 32). Until then nothing can be connected." },
 ];
 

@@ -2,7 +2,6 @@ import Link from "next/link";
 import { requireSession } from "@/dashboard/data";
 import { readStatus } from "@/core/status";
 import { OVERDUE_MIN, REALERT_HOURS } from "@/core/status-rules";
-import { currentOrgId, HOME_ORG_ID } from "@/core/tenancy";
 import { hasEmail } from "@/integrations/email";
 
 // Status (docs/usage.md, slice 4): everything that needs a look, on one page. Alerts (red) also
@@ -11,7 +10,7 @@ export default async function Status() {
   await requireSession();
   const { facts: f, problems } = await readStatus();
   const alerts = problems.filter((p) => p.level === "alert").length;
-  const emails = currentOrgId() === HOME_ORG_ID && hasEmail();
+  const emails = await hasEmail();
   const tile = (label: string, value: React.ReactNode, sub: string) => (
     <div className="card" style={{ padding: "14px 18px", gap: 4, flex: "1 1 150px" }}>
       <span className="sub">{label}</span>

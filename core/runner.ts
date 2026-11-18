@@ -384,7 +384,7 @@ export async function runExplore(spec: AgentSpec, opts: ExploreOpts): Promise<Ru
       if (spent + worst > spec.limits.maxCostUsd) { stopped = `the $${spec.limits.maxCostUsd.toFixed(2)} cost limit`; break; }
       const t0 = Date.now();
       const { res, tin, tout, c } = await span("model_call", { "operator.agent": opts.agentId, "operator.run": opts.runId, "operator.model": spec.model }, async (set) => {
-        const res = await (opts.client ?? claude()).beta.messages.create({
+        const res = await (opts.client ?? (await claude())).beta.messages.create({
           model: spec.model, max_tokens: MAX_OUT,
           betas: ["server-side-fallback-2026-07-01"], fallbacks: "default",
           output_config: { effort: spec.effort },

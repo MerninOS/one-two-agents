@@ -15,11 +15,11 @@ const AUDITED = [
   // the builder and the flow
   "createBuilt", "saveSpec", "goBack", "setBuiltBudget", "goLive", "saveCrewFlow", "rollBackFlow",
   // Connections
-  "mcpDisconnect", "mcpSaveKey", "vaultReseal", "klaviyoPickList", "customAdd", "customScopes", "customKey", "customToolOn", "customToolOff", "customPause", "customRemove",
+  "mcpDisconnect", "mcpSaveKey", "claudeSaveKey", "claudeRemoveKey", "vaultReseal", "klaviyoPickList", "customAdd", "customScopes", "customKey", "customToolOn", "customToolOff", "customPause", "customRemove",
   // people and roles
   "peopleAdd", "peopleSetRole", "peopleRemove",
   // the business's own words, which every agent is told
-  "saveBusinessProfile", "installTemplate",
+  "saveBusinessProfile", "saveWhereThingsGo", "installTemplate",
   // the org chart: budgets, email caps, who holds a seat, drafts routing
   "orgSetDeptBudget", "orgSetDeptEmails", "placeAgent", "orgSetHolder", "orgSetLeadChecks",
   // proposals change an agent's spec or routine

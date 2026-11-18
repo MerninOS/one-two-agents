@@ -10,6 +10,7 @@ import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { env } from "@/core/env";
 import { REFRESH_MS, orgToken, parseSigningKey, type SigningKey } from "@/core/org-token";
 import { scopeClient } from "@/core/tenancy";
+import "@/core/request-org";
 
 let client: SupabaseClient | null = null;
 let scoped: SupabaseClient | null = null;
@@ -51,7 +52,7 @@ export function db(): SupabaseClient {
   if (!env.supabaseUrl || !env.supabaseServiceKey) throw new Error("SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY must be set");
   client ??= createClient(env.supabaseUrl, env.supabaseServiceKey, { auth: { persistSession: false } });
   // the org is read on every from(), so one wrapper serves every org
-  scoped ??= scopeClient(client, undefined, dbLock().on ? tablesFor : undefined);
+  scoped ??= scopeClient(client, dbLock().on ? tablesFor : undefined);
   return scoped;
 }
 
@@ -101,4 +102,49 @@ export async function updateOrgRow(orgId: string, fields: { name: string; about:
   const { name, about, owner_name } = fields;
   const { error } = await client.from("orgs").update({ name, about, owner_name }).eq("id", orgId);
   if (error) throw new Error(/about|owner_name/.test(error.message) ? "The org profile migration (20261210090000_org_profile.sql) isn’t applied yet." : error.message);
+}
+
+export interface Membership { memberId: string; orgId: string; orgName: string; role: string; userId: string | null }
+
+/**
+ * Every membership an email address has, across orgs, for sign-in only (docs/tenancy.md, slice
+ * 8.1): which businesses a verified address may open. On the service role, since sign-in comes
+ * before any org is chosen. Returns ids, the role and the org's name, never the org's data.
+ */
+export async function membershipsOf(email: string): Promise<Membership[]> {
+  if (!env.supabaseUrl || !env.supabaseServiceKey) throw new Error("SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY must be set");
+  client ??= createClient(env.supabaseUrl, env.supabaseServiceKey, { auth: { persistSession: false } });
+  const { data, error } = await client.from("members").select("id, org_id, role, user_id").eq("email", email);
+  if (error) throw new Error(error.message);
+  const rows = (data ?? []) as { id: string; org_id: string; role: string; user_id: string | null }[];
+  if (!rows.length) return [];
+  const orgs = await client.from("orgs").select("id, name").in("id", [...new Set(rows.map((r) => r.org_id))]);
+  if (orgs.error) throw new Error(orgs.error.message);
+  const names = new Map(((orgs.data ?? []) as { id: string; name: string | null }[]).map((o) => [o.id, o.name ?? ""]));
+  return rows.map((r) => ({ memberId: r.id, orgId: r.org_id, orgName: names.get(r.org_id) || "Your business", role: r.role, userId: r.user_id }));
+}
+
+/**
+ * Supabase Auth for Sign in with Google (docs/tenancy.md, slice 8.1): a fresh client whose PKCE
+ * verifier lives in `store`, which the caller keeps in a short-lived httpOnly cookie between
+ * sending the person to Google and their return. Only `.auth` is handed out, as with authApi().
+ */
+export function authFlow(store: Record<string, string>): SupabaseClient["auth"] {
+  if (!env.supabaseUrl || !env.supabaseServiceKey) throw new Error("SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY must be set");
+  const storage = { getItem: (k: string) => store[k] ?? null, setItem: (k: string, v: string) => { store[k] = v; }, removeItem: (k: string) => { delete store[k]; } };
+  return createClient(env.supabaseUrl, env.supabaseServiceKey, { auth: { flowType: "pkce", storage, persistSession: true, autoRefreshToken: false, detectSessionInUrl: false } }).auth;
+}
+
+let googleOn: { on: boolean; at: number } | null = null;
+/** Whether Google is turned on as a sign-in provider in this Supabase project (read from its public settings, kept 5 minutes). */
+export async function googleSignInOn(): Promise<boolean> {
+  if (googleOn && Date.now() - googleOn.at < 5 * 6e4) return googleOn.on;
+  if (!env.supabaseUrl || !env.supabaseServiceKey) return false;
+  let on = false;
+  try {
+    const res = await fetch(`${env.supabaseUrl}/auth/v1/settings`, { headers: { apikey: env.supabaseServiceKey }, cache: "no-store", redirect: "error", signal: AbortSignal.timeout(5000) });
+    on = res.ok && (await res.json() as { external?: { google?: boolean } }).external?.google === true;
+  } catch { on = false; }
+  googleOn = { on, at: Date.now() };
+  return on;
 }

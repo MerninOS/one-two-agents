@@ -3,7 +3,7 @@ import "server-only";
 // Connections with the `read` scope only. Agents never move money: this sign-in can't use a write
 // tool, and core/mcp-rules.ts names only read tools for it. Amounts are added up in code
 // (core/mercury-rules.ts), never by a model.
-import { env } from "@/core/env";
+import { settings } from "@/core/settings";
 import { callMcpTool, mcpStatus } from "@/integrations/mcp";
 import { MERCURY_UUID, cashOf, readAccounts, readCategories, readOneTxn, readOrgName, readTxnPage, type MercuryCategory, type MercuryTxn } from "@/core/mercury-rules";
 
@@ -15,10 +15,11 @@ export async function hasMercury(): Promise<boolean> {
   return !!s?.connected && !s.paused;
 }
 
-/** Available balance across the accounts MERCURY_ACCOUNT_IDS names ("all" = every non-credit account); null when not set up. */
+/** Available balance across the accounts Settings names ("all" = every non-credit account); null when not set up. */
 export async function mercuryCash(): Promise<number | null> {
-  if (!env.mercuryAccountIds.length || !(await hasMercury())) return null;
-  return cashOf(readAccounts(await callMcpTool("mercury", "getAccounts", { limit: 1000 })), env.mercuryAccountIds);
+  const ids = (await settings()).mercuryAccountIds;
+  if (!ids.length || !(await hasMercury())) return null;
+  return cashOf(readAccounts(await callMcpTool("mercury", "getAccounts", { limit: 1000 })), ids);
 }
 
 const PAGE = 300;

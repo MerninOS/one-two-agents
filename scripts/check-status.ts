@@ -38,7 +38,7 @@ assert.match(alertEmail(ps.slice(0, 3), "https://a.b").subject, /3 things need a
 
 // alerts go only through integrations/email.ts, only for the home org, and the scheduler sends them
 const src = readFileSync("core/status.ts", "utf8");
-assert.match(src, /currentOrgId\(\) !== HOME_ORG_ID \|\| !hasEmail\(\)/);
+assert.match(src, /if \(!\(await hasEmail\(\)\)\) return \[\];/);
 assert.match(readFileSync("app/api/dispatch/route.ts", "utf8"), /sendStatusAlerts\(origin, now\)\.catch/);
 const sql = migration("20261209090000_status_alerts.sql"); // check:baseline checks every policy in the public repo
 if (sql) assert.match(sql, /create policy org_rows on status_alerts/);

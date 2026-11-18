@@ -1,10 +1,9 @@
 import "server-only";
 // Status and alerts (docs/usage.md, slice 4): reads what core/status-rules.ts judges, for the
 // Status page and for the scheduler's alert emails. Reads only the current org's rows (db()).
-// Alerts go only through integrations/email.ts, which sends to BRIEF_TO, the home org's owner; until
-// each org has its own address (not built), other orgs' problems show on their Status page only.
+// Alerts go only through integrations/email.ts, to the org's own owner email (Settings), for every org
+// that has one (slice 8.1b); an org without one sees its problems on its Status page only.
 import { db } from "@/core/db";
-import { HOME_ORG_ID, currentOrgId } from "@/core/tenancy";
 import { MCP_SERVERS } from "@/core/mcp-rules";
 import { isCustomId } from "@/core/custom-mcp-rules";
 import { emailOwner, hasEmail } from "@/integrations/email";
@@ -55,7 +54,7 @@ async function pausedConnections(): Promise<StatusFacts["paused"]> {
  * goes out once, then at most once a day while it lasts. Returns the keys emailed.
  */
 export async function sendStatusAlerts(origin: string, now = Date.now()): Promise<string[]> {
-  if (currentOrgId() !== HOME_ORG_ID || !hasEmail()) return [];
+  if (!(await hasEmail())) return [];
   const { problems } = await readStatus(now);
   if (!problems.some((p) => p.level === "alert")) return [];
   const { data, error } = await db().from("status_alerts").select("key, sent_at");

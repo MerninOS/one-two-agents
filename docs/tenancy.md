@@ -296,3 +296,101 @@ change in Vercel.
 
 A cloud KMS wrapper (ee, when Cloud picks one), rotating an org's data key itself, deleting an
 org from the Control Room.
+
+## Slice 8.1: every org signs in as itself
+
+Design: OPERATOR paid layer (ee) https://claude.ai/artifact/SnFw9BuTseFBXToakPsGBU, slice 1 (core,
+open source). Until now only the home org could sign in: the Control Room ran every page as the
+home org. Now a member of any org signs in to their own org, and a person in several orgs picks one.
+
+### The session names the org
+
+The session cookie (`core/session.ts`) is `v3.<member id>.<org id>.<expiry>`, signed with
+`SESSION_SECRET`. A `v2` cookie from before (member id only) still works and means the home org, so
+nobody is signed out by the change. Every page and action reads the member again inside the org
+the cookie names (`memberFromCookie` runs `memberById` in `withOrg`), so a member removed from that
+org is out on their next click.
+
+### A request's org
+
+`orgId()` (`core/tenancy.ts`) is the org the current work is for: the one `withOrg` set; else, in a
+Control Room request, the org the session cookie names (`core/request-org.ts`, registered by
+`core/db.ts`); else the home org (the scheduler's own calls, scripts, signed-out pages, as before).
+It is async because the cookie is read with `cookies()`. There is no synchronous guess any more:
+`currentOrgId()` is gone, since outside `withOrg` it would have been the home org for another org's
+member. `check:tenancy` fails if one of the files that used it reads the org another way.
+
+`db()` reads the org when `from()` is called. Inside `withOrg` it scopes at once, as before. Inside a
+request without one, the query is recorded and scoped when it is awaited, after the org is read
+from the cookie, so call sites keep writing `await db().from(...)...`. Work that outlives the
+request (a real run started from the Control Room, chains after an approval) captures
+`await orgId()` and runs inside `withOrg`, never reading the cookie later.
+
+### Signing in
+
+1. **Email link**, as before, but for a member of any org: `membershipsOf(email)` (`core/db.ts`) is
+   the one read across orgs at sign-in, on the service role, and returns only member ids, org ids,
+   roles and org names. The page still says "check your email" either way.
+2. **Sign in with Google**, when Google is turned on as a provider in the Supabase project
+   (the login page asks Supabase's public settings). `/auth/google` sends the person to Google
+   through Supabase Auth (PKCE, the verifier in a 10-minute httpOnly cookie);
+   `/auth/google/callback` trades the code for the verified address. Google only proves the
+   address: who may sign in is still the members list.
+3. Both end in `finishSignIn` (`dashboard/signin.ts`): each membership is tied to the person's auth
+   user, then one org signs in at once, or several go to `/auth/pick` (a signed 10-minute cookie
+   listing the memberships; picking checks the choice is in it). `finishSignIn` takes a verified
+   address, so it is deliberately not in a `"use server"` file; `check:roles` checks
+   `dashboard/authActions.ts` exports only the four sign-in actions.
+
+The first owner (`OPERATOR_OWNER_EMAIL`) is still made only for the home org, while it has no members.
+
+### Setting up Sign in with Google (once per Supabase project)
+
+In Google Cloud, on the app's OAuth client, add the redirect URI
+`https://<project>.supabase.co/auth/v1/callback`. In Supabase, Authentication > Sign In / Providers >
+Google: turn it on with that client's id and secret. In Authentication > URL Configuration, add
+`https://<your Control Room>/auth/google/callback` to Redirect URLs. Keep "Allow new users to sign up"
+off: invited members' auth users are made by the app.
+
+### Not in this slice
+
+A switcher between orgs inside the Control Room (sign out and in again for now).
+
+## Slice 8.1b: each org's own settings
+
+Some settings were one value in Vercel for the whole app, though they belong to a business: where
+the brief and alerts are emailed (`BRIEF_TO`), the website (`SITE_URL`), the Shopify store and app
+client id (`SHOPIFY_STORE_DOMAIN`, `SHOPIFY_CLIENT_ID`), the Mercury cash accounts
+(`MERCURY_ACCOUNT_IDS`) and the Notion pages reports go under (`NOTION_BRIEF_PARENT_ID`,
+`NOTION_BRIEFS_DB_ID`, `NOTION_LEADS_PARENT_ID`, `NOTION_BOOKS_PARENT_ID`). Each org now keeps
+its own on **Settings > Where things go** (owners only), stored as the `business_settings` row in
+`policies`, so no migration.
+
+- `core/settings-rules.ts` (pure) reads and checks them: an https website, a `.myshopify.com`
+  store, Mercury account ids or "all", Notion ids or links (Notion's own links only).
+- **The owner email is always one of the org's owners' sign-in addresses**, picked from a list.
+  The brief and alerts can never be pointed at someone who couldn't sign in as an owner.
+  `integrations/email.ts` still has no recipient argument; it reads the current org's owner email.
+- `core/settings.ts` gives the current org's settings. **The Vercel values count only for the
+  home org**, as its starting values where it saved none, and never for another org. Code reads
+  these settings only through `settings()`; `check:settings` fails on any other file reading
+  them from the environment.
+- **Alerts for every org.** The scheduler emails each org's alerts to its own owner email; an org
+  without one sees them on Status only.
+
+App infrastructure stays in Vercel: Supabase, Claude, Resend and its sender (`BRIEF_FROM`), the
+vault key, the app's Google OAuth client, `SHOPIFY_API_VERSION`. A template pack's
+`SHOPIFY_STOCK_COLLECTION` and the Build Board's `NOTION_BUILD_BOARD_DB_ID` stay app-wide too.
+
+## Slice 8.1c: each org's own Claude key
+
+Every model call used the app's one `ANTHROPIC_API_KEY`, so every org's agents would have billed
+to whoever runs the deployment. Now an owner pastes the business's own Claude API key on
+**Connections > Claude API**. It is checked with Anthropic (a read of the model list, no redirects),
+sealed in the vault with the org's data key on its own connection row (`anthropic_key`), and
+never shown, logged or put in a prompt.
+
+`claude()` (`integrations/anthropic.ts`) is async: it uses the org's own key when there is one;
+without one, **only the home org** falls back to the app's key, and any other org's run stops with
+a note to paste a key. Managed credits (card 128, slice 4) will let an org with credits use the
+app's key, metered. Only `integrations/anthropic.ts` opens the key (`check:mcp`).

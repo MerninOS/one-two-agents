@@ -5,12 +5,14 @@ import "server-only";
 // query first. Only integrations/shopify-server.ts imports this (lint enforces it).
 import { createHash } from "node:crypto";
 import { env } from "@/core/env";
+import { settings } from "@/core/settings";
 import { WHO, assertReadOnly, shopifyKeyKind } from "@/core/shopify-queries";
 
 const TIMEOUT_MS = 25_000;
-const domain = () => {
-  const d = env.shopifyDomain ?? "";
-  if (!/^[a-z0-9][a-z0-9-]*\.myshopify\.com$/.test(d)) throw new Error("set SHOPIFY_STORE_DOMAIN to the store's .myshopify.com address");
+// the store and the app's client id are the business's own (Settings), not the app's
+const domain = async () => {
+  const d = (await settings()).shopifyDomain ?? "";
+  if (!/^[a-z0-9][a-z0-9-]*\.myshopify\.com$/.test(d)) throw new Error("set the Shopify store (its .myshopify.com address) on Settings > Where things go");
   return d;
 };
 
@@ -20,14 +22,15 @@ async function tokenFor(key: string, fresh = false): Promise<string> {
   const kind = shopifyKeyKind(key);
   if (kind === "token") return key;
   if (kind !== "secret") throw new Error("Shopify key isn't an Admin API access token or a client secret");
-  if (!env.shopifyClientId) throw new Error("set SHOPIFY_CLIENT_ID (the app's client id) to use a client secret");
+  const clientId = (await settings()).shopifyClientId;
+  if (!clientId) throw new Error("set the Shopify app's client id on Settings > Where things go to use a client secret");
   const h = createHash("sha256").update(key).digest("base64url");
   const c = cache.get(h);
   if (!fresh && c && c.exp > Date.now() + 60_000) return c.token;
-  const res = await fetch(`https://${domain()}/admin/oauth/access_token`, {
+  const res = await fetch(`https://${await domain()}/admin/oauth/access_token`, {
     method: "POST", redirect: "error", cache: "no-store", signal: AbortSignal.timeout(TIMEOUT_MS),
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body: new URLSearchParams({ grant_type: "client_credentials", client_id: env.shopifyClientId, client_secret: key }),
+    body: new URLSearchParams({ grant_type: "client_credentials", client_id: clientId, client_secret: key }),
   });
   if (!res.ok) throw new Error(`Shopify ${res.status === 400 || res.status === 401 ? 401 : res.status}: the key wasn't accepted for a token`);
   const j = await res.json() as { access_token?: string; expires_in?: number };
@@ -37,7 +40,7 @@ async function tokenFor(key: string, fresh = false): Promise<string> {
 }
 
 async function post<T>(token: string, query: string, variables: Record<string, unknown>): Promise<T> {
-  const res = await fetch(`https://${domain()}/admin/api/${env.shopifyApiVersion}/graphql.json`, {
+  const res = await fetch(`https://${await domain()}/admin/api/${env.shopifyApiVersion}/graphql.json`, {
     method: "POST", redirect: "error", cache: "no-store", signal: AbortSignal.timeout(TIMEOUT_MS),
     headers: { "Content-Type": "application/json", Accept: "application/json", "X-Shopify-Access-Token": token },
     body: JSON.stringify({ query, variables }),

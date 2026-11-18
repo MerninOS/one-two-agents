@@ -8,7 +8,7 @@ import "server-only";
 import { db } from "@/core/db";
 import { env } from "@/core/env";
 import { DUE_LIMIT, STALE_MS, outcomeText, type JobKind } from "@/core/job-rules";
-import { currentOrgId } from "@/core/tenancy";
+import { orgId } from "@/core/tenancy";
 
 export interface Job { id: string; kind: JobKind; payload: unknown; attempts: number }
 
@@ -69,7 +69,7 @@ export async function dueJobs(now = Date.now()): Promise<string[]> {
  */
 export async function kick(origin: string, id: string): Promise<void> {
   if (!env.cronSecret || !origin) return;
-  const org = currentOrgId();
+  const org = await orgId();
   try {
     const res = await fetch(`${origin}/api/jobs/${id}?org=${org}`, { headers: { authorization: `Bearer ${env.cronSecret}` }, cache: "no-store", redirect: "error", signal: AbortSignal.timeout(20_000) });
     if (!res.ok) console.error(`[jobs] ${id} answered ${res.status}`);
