@@ -25,7 +25,7 @@ for (const f of files) if (f !== "core/extensions.ts") assert.doesNotMatch(readF
 assert.match(readFileSync("core/extensions.ts", "utf8"), SLOT_IMPORT, "core/extensions.ts is the door to the slots");
 const slots = [...(readFileSync("core/extension-types.ts", "utf8").match(/SLOTS = \[([^\]]*)\]/)?.[1] ?? "").matchAll(/"(\w+)"/g)].map((m) => m[1]);
 assert.ok(slots.length >= 4, "core/extension-types.ts lists its SLOTS");
-const fills = (f: string) => { const s = readFileSync(f, "utf8"); for (const k of slots) assert.match(s, new RegExp(`^\\s+${k}:`, "m"), `${f} fills the ${k} slot`); return s; };
+const fills = (f: string) => { const s = readFileSync(f, "utf8"); for (const k of slots) assert.match(s, new RegExp(`^\\s+${k}[:,]`, "m"), `${f} fills the ${k} slot`); return s; };
 const open = fills("core/extensions/none.ts");
 assert.match(open, /edition: "open"/, "the default edition is open");
 assert.match(open, /planBlock: async \(\) => null/, "the open edition blocks nothing");

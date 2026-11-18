@@ -41,3 +41,19 @@ check that throws counts as a "no". A new slot needs a pull request to core with
 
 The export to the public repo keeps `ee/LICENSE` and `ee/README.md` and leaves out the rest of
 `ee/`, so the public tree builds the open edition.
+
+## Billing (cloud edition, card 128 slice 3)
+
+One plan: $20 a month with the owner, plus $5 a month for each other person, after a 14-day trial
+(`ee/plan-rules.ts`). Each business on the cloud edition has one `ee_subscriptions` row, kept by
+sign-up and Stripe's webhook; the app only reads it.
+
+| Where it stands | What the plan check says |
+| --- | --- |
+| The home org | Never billed and never paused; it doesn't read a row |
+| Trial, active, or within 7 days of a failed payment | Nothing is blocked |
+| No row, trial over, unpaid after the grace period, or canceled | Runs pause, agents can't go on duty, adding people and servers stops |
+
+Nothing is deleted when a plan runs out, and approvals already waiting can still be tapped. The
+paid layer's tables are named `ee_*`: they sit in `TENANT_TABLES` with an `org_rows` policy like
+any other, and stay out of the public baseline and export. `npm run check:ee` tests the plan.

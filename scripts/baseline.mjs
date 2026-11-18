@@ -7,8 +7,8 @@
 //   docker exec supabase_db_<project> pg_dump -U postgres --schema-only --schema=public --no-owner --no-comments \
 //     -T public.<pack table> ... postgres | node scripts/baseline.mjs > supabase/baseline/operator_baseline.sql
 //
-// Leave out each template pack's own tables with -T (the `tables` in templates/<pack>/index.ts): they
-// are the pack's, not core's. `npm run check:baseline` fails when the baseline has a table core
+// Leave out each template pack's own tables with -T (the `tables` in templates/<pack>/index.ts), and
+// the paid layer's ee_* tables (-T 'public.ee_*'): they are the pack's or ee/'s, not core's. `npm run check:baseline` fails when the baseline has a table core
 // doesn't, or misses one it does.
 import { readFileSync } from "node:fs";
 import { brandWords } from "./lib/brand.mjs";

@@ -8,13 +8,14 @@ import { readFileSync } from "node:fs";
 import { HOME_ORG_ID, ORGS_TABLE, TENANT_TABLES } from "../core/tenancy";
 import { JOB_KINDS } from "../core/job-rules";
 import { MCP_EVENTS } from "../core/mcp-rules";
-import { BASELINE, packDirs, packTables } from "./lib/schema";
+import { BASELINE, isEeTable, packDirs, packTables } from "./lib/schema";
 import { brandWords } from "./lib/brand.mjs";
 
 const sql = readFileSync(BASELINE, "utf8");
-// a pack's own tables are the pack's, not core's: they stay out of the baseline
+// a pack's own tables are the pack's, and ee_* tables the paid layer's, not core's: they stay out of the baseline
 const packOnly = new Set(packDirs().flatMap(packTables));
-const coreTables = TENANT_TABLES.filter((t) => !packOnly.has(t));
+const eeOnly = TENANT_TABLES.filter(isEeTable);
+const coreTables = TENANT_TABLES.filter((t) => !packOnly.has(t) && !isEeTable(t));
 const tables = [...sql.matchAll(/^CREATE TABLE public\.([a-z_]+) \(([\s\S]*?)\n\);/gm)].map((m) => ({ name: m[1], body: m[2] }));
 const names = tables.map((t) => t.name).sort();
 assert.deepEqual(names, [...coreTables, ORGS_TABLE].sort(), "the baseline has exactly core's tenant tables and orgs: run scripts/baseline.mjs again after a migration adds or drops a table");
@@ -44,4 +45,4 @@ assert.match(sql, /^ALTER TABLE ONLY public\.jobs\n\s+ADD CONSTRAINT \w+ UNIQUE 
 const auditGrants = [...sql.matchAll(/^GRANT (\S+) ON TABLE public\.audit_log TO /gm)].map((m) => m[1]);
 assert.ok(auditGrants.length && auditGrants.every((g) => !/ALL|UPDATE|DELETE|TRUNCATE/.test(g)), "the audit log can't be changed or emptied");
 
-console.log(`check:baseline ok (${tables.length} tables, ${packOnly.size} pack tables left to their packs)`);
+console.log(`check:baseline ok (${tables.length} tables, ${packOnly.size} pack tables left to their packs, ${eeOnly.length} to ee/)`);
