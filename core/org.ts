@@ -4,6 +4,7 @@ import "server-only";
 // Callers check the login and that an agent id is one the Control Room knows.
 import { actor } from "@/core/actor";
 import { db } from "@/core/db";
+import { spendByAgent } from "@/core/usage";
 import { chicagoDate, offsetOn } from "@/core/time";
 import {
   MAX_DEPARTMENTS, MAX_DEPTH, checkerOf, MAX_SEATS, agentsIn, childrenOf, cleanSub, cleanTitle, deptBudgetChange, deptEmailChange, depthOf, deptOf, deptSlug, headOf,
@@ -218,14 +219,9 @@ export function chicagoMonthStart(now = new Date()) {
 /** "2026-11": this Chicago calendar month. */
 export const chicagoMonth = (now = new Date()) => chicagoDate(0, now).slice(0, 7);
 
-/** AI spend this Chicago month per agent, from agent_runs (cost computed by the runner, added up here in code). */
+/** AI spend this Chicago month per agent, from the usage ledger (core/usage.ts). */
 export async function monthSpendByAgent(agentIds: string[], now = new Date()): Promise<Record<string, number>> {
-  if (!agentIds.length) return {};
-  const { data, error } = await db().from("agent_runs").select("agent_id, cost_usd").in("agent_id", agentIds).gte("started_at", chicagoMonthStart(now)).limit(20000);
-  if (error) throw new Error(error.message);
-  const cents: Record<string, number> = {};
-  for (const r of data ?? []) cents[r.agent_id] = (cents[r.agent_id] ?? 0) + Math.round(Number(r.cost_usd) * 100);
-  return Object.fromEntries(Object.entries(cents).map(([k, v]) => [k, v / 100]));
+  return spendByAgent(agentIds, chicagoMonthStart(now));
 }
 
 /**
