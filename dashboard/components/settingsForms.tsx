@@ -89,3 +89,23 @@ export function CapForm({ c, controls, save }: { c: CapLine; controls: boolean; 
     </div>
   );
 }
+
+/** The business's own words, which every agent is told: its name, a line about it, the owner's name. Owners only. */
+export function BusinessForm({ initial, canEdit, save }: { initial: { name: string; about: string; ownerName: string }; canEdit: boolean; save: (f: { name: string; about: string; ownerName: string }) => Promise<ActionResult> }) {
+  const [f, setF] = useState(initial);
+  const { busy, run, toast } = useAct();
+  const changed = f.name !== initial.name || f.about !== initial.about || f.ownerName !== initial.ownerName;
+  return (
+    <div className="stack" style={{ gap: 8 }}>
+      <div className="row wrap" style={{ gap: 8 }}>
+        <input className="input" style={{ flex: 2, minWidth: 180 }} placeholder="Business name" aria-label="Business name" value={f.name} maxLength={120} disabled={!canEdit} onChange={(e) => setF({ ...f, name: e.target.value })} />
+        <input className="input" style={{ flex: 1, minWidth: 140 }} placeholder="Owner’s name (optional)" aria-label="Owner’s name" value={f.ownerName} maxLength={80} disabled={!canEdit} onChange={(e) => setF({ ...f, ownerName: e.target.value })} />
+      </div>
+      <textarea className="input" rows={2} placeholder="One line about the business, e.g. a small bakery in Denver selling bread and cakes to cafes" aria-label="About the business" value={f.about} maxLength={300} disabled={!canEdit} onChange={(e) => setF({ ...f, about: e.target.value })} />
+      <div className="row" style={{ gap: 8, justifyContent: "flex-end" }}>
+        <button className="btn dark sm" disabled={busy || !canEdit || !changed || !f.name.trim()} title={canEdit ? "Agents get the new words from their next run" : "Owners only"} onClick={() => run(() => save(f))}>{busy ? "Saving…" : "Save"}</button>
+      </div>
+      {toast}
+    </div>
+  );
+}

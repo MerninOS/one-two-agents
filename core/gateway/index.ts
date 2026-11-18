@@ -1,7 +1,7 @@
 import "server-only";
 // The tool gateway. Agents never call a write integration themselves: they propose an
 // action here, the gateway checks it against the allow-list (policy.ts) and either
-// refuses it or queues it for Zak. Approved actions are executed here and nowhere else,
+// refuses it or queues it for the owner. Approved actions are executed here and nowhere else,
 // after a fresh check against Mercury's live state (or, for a Gmail draft, the lead's row),
 // inside withRun so every apply is in agent_runs and respects agents.enabled. Every action,
 // refused or applied, is a row in agent_actions.
@@ -53,7 +53,7 @@ export async function propose(p: Proposal): Promise<{ status: "queued" | "refuse
     const review = checker ? { reviewer_agent_id: checker.reviewer, review_status: "waiting", review_due: new Date(Date.now() + LEAD_REVIEW_HOURS * 36e5).toISOString() } : {};
     const card = { action_id: action.id, agent_id: p.agentId, title: p.title, reasoning: p.reasoning ?? null, preview: p.preview ?? {} };
     let { error: e2 } = await db().from("approvals").insert({ ...card, department_id: departmentId, ...review });
-    // before the slice 4 migration the columns aren't there: the card goes straight to Zak, as before
+    // before the slice 4 migration the columns aren't there: the card goes straight to the owner, as before
     if (e2?.code === "42703" || e2?.code === "PGRST204") ({ error: e2 } = await db().from("approvals").insert(card));
     if (e2) { await db().from("agent_actions").delete().eq("id", action.id); throw new Error(`Gateway: could not queue the approval: ${e2.message}`); }
   }
@@ -126,7 +126,7 @@ export async function queueBookkeeperProposals(runId?: string | null) {
 
 // ---- Decisions
 
-/** Drafts a lead didn't check in time go to Zak, saying so. */
+/** Drafts a lead didn't check in time go to the owner, saying so. */
 export async function releaseOverdueChecks(now = new Date()) {
   const { data } = await db().from("approvals").select("id, reviewer_agent_id").eq("status", "pending").eq("review_status", "waiting").lt("review_due", now.toISOString());
   for (const r of data ?? []) {
@@ -159,8 +159,8 @@ async function sentBackBefore(pairs: { tool: string; target: string }[]) {
 
 /**
  * A lead's check on one draft (docs/org-chart.md, slice 4), saved after the lead's run finishes. A note
- * stays on the card for Zak. A send-back closes the draft without counting as Zak's decision, and
- * the caller proposes a lesson for the agent that wrote it (Zak keeps or discards it). A lead never approves,
+ * stays on the card for the owner. A send-back closes the draft without counting as the owner's decision, and
+ * the caller proposes a lesson for the agent that wrote it (the owner keeps or discards it). A lead never approves,
  * rejects or edits: the draft's words and target stay exactly as they were.
  */
 export async function leadReview(approvalId: string, reviewer: string, verdict: "note" | "send_back", note: string): Promise<{ result: "noted" | "gone" } | { result: "sent_back"; agentId: string; title: string }> {
@@ -195,15 +195,15 @@ export async function expireStale() {
   return ids.length;
 }
 
-/** Records Zak's decision on a pending approval. Approving does not write anything by itself. */
+/** Records the owner's decision on a pending approval. Approving does not write anything by itself. */
 export async function decide(approvalId: string, decision: "approve" | "reject", by: string, reason?: string) {
   const now = new Date().toISOString();
   const status = decision === "approve" ? "approved" : "rejected";
-  const { data: ap, error } = await db().from("approvals").update({ status, decided_at: now, decided_by: by, reject_reason: decision === "reject" ? (reason ?? "rejected by Zak") : null })
+  const { data: ap, error } = await db().from("approvals").update({ status, decided_at: now, decided_by: by, reject_reason: decision === "reject" ? (reason ?? "rejected by the owner") : null })
     .eq("id", approvalId).eq("status", "pending").select("action_id").maybeSingle();
   if (error) throw new Error(error.message);
   if (!ap) return null; // already decided or expired
-  await db().from("agent_actions").update({ status, decided_at: now, ...(decision === "reject" ? { reason: reason ?? "rejected by Zak" } : {}) }).eq("id", ap.action_id).eq("status", "proposed");
+  await db().from("agent_actions").update({ status, decided_at: now, ...(decision === "reject" ? { reason: reason ?? "rejected by the owner" } : {}) }).eq("id", ap.action_id).eq("status", "proposed");
   await db().from("expense_docs").update({ proposal_status: status }).eq("proposal_action_id", ap.action_id);
   return ap.action_id as string;
 }
@@ -233,7 +233,7 @@ const editsReady = () => ready("mercury_write");
 /** The gateway's receipt key, in the vault (attach a file only). */
 const filesReady = () => ready("mercury_files");
 
-/** One receipt file onto the charge Zak approved, through our receipt server on the gateway's key. Returns Mercury's attachment id. */
+/** One receipt file onto the charge an approver approved, through our receipt server on the gateway's key. Returns Mercury's attachment id. */
 async function attachReceipt(transactionId: string, file: { name: string; type: string; bytes: Uint8Array }): Promise<string | null> {
   const out = (await callWriteTool("mercury_files", "mercury_attach_receipt", { transactionId, name: file.name, type: file.type, base64: Buffer.from(file.bytes).toString("base64") })) as { attachmentId?: unknown };
   return typeof out?.attachmentId === "string" ? out.attachmentId : null;
@@ -347,7 +347,7 @@ async function applyDrafts(ids?: string[]) {
       const n = { applied: 0, refused: 0, failed: 0 };
       for (const a of list.slice(0, cap)) { const r = await applyDraft(a, runId); if (r !== "skipped") n[r]++; }
       const left = Math.max(0, list.length - cap);
-      return { status: "ok", summary: `Gateway made ${n.applied} approved Gmail draft${n.applied === 1 ? "" : "s"}${n.refused ? `, refused ${n.refused} on a fresh check` : ""}${n.failed ? `, ${n.failed} failed` : ""}${left ? `, ${left} left for the next apply (cap ${cap})` : ""}. Zak sends them from Gmail.` };
+      return { status: "ok", summary: `Gateway made ${n.applied} approved Gmail draft${n.applied === 1 ? "" : "s"}${n.refused ? `, refused ${n.refused} on a fresh check` : ""}${n.failed ? `, ${n.failed} failed` : ""}${left ? `, ${left} left for the next apply (cap ${cap})` : ""}. The owner sends them from Gmail.` };
     });
     if (res.status === "skipped") ok = false;
     texts.push(res.status === "skipped" ? `${agentId}: not applied (${res.summary}) Approved drafts are kept.` : res.summary);
@@ -441,14 +441,14 @@ export async function monthSpentUsd(now = new Date()): Promise<number> {
   return cents / 100;
 }
 
-/** Outbound emails sent today (Chicago), from applied email actions. Briefs to Zak are reports, not actions, so they don't count. */
+/** Outbound emails sent today (Chicago), from applied email actions. Briefs to the owner are reports, not actions, so they don't count. */
 export async function emailsSentToday(now = new Date()): Promise<number> {
   const { count, error } = await db().from("agent_actions").select("id", { count: "exact", head: true }).eq("tool", EMAIL_TOOL).in("status", ["applied", "executing"]).gte("executed_at", chicagoStart("day", now));
   if (error) throw new Error(error.message);
   return count ?? 0;
 }
 
-/** Vendors that have been paid before, so a first payment always waits for Zak. */
+/** Vendors that have been paid before, so a first payment always waits for the owner. */
 export async function paidVendorIds(): Promise<Set<string>> {
   const { data } = await db().from("agent_actions").select("target").eq("tool", PAY_TOOL).eq("status", "applied");
   return new Set((data ?? []).map((r) => r.target as string));

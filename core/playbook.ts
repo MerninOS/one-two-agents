@@ -1,13 +1,13 @@
 import "server-only";
 // Playbooks (docs/agent-builder.md, slice 4). An explore run lets the model pick its own tool
-// calls. Code drafts a playbook from the calls that worked: the tools and inputs, in order. Zak
+// calls. Code drafts a playbook from the calls that worked: the tools and inputs, in order. The owner
 // approves an agent's first playbook (and may drop steps); after that, runs follow it: code makes
 // the calls, the model only writes the result. When a step fails the run falls back to exploring.
 //
-// Updates (Zak, Nov 13): once a playbook is approved, a new one drafted from a deliberate
+// Updates (owner's call, Nov 13): once a playbook is approved, a new one drafted from a deliberate
 // Re-explore applies automatically, with what changed shown. A run that falls back or doesn't
 // finish puts the agent on hold: its next playbook waits for approval again. So does an action
-// Zak rejects (slice 5, holdAfterRejection).
+// An approver rejects (slice 5, holdAfterRejection).
 import { actor } from "@/core/actor";
 import { db } from "@/core/db";
 import { TOOLS } from "@/core/tools/catalog";
@@ -76,7 +76,7 @@ export const pendingPlaybook = (all: Playbook[]) => all.find((p) => p.status ===
 
 export interface Hold { agentId: string; reason: string; at: string }
 
-/** Why the agent's next playbook must wait for Zak, or null when updates may apply on their own. */
+/** Why the agent's next playbook must wait for the owner, or null when updates may apply on their own. */
 export async function playbookHold(agentId: string): Promise<Hold | null> {
   const { data, error } = await db().from("agent_playbook_holds").select("agent_id, reason, at").eq("agent_id", agentId).maybeSingle();
   if (error) throw new Error(`Playbooks: ${error.message}`);
@@ -89,13 +89,13 @@ async function setHold(agentId: string, reason: string) {
 }
 
 /**
- * Zak rejected an action a built agent proposed: its next playbook waits for his approval
- * (Zak, Nov 13). Agents with no playbook yet are left alone. Returns true when a hold was set.
+ * An approver rejected an action a built agent proposed: its next playbook waits for an approver
+ * (owner's call, Nov 13). Agents with no playbook yet are left alone. Returns true when a hold was set.
  */
 export async function holdAfterRejection(agentId: string, title: string): Promise<boolean> {
   const { data, error } = await db().from("agent_playbooks").select("id").eq("agent_id", agentId).eq("status", "approved").limit(1);
   if (error || !data?.length) return false;
-  await setHold(agentId, `Zak rejected a proposal: ${title}`.slice(0, 300));
+  await setHold(agentId, `An approver rejected a proposal: ${title}`.slice(0, 300));
   return true;
 }
 
@@ -106,7 +106,7 @@ async function clearHold(agentId: string) {
 
 async function insertPlaybook(agentId: string, steps: PlaybookStep[], status: "proposed" | "approved", fromRun: string | null, changes: string, auto: boolean, all: Playbook[]) {
   const version = (all[0]?.version ?? 0) + 1;
-  // one proposal at a time: a newer draft replaces an older one Zak hasn't decided
+  // one proposal at a time: a newer draft replaces an older one the owner hasn't decided
   const old = all.filter((p) => p.status === "proposed" || (status === "approved" && p.status === "approved")).map((p) => p.id);
   if (old.length) {
     const r = await db().from("agent_playbooks").update({ status: "replaced", decided_at: new Date().toISOString() }).in("id", old);
@@ -148,7 +148,7 @@ export async function afterRun(agentId: string, runId: string | null, r: { steps
   return `Playbook updated to v${v} on its own. ${changes}`;
 }
 
-/** Zak approves a proposed playbook, keeping the steps he ticked. Clears the hold. */
+/** An approver approves a proposed playbook, keeping the steps they ticked. Clears the hold. */
 export async function approvePlaybook(agentId: string, id: number, keep: number[]): Promise<number> {
   const all = await listPlaybooks(agentId);
   const p = all.find((x) => x.id === id);

@@ -15,7 +15,7 @@ import { agentNames } from "@/core/org";
 import { Icon } from "@/dashboard/components/Icon";
 
 // The Desk (docs/company-mode.md, slice 5): home. Goals with where each stands and its head's latest
-// word, then what needs Zak, proposals first. Avery's chat sits beside it (the layout draws it).
+// word, then what needs the owner, proposals first. Avery's chat sits beside it (the layout draws it).
 // Every count and status here comes from code.
 
 const KIND_LOOK: Record<string, { bg: string; fg: string }> = {
@@ -52,7 +52,7 @@ export default async function Desk() {
     <>
       <div className="stack" style={{ gap: 6 }}>
         <span style={{ fontSize: 13 }} className="muted">{longDay(now)} · {hm(now)} CT</span>
-        <h1 style={{ fontSize: 32, lineHeight: 1.15, fontWeight: 600, letterSpacing: "-.025em" }}>{deskGreeting(now)}, Zak.</h1>
+        <h1 style={{ fontSize: 32, lineHeight: 1.15, fontWeight: 600, letterSpacing: "-.025em" }}>{deskGreeting(now)}.</h1>
         <p style={{ fontSize: 14.5, textWrap: "pretty" }} className="ink2">{deskLine(allGoals.map((g) => g.status), props.length, rest.length)}</p>
       </div>
 

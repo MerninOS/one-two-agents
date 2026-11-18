@@ -7,7 +7,7 @@ import { db } from "@/core/db";
 import { HOME_ORG_ID, currentOrgId } from "@/core/tenancy";
 import { MCP_SERVERS } from "@/core/mcp-rules";
 import { isCustomId } from "@/core/custom-mcp-rules";
-import { emailZak, hasEmail } from "@/integrations/email";
+import { emailOwner, hasEmail } from "@/integrations/email";
 import { OVERDUE_MIN, alertEmail, alertsDue, statusProblems, type Problem, type StatusFacts } from "@/core/status-rules";
 
 const DAY = 864e5;
@@ -68,6 +68,6 @@ export async function sendStatusAlerts(origin: string, now = Date.now()): Promis
   const { error: e2 } = await db().from("status_alerts").upsert(due.map((p) => ({ key: p.key, sent_at: at })), { onConflict: "key" });
   if (e2) return [];
   const m = alertEmail(due, origin);
-  await emailZak(m.subject, m.html, m.text);
+  await emailOwner(m.subject, m.html, m.text);
   return due.map((p) => p.key);
 }

@@ -11,7 +11,7 @@ import { MAX_CUSTOM_GRANTS, isCustomToolId } from "@/core/custom-mcp-rules";
 export const EFFORTS = ["low", "medium", "high"] as const;
 export type Effort = (typeof EFFORTS)[number];
 
-/** Hard limits per run. A spec picks at or under the ceiling; code stops the run there (Zak, Nov 13). */
+/** Hard limits per run. A spec picks at or under the ceiling; code stops the run there (owner's call, Nov 13). */
 export const RUN_LIMITS = {
   maxSteps: { default: 12, min: 1, max: 30 },
   maxCostUsd: { default: 0.5, min: 0.01, max: 2 },
@@ -41,7 +41,7 @@ export interface AgentSpec {
 
 export const MAX_DIRECTIVE = 4000;
 
-/** Claude models only (Zak, Nov 12): no AI Gateway route for a built agent. */
+/** Claude models only (owner's call, Nov 12): no AI Gateway route for a built agent. */
 export const specModelOk = (id: string) => modelDef(id)?.route === "anthropic";
 
 const str = (v: unknown, max: number) => (typeof v === "string" ? v.trim().slice(0, max) : "");
@@ -51,7 +51,7 @@ const AGENT_ID = /^[a-z0-9_]{1,60}$/;
 /**
  * A stored or drafted spec, checked against what code offers. Anything it asks for that code
  * doesn't offer is left out and named in `problems`; limits above the ceiling are refused, not
- * clamped, so a run never uses a value Zak didn't pick.
+ * clamped, so a run never uses a value the owner didn't pick.
  */
 export function readSpec(raw: unknown, agentId?: string): { spec: AgentSpec; problems: string[] } {
   const r = (raw && typeof raw === "object" ? raw : {}) as Record<string, unknown>;

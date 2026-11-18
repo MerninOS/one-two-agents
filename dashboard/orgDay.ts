@@ -6,8 +6,8 @@ import type { CrewMember, Schedule } from "./crew";
 import { runsInMonth } from "./orgPlan";
 import { nextRuns, schedWords } from "./schedule";
 
-/** Tools whose result reaches Zak: an agent with one is marked "reports to you" on the day. */
-export const REPORTS_TO_ZAK = ["report_email_zak", "report_morning_brief"];
+/** Tools whose result reaches the owner: an agent with one is marked "reports to you" on the day. */
+export const REPORTS_TO_OWNER = ["report_email_zak", "report_morning_brief"];
 
 export interface DayRow {
   id: string;
@@ -61,7 +61,7 @@ export function orgDay(o: {
       schedule, when: schedWords(schedule), next: nextRuns(schedule, o.now, 4),
       perRun, perMonth: perRun == null ? 0 : perRun * runsInMonth(schedule),
       enabled: !!o.enabled[m.id], budget: o.budget[m.id] ?? 0,
-      reportsToYou: (o.grants[m.id] ?? []).some((t) => REPORTS_TO_ZAK.includes(t)),
+      reportsToYou: (o.grants[m.id] ?? []).some((t) => REPORTS_TO_OWNER.includes(t)),
     };
   });
   // the window: 4 AM to noon, stretched to an hour around the earliest and latest run

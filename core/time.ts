@@ -1,4 +1,4 @@
-// Calendar dates in Chicago, where One Two works. Vercel Cron runs in UTC.
+// Calendar dates in Chicago (Central Time), the only time zone so far; a time zone per business comes later. Vercel Cron runs in UTC.
 export const TZ = "America/Chicago";
 
 /** "2026-10-27" for the Chicago calendar day `daysAgo` before now. */

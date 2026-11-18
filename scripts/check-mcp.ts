@@ -36,12 +36,12 @@ assert.deepEqual(toolPayload({ content: [{ type: "text", text: "{\"data\":[1]}" 
 assert.deepEqual(toolPayload({ isError: true, content: [{ type: "text", text: "bad id" }] }), { error: "bad id" });
 
 // Klaviyo replies, in the shapes its MCP server sends (checked against the live server, Nov 2026)
-const lists = { data: [{ type: "list", id: "XZRviM", attributes: { name: "One Two Coffee Lab Email List" } }, { type: "list", id: "V8E3fQ", attributes: { name: "SMS List" } }], links: { next: "https://a.klaviyo.com/api/lists?page%5Bcursor%5D=abc123" } };
-assert.deepEqual(namedRows(lists).map((r) => r.id), ["XZRviM", "V8E3fQ"]);
+const lists = { data: [{ type: "list", id: "Lx9Q2a", attributes: { name: "Acme Coffee Email List" } }, { type: "list", id: "V8E3fQ", attributes: { name: "SMS List" } }], links: { next: "https://a.klaviyo.com/api/lists?page%5Bcursor%5D=abc123" } };
+assert.deepEqual(namedRows(lists).map((r) => r.id), ["Lx9Q2a", "V8E3fQ"]);
 assert.equal(nextCursor(lists), "abc123");
 assert.equal(nextCursor({ links: { next: null } }), null);
-assert.deepEqual(listSize({ data: { type: "list", id: "XZRviM", attributes: { name: "Email", profile_count: 212 } } }), { id: "XZRviM", name: "Email", profiles: 212 });
-assert.equal(listSize({ data: { id: "XZRviM", attributes: { name: "Email" } } }), null, "no count, no number");
+assert.deepEqual(listSize({ data: { type: "list", id: "Lx9Q2a", attributes: { name: "Email", profile_count: 212 } } }), { id: "Lx9Q2a", name: "Email", profiles: 212 });
+assert.equal(listSize({ data: { id: "Lx9Q2a", attributes: { name: "Email" } } }), null, "no count, no number");
 
 const report = { data: { attributes: { results: [
   { groupings: { campaign_id: "c1", send_channel: "email" }, statistics: { recipients: 196, delivered: 186, opens_unique: 107, clicks_unique: 7, conversions: 0, conversion_value: 0, unsubscribes: 1 }, campaign_details: { attributes: { name: "Hidden Window", send_time: "November 15, 2025, 17:08" } } },
@@ -217,7 +217,7 @@ assert.equal(readTxnPage({ transactions: [], page: { nextPage: "not-a-cursor" } 
 assert.equal(readOneTxn({ transaction: { id: tid(4), amount: -3, status: "sent" } })?.id, tid(4));
 assert.equal(readOneTxn({ id: tid(5), amount: -3, status: "sent" })?.id, tid(5));
 assert.deepEqual(readCategories({ categories: [{ id: "k1", name: "Green coffee" }, { id: "k2" }] }).categories, [{ id: "k1", name: "Green coffee" }]);
-assert.equal(readOrgName({ organization: { legalBusinessName: "One Two Coffee Lab LLC", ein: "12-3456789" } }), "One Two Coffee Lab LLC");
+assert.equal(readOrgName({ organization: { legalBusinessName: "Acme Coffee LLC", ein: "12-3456789" } }), "Acme Coffee LLC");
 
 // ---- Mercury writes on the gateway's own sign-in (slice 5b)
 assert.deepEqual([...MCP_SERVERS.mercury_write.scopes], ["transactions:update", "offline_access"], "the write sign-in asks for category and memo only");
@@ -306,7 +306,7 @@ for (const [tool, args, why] of [
   ["gmail_message", { id: "../../drafts" }, /id must/],
   ["gmail_attachment", { messageId: "18c2a9f0e1b2", attachmentId: "a/b" }, /attachmentId/],
   ["gmail_create_draft", { to: "a@b.co, c@d.co", subject: "Hi", body: "x" }, /one plain/],
-  ["gmail_create_draft", { to: "Zak <a@b.co>", subject: "Hi", body: "x" }, /one plain/],
+  ["gmail_create_draft", { to: "Sam <a@b.co>", subject: "Hi", body: "x" }, /one plain/],
   ["gmail_create_draft", { to: "a@b.co\r\nBcc: c@d.co", subject: "Hi", body: "x" }, /one plain/],
   ["gmail_create_draft", { to: "a@b.co", subject: " ", body: "x" }, /subject/],
   ["gmail_send", { to: "a@b.co" }, /isn't a Gmail tool/],

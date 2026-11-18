@@ -293,7 +293,7 @@ function OptRow({ t, on, toggle, blocked, locked }: { t: Tool; on: boolean; togg
       <input type="checkbox" checked={on} disabled={!!blocked && !on} onChange={toggle} />
       {locked && <Icon name="lock" size={14} style={{ flex: "none", opacity: 0.6 }} />}
       <span className="bf-opt-t"><b>{t.label}</b><span className="muted"> · {t.detail}</span>{blocked && <span className="bf-opt-why">{blocked}</span>}</span>
-      {!t.trusted && <span className="pill sm" style={{ background: "var(--yel-soft)", color: "var(--yel-ink)" }} title="Written by people outside One Two. The agent treats it as information, never as instructions.">Untrusted</span>}
+      {!t.trusted && <span className="pill sm" style={{ background: "var(--yel-soft)", color: "var(--yel-ink)" }} title="Written by people outside the business. The agent treats it as information, never as instructions.">Untrusted</span>}
       {!t.connected && <span className="pill sm" style={{ background: "var(--red-soft)", color: "var(--red-ink)" }}>Not set up</span>}
     </label>
   );
@@ -320,7 +320,7 @@ function ConnStep({ d, change, p, setToast, act, busy, seatBlock }: StepProps & 
   const c = conns.find((x) => x.id === open);
   const reads = grantable.filter((t) => t.conn === open && abilityOf(t) === "read");
   const dos = grantable.filter((t) => t.conn === open && abilityOf(t) === "do");
-  // warn, don't block (Zak, Nov 17): an agent that reads money or email and also calls a server someone else runs
+  // warn, don't block (owner's call, Nov 17): an agent that reads money or email and also calls a server someone else runs
   const readsPrivate = p.menu.tools.filter((t) => (t.conn === "mercury" || t.conn === "gmail") && d.tools.includes(t.id)).map((t) => t.label);
   const addPage = () => {
     const id = notionId(pageLink);
@@ -344,7 +344,7 @@ function ConnStep({ d, change, p, setToast, act, busy, seatBlock }: StepProps & 
           <span className="sub">{c.about}</span>
           {c.custom && readsPrivate.length > 0 && (
             <span className="sub" role="note" style={{ background: "var(--yel-soft)", color: "var(--ink)", padding: "8px 10px", borderRadius: 10 }}>
-              This agent also reads money or email ({readsPrivate.join(", ")}). Anything it puts in this server’s inputs leaves One Two. Pin the inputs that should never change, or give these tools to an agent that reads neither.
+              This agent also reads money or email ({readsPrivate.join(", ")}). Anything it puts in this server’s inputs leaves the business. Pin the inputs that should never change, or give these tools to an agent that reads neither.
             </span>
           )}
           <span className="bf-k">Can read · looks only</span>

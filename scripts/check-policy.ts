@@ -40,7 +40,7 @@ t("unknown key refused", "refuse" in capChange("max_refund_usd", 0, 5));
 t("same value refused", "refuse" in capChange("max_emails_per_day", 20, 20));
 // Gmail drafts (slice 7): only Rowan, a lead id, subject and body only, no links; the recipient comes from the leads list
 const lead = "0b5f7a52-1c1e-4d1a-9a59-3f1f0a8c2d11";
-const draft = { subject: "Coffee for Fleet", body: "Hi Ana,\n\nWould a free tasting help?\n\nZak\nOne Two Coffee Lab" };
+const draft = { subject: "Coffee for Fleet", body: "Hi Ana,\n\nWould a free tasting help?\n\nSam\nAcme Coffee" };
 t("draft ok for Rowan", refuseProposal("wholesale_hunter", DRAFT_EMAIL, lead, draft) === null);
 t("draft refused for Quinn", refuseProposal("bookkeeper", DRAFT_EMAIL, lead, draft) !== null);
 t("draft refused with a recipient field", refuseProposal("wholesale_hunter", DRAFT_EMAIL, lead, { ...draft, to: "x@y.com" }) !== null);

@@ -37,7 +37,7 @@ export function checkWhat(s: string): { what: string } | { problem: string } {
  * Servers we know about, by name and address. Kept in code so an address never comes from an
  * agent's words or a web page. Not vetted: each is run by its own company, and adding one still
  * goes through the warning and every check on Connections. `builtIn` names the built-in connection
- * for a service One Two already connects another way, so Find a tool sends you there instead.
+ * for a service the business already connects another way, so Find a tool sends you there instead.
  */
 export interface KnownServer { key: string; name: string; url: string | null; docs: string; reads: string; builtIn?: "shopify" | "mercury" | "gmail" | "notion" | "klaviyo" }
 export const KNOWN_SERVERS: readonly KnownServer[] = [

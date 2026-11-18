@@ -49,7 +49,7 @@ export async function runChainStep(origin: string, ctx: ChainCtx): Promise<{ out
   if (!ctx.manual && !(await orgOn())) return { outcome: "Skipped: the org is off." };
   const found = await resolveAgent(step.agent);
   if (!found) return { outcome: `Skipped: ${step.agent} isn't an agent.` };
-  // a manual-only agent runs in a chain only when Zak pressed Run chain
+  // a manual-only agent runs in a chain only when the owner pressed Run chain
   if (found.manualOnly && !ctx.manual) return { outcome: "Skipped: this agent runs only by hand; start its chain with Run chain." };
   const handoff = step.passAlong ? await handoffFrom(ctx.parent) : null;
   const log = (w: string) => console.log(`[chain ${c.key}] ${w}`);

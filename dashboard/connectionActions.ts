@@ -152,7 +152,7 @@ export async function customRemove(id: string): Promise<ActionResult> {
 }
 
 // ---- Find a tool (docs/custom-servers.md, slice 3). Asking for a connector and closing a request
-// change no agent and reach no service but One Two's own Build Board, so neither needs Controls on.
+// change no agent and reach no service but the business's own Build Board, so neither needs Controls on.
 
 const PROPOSAL_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 

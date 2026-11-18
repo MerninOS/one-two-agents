@@ -2,7 +2,7 @@
 // `npm run check:mcp` can test it.
 //
 // A custom server is one the owner adds by its address, for a tool the built-in connectors don't
-// have. Nobody at One Two reviewed its code, so it gets tighter limits than a built-in server:
+// have. Nobody who maintains this app reviewed its code, so it gets tighter limits than a built-in server:
 // every tool starts off, only tools that say they only read and take plain inputs can be turned on,
 // a turned-on tool that changes in any way pauses the server, and the address must be a public
 // https host. Its profile is a row the owner edits (mcp_custom_servers); these limits are code.
@@ -19,7 +19,7 @@ export const MAX_CUSTOM_SERVERS = 10;
 export const MAX_LISTED_TOOLS = 200;
 
 /** Shown before a server is added and on every custom server's page. */
-export const CUSTOM_WARNING = "This server is run by someone else, not One Two. It sees every question an agent sends it and decides what it answers. Only add servers from companies you already trust with this data.";
+export const CUSTOM_WARNING = "This server is run by someone else, not by this app. It sees every question an agent sends it and decides what it answers. Only add servers from companies you already trust with this data.";
 
 export type CustomAuth = "oauth" | "key";
 

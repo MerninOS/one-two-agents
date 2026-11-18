@@ -6,7 +6,7 @@ import { db } from "@/core/db";
 import { agentSpend } from "@/core/usage";
 import { env } from "@/core/env";
 import { agentDepartment, claimBudgetAlert, deptBudgetBlock } from "@/core/org";
-import { emailZak, hasEmail } from "@/integrations/email";
+import { emailOwner, hasEmail } from "@/integrations/email";
 import { afterLoad, loadMemory, loadSummary, saveWorking, type MemoryLoad } from "@/core/memory";
 
 /** Vercel Cron sends `Authorization: Bearer $CRON_SECRET`; manual runs use the same header. */
@@ -45,7 +45,7 @@ async function blockedReason(agentId: string, trigger: string) {
 
 /**
  * The department budget (docs/org-chart.md, slice 2): the agents seated in a department share its
- * monthly budget, on top of each one's daily budget. The first skip of the month emails Zak. No
+ * monthly budget, on top of each one's daily budget. The first skip of the month emails the owner. No
  * org chart, no department or no department budget: nothing to check. Spend that can't be read
  * blocks the run, since it can't be shown to be under the budget.
  */
@@ -58,7 +58,7 @@ async function deptBlocked(agentId: string): Promise<string | null> {
   try {
     if (hasEmail() && (await claimBudgetAlert(at.dept.id))) {
       const line = `${why} Its agents’ runs are skipped at $0 until next month, or until you raise the budget on Crew > Org chart (Edit chart, then Edit on ${at.dept.name}).`;
-      await emailZak(`${at.dept.name} reached its monthly AI budget`, `<p>${line.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")}</p>`, line);
+      await emailOwner(`${at.dept.name} reached its monthly AI budget`, `<p>${line.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")}</p>`, line);
     }
   } catch { /* an alert that can't be sent never changes the skip */ }
   return why;

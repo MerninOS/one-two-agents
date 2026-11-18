@@ -22,7 +22,7 @@ const Tag = ({ s }: { s: string }) => {
   return <span className="row" style={{ gap: 6, fontSize: 12.5, whiteSpace: "nowrap" }}><span style={{ width: 7, height: 7, borderRadius: 999, background: c }} />{l}</span>;
 };
 
-/** A Gmail draft (Rowan): who it goes to, from the leads list, and the exact words. Approving puts it in Gmail; Zak still sends it there. */
+/** A Gmail draft (Rowan): who it goes to, from the leads list, and the exact words. Approving puts it in Gmail; the owner still sends it there. */
 function Draft({ i }: { i: ApprovalItem }) {
   const p = i.preview;
   return (

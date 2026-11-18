@@ -14,6 +14,8 @@ import type { ActionResult } from "./actions";
 import { PLANNED } from "./crew";
 import { getFloor, asRole } from "./data";
 import { controlsOn } from "./session";
+import { saveBusiness } from "@/core/business";
+import { businessProblem } from "@/core/business-rules";
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const fail = (e: unknown): ActionResult => ({ ok: false, text: e instanceof Error ? e.message : String(e) });
@@ -166,7 +168,7 @@ export async function orgForgetDeptRule(ruleId: string): Promise<ActionResult> {
   try { await deptRule(String(ruleId)); await withActor(me.email, () => forgetMemory(ruleId)); return done("Forgotten. It stays on each agent’s memory timeline."); } catch (e) { return fail(e); }
 }
 
-/** "Lead checks drafts first" on or off. Neither way loosens a cap: Zak's tap stays the only approval. */
+/** "Lead checks drafts first" on or off. Neither way loosens a cap: The owner's tap stays the only approval. */
 export async function orgSetLeadChecks(id: string, on: boolean): Promise<ActionResult> {
   const { me, no } = await asRole("owner"); if (no) return no;
   try {
@@ -174,5 +176,18 @@ export async function orgSetLeadChecks(id: string, on: boolean): Promise<ActionR
     await setLeadChecks(d.id, !!on);
     await audit(me, "set_lead_checks", d.id, { on: !!on });
     return done(on ? `${d.name}: drafts go to the agent above them first, for up to a day.` : `${d.name}: drafts come straight to you.`);
+  } catch (e) { return fail(e); }
+}
+
+/** The business's own words (Settings): its name, a line about it and the owner's name, which every agent is told. */
+export async function saveBusinessProfile(f: { name: string; about: string; ownerName: string }): Promise<ActionResult> {
+  const { me, no } = await asRole("owner"); if (no) return no;
+  const b = { name: String(f?.name ?? ""), about: String(f?.about ?? ""), ownerName: String(f?.ownerName ?? "") };
+  const problem = businessProblem(b);
+  if (problem) return { ok: false, text: problem };
+  try {
+    await saveBusiness(b);
+    await audit(me, "save_business_profile", null, { name: b.name.trim() });
+    return done("Saved. Agents get the new words from their next run.");
   } catch (e) { return fail(e); }
 }

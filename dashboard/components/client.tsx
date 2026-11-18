@@ -19,7 +19,7 @@ export function ThemeToggle({ initial, wide }: { initial: "light" | "dark"; wide
   return <button className="round" title="Switch theme" onClick={flip}><Icon name={theme === "dark" ? "sun" : "moon"} /></button>;
 }
 
-/** Rendered only while an agent has run alerts Zak hasn't looked at: notes the look, then refreshes so the badge clears. */
+/** Rendered only while an agent has run alerts the owner hasn't looked at: notes the look, then refreshes so the badge clears. */
 export function MarkSeen({ agentId, at }: { agentId: string; at: number }) {
   const router = useRouter();
   useEffect(() => {
@@ -52,7 +52,7 @@ export function RailLink({ id, name, title, icon, planned, running, badge }: { i
   const tab = useSearchParams().get("tab");
   // the builder page is the agent's Edit tab, so its chip stays selected there too
   const sel = path === `/agents/${id}` || path === `/build/${id}`;
-  // switching agents keeps the tab Zak is on (Memory to Memory), except for agents not built yet
+  // switching agents keeps the tab the owner is on (Memory to Memory), except for agents not built yet
   const href = path.startsWith("/build/") && !planned && !path.startsWith("/build/new") ? `/build/${id}` : `/agents/${id}${tab && !planned && path.startsWith("/agents/") ? `?tab=${tab}` : ""}`;
   return (
     <Link href={href} title={title} className={"rail-item" + (sel ? " sel" : "") + (planned ? " planned" : "")} aria-current={sel ? "page" : undefined}>
@@ -202,7 +202,7 @@ export interface RecentRun { id: string; name: string; status: string; live: boo
 
 /**
  * Keeps the floor current while an agent works: refreshes the server data every few seconds while any
- * run is live, and says so when one finishes. Mounted once in the room layout, so it follows Zak around.
+ * run is live, and says so when one finishes. Mounted once in the room layout, so it follows the owner around.
  */
 export function LiveRefresher({ runs }: { runs: RecentRun[] }) {
   const router = useRouter();

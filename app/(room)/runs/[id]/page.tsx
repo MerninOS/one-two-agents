@@ -59,7 +59,7 @@ export default async function Replay({ params }: { params: Promise<{ id: string 
     ["Duration", dur(run.started_at, run.ended_at), ""],
     ["Cost", m4(run.cost_usd), ""],
     ["Tokens", `${num(run.tokens_in)} in · ${num(run.tokens_out)} out`, ""],
-    ["Trigger", run.trigger === "cron" ? "Vercel Schedule" : run.trigger === "manual" ? "Zak pressed Run" : run.trigger === "approval" ? "Zak approved changes (gateway)" : run.trigger === "chain" ? `Chain${chain ? `: ${chain.name}` : ""}` : run.trigger === "preview" ? "A try from the builder: nothing sent or saved" : run.trigger === "chat" ? `Zak’s message in the chat${asked ? `: “${asked.slice(0, 200)}”` : ""}` : run.trigger, ""],
+    ["Trigger", run.trigger === "cron" ? "Vercel Schedule" : run.trigger === "manual" ? "Someone pressed Run" : run.trigger === "approval" ? "An approver approved changes (gateway)" : run.trigger === "chain" ? `Chain${chain ? `: ${chain.name}` : ""}` : run.trigger === "preview" ? "A try from the builder: nothing sent or saved" : run.trigger === "chat" ? `The owner’s message in the chat${asked ? `: “${asked.slice(0, 200)}”` : ""}` : run.trigger, ""],
   ];
 
   return (

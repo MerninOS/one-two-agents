@@ -122,7 +122,7 @@ export default async function GoalPage({ params }: { params: Promise<{ id: strin
 
 type Spec = NonNullable<Awaited<ReturnType<typeof listSpecVersions>>[number]["spec"]>;
 
-/** The head's plan for this week: its words and lines (a teammate's focus, a seat nobody holds yet, a job for Zak). */
+/** The head's plan for this week: its words and lines (a teammate's focus, a seat nobody holds yet, a job for the owner). */
 function PlanCard({ plan, plans, week, headName, bySeat }: { plan: Plan | null; plans: Plan[] | null; week: string; headName: string | null; bySeat: Record<string, { id: string; text: string }[]> }) {
   if (plans == null) return <div className="card"><span className="sub">The plans table isn’t in Supabase yet: apply the migration 20261123090000_plans.sql.</span></div>;
   const who = headName ?? "The head";
@@ -154,7 +154,7 @@ function PlanCard({ plan, plans, week, headName, bySeat }: { plan: Plan | null; 
   );
 }
 
-/** How the head works, from its live version: brain, cap, what it reads and hands Zak. */
+/** How the head works, from its live version: brain, cap, what it reads and hands the owner. */
 function HowHeadWorks({ name, spec }: { name: string; spec: Spec }) {
   const tools = spec.tools.map((t) => TOOLS[t]).filter(Boolean);
   const reads = tools.filter((t) => t.kind === "read" || t.kind === "calculate").map((t) => t.label);

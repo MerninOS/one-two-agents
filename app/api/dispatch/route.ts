@@ -17,7 +17,7 @@ export const maxDuration = 60;
 // the jobs that are due (a step whose "not before" time has come, or one whose kick was lost). The
 // work itself runs in workers (/api/jobs/<id>), each its own request through withRun. While an org
 // is off (core/org-switch.ts, docs/org-schedule.md) no chain of it starts on its own; the worker
-// lets only steps of a chain Zak started with Run chain go on. Last, it emails the owner any new
+// lets only steps of a chain the owner started with Run chain go on. Last, it emails the owner any new
 // alert from the Status page (core/status.ts).
 export async function GET(req: Request) {
   if (!cronAuthorized(req)) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });

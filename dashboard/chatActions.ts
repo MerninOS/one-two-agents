@@ -1,6 +1,6 @@
 "use server";
 // Avery's chat (docs/company-mode.md, slice 5). Checks the login again. A message makes real model
-// calls, so it also needs DASHBOARD_CONTROLS=on. Avery can only answer, save a rule in Zak's words
+// calls, so it also needs DASHBOARD_CONTROLS=on. Avery can only answer, save a rule in the owner's words
 // and file a proposal; see core/avery-chat.ts.
 import { revalidatePath } from "next/cache";
 import { askAvery, type ChatAnswer } from "@/core/avery-chat";

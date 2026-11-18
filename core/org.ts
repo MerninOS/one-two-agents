@@ -239,7 +239,7 @@ export async function agentDepartment(agentId: string, opts: { spend?: boolean }
 }
 
 /**
- * Marks that Zak was told this month that the department is at its budget. True only for the
+ * Marks that the owner was told this month that the department is at its budget. True only for the
  * first caller this month, so a department sends one alert a month however many runs it skips.
  */
 export async function claimBudgetAlert(deptId: string, now = new Date()): Promise<boolean> {
@@ -271,7 +271,7 @@ export async function setDeptEmailCap(id: string, next: number | null, companyCa
   if (error) throw new Error(error.message);
 }
 
-/** Turns "Lead checks drafts first" on or off for a department. Either way Zak's tap is the only approval. */
+/** Turns "Lead checks drafts first" on or off for a department. Either way the owner's tap is the only approval. */
 export async function setLeadChecks(id: string, on: boolean) {
   const o = await mustLoad();
   if (!o.departments.some((x) => x.id === id)) throw new Error("That department isn’t on the chart any more.");

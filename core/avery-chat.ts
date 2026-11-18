@@ -1,12 +1,12 @@
 import "server-only";
-// Avery's chat, the front door (docs/company-mode.md, slice 5). Zak types to the agent in the company
+// Avery's chat, the front door (docs/company-mode.md, slice 5). The owner types to the agent in the company
 // seat from any screen; each message is one run through withRun, so it is logged in agent_runs and
 // stays inside her daily budget. The run uses the shared runner (core/runner.ts) with:
 //
 // - her active spec's model and cost cap, her read and calculate tools, Goal progress, and The crew
 //   now (below);
 // - two chat-only report tools, offered nowhere else (they are not in the builder's tool list):
-//   Save a rule, whose words must be Zak's own from this message (checked in code), and File a
+//   Save a rule, whose words must be the owner's own from this message (checked in code), and File a
 //   proposal, which goes through fileProposal like a head's and does nothing until his yes.
 //
 // Nothing here runs, starts or changes an agent, and nothing sends, pays or posts. Rules and
@@ -18,12 +18,14 @@ import { agentNames, companySeat, liveAgentIds, loadOrg, seatOf, type Org } from
 import { planReaction } from "@/core/reaction-rules";
 import { saveRule } from "@/core/reactions";
 import { runExplore } from "@/core/runner";
+import { loadBusiness } from "@/core/business";
+import { UNKNOWN_BUSINESS, type Business } from "@/core/business-rules";
 import { withRun } from "@/core/runs";
 import { chicagoDate, dayTitle } from "@/core/time";
 import { TOOLS } from "@/core/tools/catalog";
 import type { ToolDef } from "@/core/tools/types";
 import { weekOf } from "@/core/plan-rules";
-import { MAX_FILED, MAX_REPLY, MAX_RULES, chatPrompt, deptNamed, inZaksWords, resolveRuleWho, savedLines, type ChatLine, type ChatReach } from "@/core/chat-rules";
+import { MAX_FILED, MAX_REPLY, MAX_RULES, chatPrompt, deptNamed, inOwnWords, resolveRuleWho, savedLines, type ChatLine, type ChatReach } from "@/core/chat-rules";
 
 export const CHAT_MISSING = "The chat table isn’t in Supabase yet: apply the migration 20261124090000_avery_chat.sql. Until then Avery answers but the conversation isn’t kept.";
 export interface ChatRow { id: string; role: "zak" | "avery"; text: string; run_id: string | null; notes: string[]; created_at: string }
@@ -35,7 +37,7 @@ export async function chatHistory(limit = 30): Promise<ChatRow[] | null> {
   return ((data ?? []) as ChatRow[]).map((r) => ({ ...r, notes: Array.isArray(r.notes) ? r.notes : [] })).reverse();
 }
 
-/** What Zak asked, for the replay of the chat run that answered it. Null when it isn't kept. */
+/** What the owner asked, for the replay of the chat run that answered it. Null when it isn't kept. */
 export async function askedIn(runId: string): Promise<string | null> {
   const { data: reply } = await db().from("avery_chat").select("created_at").eq("run_id", runId).eq("role", "avery").maybeSingle();
   if (!reply) return null;
@@ -59,18 +61,18 @@ async function frontDoor(): Promise<{ org: Org; agentId: string; spec: AgentSpec
   return { org, agentId: seat.agentId, spec: loaded.spec };
 }
 
-const directive = (name: string) => `You are ${name}, One Two's chief of staff, talking with Zak, the owner, in the Control Room. Answer his questions about the company from your tools: goals, department reports, this week's plans, proposals, the crew and the numbers. Short plain sentences, at most about 120 words. No flattery, no exclamation marks.
+const directive = (name: string, biz: Business) => `You are ${name}, chief of staff at ${biz.name}, talking in the Control Room with a person from the business. Answer their questions about the company from your tools: goals, department reports, this week's plans, proposals, the crew and the numbers. Short plain sentences, at most about 120 words. No flattery, no exclamation marks.
 
 Besides answering you can do only two things:
-- When Zak tells you a rule for an agent, a department or everyone ("Rowan: skip chains", "Quinn keeps putting Costco in supplies, it's groceries"), save it with Save a rule. The words must be his own, copied from his message; who is the agent, the department or everyone he means. If it isn't clear who should follow it, ask him instead of saving.
-- When Zak wants to hire, give an agent a read tool, get a new tool built, or retire an agent or close a seat, file it with File a proposal. Nothing happens until he says yes on Proposals. Ask first if you don't know enough to fill it in.
+- When they tell you a rule for an agent, a department or everyone ("Rowan: skip chains", "Quinn keeps putting Costco in supplies, it's groceries"), save it with Save a rule. The words must be their own, copied from their message; who is the agent, the department or everyone they mean. If it isn't clear who should follow it, ask them instead of saving.
+- When they want to hire, give an agent a read tool, get a new tool built, or retire an agent or close a seat, file it with File a proposal. Nothing happens until an owner says yes on Proposals. Ask first if you don't know enough to fill it in.
 
-You never run, start, stop or change an agent, and you never send, buy or post. If he asks for that, tell him where in the Control Room he can do it. Code saves rules and proposals only after you finish and adds a line under your reply saying what it saved, so don't say you saved anything yourself.`;
+You never run, start, stop or change an agent, and you never send, buy or post. If they ask for that, tell them where in the Control Room they can do it. Code saves rules and proposals only after you finish and adds a line under your reply saying what it saved, so don't say you saved anything yourself.`;
 
 /** The crew now: who sits where, on duty or not, how each agent's last run went, this week's plans and the proposals waiting. */
 function crewNowTool(org: Org): ToolDef {
   return {
-    id: "crew_now", label: "The crew now", detail: "Every department with its seats (who holds each, on duty or not, the last run), this week's plan and review per department, agents not in a department, and the proposals waiting for Zak",
+    id: "crew_now", label: "The crew now", detail: "Every department with its seats (who holds each, on duty or not, the last run), this week's plan and review per department, agents not in a department, and the proposals waiting for a decision",
     kind: "read", group: "agents", params: [], trusted: false, needs: [], costUsd: 0,
     run: async () => {
       const live = await liveAgentIds();
@@ -94,11 +96,11 @@ function crewNowTool(org: Org): ToolDef {
       };
       const departments = org.departments.map((d) => ({
         department: d.name,
-        seats: org.seats.filter((s) => s.departmentId === d.id).map((s) => ({ seat: s.title, head: s.parentId == null, holder: s.holder === "agent" ? who(s.agentId) : s.holder === "zak" ? "Zak" : "open" })),
+        seats: org.seats.filter((s) => s.departmentId === d.id).map((s) => ({ seat: s.title, head: s.parentId == null, holder: s.holder === "agent" ? who(s.agentId) : s.holder === "zak" ? "a person" : "open" })),
         planThisWeek: planOf(d.id),
       }));
       const loose = ids.filter((id) => !seatOf(org, id)).map((id) => who(id));
-      const waiting = (props.data ?? []).map((p) => ({ title: p.title, kind: p.kind, from: p.from_agent ? names[p.from_agent] ?? p.from_agent : "Zak" }));
+      const waiting = (props.data ?? []).map((p) => ({ title: p.title, kind: p.kind, from: p.from_agent ? names[p.from_agent] ?? p.from_agent : "a person" }));
       return {
         data: { departments, notInADepartment: loose, proposalsWaiting: props.error ? "the proposals table isn't there" : waiting },
         numbers: { agents_on_duty: [...onDuty.values()].filter(Boolean).length, agents: ids.length, open_seats: org.seats.filter((s) => s.holder === "open").length, proposals_waiting: waiting.length },
@@ -107,19 +109,19 @@ function crewNowTool(org: Org): ToolDef {
   };
 }
 
-/** Save a rule: Zak's words for an agent, a department or everyone. Checked against his message in code. */
+/** Save a rule: the person's words for an agent, a department or everyone. Checked against their message in code. */
 function saveRuleTool(message: string, reach: ChatReach, companyId: string): ToolDef {
   return {
-    id: "save_rule", label: "Save a rule", detail: "Saves a rule Zak just dictated, in his own words, for an agent, a department or everyone. Saved after you finish; code says what it saved",
+    id: "save_rule", label: "Save a rule", detail: "Saves a rule the person just dictated, in their own words, for an agent, a department or everyone. Saved after you finish; code says what it saved",
     kind: "report", group: "agents", trusted: true, needs: [], costUsd: 0,
     params: [
-      { name: "words", type: "text", maxLength: 280, description: "The rule, copied word for word from Zak's message. Never your own words." },
+      { name: "words", type: "text", maxLength: 280, description: "The rule, copied word for word from their message. Never your own words." },
       { name: "who", type: "text", maxLength: 60, description: "An agent's name, a department's name, or everyone." },
       { name: "keep", type: "enum", options: ["always", "days_30", "next_run"], default: "always", description: "How long: always, 30 days, or the next run only. Only an agent's own rule can be short-lived." },
     ],
     collect: (input, held) => {
       if (held.length >= MAX_RULES) return { problem: `at most ${MAX_RULES} rules from one message` };
-      if (!inZaksWords(String(input.words), message)) return { problem: "the words must be Zak's own, copied from his message" };
+      if (!inOwnWords(String(input.words), message)) return { problem: "the words must be their own, copied from their message" };
       const w = resolveRuleWho(String(input.who), reach);
       if ("problem" in w) return w;
       return { row: input };
@@ -143,11 +145,11 @@ function saveRuleTool(message: string, reach: ChatReach, companyId: string): Too
   };
 }
 
-/** File a proposal: the same checks as a head's Propose to Zak, plus which department it is for. */
+/** File a proposal: the same checks as a head's Propose to the owner, plus which department it is for. */
 function fileProposalTool(reach: ChatReach): ToolDef {
   const base = TOOLS.propose;
   return {
-    id: "file_proposal", label: "File a proposal", detail: "Files a proposal for Zak to decide on Proposals: hire an agent, give an agent a read tool, build a new tool, or retire an agent or close a seat. Nothing happens until he says yes",
+    id: "file_proposal", label: "File a proposal", detail: "Files a proposal for an owner to decide on Proposals: hire an agent, give an agent a read tool, build a new tool, or retire an agent or close a seat. Nothing happens until an owner says yes",
     kind: "report", group: "agents", trusted: true, needs: [], costUsd: 0,
     params: [
       ...base.params,
@@ -191,8 +193,8 @@ export async function askAvery(message: string): Promise<ChatAnswer> {
   const reads = base.tools.filter((id) => (TOOLS[id]?.kind === "read" || TOOLS[id]?.kind === "calculate") && !TOOLS[id]?.server);
   const spec: AgentSpec = {
     ...base,
-    directive: directive(base.name),
-    goodResult: "A short plain answer for Zak, at most about 120 words. Every number exactly as a tool gave it.",
+    directive: directive(base.name, await loadBusiness().catch(() => UNKNOWN_BUSINESS)),
+    goodResult: "A short plain answer, at most about 120 words. Every number exactly as a tool gave it.",
     effort: "low",
     tools: [...new Set([...reads, "goal_progress", ...chatTools.map((t) => t.id)])],
     limits: { maxSteps: Math.min(base.limits.maxSteps, 8), maxCostUsd: base.limits.maxCostUsd },

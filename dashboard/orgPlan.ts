@@ -1,4 +1,4 @@
-// What turning on the org does, worked out in code before Zak confirms it (docs/org-schedule.md).
+// What turning on the org does, worked out in code before the owner confirms it (docs/org-schedule.md).
 // Pure: no database, so `npm run check:org-switch` tests it and the confirm and the action agree.
 import { DAY_RUNS, type Chain } from "@/core/flow-rules";
 import type { Schedule } from "./crew";

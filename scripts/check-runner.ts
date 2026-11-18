@@ -170,7 +170,7 @@ async function main() {
   assert.deepEqual((queued[0] as { args: unknown }).args, { category_id: CAT, category: "Packaging", note: "Bags" });
   assert.equal(r7.steps.filter((x) => x.kind === "tool" && x.tool === "mercury_propose_annotation" && !x.ok).length, 2);
   assert.deepEqual(r7.reports, [{ tool: "report_email_zak", ok: true, note: "emailed" }]);
-  assert.match(r7.summary, /1 proposal queued for Zak/);
+  assert.match(r7.summary, /1 proposal queued for approval/);
   // proposals and reports never become playbook steps
   assert.deepEqual(draftSteps(r7.steps).map((x) => x.tool), ["mercury_charges", "mercury_categories"]);
 
@@ -216,7 +216,7 @@ async function main() {
 
   // slice 7: multiline text keeps line breaks but no links; url and email shapes
   const body = [{ name: "body", type: "text", maxLength: 200, multiline: true, description: "" }] as const;
-  assert.deepEqual(checkInput(body, { body: "Hi,\r\n\n\n\nZak" }), { input: { body: "Hi,\n\nZak" } });
+  assert.deepEqual(checkInput(body, { body: "Hi,\r\n\n\n\nSam" }), { input: { body: "Hi,\n\nSam" } });
   assert.ok("problem" in checkInput(body, { body: "see www.x.com" }));
   assert.ok("problem" in checkInput([{ name: "s", type: "text", maxLength: 50, description: "" }], { s: "a\u0007b" }));
   assert.deepEqual(checkInput([{ name: "w", type: "url", description: "" }], { w: "fleet.coffee/about" }), { input: { w: "https://fleet.coffee/about" } });
@@ -227,7 +227,7 @@ async function main() {
   const rowan = readSpec({ name: "Rowan", directive: "x", model: "claude-opus-5-5", tools: ["web_search", "report_leads"], limits: { maxSteps: 6, maxCostUsd: 1 } }, "wholesale_hunter").spec;
   const delivered: unknown[] = [];
   const lTools: Record<string, ToolDef> = { ...TOOLS, report_leads: { ...TOOLS.report_leads, deliver: async (o) => { delivered.push(...o.rows); return "saved"; } } };
-  const leadIn = { business: "Fleet Coffee", city: "Austin", type: "cafe", website: "https://www.fleet.coffee", fit_score: 4, fit_reason: "Busy cafe.", subject: "Coffee", body: "Hi\n\nZak" };
+  const leadIn = { business: "Fleet Coffee", city: "Austin", type: "cafe", website: "https://www.fleet.coffee", fit_score: 4, fit_reason: "Busy cafe.", subject: "Coffee", body: "Hi\n\nSam" };
   const r12 = await runExplore(rowan, { agentId: "wholesale_hunter", tools: lTools, deliver: true, client: fake((t, b) => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     if (t === 0) { assert.ok((b.tools as any[]).some((x) => x.type === "web_search_20260209" && x.name === "web_search")); return { ...reply([{ type: "server_tool_use", id: "s1", name: "web_search", input: { query: "austin cafes" } } as unknown as Block], "pause_turn") }; }

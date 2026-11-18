@@ -1,6 +1,6 @@
 import "server-only";
-// Connections (docs/builder-flow.md, slice 1): the one place that says which integrations One Two has, what
-// each lets an agent read, do and hand Zak, and which agents have each of those in their saved
+// Connections (docs/builder-flow.md, slice 1): the one place that says which integrations the business has, what
+// each lets an agent read, do and hand the owner, and which agents have each of those in their saved
 // setup. It replaces the hand-written access map, so what the Control Room shows is what the
 // runner would really allow. Nothing is granted here: granting is a builder step, and code (the
 // tool list and the gateway) decides what can be granted at all.
@@ -36,19 +36,19 @@ export interface Connection {
 export const CONNECTIONS: Connection[] = [
   {
     id: "shopify", name: "Shopify", sub: "Orders, products, stock", icon: "shopping-bag", builtIn: false, mcp: "shopify",
-    about: "Our own Shopify server, run in the app with the read-only app “One Two Agents (read)”. Each tool runs one fixed query written in code; no tool takes GraphQL and no change can run. A key whose app has any write scope is refused when you paste it. Order reads carry no customer names or addresses.",
+    about: "Our own Shopify server, run in the app with the read-only custom app the business makes in Shopify. Each tool runs one fixed query written in code; no tool takes GraphQL and no change can run. A key whose app has any write scope is refused when you paste it. Order reads carry no customer names or addresses.",
     checks: [{ key: "shopify", label: "Store", setup: "Paste the read-only app’s key below, and set SHOPIFY_STORE_DOMAIN (and SHOPIFY_CLIENT_ID if the key is a client secret)." }],
   },
   {
     id: "mercury", name: "Mercury", sub: "Bank", icon: "landmark", builtIn: false, mcp: "mercury", mcpMore: ["mercury_write", "mercury_files"],
     about: "Mercury’s own MCP server, signed in with the read scope only, so this sign-in can’t use any tool that changes Mercury or moves money. Code may call only the read tools named in code (accounts, charges, categories). Sums are worked out in code. After you approve, the gateway sets a charge’s category and memo through its own Mercury sign-in (that one change only), and attaches the receipt file with a separate Mercury token, also locked in the vault, that only it uses.",
-    checks: [{ key: "mercury", label: "Bank", setup: "Tap Connect and sign in to Mercury, picking One Two’s business org. Set MERCURY_ACCOUNT_IDS (all, or a comma list) for the cash number." }],
+    checks: [{ key: "mercury", label: "Bank", setup: "Tap Connect and sign in to Mercury, picking the business’s Mercury org. Set MERCURY_ACCOUNT_IDS (all, or a comma list) for the cash number." }],
   },
   {
     id: "gmail", name: "Gmail", sub: "Receipts in, drafts out", icon: "mail", builtIn: false, mcp: "gmail_read", mcpMore: ["gmail"],
-    about: "Our own Gmail server, run in the app. Google’s Gmail MCP server isn’t used: it’s a preview program and can’t download receipt files. Two separate Google sign-ins to One Two’s mailbox, each granted one scope: one only reads (Quinn’s receipts), one only makes drafts and is used only by the gateway after you approve. There is no send tool, so you send every email from Gmail. Email is untrusted data.",
+    about: "Our own Gmail server, run in the app. Google’s Gmail MCP server isn’t used: it’s a preview program and can’t download receipt files. Two separate Google sign-ins to the business’s mailbox, each granted one scope: one only reads (Quinn’s receipts), one only makes drafts and is used only by the gateway after you approve. There is no send tool, so you send every email from Gmail. Email is untrusted data.",
     checks: [
-      { key: "gmail_read", label: "Receipts (read only)", setup: "Tap Connect under Gmail (read only) and sign in to One Two’s mailbox. Needs GMAIL_CLIENT_ID and GMAIL_CLIENT_SECRET in Vercel.", tools: ["report_books_sync"] },
+      { key: "gmail_read", label: "Receipts (read only)", setup: "Tap Connect under Gmail (read only) and sign in to the business’s mailbox. Needs GMAIL_CLIENT_ID and GMAIL_CLIENT_SECRET in Vercel.", tools: ["report_books_sync"] },
       { key: "gmail", label: "Drafts", tools: ["gmail_draft_lead"], setup: "Tap Connect under Gmail drafts and sign in to the same mailbox." },
     ],
   },

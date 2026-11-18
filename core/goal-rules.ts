@@ -58,7 +58,7 @@ const addDays = (d: string, n: number) => new Date(Date.parse(`${d}T12:00:00Z`) 
 const validDate = (d: string) => DATE.test(d) && new Date(`${d}T12:00:00Z`).toISOString().slice(0, 10) === d;
 
 /**
- * Checks what Zak typed for a goal. `today` is the Chicago date. A measure code can't count yet is
+ * Checks what the owner typed for a goal. `today` is the Chicago date. A measure code can't count yet is
  * kept (so the goal says what's missing) with no target needed.
  */
 export function planGoal(input: GoalInput, today: string): { plan: GoalPlan } | { error: string } {

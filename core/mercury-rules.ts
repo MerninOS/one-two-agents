@@ -116,7 +116,7 @@ export function readOrgName(payload: unknown): string | null {
 }
 
 // ---- Receipt files (docs/mcp-everywhere.md, slice 8): the gateway's receipt token lives in the
-// vault, and our own small server attaches one file to the charge Zak approved.
+// vault, and our own small server attaches one file to the charge an approver approved.
 
 /** Mercury's API tokens ("secret-token:mercury_production_…"). */
 export const looksLikeMercuryToken = (k: string) => /^secret-token:mercury_[A-Za-z0-9_$.-]{20,300}$/.test(k);

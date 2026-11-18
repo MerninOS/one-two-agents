@@ -3,11 +3,11 @@ import "server-only";
 // Read and Calculate tools are built from code the four agents already use (slice 1). Report and
 // Action tools came with slice 5. Rules that hold for every tool here:
 // - Read and Calculate tools write nothing, anywhere.
-// - Report tools reach only Zak (integrations/email.ts, no recipient argument) or our own Notion,
-//   under a page Zak picked. Code delivers them after a finished run, from the run's result and
+// - Report tools reach only the owner (integrations/email.ts, no recipient argument) or our own Notion,
+//   under a page the owner picked. Code delivers them after a finished run, from the run's result and
 //   traced numbers; the model never calls one.
 // - Action tools only stage a proposal. The runner queues it at core/gateway after the run, where
-//   the gateway's own allow-list checks it again and it waits for Zak as an approval card.
+//   the gateway's own allow-list checks it again and it waits for the owner as an approval card.
 // - Numbers are computed in code and returned in `numbers`, never left to the model.
 // - Inputs are small, checked values (whole numbers in a range, a choice from a fixed list, a row
 //   a tool returned in the same run, or short text with no links). No tool takes a URL, an
@@ -25,7 +25,7 @@ import { MAX_PLAN_LINES, checkLine } from "@/core/plan-rules";
 import { saveReview, savePlan, weekView } from "@/core/plans";
 import { mercuryCash, mercuryCategories, mercuryTransactions } from "@/integrations/mercury";
 import { divider, h2, h3, li, notionConnected, notionPage, notionPageText, p as para, quote } from "@/integrations/notion";
-import { emailZak } from "@/integrations/email";
+import { emailOwner } from "@/integrations/email";
 import { ANNOTATE, DRAFT_EMAIL, DRAFT_LIMITS, TOOLS as GATEWAY_TOOLS, refuseProposal } from "@/core/gateway/policy";
 import { draftsToCheck, leadReview, propose } from "@/core/gateway";
 import { proposeLesson } from "@/core/memory";
@@ -58,7 +58,7 @@ const TOOLS_LIST: ToolDef[] = [
 
   // ---- Mercury (read-only token, business org)
   {
-    id: "mercury_balances", label: "Cash balance", detail: "Available cash across One Two's Mercury accounts",
+    id: "mercury_balances", label: "Cash balance", detail: "Available cash across the business's Mercury accounts",
     kind: "read", group: "mercury", params: [], trusted: true, needs: MERCURY, costUsd: 0,
     run: async () => { const cash = await mercuryCash(); const numbers: Record<string, number> = cash == null ? {} : { cash_usd: cash }; return { data: { cashUsd: cash }, numbers }; },
   },
@@ -85,7 +85,7 @@ const TOOLS_LIST: ToolDef[] = [
   },
 
   {
-    id: "mercury_categories", label: "Expense categories", detail: "One Two's expense categories in Mercury, the only categories an action may propose",
+    id: "mercury_categories", label: "Expense categories", detail: "the business's expense categories in Mercury, the only categories an action may propose",
     kind: "read", group: "mercury", params: [], trusted: true, needs: MERCURY, costUsd: 0,
     run: async () => {
       const cats = await mercuryCategories();
@@ -98,9 +98,9 @@ const TOOLS_LIST: ToolDef[] = [
   // ---- Wholesale (slice 7): what Rowan may claim, and who is already on the leads list
   // Klaviyo over its MCP server (company mode slice 6): read tools only, each one a named server
   // tool in core/mcp-rules.ts. Counts and rates are added up in code from the raw reply. Names in
-  // Klaviyo are One Two's own, but the reply comes from outside, so it is shown as untrusted data.
+  // Klaviyo are the business's own, but the reply comes from outside, so it is shown as untrusted data.
   {
-    id: "klaviyo_lists", label: "Email lists", detail: "Every list in One Two's Klaviyo: its id and name. Use an id with Email list size",
+    id: "klaviyo_lists", label: "Email lists", detail: "Every list in the business's Klaviyo: its id and name. Use an id with Email list size",
     kind: "read", group: "klaviyo", params: [], trusted: false, needs: KLAVIYO, costUsd: 0,
     run: async () => { const lists = await klaviyoLists(); return { data: { lists }, numbers: { lists: lists.length } }; },
   },
@@ -158,7 +158,7 @@ const TOOLS_LIST: ToolDef[] = [
   // checked again on every call; the model never picks it. Teammates' words are untrusted; run
   // counts and spend are added up here in code.
   {
-    id: "team_report", label: "Your team", detail: "For an agent with live agents under its seat on the org chart: each one's latest finished result, how its runs went (failures, cost against its budget) and what Zak said about its work (Good / Not this). The team comes from the chart",
+    id: "team_report", label: "Your team", detail: "For an agent with live agents under its seat on the org chart: each one's latest finished result, how its runs went (failures, cost against its budget) and what the owner said about its work (Good / Not this). The team comes from the chart",
     kind: "read", group: "agents", params: [daysParam(1, 7, "How many days of runs to look at.")], trusted: false, needs: SUPABASE, costUsd: 0, seat: "team",
     run: async ({ days }, ctx) => {
       const [o, live] = await Promise.all([loadOrg(), liveAgentIds()]);
@@ -184,7 +184,7 @@ const TOOLS_LIST: ToolDef[] = [
           key: k, agent: names[id], seat: seatOf(o, id)?.title ?? "",
           latest: out ? { output: out.name, at: out.at, summary: out.summary, numbers: out.numbers.map((n, j) => ({ key: `${k}_n${j + 1}`, label: n.label, value: n.value })) } : null,
           runs: s.runs, failed: s.failed, skipped: s.skipped, costUsd: s.costUsd, budgetUsd: Math.round((budget.get(id) ?? 0) * Number(days) * 100) / 100, lastError: s.lastError,
-          // Zak's reactions to its work (Good / Not this), and his latest words, already saved as its rules
+          // The owner's reactions to its work (Good / Not this), and their latest words, already saved as its rules
           fromZak: { good: z?.good ?? 0, notThis: z?.not ?? 0, said: z?.said ?? [] },
         };
       });
@@ -221,7 +221,7 @@ const TOOLS_LIST: ToolDef[] = [
         numbers[`${d.id}_spent_month_usd`] = deptSpent(o, d.id, month);
         out?.numbers.forEach((n, j) => { numbers[`${d.id}_n${j + 1}`] = n.value; });
         return {
-          department: d.name, head: headId ? names[headId] : head?.holder === "zak" ? "Zak" : "open seat",
+          department: d.name, head: headId ? names[headId] : head?.holder === "zak" ? "a person" : "open seat",
           headReport: out ? { output: out.name, at: out.at, summary: out.summary, numbers: out.numbers.map((n, j) => ({ key: `${d.id}_n${j + 1}`, label: n.label, value: n.value })) } : null,
           agents: members.length, runs: numbers[`${d.id}_runs`], failed: numbers[`${d.id}_failed`], costUsd: cost,
           failures: members.filter((id) => stats[id]?.failed).map((id) => ({ agent: names[id], error: stats[id].lastError })),
@@ -238,7 +238,7 @@ const TOOLS_LIST: ToolDef[] = [
   // Company mode slice 2 (docs/company-mode.md): the department's goals, counted in code. The
   // department comes from the chart on every call (the company seat reads every department).
   {
-    id: "goal_progress", label: "Goal progress", detail: "The goals Zak set for its department (every department for the company seat): each goal, its measure counted in code, the target and date, and whether it's on pace. The department comes from the chart",
+    id: "goal_progress", label: "Goal progress", detail: "The goals the owner set for its department (every department for the company seat): each goal, its measure counted in code, the target and date, and whether it's on pace. The department comes from the chart",
     kind: "read", group: "agents", params: [], trusted: true, needs: SUPABASE, costUsd: 0,
     run: async (_p, ctx) => goalProgress(ctx.agentId),
   },
@@ -251,12 +251,12 @@ const TOOLS_LIST: ToolDef[] = [
     run: async (_p, ctx) => weekView(ctx.agentId),
   },
   {
-    id: "plan_week", label: "Plan and review", detail: "Saves the week's plan after a run that finishes: its result is the plan, and each line it hands in names a teammate (a focus note for 7 days), an open seat, or Zak (a job for him). A run that hands in no lines while this week's plan exists saves its result as the review. It can't send, assign actions or change any agent",
+    id: "plan_week", label: "Plan and review", detail: "Saves the week's plan after a run that finishes: its result is the plan, and each line it hands in names a teammate (a focus note for 7 days), an open seat, or the owner (a job for a person). A run that hands in no lines while this week's plan exists saves its result as the review. It can't send, assign actions or change any agent",
     kind: "report", group: "agents", trusted: false, needs: SUPABASE, costUsd: 0, seat: "head",
     params: [
       { name: "title", type: "text", maxLength: 120, description: "The job, in a few words: Find cafés that fit, not more cafés." },
-      { name: "who", type: "text", maxLength: 60, description: "A teammate under you by name, an open seat in your department by name, or Zak." },
-      { name: "words", type: "text", maxLength: 280, description: "For a teammate: its focus for the week, in a sentence or two. For Zak: what you suggest he does and why. No links or addresses." },
+      { name: "who", type: "text", maxLength: 60, description: "A teammate under you by name, an open seat in your department by name, or the owner." },
+      { name: "words", type: "text", maxLength: 280, description: "For a teammate: its focus for the week, in a sentence or two. For the owner: what you suggest they do and why. No links or addresses." },
     ],
     collect: (input, held) => {
       if (held.length >= MAX_PLAN_LINES) return { problem: `at most ${MAX_PLAN_LINES} lines in a plan` };
@@ -269,12 +269,12 @@ const TOOLS_LIST: ToolDef[] = [
       ? savePlan(ctx.agentId, ctx.runId ?? null, o.summary, o.rows.map((r) => ({ title: String(r.title), who: String(r.who), words: String(r.words) })))
       : saveReview(ctx.agentId, ctx.runId ?? null, o.summary),
   },
-  // Company mode slice 3 (docs/company-mode.md): a head hands Zak proposals at the end of a run.
+  // Company mode slice 3 (docs/company-mode.md): a head hands the owner proposals at the end of a run.
   // Checked here like any report row, saved only after a run that finishes, checked again against
-  // the chart when saved and again at Zak's tap. A proposal does nothing until he says yes, and can
+  // the chart when saved and again at the owner's tap. A proposal does nothing until they say yes, and can
   // never hand out an action.
   {
-    id: "propose", label: "Propose to Zak", detail: "Hands Zak a proposal to decide: hire an agent for a seat in its department, give a teammate a read tool, build a new tool, or retire an agent or close a seat. Saved after a run that finishes; nothing happens until Zak says yes, and it can't hand out actions",
+    id: "propose", label: "Propose to the owner", detail: "Hands the owner a proposal to decide: hire an agent for a seat in its department, give a teammate a read tool, build a new tool, or retire an agent or close a seat. Saved after a run that finishes; nothing happens until the owner says yes, and it can't hand out actions",
     kind: "report", group: "agents", trusted: false, needs: SUPABASE, costUsd: 0, seat: "head",
     params: [
       { name: "kind", type: "enum", options: ["hire", "grant_tool", "new_tool", "retire"], description: "hire: a new agent for a seat. grant_tool: one read tool for a teammate. new_tool: something no tool reads yet. retire: take a teammate off duty, or close an empty seat." },
@@ -312,12 +312,12 @@ const TOOLS_LIST: ToolDef[] = [
       return notes.join("; ");
     },
   },
-  // Slice 4 (docs/org-chart.md): a lead checks its team's drafts before Zak sees them, where the
+  // Slice 4 (docs/org-chart.md): a lead checks its team's drafts before the owner sees them, where the
   // department has "Lead checks drafts first" on. Only drafts the gateway assigned to this agent
   // come back; the draft's words are untrusted. The check is a note or one send-back, saved after
   // the run: never an approval, a rejection or an edit.
   {
-    id: "team_drafts", label: "Your team's drafts", detail: "Drafts from agents under its seat that wait for its check before they reach Zak (when the department has Lead checks drafts first on): who wrote each, the exact words, and whether it can still be sent back",
+    id: "team_drafts", label: "Your team's drafts", detail: "Drafts from agents under its seat that wait for its check before they reach the owner (when the department has Lead checks drafts first on): who wrote each, the exact words, and whether it can still be sent back",
     kind: "read", group: "agents", params: [], trusted: false, needs: SUPABASE, costUsd: 0, seat: "team",
     run: async (_input, ctx) => {
       const rows = await draftsToCheck(ctx.agentId);
@@ -329,12 +329,12 @@ const TOOLS_LIST: ToolDef[] = [
     },
   },
   {
-    id: "check_team_draft", label: "Check a team draft", detail: "Hands one check per call on a draft from Your team's drafts: a note Zak sees on the card, or send it back once with the reason. Saved after a run that finishes. It can't approve, reject or change the draft",
+    id: "check_team_draft", label: "Check a team draft", detail: "Hands one check per call on a draft from Your team's drafts: a note the owner sees on the card, or send it back once with the reason. Saved after a run that finishes. It can't approve, reject or change the draft",
     kind: "report", group: "agents", trusted: false, needs: SUPABASE, costUsd: 0, seat: "team",
     params: [
       { name: "draft", type: "text", maxLength: 8, description: "The draft's code from Your team's drafts." },
-      { name: "verdict", type: "enum", options: ["note", "send_back"], description: "note: it goes on to Zak with your note. send_back: it goes back to the agent that wrote it, with your reason (once per draft)." },
-      { name: "note", type: "text", maxLength: 400, description: "Your note for Zak, or the reason it goes back. One or two sentences, no links." },
+      { name: "verdict", type: "enum", options: ["note", "send_back"], description: "note: it goes on to the owner with your note. send_back: it goes back to the agent that wrote it, with your reason (once per draft)." },
+      { name: "note", type: "text", maxLength: 400, description: "Your note for the owner, or the reason it goes back. One or two sentences, no links." },
     ],
     collect: (input, held) => {
       const code = String(input.draft).trim().toLowerCase();
@@ -355,14 +355,14 @@ const TOOLS_LIST: ToolDef[] = [
         const note = "problem" in c ? String(r.note).slice(0, 400) : c.note;
         const got = await leadReview(d.id, ctx.agentId, "problem" in c ? "note" : c.verdict, note);
         n[got.result]++;
-        // the reason reaches the agent that wrote it as a proposed lesson, only once Zak keeps it
+        // the reason reaches the agent that wrote it as a proposed lesson, only once the owner keeps it
         if (got.result === "sent_back") await proposeLesson(got.agentId, d.id, got.title, note, o.agentName).catch(() => null);
       }
       return `${n.noted} noted, ${n.sent_back} sent back${n.gone ? `, ${n.gone} no longer waiting` : ""}`;
     },
   },
   {
-    id: "approvals_waiting", label: "Approvals waiting", detail: "How many approval cards are waiting for Zak and how old the oldest is",
+    id: "approvals_waiting", label: "Approvals waiting", detail: "How many approval cards are waiting for the owner and how old the oldest is",
     kind: "read", group: "supabase", params: [], trusted: true, needs: SUPABASE, costUsd: 0,
     run: async () => {
       const { data, error } = await db().from("approvals").select("created_at").eq("status", "pending").order("created_at").limit(500);
@@ -425,13 +425,13 @@ const TOOLS_LIST: ToolDef[] = [
 
   // ---- Reports (slice 5): code delivers the finished result; the model never calls these
   {
-    id: "report_email_zak", label: "Email Zak the result", detail: "After a run that finishes, code emails its result and traced numbers to Zak (BRIEF_TO). No other recipient is possible",
+    id: "report_email_zak", label: "Email the owner the result", detail: "After a run that finishes, code emails its result and traced numbers to the owner (BRIEF_TO). No other recipient is possible",
     kind: "report", group: "email", params: [], trusted: true, needs: EMAIL, costUsd: 0,
     deliver: async (o) => {
       const nums = o.numbers.map((n) => `${n.label}: ${n.value}`);
       const text = [o.summary, ...(nums.length ? ["", ...nums] : [])].join("\n");
       const body = `<p style="white-space:pre-wrap">${html(o.summary)}</p>${nums.length ? `<ul>${nums.map((n) => `<li>${html(n)}</li>`).join("")}</ul>` : ""}<p style="color:#888;font-size:12px">Sent by ${html(o.agentName)}, built in the Control Room. Numbers were copied by code from tool results.</p>`;
-      const id = await emailZak(reportTitle(o).slice(0, 150), body, text);
+      const id = await emailOwner(reportTitle(o).slice(0, 150), body, text);
       return `emailed (${id})`;
     },
   },
@@ -447,7 +447,7 @@ const TOOLS_LIST: ToolDef[] = [
   },
 
   {
-    id: "report_leads", label: "Add leads to the leads list", detail: "The model hands one checked lead per call (business, website, a public email if there is one, fit, and a first email); after a run that finishes, code saves the new ones to the leads list and a Notion page, and, when this agent also has Draft an email to a lead and Gmail is connected, puts each first email in front of Zak as a draft card",
+    id: "report_leads", label: "Add leads to the leads list", detail: "The model hands one checked lead per call (business, website, a public email if there is one, fit, and a first email); after a run that finishes, code saves the new ones to the leads list and a Notion page, and, when this agent also has Draft an email to a lead and Gmail is connected, puts each first email in front of the owner as a draft card",
     kind: "report", group: "supabase", trusted: false, needs: SUPABASE, costUsd: 0,
     params: [
       { name: "business", type: "text", maxLength: 120, description: "The business's name." },
@@ -461,7 +461,7 @@ const TOOLS_LIST: ToolDef[] = [
       { name: "fit_reason", type: "text", maxLength: 300, description: "Why, in one sentence, from what you read." },
       { name: "source", type: "url", optional: true, description: "The page you read that says the most about them." },
       { name: "subject", type: "text", maxLength: DRAFT_LIMITS.subject, description: "The first email's subject." },
-      { name: "body", type: "text", maxLength: DRAFT_LIMITS.body, multiline: true, description: "The first email from Zak, under 120 words, signed Zak / One Two Coffee Lab." },
+      { name: "body", type: "text", maxLength: DRAFT_LIMITS.body, multiline: true, description: "The first email from the owner, under 120 words, signed with the owner's name and the business's name as your rules give them." },
     ],
     collect: (input, held) => {
       const domain = domainOf(String(input.website));
@@ -516,20 +516,20 @@ const TOOLS_LIST: ToolDef[] = [
           ]),
         ], parent);
       }
-      return `${saved.length} new lead${saved.length === 1 ? "" : "s"} saved${rows.length > saved.length ? ` (${rows.length - saved.length} already on the list)` : ""}${drafting ? `, ${cards} draft card${cards === 1 ? "" : "s"} for Zak${refused ? `, ${refused} refused by the gateway` : ""}` : ""}${url ? `; Notion page ${url}` : ""}`;
+      return `${saved.length} new lead${saved.length === 1 ? "" : "s"} saved${rows.length > saved.length ? ` (${rows.length - saved.length} already on the list)` : ""}${drafting ? `, ${cards} draft card${cards === 1 ? "" : "s"} for the owner${refused ? `, ${refused} refused by the gateway` : ""}` : ""}${url ? `; Notion page ${url}` : ""}`;
     },
   },
 
   // ---- Actions (slice 5): proposals only, queued at core/gateway after the run, Draft tier
   {
-    id: "mercury_propose_annotation", label: "Propose a category or memo on a charge", detail: "Stages a change for Zak to approve: a category from Mercury's own list and/or a short memo, on a charge from Mercury. Never writes by itself",
+    id: "mercury_propose_annotation", label: "Propose a category or memo on a charge", detail: "Stages a change for the owner to approve: a category from Mercury's own list and/or a short memo, on a charge from Mercury. Never writes by itself",
     kind: "action", group: "mercury", trusted: true, needs: MERCURY, costUsd: 0,
     agents: GATEWAY_TOOLS[ANNOTATE].agents,
     params: [
       { name: "charge", type: "pick", kind: "charge", description: "The charge, from a Charges result." },
       { name: "category", type: "pick", kind: "category", optional: true, description: "A category from an Expense categories result." },
       { name: "memo", type: "text", maxLength: 200, optional: true, description: "A short memo." },
-      { name: "why", type: "text", maxLength: 300, description: "One line for Zak on why, shown on the approval card." },
+      { name: "why", type: "text", maxLength: 300, description: "One line for the owner on why, shown on the approval card." },
     ],
     stage: (input, ctx) => {
       const charge = input.charge as Pick, category = input.category as Pick | undefined, memo = input.memo as string | undefined;
@@ -547,14 +547,14 @@ const TOOLS_LIST: ToolDef[] = [
     },
   },
   {
-    id: "gmail_draft_lead", label: "Draft an email to a lead", detail: "Stages a plain-text email to a lead on the leads list, for Zak to approve. Approving puts it in Gmail as a draft; Zak sends it himself. The address always comes from the leads list. First emails are approval-only for good",
+    id: "gmail_draft_lead", label: "Draft an email to a lead", detail: "Stages a plain-text email to a lead on the leads list, for the owner to approve. Approving puts it in Gmail as a draft; the owner sends it from Gmail. The address always comes from the leads list. First emails are approval-only for good",
     kind: "action", group: "gmail", trusted: true, needs: GMAIL, costUsd: 0,
     agents: GATEWAY_TOOLS[DRAFT_EMAIL].agents,
     params: [
       { name: "lead", type: "pick", kind: "lead", description: "The lead, from a Leads list result." },
       { name: "subject", type: "text", maxLength: DRAFT_LIMITS.subject, description: "The subject." },
-      { name: "body", type: "text", maxLength: DRAFT_LIMITS.body, multiline: true, description: "The email from Zak, plain and short." },
-      { name: "why", type: "text", maxLength: 300, description: "One line for Zak on why, shown on the approval card." },
+      { name: "body", type: "text", maxLength: DRAFT_LIMITS.body, multiline: true, description: "The email from the owner, plain and short." },
+      { name: "why", type: "text", maxLength: 300, description: "One line for the owner on why, shown on the approval card." },
     ],
     stage: (input, ctx) => {
       const lead = input.lead as Pick;

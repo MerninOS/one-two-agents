@@ -1,4 +1,4 @@
-// Display helpers. Every time is shown in Central Time, where One Two works.
+// Display helpers. Every time is shown in Central Time, the only time zone so far.
 import { TZ } from "@/core/time";
 
 const fmt = (o: Intl.DateTimeFormatOptions) => new Intl.DateTimeFormat("en-US", { timeZone: TZ, ...o });

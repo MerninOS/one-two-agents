@@ -1,5 +1,5 @@
 // Connect an MCP server (docs/company-mode.md, slice 6): registers the Control Room with the
-// server, keeps the sign-in's state in a short-lived sealed cookie, and sends Zak to the server's
+// server, keeps the sign-in's state in a short-lived sealed cookie, and sends the owner to the server's
 // own sign-in page. The login is checked here too, not only by the proxy.
 import { NextResponse, type NextRequest } from "next/server";
 import { SESSION_COOKIE, controlsOn } from "@/dashboard/session";

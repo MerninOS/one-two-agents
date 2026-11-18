@@ -12,7 +12,7 @@ import { fetchStockCoffees } from "@/templates/one-two/shopify/stock";
 export async function offer() {
   const [lots, stock] = await Promise.all([getInventoryLots(), fetchStockCoffees()]);
   return {
-    site: `${env.siteUrl}/wholesale`,
+    site: `${env.siteUrl || "https://onetwocoffeelab.com"}/wholesale`,
     privateLabel: {
       minimumLb: PL_MIN,
       roastedToOrder: true,

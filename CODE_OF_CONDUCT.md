@@ -7,5 +7,5 @@ In short: be welcoming and respectful, criticise ideas rather than people, and a
 Harassment, personal attacks and publishing others' private information aren't tolerated, in issues,
 pull requests or anywhere the project meets.
 
-Report anything that breaks this code to the maintainers at [CONDUCT EMAIL]. Reports are kept
+Report anything that breaks this code to the maintainers at earlybiirrd@gmail.com. Reports are kept
 private, and maintainers may warn, suspend or ban anyone who breaks it.

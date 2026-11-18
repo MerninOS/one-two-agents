@@ -3,7 +3,7 @@ import "server-only";
 // MCP server can only upload a receipt and let Mercury pick the charge, so this one write runs on our
 // own small server in the app. Its key (a Mercury Custom token with transaction write scope) is
 // pasted on Connections into the token vault, and only core/gateway reaches it, through
-// callWriteTool, after Zak approves. One tool: attach a file to the charge named. No endpoint that
+// callWriteTool, after an approver approves. One tool: attach a file to the charge named. No endpoint that
 // creates, cancels or moves money is here, and none may be added. Only integrations/mcp.ts imports
 // this file (lint enforces it).
 import { MCP_PROTOCOL, checkedTools } from "@/core/mcp-rules";

@@ -18,7 +18,7 @@ const readStored = () => { try { return localStorage.getItem(KEY); } catch { ret
 export function AveryChat({ name, initial, missing, send }: { name: string; initial: ChatMsg[]; missing: string | null; send: (text: string) => Promise<ChatAnswer> }) {
   const path = usePathname();
   const router = useRouter();
-  // wide screen: open by default on the Desk; elsewhere it remembers what Zak last did (this browser only).
+  // wide screen: open by default on the Desk; elsewhere it remembers what the owner last did (this browser only).
   // phone: a bar at the bottom that opens a full sheet, closed again on the next page.
   const stored = useSyncExternalStore(noop, readStored, () => null);
   const [manual, setManual] = useState<Record<string, boolean>>({});

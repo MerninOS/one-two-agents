@@ -41,7 +41,7 @@ export async function mercuryTransactions(postedStart: string, postedEnd: string
   throw new Error("Mercury: too many pages of transactions; ask for fewer days");
 }
 
-/** One Two's custom expense categories in Mercury: the chart of accounts until there is a QuickBooks company. */
+/** the business's custom expense categories in Mercury: the chart of accounts until there is a QuickBooks company. */
 export async function mercuryCategories(): Promise<MercuryCategory[]> {
   const out: MercuryCategory[] = [];
   let after: string | null = null;
@@ -65,7 +65,7 @@ export async function mercuryTransaction(id: string): Promise<MercuryTxn | null>
   }
 }
 
-/** The signed-in organization's name, so Connections shows whether it's One Two or another org. */
+/** The signed-in organization's name, so Connections shows whether it's the business or another org. */
 export async function mercuryOrgName(): Promise<string | null> {
   return readOrgName(await callMcpTool("mercury", "getOrganization", {}));
 }

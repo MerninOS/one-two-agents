@@ -1,13 +1,13 @@
 // The gateway's rules in plain code, no I/O, so they can be read in one place and tested.
 // Hard rule (tech spec, CLAUDE.md): Mercury writes are only a receipt attachment, a category
 // and a memo on a transaction that already exists, only for CFO and Bookkeeper, and only
-// after Zak approves (Draft tier). Nothing here can create, cancel or move money.
+// after an approver approves (Draft tier). Nothing here can create, cancel or move money.
 
 export type Tier = "Report" | "Draft" | "Act";
 
 export const ANNOTATE = "mercury.annotate_transaction";
 /**
- * A plain-text draft in One Two's Gmail, to a lead on the leads list (slice 7). Zak still sends
+ * A plain-text draft in the business's Gmail, to a lead on the leads list (slice 7). The owner still sends
  * it himself from Gmail. The recipient is never in the proposal: the gateway reads it from the
  * lead's row when it makes the draft. A first email to someone is always Draft and never promoted.
  */
@@ -17,7 +17,7 @@ export const DRAFT_EMAIL = "gmail.create_draft";
 export const TOOLS = {
   [ANNOTATE]: {
     agents: ["bookkeeper", "cfo"],
-    // Draft: every action waits for Zak. Promotion to Act is a later, data-backed decision.
+    // Draft: every action waits for the owner. Promotion to Act is a later, data-backed decision.
     tier: "Draft" as Tier,
     fields: ["attach", "receipt_path", "category_id", "category", "note"],
     promotable: true,
@@ -26,7 +26,7 @@ export const TOOLS = {
     agents: ["wholesale_hunter"],
     tier: "Draft" as Tier,
     fields: ["subject", "body"],
-    // first contact with a person who has never heard from One Two: Draft for good (CLAUDE.md)
+    // first contact with a person who has never heard from the business: Draft for good (CLAUDE.md)
     promotable: false,
   },
 } as const;
@@ -69,7 +69,7 @@ export function refuseDraft(args: Record<string, unknown>): string | null {
   return null;
 }
 
-/** Whether One Two may draft an email to this lead: an address on the row, not suppressed, not a lead Zak closed. */
+/** Whether the business may draft an email to this lead: an address on the row, not suppressed, not a lead the owner closed. */
 export function refuseDraftTo(lead: { email: string | null; stage: string } | null, suppressed: Set<string>): string | null {
   if (!lead) return "That lead isn't on the leads list.";
   const to = (lead.email ?? "").trim().toLowerCase();
@@ -147,14 +147,14 @@ export function planWrite(args: AnnotateArgs, live: LiveTxn | null, expect: { am
 
 export const planIsEmpty = (p: Plan) => !p.attach && !p.categoryId && !p.note;
 
-// ---- Caps (CLAUDE.md: money, email and undo limits). Zak's values live in `policies`; each has
+// ---- Caps (CLAUDE.md: money, email and undo limits). The owner's values live in `policies`; each has
 // a limit in code that no row can pass. "looser" says which way is riskier: a bigger purchase
 // cap, more emails, or a shorter undo window. Tightening is always allowed.
 
 export type CapKey = "max_purchase_usd" | "max_monthly_spend_usd" | "max_emails_per_day" | "undo_window_minutes";
 export interface CapDef {
   label: string;
-  /** Zak's starting value (Nov 11), used when the row is missing or unreadable. */
+  /** The owner's starting value (Nov 11), used when the row is missing or unreadable. */
   start: number;
   /** The riskier direction. */
   looser: "up" | "down";
@@ -204,7 +204,7 @@ export interface Vendor { id: string; name: string; mercury_recipient_id: string
 /**
  * Whether a payment may be proposed. Refuses when the payee isn't in vendors, the amount is
  * over the per-purchase cap, or this month plus the amount is over the monthly cap. A first
- * payment to a vendor is flagged so it always waits for Zak (never promoted). Amounts are cents
+ * payment to a vendor is flagged so it always waits for the owner (never promoted). Amounts are cents
  * in code; the payee comes from vendors, never from a web page, an email or model text.
  * A refusal is a cap breach: the caller passes it to onBreach (core/gateway/index.ts).
  */

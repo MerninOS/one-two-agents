@@ -1,9 +1,9 @@
 // Avery's chat, the front door (docs/company-mode.md, slice 5). Pure: no database, no network, so
 // `npm run check:chat` can test it.
 //
-// Zak talks to the agent in the company seat (Avery) from any screen. Each message is one logged run
+// The owner talks to the agent in the company seat (Avery) from any screen. Each message is one logged run
 // inside her budget. She reads the company's data with read tools, and can do only two things:
-// save a rule Zak dictates (in his own words, checked here against what he typed) and file a
+// save a rule the person dictates (in their own words, checked here against what they typed) and file a
 // proposal (which does nothing until he says yes). She can't run, send, spend or change an agent.
 
 export const MAX_MESSAGE = 1000;
@@ -18,7 +18,7 @@ export interface ChatLine { role: "zak" | "avery"; text: string }
 
 const norm = (s: string) => s.toLowerCase().replace(/[“”"‘’'`]/g, "").replace(/\s+/g, " ").replace(/[\s.!?,;:]+$/, "").trim();
 
-/** Tidies what Zak typed: one paragraph break at most, no control characters, at most MAX_MESSAGE. */
+/** Tidies what the owner typed: one paragraph break at most, no control characters, at most MAX_MESSAGE. */
 export function cleanMessage(raw: unknown): { text: string } | { problem: string } {
   const text = String(raw ?? "").replace(/\r\n?/g, "\n").replace(/[\u0000-\u0009\u000b-\u001f\u007f]/g, " ").replace(/[ \t]+/g, " ").replace(/\n{3,}/g, "\n\n").trim();
   if (!text) return { problem: "Write something first." };
@@ -27,11 +27,11 @@ export function cleanMessage(raw: unknown): { text: string } | { problem: string
 }
 
 /**
- * A rule is saved only in Zak's words: the words must appear in what he typed in this message
+ * A rule is saved only in the owner's words: the words must appear in what they typed in this message
  * (ignoring case, quotes, spacing and the closing full stop). Avery picks which of his words, never
  * new ones.
  */
-export function inZaksWords(words: string, message: string): boolean {
+export function inOwnWords(words: string, message: string): boolean {
   const w = norm(words), m = norm(message);
   return w.length >= 3 && m.includes(w);
 }
@@ -62,15 +62,15 @@ export function deptNamed(name: string | undefined, departments: { id: string; n
 
 /**
  * The message the model gets: the earlier conversation (oldest first, at most HISTORY_TURNS lines)
- * and Zak's new message. Her earlier replies are her own words, shown as such.
+ * and the owner's new message. Her earlier replies are her own words, shown as such.
  */
 export function chatPrompt(history: ChatLine[], message: string, today: string): string {
-  const earlier = history.slice(-HISTORY_TURNS).map((l) => `${l.role === "zak" ? "Zak" : "You"}: ${l.text.replace(/\s+/g, " ").slice(0, 600)}`).join("\n");
+  const earlier = history.slice(-HISTORY_TURNS).map((l) => `${l.role === "zak" ? "Them" : "You"}: ${l.text.replace(/\s+/g, " ").slice(0, 600)}`).join("\n");
   return [
-    `Today is ${today} (Central time). Zak is talking to you in the Control Room chat.`,
+    `Today is ${today} (Central time). A person from the business is talking to you in the Control Room chat.`,
     earlier ? `Earlier in this conversation:\n${earlier}` : "",
-    `Zak's new message:\n${message}`,
-    "Read what you need with your tools, then call finish with your reply to Zak.",
+    `Their new message:\n${message}`,
+    "Read what you need with your tools, then call finish with your reply to them.",
   ].filter(Boolean).join("\n\n");
 }
 

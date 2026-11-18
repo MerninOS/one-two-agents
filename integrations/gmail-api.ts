@@ -38,7 +38,7 @@ export async function attachment(token: string, messageId: string, attachmentId:
   return { base64: bytes.toString("base64"), size: bytes.length };
 }
 
-/** A plain-text draft in the mailbox; Zak sends it from Gmail. Returns its draft id. */
+/** A plain-text draft in the mailbox; the owner sends it from Gmail. Returns its draft id. */
 export async function createDraft(token: string, to: string, subject: string, body: string): Promise<{ draftId: string }> {
   const j = await gmail<{ id: string }>(token, "POST", "/drafts", { message: { raw: draftRaw(to, subject, body) } });
   return { draftId: j.id };

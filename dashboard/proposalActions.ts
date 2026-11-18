@@ -20,7 +20,7 @@ export async function proposalAccept(id: string): Promise<ActionResult & { href?
   try { const r = await acceptProposal(id); await audit(me, "accept_proposal", id); return { ...done(r.text), href: r.href ?? undefined }; } catch (e) { return fail(e); }
 }
 
-/** Not now, with the reason Zak typed (optional). */
+/** Not now, with the reason the owner typed (optional). */
 export async function proposalDecline(id: string, reason: string): Promise<ActionResult> {
   const { me, no } = await asRole("owner"); if (no) return no;
   if (!UUID.test(String(id))) return { ok: false, text: "Unknown proposal." };

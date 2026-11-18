@@ -387,7 +387,7 @@ function Memory({ a, f, domains, mem }: { a: CrewMember; f: Floor; domains?: str
             {(() => { const r = f.runs.find((r) => r.agent_id === a.id && (r.status === "ok" || r.status === "failed")); return r ? <Link href={`/runs/${r.id}#react`} className="btn primary sm">React to its latest run</Link> : <span className="muted" style={{ fontSize: 12.5 }}>No finished run to react to yet.</span>; })()}
             <Link href={`/build/${a.id}?edit`} className="btn outline sm">Rules it always follows</Link>
           </div>
-          <span className="row ink2" style={{ gap: 8, fontSize: 12, lineHeight: 1.45, alignItems: "flex-start" }}><Icon name="lock" size={13} style={{ marginTop: 2, flex: "none" }} />Memory can’t widen access, switch off a hard rule or add a recipient. Only Zak writes rules.</span>
+          <span className="row ink2" style={{ gap: 8, fontSize: 12, lineHeight: 1.45, alignItems: "flex-start" }}><Icon name="lock" size={13} style={{ marginTop: 2, flex: "none" }} />Memory can’t widen access, switch off a hard rule or add a recipient. Only the owner writes rules.</span>
         </div>
       </div>
       <div className="grid2">
