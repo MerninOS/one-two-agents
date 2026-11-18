@@ -3,7 +3,7 @@
 import assert from "node:assert/strict";
 
 import { avgCostOf, buildCrew, costLabel, hueFor, memberOf, scheduleOf, sinceLabel } from "../dashboard/roster";
-import { PLANNED } from "../dashboard/crew";
+import { ONE_TWO_PLANNED as PLANNED } from "../templates/one-two/planned";
 import { flowProblems, type Chain, type Crew } from "../core/flow-rules";
 
 const tools = { team_report: { label: "Your team", kind: "read" }, report_email_owner: { label: "Email the owner the result", kind: "report" }, gmail_draft_lead: { label: "Draft an email to a lead", kind: "action" } };
@@ -53,11 +53,12 @@ assert.equal(avgCostOf([], "a"), null);
 assert.equal(scheduleOf("cfo", [{ ...morning, key: "off", name: "Off", on: false, start: { type: "schedule", days: "weekdays", time: "09:00" } }, morning]).chain, "Morning");
 
 // the roster: agents first, then planned seats no agent has taken
-const r = buildCrew([reese, rowan, { ...PLANNED[0], id: "blend_coach", built: true }]);
+const r = buildCrew([reese, rowan, { ...PLANNED[0], id: "blend_coach", built: true }], PLANNED);
 assert.equal(r.built.length, 3);
 assert.equal(r.planned.some((p) => p.id === "blend_coach"), false);
 assert.equal(r.planned.length, PLANNED.length - 1);
 assert.equal(r.byId.b_reese.name, "Rico");
+assert.equal(buildCrew([reese]).planned.length, 0, "no pack, no planned seats");
 
 // the flow picks from the crew; an agent that runs only by hand needs a Run chain start; any agent reads a hand-off
 const crew: Crew = { ids: ["b_reese", "cfo", "wholesale_hunter"], manualOnly: new Set(["wholesale_hunter"]) };

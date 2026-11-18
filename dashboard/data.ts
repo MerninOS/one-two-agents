@@ -18,6 +18,7 @@ import { MCP_IDS } from "@/core/mcp-rules";
 import { orgState, type OrgState } from "@/core/org-switch";
 import type { CrewMember, IntegrationId } from "./crew";
 import { avgCostOf, buildCrew, memberOf, type RosterRow, type RosterSpec } from "./roster";
+import { plannedSeats } from "@/core/install";
 import type { CrewAgent, CrewCanvasData } from "./components/CrewCanvas";
 import { SESSION_COOKIE, controlsOn, sessionMemberId } from "./session";
 import { memberById } from "@/core/members";
@@ -193,7 +194,7 @@ export const getFloor = cache(async (): Promise<Floor> => {
   const chains: Chain[] = flowRow.error || !flowRow.data ? [] : readFlow(flowRow.data.flow, palette).flow.chains;
   const tools = Object.fromEntries(Object.values(TOOLS).map((t) => [t.id, { label: t.label, kind: t.kind }]));
   const seatTitle = (id: string) => org?.seats.find((x) => x.holder === "agent" && x.agentId === id)?.title ?? null;
-  const roster = buildCrew(live.map((x) => memberOf(x, specs[x.id], { tools, avgCost: avgCostOf(runs, x.id), seatTitle: seatTitle(x.id), chains })));
+  const roster = buildCrew(live.map((x) => memberOf(x, specs[x.id], { tools, avgCost: avgCostOf(runs, x.id), seatTitle: seatTitle(x.id), chains })), plannedSeats(live.map((x) => x.id)));
   return { ok: true, now, agents, runs, spentToday, health: h, photosWaiting: ph.error ? null : ph.count ?? 0, approvalsPending: ap.error ? null : ap.count ?? 0, proposalsPending: pp.error ? null : pp.count ?? 0, jobsForYou, lessonsWaiting, grants, liveVersion, ...roster, palette, org: orgSwitch };
 });
 

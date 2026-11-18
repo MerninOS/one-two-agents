@@ -36,8 +36,12 @@ Supabase itself is either its official self-host stack on your machine
    apps where one is needed (Google's client id and secret in `.env`).
 3. **Run** `docker compose up -d --build`. The first run applies every migration; later runs apply
    only new ones.
-4. **First owner.** Add yourself as an owner (`npm run org:new` from a checkout with the same `.env`,
-   or insert a `members` row), then open `APP_URL` and sign in with the emailed link.
+4. **First owner.** Set `OPERATOR_OWNER_EMAIL` to your address: while the org has no members, that
+   address becomes its first owner the first time it signs in. Open `APP_URL` and sign in with the
+   emailed link.
+5. **Name the business and pick a crew.** On Settings, "The business" holds the name, a line about
+   it and the owner's name that every agent is told. The Desk of an empty org offers each template
+   pack's crew (installed off duty) or an empty start.
 
 ## Tested
 
@@ -46,11 +50,20 @@ on an empty database and a second run applied none; the app image served the sig
 `/api/health` and ran `/api/dispatch`; the scheduler's call went through with the right secret and
 reported a failure with a wrong one.
 
+## The starting migration
+
+This repo's `supabase/migrations` are its history and create One Two's rows. The public repo
+ships one squashed migration instead, `supabase/baseline/operator_baseline.sql`: the same schema
+(tables, checks, row level security, policies, grants, functions), the private receipts bucket and
+an empty home org called "My business", and no business's rows. `scripts/baseline.mjs` makes it from
+a schema-only dump of a database with every migration applied (the steps are in the script), and
+`npm run check:baseline` fails when a migration adds or drops a table it doesn't have.
+
+Tested 2026-11-18: a fresh Supabase database built from the baseline alone dumps byte for byte the
+same public schema as one built from every migration, and the One Two template installed into its
+empty home org (5 departments, 10 agents, all off duty) and refused a second install.
+
 ## Not yet
 
-- **A clean starting database.** The migrations are this repo's history, so they create One Two as
-  the home org with its early agents. The public repo starts from one squashed migration with no
-  One Two rows, and a fresh install opens on an empty org with the template picker (card 127, later
-  slice).
 - Building the image needs network access to npm from inside Docker.
 - Alert emails go only to `BRIEF_TO` (one address per install) until each org has its own.
