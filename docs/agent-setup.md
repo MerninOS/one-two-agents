@@ -141,10 +141,10 @@ and Writes are saved together as one version.
 - Notion target: picked from pages and databases the Notion integration can see (`notionSearch`
   in `integrations/notion.ts`), so the app can't widen access. A database must have every column
   the Briefs row writes (`menu.notion.dbProps`); a page gets one new page per day under it. The
-  server opens the target again on save. With no target picked, `NOTION_BRIEFS_DB_ID`, then
-  `NOTION_BRIEF_PARENT_ID`, still work, so nothing changes until the owner picks one.
+  server opens the target again on save. With no target picked, the briefs database, then the
+  briefs page on Settings > Where things go, still work, so nothing changes until the owner picks one.
 - The email recipient is never a choice: `integrations/email.ts` has no recipient argument and
-  sends to `BRIEF_TO`.
+  sends to the business's owner email (Settings).
 - Gateway action types show read only in Writes, with their tier. Avery has none.
 - Looser, so a confirm and `DASHBOARD_CONTROLS=on`: an output turned back on, or a different
   Notion target, as well as the slice 2 cost rules. Turning things off never needs either.

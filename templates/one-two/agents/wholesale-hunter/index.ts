@@ -1,10 +1,10 @@
+import { settings } from "@/core/settings";
 import "server-only";
 // Rowan's code that the pack's tools call (templates/one-two/tools.ts): what One Two offers a
 // wholesale customer (wholesale_offer, the only facts an outreach email may claim). The dedupe key
 // for a lead's website is core's (core/lead-rules.ts). Lead pages are untrusted: report_leads checks
 // every lead in code before it is stored, and first emails are only ever draft cards.
 import { PL_BAGS, PL_MIN, PL_PACK, roastName, wholesaleOf } from "@/templates/one-two/domain/coffee";
-import { env } from "@/core/env";
 import { getInventoryLots } from "@/templates/one-two/shopify/lots";
 import { fetchStockCoffees } from "@/templates/one-two/shopify/stock";
 
@@ -12,7 +12,7 @@ import { fetchStockCoffees } from "@/templates/one-two/shopify/stock";
 export async function offer() {
   const [lots, stock] = await Promise.all([getInventoryLots(), fetchStockCoffees()]);
   return {
-    site: `${env.siteUrl || "https://onetwocoffeelab.com"}/wholesale`,
+    site: `${(await settings()).siteUrl || "https://onetwocoffeelab.com"}/wholesale`,
     privateLabel: {
       minimumLb: PL_MIN,
       roastedToOrder: true,

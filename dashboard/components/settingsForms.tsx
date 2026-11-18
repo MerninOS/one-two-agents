@@ -109,3 +109,44 @@ export function BusinessForm({ initial, canEdit, save }: { initial: { name: stri
     </div>
   );
 }
+
+type WhereKey = "ownerEmail" | "siteUrl" | "shopifyDomain" | "shopifyClientId" | "mercuryAccountIds" | "notionBriefParent" | "notionBriefsDb" | "notionLeadsParent" | "notionBooksParent";
+const WHERE_FIELDS: { k: WhereKey; label: string; hint: string }[] = [
+  { k: "siteUrl", label: "Website", hint: "https://example.com, named in outreach drafts" },
+  { k: "shopifyDomain", label: "Shopify store", hint: "your-store.myshopify.com" },
+  { k: "shopifyClientId", label: "Shopify app client id", hint: "only for a Dev Dashboard app's client secret" },
+  { k: "mercuryAccountIds", label: "Mercury accounts that count as cash", hint: "all, or account ids separated by commas" },
+  { k: "notionBriefParent", label: "Notion page for briefs and reports", hint: "a Notion link or page id" },
+  { k: "notionBriefsDb", label: "Notion briefs database", hint: "optional: one row per morning brief" },
+  { k: "notionLeadsParent", label: "Notion page for lead lists", hint: "optional: else the briefs page" },
+  { k: "notionBooksParent", label: "Notion page for the books", hint: "optional: else the briefs page" },
+];
+
+/** Where things go (Settings): this business's owner email, store, accounts and Notion pages. Owners only. */
+export function WhereForm({ initial, starting, owners, canEdit, save }: { initial: Record<WhereKey, string>; starting: Partial<Record<WhereKey, string>>; owners: string[]; canEdit: boolean; save: (f: Record<WhereKey, string>) => Promise<ActionResult> }) {
+  const [f, setF] = useState(initial);
+  const { busy, run, toast } = useAct();
+  const changed = (Object.keys(initial) as WhereKey[]).some((k) => f[k] !== initial[k]);
+  const field = (k: WhereKey, label: string, hint: string, control: React.ReactNode) => (
+    <label key={k} style={{ display: "flex", flexDirection: "column", gap: 4, fontSize: 13 }} className="ink2">
+      {label}
+      {control}
+      <span className="muted" style={{ fontSize: 12 }}>{starting[k] && !f[k] ? `Now using ${starting[k]} (from the app-wide setting or the briefs page)` : hint}</span>
+    </label>
+  );
+  return (
+    <div className="stack" style={{ gap: 10 }}>
+      {field("ownerEmail", "Owner email", "The morning brief and alerts go here. Always one of this business’s owners.",
+        <select className="input" aria-label="Owner email" value={f.ownerEmail} disabled={!canEdit} onChange={(e) => setF({ ...f, ownerEmail: e.target.value })}>
+          <option value="">{starting.ownerEmail ? `App-wide setting (${starting.ownerEmail})` : "Nobody: no emails"}</option>
+          {owners.map((o) => <option key={o} value={o}>{o}</option>)}
+        </select>)}
+      {WHERE_FIELDS.map(({ k, label, hint }) => field(k, label, hint,
+        <input className="input" aria-label={label} value={f[k]} maxLength={300} disabled={!canEdit} placeholder={starting[k] ?? ""} onChange={(e) => setF({ ...f, [k]: e.target.value })} />))}
+      <div className="row" style={{ gap: 8, justifyContent: "flex-end" }}>
+        <button className="btn dark sm" disabled={busy || !canEdit || !changed} title={canEdit ? "Agents use the new settings from their next run" : "Owners only"} onClick={() => run(() => save(f))}>{busy ? "Saving…" : "Save"}</button>
+      </div>
+      {toast}
+    </div>
+  );
+}

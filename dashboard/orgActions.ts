@@ -15,6 +15,9 @@ import { installPack, plannedIds } from "@/core/install";
 import { getFloor, asRole } from "./data";
 import { controlsOn } from "./session";
 import { saveBusiness } from "@/core/business";
+import { saveSettings } from "@/core/settings";
+import { checkSettingsEdit, type SettingsEdit } from "@/core/settings-rules";
+import { listMembers } from "@/core/members";
 import { businessProblem } from "@/core/business-rules";
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -190,6 +193,21 @@ export async function saveBusinessProfile(f: { name: string; about: string; owne
     await audit(me, "save_business_profile", null, { name: b.name.trim() });
     return done("Saved. Agents get the new words from their next run.");
   } catch (e) { return fail(e); }
+}
+
+/** Where things go (Settings): the owner email, website, Shopify store, Mercury accounts and Notion pages of this business. */
+export async function saveWhereThingsGo(f: SettingsEdit): Promise<ActionResult> {
+  const { me, no } = await asRole("owner"); if (no) return no;
+  const keys = ["ownerEmail", "siteUrl", "shopifyDomain", "shopifyClientId", "mercuryAccountIds", "notionBriefParent", "notionBriefsDb", "notionLeadsParent", "notionBooksParent"] as const;
+  const e = Object.fromEntries(keys.map((k) => [k, String(f?.[k] ?? "").slice(0, 300)])) as unknown as SettingsEdit;
+  try {
+    const owners = (await listMembers()).filter((m) => m.role === "owner").map((m) => m.email);
+    const checked = checkSettingsEdit(e, owners);
+    if ("problem" in checked) return { ok: false, text: checked.problem };
+    await saveSettings(checked.settings);
+    await audit(me, "save_settings", null, { owner_email: checked.settings.ownerEmail, shopify: checked.settings.shopifyDomain });
+    return done("Saved. Agents use the new settings from their next run.");
+  } catch (e2) { return fail(e2); }
 }
 
 /**

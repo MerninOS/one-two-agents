@@ -64,8 +64,8 @@ export const CONNECTIONS: Connection[] = [
   },
   {
     id: "email", name: "Email to you", sub: "Briefs and alerts", icon: "inbox", builtIn: false,
-    about: "Sends through Resend to one address fixed in settings (BRIEF_TO). The code has no way to name anyone else.",
-    checks: [{ key: "email", label: "Email", setup: "Set RESEND_API_KEY, BRIEF_FROM (a sender on a domain verified in Resend) and BRIEF_TO." }],
+    about: "Sends through Resend to the owner email on Settings > Where things go, always one of this business’s owners. The code has no way to name anyone else.",
+    checks: [{ key: "email", label: "Email", setup: "Set RESEND_API_KEY and BRIEF_FROM (a sender on a domain verified in Resend) in Vercel, and pick the owner email on Settings > Where things go." }],
   },
   {
     id: "web", name: "The web", sub: "Search and read pages", icon: "globe", builtIn: false,

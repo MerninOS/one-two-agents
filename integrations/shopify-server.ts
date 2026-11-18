@@ -6,6 +6,7 @@ import "server-only";
 // Each tool runs one fixed query (core/shopify-queries.ts); there is no tool that takes GraphQL.
 import { MCP_PROTOCOL, MCP_SERVERS } from "@/core/mcp-rules";
 import { env } from "@/core/env";
+import { settings } from "@/core/settings";
 import { SHOPIFY_QUERIES, shopifyKeyKind, shopifyVariables, writeScopes } from "@/core/shopify-queries";
 import { shopifyQuery, whoIs } from "./shopify-api";
 
@@ -18,7 +19,8 @@ export async function checkShopifyKey(key: string): Promise<{ name: string; work
   const w = await whoIs(key);
   const bad = writeScopes(w.scopes);
   if (bad.length) throw new Error(`this app can change the store (${bad.slice(0, 6).join(", ")}). Use the read-only app, with read scopes only`);
-  if (env.shopifyDomain && w.domain !== env.shopifyDomain) throw new Error(`it opens ${w.domain}, not ${env.shopifyDomain}`);
+  const shop = (await settings()).shopifyDomain;
+  if (shop && w.domain !== shop) throw new Error(`it opens ${w.domain}, not ${shop}`);
   return { name: w.name, workspace: `${w.domain}, ${w.scopes.length} read scopes` };
 }
 

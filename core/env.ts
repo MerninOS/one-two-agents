@@ -53,8 +53,9 @@ export const env = {
   gmailClientId: v("GMAIL_CLIENT_ID"),
   gmailClientSecret: v("GMAIL_CLIENT_SECRET"),
 
-  // Email to the owner only (morning brief, alerts) through Resend. BRIEF_TO is the one fixed
-  // recipient; BRIEF_FROM is a sender on a domain verified in Resend. Blank = no email.
+  // Email to the owner only (morning brief, alerts) through Resend. Each business picks its owner
+  // email on Settings; BRIEF_TO is only the home org's starting value (core/settings.ts).
+  // BRIEF_FROM is a sender on a domain verified in Resend. Blank = no email.
   resendKey: v("RESEND_API_KEY"),
   briefFrom: v("BRIEF_FROM"),
   briefTo: v("BRIEF_TO"),

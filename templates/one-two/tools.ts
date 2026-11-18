@@ -1,3 +1,4 @@
+import { settings } from "@/core/settings";
 import "server-only";
 // One Two Coffee Lab's own tools (docs/templates.md): coffee math, Morgan's daily numbers, Avery's
 // brief, Quinn's books sync and Rowan's wholesale offer. Registered with the tool list through
@@ -5,7 +6,6 @@ import "server-only";
 // Calculate write nothing, numbers are worked out in code, reports reach only the owner or our own
 // stores after a finished run).
 import { db } from "@/core/db";
-import { env } from "@/core/env";
 import { round2 } from "@/core/num";
 import { chicagoDate } from "@/core/time";
 import { EMAIL, MERCURY, SHOPIFY, SUPABASE, daysParam, usd } from "@/core/tools/shared";
@@ -123,7 +123,7 @@ export const ONE_TWO_TOOLS: ToolDef[] = [
     },
   },
   {
-    id: "report_morning_brief", label: "Send the morning brief", detail: "Avery's brief email and Briefs row: the Focus line and watch lines from the result, every number worked out again in code from today's facts. Only to BRIEF_TO and the Briefs target",
+    id: "report_morning_brief", label: "Send the morning brief", detail: "Avery's brief email and Briefs row: the Focus line and watch lines from the result, every number worked out again in code from today's facts. Only to the owner email and the Briefs target on Settings",
     kind: "report", group: "email", params: [], trusted: true, needs: EMAIL, costUsd: 0,
     deliver: async (o, ctx) => deliverBrief(o.summary, ctx.runId ?? null),
   },
@@ -131,8 +131,8 @@ export const ONE_TWO_TOOLS: ToolDef[] = [
     id: "report_books_sync", label: "Sync the books and match receipts", detail: "Quinn's code: one row per Mercury charge, receipts found in Gmail and matched in code (exact amount, date window, merchant), photo reminders, receipt approval cards, and the Notion books page. A small model only reads receipts; it never decides a match",
     kind: "report", group: "mercury", params: [], trusted: true, needs: [...MERCURY, ...SUPABASE], costUsd: 0, codeOnly: true,
     deliver: async (_o, ctx) => {
-      // the Notion page picked in the hands-you step, else NOTION_BOOKS_PARENT_ID
-      const r = await syncBooks(ctx.runId ?? undefined, { notionParent: ctx.reportPage?.id ?? env.notionBooksParent });
+      // the Notion page picked in the hands-you step, else the books page on Settings
+      const r = await syncBooks(ctx.runId ?? undefined, { notionParent: ctx.reportPage?.id ?? (await settings()).notionBooksParent ?? undefined });
       return { note: r.summary.slice(0, 600), costUsd: r.costUsd, tokensIn: r.tokensIn, tokensOut: r.tokensOut };
     },
   },

@@ -6,6 +6,7 @@ import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { db } from "@/core/db";
 import { env } from "@/core/env";
+import { settings } from "@/core/settings";
 import { openJobsThisWeek } from "@/core/plans";
 import { DEFAULT_BUDGET, loadMemory, memoryView, proposedLessons, readPages, type MemoryEvent, type MemoryLoad, type MemoryRow, type PageLoad } from "@/core/memory";
 import { agentDepartment, agentNames, loadOrg } from "@/core/org";
@@ -129,7 +130,8 @@ export function health(): Record<IntegrationId, boolean> {
     mercury: false,
     // signed in on Connections (its key in the vault): getFloor reads mcp_connections
     notion: false,
-    email: !!(env.resendKey && env.briefFrom && env.briefTo),
+    // and the business has an owner email (Settings): getFloor checks that
+    email: !!(env.resendKey && env.briefFrom),
     // both Gmail sign-ins (read only, drafts) are made on Connections: getFloor reads mcp_connections
     gmail: false,
     gmail_read: false,
@@ -177,7 +179,9 @@ export const getFloor = cache(async (): Promise<Floor> => {
     orgState(),
   ]);
   // every server in the registry: set up when signed in and not paused (Notion also needs its parent page, Mercury its accounts)
-  const extra: Partial<Record<string, boolean>> = { shopify: !!env.shopifyDomain, notion: !!env.notionBriefParent, mercury: env.mercuryAccountIds.length > 0 };
+  const s = await settings();
+  if (!s.ownerEmail) h.email = false;
+  const extra: Partial<Record<string, boolean>> = { shopify: !!s.shopifyDomain, notion: !!s.notionBriefParent, mercury: s.mercuryAccountIds.length > 0 };
   for (const [id, st] of mcp) if (st?.connected && !st.paused && extra[id] !== false) h[id] = true;
   if (a.error || r.error) return { ...empty, problem: `Supabase: ${(a.error ?? r.error)?.message}` };
   const rows = (a.data ?? []) as (AgentRow & RosterRow)[];

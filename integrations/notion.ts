@@ -3,7 +3,7 @@ import "server-only";
 // Notion MCP server (integrations/notion-server.ts) through integrations/mcp.ts, which opens the
 // integration's key from the token vault for that call. The key reaches only pages shared with the
 // agents' Notion integration. Reads are agent tools; pages and rows are reports, written by code.
-import { env } from "@/core/env";
+import { settings } from "@/core/settings";
 import { callLocalTool, localReady } from "@/integrations/mcp";
 import type { Block, Props, Row } from "@/core/notion-blocks";
 
@@ -12,9 +12,10 @@ export { divider, h2, h3, li, notionPageId, p, prop, quote, rt, type Block, type
 /** Whether Notion's key is in the vault and not paused. */
 export const notionConnected = () => localReady("notion");
 
-/** Creates a page under `parent` (default NOTION_BRIEF_PARENT_ID) and returns its URL. At most 100 blocks. */
-export async function notionPage(title: string, children: Block[], parent = env.notionBriefParent) {
-  if (!parent) throw new Error("NOTION_BRIEF_PARENT_ID must be set");
+/** Creates a page under `parent` (default: the business's briefs page, Settings) and returns its URL. At most 100 blocks. */
+export async function notionPage(title: string, children: Block[], parent?: string | null) {
+  parent ||= (await settings()).notionBriefParent;
+  if (!parent) throw new Error("set the Notion briefs page on Settings > Where things go");
   const page = await callLocalTool("notion", "notion_create_page", { parentId: parent, title, children }) as { url: string };
   return page.url;
 }

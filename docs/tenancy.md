@@ -354,5 +354,30 @@ off: invited members' auth users are made by the app.
 
 ### Not in this slice
 
-A switcher between orgs inside the Control Room (sign out and in again for now), per-org owner
-email and business settings (slice 8.1b), a Claude key per org (slice 8.1c).
+A switcher between orgs inside the Control Room (sign out and in again for now).
+
+## Slice 8.1b: each org's own settings
+
+Some settings were one value in Vercel for the whole app, though they belong to a business: where
+the brief and alerts are emailed (`BRIEF_TO`), the website (`SITE_URL`), the Shopify store and app
+client id (`SHOPIFY_STORE_DOMAIN`, `SHOPIFY_CLIENT_ID`), the Mercury cash accounts
+(`MERCURY_ACCOUNT_IDS`) and the Notion pages reports go under (`NOTION_BRIEF_PARENT_ID`,
+`NOTION_BRIEFS_DB_ID`, `NOTION_LEADS_PARENT_ID`, `NOTION_BOOKS_PARENT_ID`). Each org now keeps
+its own on **Settings > Where things go** (owners only), stored as the `business_settings` row in
+`policies`, so no migration.
+
+- `core/settings-rules.ts` (pure) reads and checks them: an https website, a `.myshopify.com`
+  store, Mercury account ids or "all", Notion ids or links (Notion's own links only).
+- **The owner email is always one of the org's owners' sign-in addresses**, picked from a list.
+  The brief and alerts can never be pointed at someone who couldn't sign in as an owner.
+  `integrations/email.ts` still has no recipient argument; it reads the current org's owner email.
+- `core/settings.ts` gives the current org's settings. **The Vercel values count only for the
+  home org**, as its starting values where it saved none, and never for another org. Code reads
+  these settings only through `settings()`; `check:settings` fails on any other file reading
+  them from the environment.
+- **Alerts for every org.** The scheduler emails each org's alerts to its own owner email; an org
+  without one sees them on Status only.
+
+App infrastructure stays in Vercel: Supabase, Claude, Resend and its sender (`BRIEF_FROM`), the
+vault key, the app's Google OAuth client, `SHOPIFY_API_VERSION`. The One Two pack's
+`SHOPIFY_STOCK_COLLECTION` and the Build Board's `NOTION_BUILD_BOARD_DB_ID` stay app-wide too.

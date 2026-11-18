@@ -1,3 +1,4 @@
+import { settings } from "@/core/settings";
 import "server-only";
 // The tool list (docs/agent-builder.md): every ability an agent built in the app can be given.
 // Read and Calculate tools are built from code the four agents already use (slice 1). Report and
@@ -30,7 +31,6 @@ import { ANNOTATE, DRAFT_EMAIL, DRAFT_LIMITS, TOOLS as GATEWAY_TOOLS, refuseProp
 import { draftsToCheck, leadReview, propose } from "@/core/gateway";
 import { proposeLesson } from "@/core/memory";
 import { reactionTally } from "@/core/reactions";
-import { env } from "@/core/env";
 import { domainOf } from "@/core/lead-rules";
 import { hasGmail } from "@/integrations/gmail";
 import { klaviyoListSize, klaviyoLists, klaviyoReport } from "@/integrations/klaviyo";
@@ -425,7 +425,7 @@ const TOOLS_LIST: ToolDef[] = [
 
   // ---- Reports (slice 5): code delivers the finished result; the model never calls these
   {
-    id: "report_email_owner", label: "Email the owner the result", detail: "After a run that finishes, code emails its result and traced numbers to the owner (BRIEF_TO). No other recipient is possible",
+    id: "report_email_owner", label: "Email the owner the result", detail: "After a run that finishes, code emails its result and traced numbers to the owner email on Settings. No other recipient is possible",
     kind: "report", group: "email", params: [], trusted: true, needs: EMAIL, costUsd: 0,
     deliver: async (o) => {
       const nums = o.numbers.map((n) => `${n.label}: ${n.value}`);
@@ -500,7 +500,7 @@ const TOOLS_LIST: ToolDef[] = [
         });
         if (res.status === "queued") cards++; else if (res.status === "refused") refused++;
       }
-      const parent = await notionConnected() ? (ctx.reportPage?.id ?? env.notionLeadsParent) : undefined;
+      const parent = await notionConnected() ? (ctx.reportPage?.id ?? (await settings()).notionLeadsParent) : undefined;
       let url = "";
       if (parent && saved.length) {
         url = await notionPage(`Wholesale leads · ${o.date}`, [
