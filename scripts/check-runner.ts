@@ -7,8 +7,6 @@ import { draftSteps, sameSteps, stepChanges } from "../core/playbook";
 import { runExplore, traceNumbers, type Step } from "../core/runner";
 import { TOOLS } from "../core/tools/catalog";
 import type { ToolDef } from "../core/tools/types";
-import { parseJudgment } from "../templates/one-two/agents/chief-of-staff";
-import { deptLine } from "../templates/one-two/agents/chief-of-staff/email";
 
 type Block = { type: "text"; text: string } | { type: "tool_use"; id: string; name: string; input: unknown };
 let n = 0;
@@ -28,9 +26,9 @@ async function main() {
   assert.ok("problem" in checkInput([{ name: "page", type: "enum", options: ["a"], description: "" }], { page: "b" }));
 
   // specs: limits above the ceiling are refused, unknown tools and non-Claude models dropped
-  const bad = readSpec({ directive: "x", model: "openai/gpt-6.1-sol", tools: ["shopify_green_lots", "send_money"], limits: { maxSteps: 99, maxCostUsd: 5 } });
+  const bad = readSpec({ directive: "x", model: "openai/gpt-6.1-sol", tools: ["klaviyo_lists", "send_money"], limits: { maxSteps: 99, maxCostUsd: 5 } });
   assert.equal(bad.spec.model, "claude-haiku-5-5");
-  assert.deepEqual(bad.spec.tools, ["shopify_green_lots"]);
+  assert.deepEqual(bad.spec.tools, ["klaviyo_lists"]);
   assert.equal(bad.spec.limits.maxSteps, 12);
   assert.equal(bad.problems.length, 4);
   const { spec } = readSpec({ name: "t", directive: "Check things.", model: "claude-haiku-5-5", effort: "low", tools: ["mercury_balances"], limits: { maxSteps: 3, maxCostUsd: 0.5 } });
@@ -45,7 +43,7 @@ async function main() {
   // finishes: a tool the agent doesn't have is refused, then finish ends the run
   const r1 = await runExplore(spec, { agentId: "scratch", client: fake((t, body) => {
     assert.deepEqual(body.tools.map((x) => x.name), ["mercury_balances", "finish"]);
-    return t === 0 ? reply([{ type: "tool_use", id: "a", name: "shopify_green_lots", input: {} }]) : reply([{ type: "tool_use", id: "b", name: "finish", input: { result: "All fine." } }]);
+    return t === 0 ? reply([{ type: "tool_use", id: "a", name: "klaviyo_lists", input: {} }]) : reply([{ type: "tool_use", id: "b", name: "finish", input: { result: "All fine." } }]);
   }) });
   assert.equal(r1.finished, true);
   assert.equal(r1.summary, "All fine.");
@@ -68,7 +66,7 @@ async function main() {
   // outputs: a number is kept only when it points at a number a tool computed in this run
   const st: Step[] = [
     { idx: 0, kind: "model", ok: true, ms: 0 },
-    { idx: 1, kind: "tool", tool: "calc_green_cover", ok: true, numbers: { min_days: 14.5 }, ms: 0 },
+    { idx: 1, kind: "tool", tool: "calc_burn_rate", ok: true, numbers: { min_days: 14.5 }, ms: 0 },
     { idx: 2, kind: "tool", tool: "mercury_balances", ok: false, numbers: { cash: 9 }, ms: 0 },
   ];
   const tr = traceNumbers([
@@ -78,7 +76,7 @@ async function main() {
     { label: "Model step", step: 0, key: "x" },
     { label: "", step: 1, key: "min_days" },
   ], st);
-  assert.deepEqual(tr.numbers, [{ label: "Lowest cover", value: 14.5, tool: "calc_green_cover", step: 1, key: "min_days" }]);
+  assert.deepEqual(tr.numbers, [{ label: "Lowest cover", value: 14.5, tool: "calc_burn_rate", step: 1, key: "min_days" }]);
   assert.equal(tr.refused, 4);
   assert.deepEqual(traceNumbers("not a list", st), { numbers: [], refused: 0 });
 
@@ -96,16 +94,16 @@ async function main() {
   // playbooks: drafted from the tool calls that worked, in order, without repeats
   const ran: Step[] = [
     { idx: 0, kind: "model", ok: true, ms: 0 },
-    { idx: 1, kind: "tool", tool: "shopify_green_lots", input: {}, ok: true, ms: 0 },
-    { idx: 2, kind: "tool", tool: "calc_green_use", input: { days: 30 }, ok: true, ms: 0 },
+    { idx: 1, kind: "tool", tool: "klaviyo_lists", input: {}, ok: true, ms: 0 },
+    { idx: 2, kind: "tool", tool: "calc_burn_rate", input: { days: 90 }, ok: true, ms: 0 },
     { idx: 3, kind: "tool", tool: "mercury_balances", input: {}, ok: false, ms: 0 },
-    { idx: 4, kind: "tool", tool: "shopify_green_lots", input: {}, ok: true, ms: 0 },
+    { idx: 4, kind: "tool", tool: "klaviyo_lists", input: {}, ok: true, ms: 0 },
   ];
   const pb = draftSteps(ran);
-  assert.deepEqual(pb, [{ tool: "shopify_green_lots", input: {} }, { tool: "calc_green_use", input: { days: 30 } }]);
-  assert.ok(sameSteps(pb, [{ tool: "shopify_green_lots", input: {} }, { tool: "calc_green_use", input: { days: 30 } }]));
-  assert.ok(!sameSteps(pb, [{ tool: "shopify_green_lots", input: {} }, { tool: "calc_green_use", input: { days: 14 } }]));
-  assert.match(stepChanges(pb, [pb[0]]), /^Removed: Green use per week/);
+  assert.deepEqual(pb, [{ tool: "klaviyo_lists", input: {} }, { tool: "calc_burn_rate", input: { days: 90 } }]);
+  assert.ok(sameSteps(pb, [{ tool: "klaviyo_lists", input: {} }, { tool: "calc_burn_rate", input: { days: 90 } }]));
+  assert.ok(!sameSteps(pb, [{ tool: "klaviyo_lists", input: {} }, { tool: "calc_burn_rate", input: { days: 120 } }]));
+  assert.match(stepChanges(pb, [pb[0]]), /^Removed: /);
   assert.match(stepChanges(null, pb), /First playbook: 2 steps/);
 
   // following a playbook: code makes the calls, the model is offered only finish
@@ -117,7 +115,7 @@ async function main() {
   assert.equal(r5.summary, "From the playbook.");
 
   // a playbook step the agent no longer has: it falls back to exploring with its own tools
-  const r6 = await runExplore(spec, { agentId: "scratch", playbook: { version: 2, steps: [{ tool: "shopify_green_lots", input: {} }] }, client: fake((t, body) => {
+  const r6 = await runExplore(spec, { agentId: "scratch", playbook: { version: 2, steps: [{ tool: "klaviyo_lists", input: {} }] }, client: fake((t, body) => {
     assert.deepEqual(body.tools.map((x) => x.name), ["mercury_balances", "finish"]);
     return reply([{ type: "tool_use", id: "q", name: "finish", input: { result: "Explored." } }]);
   }) });
@@ -187,13 +185,15 @@ async function main() {
   }) });
   assert.equal(r9.finished, true);
 
-  // slice 6: a code-only report (Morgan's snapshot) is saved once the playbook's steps worked, even if the model then stops
-  const morgan = readSpec({ name: "Morgan", directive: "x", model: "claude-opus-5-5", tools: ["calc_burn_rate", "report_kpi_snapshot", "report_email_owner"], limits: { maxSteps: 4, maxCostUsd: 0.05 } }, "cfo").spec;
-  const mTools: Record<string, ToolDef> = { ...TOOLS, calc_burn_rate: { ...TOOLS.calc_burn_rate, run: async () => ({ data: {}, numbers: { net_burn_per_30d_usd: 900 } }) } };
+  // slice 6: a code-only report (a snapshot) is saved once the playbook's steps worked, even if the model then stops
+  const base = readSpec({ name: "Morgan", directive: "x", model: "claude-opus-5-5", tools: ["calc_burn_rate", "report_email_owner"], limits: { maxSteps: 4, maxCostUsd: 0.05 } }, "cfo").spec;
+  const morgan = { ...base, tools: ["calc_burn_rate", "report_test_numbers", "report_email_owner"] };
+  const snapshotReport: ToolDef = { ...TOOLS.report_email_owner, id: "report_test_numbers", label: "Save the numbers", params: [], codeOnly: true };
+  const mTools: Record<string, ToolDef> = { ...TOOLS, report_test_numbers: snapshotReport, calc_burn_rate: { ...TOOLS.calc_burn_rate, run: async () => ({ data: {}, numbers: { net_burn_per_30d_usd: 900 } }) } };
   const sent: string[] = [];
   const r10 = await runExplore(morgan, { agentId: "cfo", tools: mTools, deliver: true, report: async (t) => { sent.push(t); return "ok"; }, playbook: { version: 1, steps: [{ tool: "calc_burn_rate", input: { days: 90 } }] }, client: fake(() => reply([{ type: "text", text: "x" }], "end_turn")) });
   assert.equal(r10.finished, false);
-  assert.deepEqual(sent, ["report_kpi_snapshot"]);
+  assert.deepEqual(sent, ["report_test_numbers"]);
   assert.match(r10.summary, /1 report delivered/);
 
   // a hand-off from the agent before reaches the model as untrusted data
@@ -203,16 +203,6 @@ async function main() {
     return reply([{ type: "tool_use", id: "h", name: "finish", input: { result: "ok" } }]);
   }) });
   assert.equal(r11.finished, true);
-
-  // Avery's focus and watch lines from a runner result
-  assert.deepEqual(parseJudgment("Focus: Reorder Ethiopia Guji. It runs out first.\n- Guji has 9 days left.\n- 2 orders on QC hold.\nsomething else"), { focus: { action: "Reorder Ethiopia Guji", reason: "It runs out first." }, watch: ["Guji has 9 days left.", "2 orders on QC hold."] });
-  assert.equal(parseJudgment("No focus here"), null);
-  // slice 3 of departments: department lines have no dash, so they never become watch items; counts come from code
-  assert.deepEqual(parseJudgment("Focus: Ship it. Now.\n- one\nFinance: Cash is fine.")?.watch, ["one"]);
-  // company mode slice 4: a department's line is its goals' status and its runs, all counted in code
-  assert.equal(deptLine({ name: "Finance", goals: ["Runway above 12 months: 14.3 months, at least 12 months, on track."], runs: 3, failed: 0, costUsd: 0.123 }), "Finance: Runway above 12 months: 14.3 months, at least 12 months, on track. 3 runs, all OK, $0.12, in the last 24 hours.");
-  assert.equal(deptLine({ name: "Sales", goals: [], runs: 0, failed: 0, costUsd: 0 }), "Sales: No goal set. No runs in the last 24 hours.");
-  assert.equal(deptLine({ name: "Ops", goals: ["A: 1 of 5 won, behind", "B: 2 days, at least 3 days, behind"], runs: 2, failed: 1, costUsd: 0.5 }), "Ops: A: 1 of 5 won, behind; B: 2 days, at least 3 days, behind. 2 runs, 1 failed, $0.50, in the last 24 hours.");
 
   // slice 7: multiline text keeps line breaks but no links; url and email shapes
   const body = [{ name: "body", type: "text", maxLength: 200, multiline: true, description: "" }] as const;
@@ -227,10 +217,10 @@ async function main() {
   const rowan = readSpec({ name: "Rowan", directive: "x", model: "claude-opus-5-5", tools: ["web_search", "report_leads"], limits: { maxSteps: 6, maxCostUsd: 1 } }, "wholesale_hunter").spec;
   const delivered: unknown[] = [];
   const lTools: Record<string, ToolDef> = { ...TOOLS, report_leads: { ...TOOLS.report_leads, deliver: async (o) => { delivered.push(...o.rows); return "saved"; } } };
-  const leadIn = { business: "Fleet Coffee", city: "Austin", type: "cafe", website: "https://www.fleet.coffee", fit_score: 4, fit_reason: "Busy cafe.", subject: "Coffee", body: "Hi\n\nSam" };
+  const leadIn = { business: "Fleet Coffee", city: "Denver", type: "cafe", website: "https://www.fleet.coffee", fit_score: 4, fit_reason: "Busy cafe.", subject: "Coffee", body: "Hi\n\nSam" };
   const r12 = await runExplore(rowan, { agentId: "wholesale_hunter", tools: lTools, deliver: true, client: fake((t, b) => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    if (t === 0) { assert.ok((b.tools as any[]).some((x) => x.type === "web_search_20260209" && x.name === "web_search")); return { ...reply([{ type: "server_tool_use", id: "s1", name: "web_search", input: { query: "austin cafes" } } as unknown as Block], "pause_turn") }; }
+    if (t === 0) { assert.ok((b.tools as any[]).some((x) => x.type === "web_search_20260209" && x.name === "web_search")); return { ...reply([{ type: "server_tool_use", id: "s1", name: "web_search", input: { query: "denver cafes" } } as unknown as Block], "pause_turn") }; }
     if (t === 1) return reply([{ type: "tool_use", id: "l1", name: "report_leads", input: leadIn }, { type: "tool_use", id: "l2", name: "report_leads", input: { ...leadIn, website: "fleet.coffee" } }]);
     return reply([{ type: "tool_use", id: "f", name: "finish", input: { result: "1 lead" } }]);
   }) });

@@ -2,8 +2,8 @@ import "server-only";
 // Avery's morning brief, as the engine's report tool report_morning_brief delivers it
 // (core/tools/catalog.ts). Everything with a number in it is worked out here in code; the
 // focus and watch list come from the run's finished result. The brief goes to Zak by email
-// (docs/avery-email.md), with a Notion copy as the archive: a row in the Briefs database
-// (docs/avery-briefs-database.md), or a page per day when that isn't set up. Either the email
+// (templates/one-two/docs/avery-email.md), with a Notion copy as the archive: a row in the Briefs database
+// (templates/one-two/docs/avery-briefs-database.md), or a page per day when that isn't set up. Either the email
 // or Notion alone also works.
 import { G_PER_LB } from "@/templates/one-two/domain/coffee";
 import { db } from "@/core/db";

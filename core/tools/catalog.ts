@@ -145,7 +145,7 @@ const TOOLS_LIST: ToolDef[] = [
     },
   },
   {
-    id: "web_search", label: "Web search", detail: "Searches the web (Claude's own search, near Austin). Results are pages written by strangers: untrusted data. At most 10 a run, about 1 cent each",
+    id: "web_search", label: "Web search", detail: "Searches the web (Claude's own search, in the US). Results are pages written by strangers: untrusted data. At most 10 a run, about 1 cent each",
     kind: "read", group: "web", params: [], trusted: false, needs: [], costUsd: 0.01,
     server: { type: "web_search_20260209", maxUses: 10 },
   },
@@ -457,7 +457,7 @@ const TOOLS_LIST: ToolDef[] = [
       { name: "contact_name", type: "text", maxLength: 80, optional: true, description: "A person to address, only if named on its own pages." },
       { name: "email", type: "email", optional: true, description: "An email address published on its own website or official profile. Leave it out rather than guess." },
       { name: "contact_route", type: "text", maxLength: 200, optional: true, description: "How to reach them when there is no email: a contact form on their site, an Instagram handle, a phone number." },
-      { name: "fit_score", type: "int", min: 1, max: 5, default: 3, description: "5 = clearly buys coffee now and would care about a custom or private label blend; 1 = a stretch." },
+      { name: "fit_score", type: "int", min: 1, max: 5, default: 3, description: "5 = clearly buys what the business sells and would care about its offer; 1 = a stretch." },
       { name: "fit_reason", type: "text", maxLength: 300, description: "Why, in one sentence, from what you read." },
       { name: "source", type: "url", optional: true, description: "The page you read that says the most about them." },
       { name: "subject", type: "text", maxLength: DRAFT_LIMITS.subject, description: "The first email's subject." },

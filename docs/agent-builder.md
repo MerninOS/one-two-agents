@@ -2,7 +2,7 @@
 
 > **Nov 13:** the builder screen's eight sections became the builder flow, one question per card (docs/builder-flow.md, slice 2). Slice 4 replaced Preview, the Deliver switch, Compare, Switch, the engine and playbook panels and `/lab` with Try it and Go live: a save is now a draft, and only Go live (after a try of that version where every step worked) makes it the version that runs. The spec, playbooks (called "its routine" on screen) and runner below are otherwise unchanged.
 
-Plan (approved by Zak 2026-11-13): https://claude.ai/artifact/VNbJQM4SMTWDbKH9CfjHMh.
+Plan (approved by the owner 2026-11-13): https://claude.ai/artifact/VNbJQM4SMTWDbKH9CfjHMh.
 Mockup: https://claude.ai/artifact/FwFFc3nmJK7QuRvag7LAW2.
 Epic on the Build Board: "EPIC: Agent builder (build agents from scratch in the app)", slices Order 41-47.
 
@@ -11,7 +11,7 @@ becomes a saved spec with eight parts (Trigger, Sources, Standards, Directive, T
 Guardrails, Output). One shared runner runs every spec the same way: the model picks its own steps
 from the tools the spec grants, code runs them, hard limits stop it.
 
-## Decisions (Zak, 2026-11-13)
+## Decisions (the owner, 2026-11-13)
 
 - Explore runs by hand only: a built agent can't run on a schedule until its first playbook is approved.
 - Per-run limits start at 12 tool calls and $0.50; ceilings in code are 30 and $2 (`RUN_LIMITS` in
@@ -19,7 +19,7 @@ from the tools the spec grants, code runs them, hard limits stop it.
 - Tools are narrow ("Shopify: open orders"), grouped by integration on the builder screen.
 - Morgan stays model-free except one judgment step on burn rate. Burn rate and runway are worked
   out in code (`calc_burn_rate`); the judgment step only reads those numbers.
-- Earlier: the first playbook needs Zak's approval, later versions apply automatically with a diff,
+- Earlier: the first playbook needs the owner's approval, later versions apply automatically with a diff,
   and drop back to approval after a failed run or a rejected action. Claude models only. Avery,
   Rowan, Quinn and Morgan are rebuilt on the runner.
 
@@ -107,16 +107,16 @@ from the tools the spec grants, code runs them, hard limits stop it.
 - **Tables** (migration `20261113170000_agent_playbooks.sql`): `agent_playbooks` (versioned per
   agent: steps `[{ tool, input }]`, status proposed / approved / rejected / replaced, the run it came
   from, what changed, whether it applied on its own; one approved at a time) and
-  `agent_playbook_holds` (an agent whose next playbook must wait for Zak, and why).
+  `agent_playbook_holds` (an agent whose next playbook must wait for the owner, and why).
 - **Drafting** (`core/playbook.ts`, no model): after an explore run that finished, code takes the
   tool calls that worked, in order and without repeats (`draftSteps`). The first one is proposed for
-  Zak's approval; he can drop steps before approving.
+  the owner's approval; they can drop steps before approving.
 - **Following** (`runExplore` with `playbook`): code makes the playbook's tool calls (each checked
   against the spec and its inputs again, counted against the step limit), then the model is offered
   only `finish` and writes the result from the data, citing numbers by step as in slice 3. If a step
   fails or is no longer granted, the run **falls back** to exploring with the agent's tools, and the
   summary says so.
-- **Updates** (Zak, Nov 13): with an approved playbook and no hold, a playbook drafted from a
+- **Updates** (owner's call, Nov 13): with an approved playbook and no hold, a playbook drafted from a
   **Re-explore** applies on its own (`auto`), with what changed (`stepChanges`). A run that falls back
   or doesn't finish puts the agent **on hold**: the next draft waits for approval, and approving
   clears the hold. Rejected actions will do the same from slice 5.
@@ -160,7 +160,7 @@ from the tools the spec grants, code runs them, hard limits stop it.
 - **Saving** a version that adds a report or action, or points a Notion report at another page,
   counts as reaching further (`specLooser`): it needs a confirm and `DASHBOARD_CONTROLS=on`.
 - **Rejected actions**: rejecting a card from an agent with an approved playbook puts it on hold
-  (`holdAfterRejection`), so its next playbook waits for Zak.
+  (`holdAfterRejection`), so its next playbook waits for the owner.
 - Proposals and reports are never playbook steps (`draftSteps` keeps read and calculate calls). A
   playbook run offers the agent's action tools plus `finish`, so the model still decides what to
   propose from the data the playbook gathered.
@@ -237,7 +237,7 @@ from the tools the spec grants, code runs them, hard limits stop it.
   charge that also got a receipt card in the same run shows as already waiting and is
   proposed again next run. Quinn's month-close count of suggestions waiting reads
   `expense_docs`, so it leaves out the model's proposals.
-- **Retiring the old code** (next, once all four are switched and Zak is happy): remove
+- **Retiring the old code** (next, once all four are switched and the owner is happy): remove
   `agents/*/menu.ts`, `agents/menus.ts`, `core/setup.ts`, the Setup tab, `OWN_JOBS` and the
   old run functions, keep the code the report tools call, and let only `core/gateway` import
   `createDraft` (lint).

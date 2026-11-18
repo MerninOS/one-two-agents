@@ -10,11 +10,12 @@ import { chicagoDate, nextDay } from "@/core/time";
 import { mercuryCash } from "@/integrations/mercury";
 import { getInventoryLots } from "@/templates/one-two/shopify/lots";
 import { linesOf, parseRecord, usageOf } from "@/templates/one-two/shopify/orders";
-import { ordersBetween } from "@/integrations/shopify/orders";
+import { ordersBetween as coreOrdersBetween, type DayOrder } from "@/integrations/shopify/orders";
 import { getRoastLoss } from "@/templates/one-two/shopify/settings";
 import { fetchStockCoffees } from "@/templates/one-two/shopify/stock";
 
-export { ordersBetween };
+/** A day's orders with the green each took (blended.green_usage). */
+export const ordersBetween = (start: string, endExclusive: string) => coreOrdersBetween<DayOrder & { usage: { value: string } | null }>(start, endExclusive, "shopify_green_orders_between");
 const ordersOn = (date: string) => ordersBetween(date, nextDay(date));
 
 export async function snapshot(date = chicagoDate(1), opts: { dryRun?: boolean } = {}) {

@@ -1,6 +1,6 @@
 # Company mode: run the crew like a company
 
-Zak, Nov 15: the Control Room still felt like configuring software. Teaching agents, adding agents
+The owner, Nov 15: the Control Room still felt like configuring software. Teaching agents, adding agents
 and mapping the org were clunky. He wants to run a fully agentic organization with himself on top:
 he sets goals, reacts to work and decides on proposals; heads think and plan, specialists do one
 narrow job. Approved design (every board, desktop and phone):
@@ -8,16 +8,16 @@ https://claude.ai/artifact/UtmdGkLKTTezQNGmg5oWHu. Status lives on the Build Boa
 
 **Rule for every slice: it deletes what it replaces in the same PR.**
 
-## Decisions (Zak, 2026-11-15, "yes to all")
+## Decisions (the owner, 2026-11-15, "yes to all")
 
 1. Heads (not leads) give their specialists a weekly focus: a note that expires in 7 days, never
    authority. Leads still only watch. This changes the Nov 13 rule for heads only.
 2. Every goal needs a measure counted in code, picked from a list. A goal without one shows
    "No measure yet" and the missing read goes to Find a tool.
-3. Zak's reactions save straight away as rules in his words, with Undo. Avery may suggest wording
+3. The owner's reactions save straight away as rules in their words, with Undo. Avery may suggest wording
    or scope; only his tap applies it. Lessons a lead or head proposes still wait for his Keep.
 4. Avery becomes the front door: a chat in the app that reads the company's data and can only file
-   proposals and save the rules Zak dictates. The /one-two-new-agent skill retires once she can hire.
+   proposals and save the rules the owner dictates. The outside new-agent skill retires once she can hire.
 5. Heads move to Sonnet, medium effort, $0.75 cap a run. Specialists stay on Haiku unless the job
    needs judgment.
 6. MCP connections: our runner calls MCP servers itself (never the model provider's server-side
@@ -25,23 +25,23 @@ https://claude.ai/artifact/UtmdGkLKTTezQNGmg5oWHu. Status lives on the Build Boa
 7. The Desk replaces Today. Editing the org chart by hand stays.
 
 Unchanged: heads never get action tools; new agents start off duty with no actions; every send,
-payment or post is a gateway action that starts at Draft; only Zak's taps approve or count toward
+payment or post is a gateway action that starts at Draft; only the owner's taps approve or count toward
 promotion; agents stay off until he says launched.
 
 ## Slices
 
 | # | Slice | Replaces (deleted in the same PR) |
 |---|---|---|
-| 1 | Teach by reacting | The Memory tab's Teach form; Reject's "proposed lesson" from Zak's own reason |
+| 1 | Teach by reacting | The Memory tab's Teach form; Reject's "proposed lesson" from the owner's own reason |
 | 2 | Goals and measures | Today's stat chips |
 | 3 | Proposals: hire, grant a tool, new tool, retire | The new-agent skill's direct database writes (New agent stays the builder, see slice 3) |
 | 4 | Heads plan, review and set focus | Hand-written focus in department rules |
-| 5 | Avery, the front door, and the Desk | The Today page; the /one-two-new-agent skill |
+| 5 | Avery, the front door, and the Desk | The Today page; the outside new-agent skill |
 | 6 | MCP connections, Klaviyo first | (new kind of connection) |
 
 ## Slice 1: Teach by reacting
 
-**What Zak sees.**
+**What the owner sees.**
 
 - **Run replay: "Was this right?"** (`#react`, so links can jump there). **Good** saves at once.
   **Not this…** opens a box: his words ("Say it like you'd say it to Rowan"), **who should follow
@@ -59,7 +59,7 @@ promotion; agents stay off until he says launched.
   cards) with **React to its latest run** and **Rules it always follows** (builder step 1, which
   still adds standing orders with a Notion page). The tab stays the record: every rule shows where
   it came from ("Your reaction to a run", "Your reason for a Reject"), with Edit and Forget.
-- **Heads read it:** "Your team" (`team_report`) now carries each teammate's `fromZak`: Good and
+- **Heads read it:** "Your team" (`team_report`) now carries each teammate's `fromOwner`: Good and
   Not this counts for the period, and his latest words, plus `aN_zak_good` / `aN_zak_not` numbers.
 
 **What gets saved** (`core/reaction-rules.ts`, pure, `npm run check:reactions`; `core/reactions.ts`).
@@ -67,7 +67,7 @@ promotion; agents stay off until he says launched.
 - One `reactions` row per thing reacted to (a run, a lead in a run, an approval); reacting again
   changes it. It holds the verdict, his words when they became a rule, and the rule's id.
 - Not this with words: agent + always is a standing order, agent + 30 days or next run is a note,
-  department is a department rule, everyone is a crew line. `source = zak`,
+  department is a department rule, everyone is a crew line. `source = owner`,
   `source_tag = run:<id>` or `approval:<id>`. The new rule is saved first, then the one it replaces
   is forgotten (so a failed save never loses the old rule). A replaced rule must be kept and in the
   same scope, checked in code.
@@ -78,17 +78,17 @@ promotion; agents stay off until he says launched.
 **Data.** Migration `20261120090000_reactions.sql` (the `reactions` table). Until it's applied,
 Good and a plain Not this answer that the table isn't there; Not this with words and Reject with
 words still save the rule (the toast says it won't show on the scorecard); the scorecard, journal
-entries and `fromZak` are empty.
+entries and `fromOwner` are empty.
 
 **What it replaces.** `TeachForm` and the `teach` action (the Memory tab's form and the Overview
-Journal's compact copy); `RejectButton`'s "propose a lesson" path in `reject` (Zak's reason is now a
+Journal's compact copy); `RejectButton`'s "propose a lesson" path in `reject` (the owner's reason is now a
 reaction). `proposeLesson` stays for a lead's or head's send-back.
 
 **Checks.** `npm run check`, `npm run check:reactions`, `npm run build`.
 
 ## Slice 2: Goals and measures
 
-**What Zak sees.**
+**What the owner sees.**
 
 - **Crew > Org chart:** each department card leads with its goals (up to 3), above its budget and
   seats, and stays visible when a department is folded on a phone. A tile shows the goal in his
@@ -121,7 +121,7 @@ reaction). `proposeLesson` stays for a lead's or head's send-back.
 | Wholesale accounts won | total, by a date | `wholesale_leads` at stage Won |
 | Revenue this month | month | Shopify orders this Chicago month, cancelled left out |
 | Orders this month | month | the same orders, counted |
-| Lowest days of green cover | floor | each listed lot: on hand ÷ use per day over 30 days (`templates/one-two/green.ts`) |
+| Lowest days of green cover | floor | each listed lot: on hand ÷ use per day over 30 days (`templates/<pack>/green.ts`) |
 | Months of runway | floor | Mercury cash ÷ net burn per 30 days over 90 days (`core/money.ts`) |
 | Email list size | total, by a date | profiles on the list picked on Connections › Klaviyo, read over Klaviyo's MCP server (slice 6) |
 
@@ -138,7 +138,7 @@ reaction). `proposeLesson` stays for a lead's or head's send-back.
 - Status and pace are plain arithmetic in `progress()`, tested by `npm run check:goals`.
 
 **What it never does.** A goal grants nothing: no agent can do anything new because of one, and
-goals need the login only (no Controls), like the org chart. Goal words are Zak's (trusted); the
+goals need the login only (no Controls), like the org chart. Goal words are the owner's (trusted); the
 numbers are code's. Changing a goal's measure starts its pace again from that day (`paced_from`).
 
 **Data.** Migration `20261121090000_goals.sql` (the `goals` table: department, title, measure key,
@@ -146,8 +146,8 @@ target, `start_value`, `due_on`, state active / paused / done / dropped, `paced_
 department removes its goals. Until it's applied, Crew and Today say so and Set a goal refuses.
 
 **Code.** `core/goal-rules.ts` (pure: the list, `planGoal`, `progress`), `core/measures.ts`,
-`core/goals.ts` (store, `goalProgress` for the tool), `templates/one-two/green.ts` and `core/money.ts` (moved
-out of the tool list so the tools and the measures share one copy), `templates/one-two/agents/cfo` `ordersBetween`,
+`core/goals.ts` (store, `goalProgress` for the tool), `templates/<pack>/green.ts` and `core/money.ts` (moved
+out of the tool list so the tools and the measures share one copy), `templates/<pack>/agents/cfo` `ordersBetween`,
 `dashboard/goals.ts`, `dashboard/goalActions.ts`, `dashboard/components/goals.tsx`,
 `dashboard/components/GoalForm.tsx`, `app/(room)/goals/`.
 
@@ -157,7 +157,7 @@ out of the tool list so the tools and the measures share one copy), `templates/o
 
 ## Slice 3: Proposals
 
-**What Zak sees.**
+**What the owner sees.**
 
 - **Needs you** says "2 proposals from your heads" and opens **Proposals** (`/proposals`). The
   Approvals item in the sidebar counts proposals too, and the Approvals page leads with a card for
@@ -174,13 +174,13 @@ out of the tool list so the tools and the measures share one copy), `templates/o
     **Retire Rowan**, **Close the Follow-ups seat**), with a confirm. Off while a check fails.
   - **Change it first** (hires): the builder with everything filled in and the seat picked. Creating
     the agent there says yes to the proposal (and makes the new seat, if it asked for one).
-  - **Not now…** asks why. Words become a 30-day note for the head that asked ("Zak said not now to
+  - **Not now…** asks why. Words become a 30-day note for the head that asked ("The owner said not now to
     …"), so it doesn't ask again for the same reason next run.
 - **Crew > Org chart:** a seat with a proposal waiting shows "Proposal · Hire Tate for Follow-ups"
   (on the open seat, or on the head's seat when the hire asks for a new seat under it). An open
   seat with a waiting hire opens the proposal instead of the builder.
 
-**How a head proposes.** A new report tool, **Propose to Zak** (`propose`, Agents group in builder
+**How a head proposes.** A new report tool, **Propose to the owner** (`propose`, Agents group in builder
 step 2), offered only to a department head or the company seat (`seat: "head"`, from the chart;
 the tool checks the chart again when it saves). The model hands one proposal per call, at most 3 a
 run; each is checked in code like any report row (`planProposal`) and saved only after a run that
@@ -205,12 +205,12 @@ judgment, **thinking** (Sonnet, medium, $0.25). A hire gets 12 steps.
 **What it never does.** A proposal is words and choices from lists in code; it does nothing by
 itself. It can never hand out an action (refused when filed, and again at the tap: actions are
 granted in code only). A head can't propose tools for itself or its own retirement, can't close a
-head seat, and reaches only its own department. Every check runs again at Zak's tap against the
+head seat, and reaches only its own department. Every check runs again at the owner's tap against the
 chart and tool list as they are then. Nothing here runs, sends or spends, so it needs the login
 only (no Controls).
 
 **Data.** Migration `20261122090000_proposals.sql` (the `proposals` table: kind, title, source agent
-/ claude / zak, from_agent, department, run, the checked plan as `payload`, why, state pending /
+/ claude / owner, from_agent, department, run, the checked plan as `payload`, why, state pending /
 accepted / declined / built / failed, outcome, result_ref, decided_at). Until it's applied, the
 Proposals page says so and the tool refuses to save.
 
@@ -221,15 +221,15 @@ Proposals page says so and the tool refuses to save.
 `dashboard/proposalActions.ts`, `dashboard/components/proposals.tsx`, `app/(room)/proposals/`,
 `/build/new?proposal=`.
 
-**What it replaces.** The /one-two-new-agent skill's direct inserts into `agents`, `agent_defs` and
-`seats`: it now files a pending proposal (source `claude`) that Zak decides here. New agent on Crew
-stays the builder: it is already the blank form, and Zak's own tap needs no proposal to approve.
+**What it replaces.** The outside new-agent skill's direct inserts into `agents`, `agent_defs` and
+`seats`: it now files a pending proposal (source `claude`) that the owner decides here. New agent on Crew
+stays the builder: it is already the blank form, and the owner's own tap needs no proposal to approve.
 
 **Checks.** `npm run check`, `npm run check:proposals`, `npm run check:org`, `npm run build`.
 
 ## Slice 4: Heads plan, review and set focus
 
-**What Zak sees.**
+**What the owner sees.**
 
 - **A goal's page** now has the head's week under the number:
   - **"Rico's plan, week of Nov 16"**: when it was written (and the run, to react to), the head's
@@ -256,7 +256,7 @@ plans no department):
 - **Plan and review** (`plan_week`, report): the model hands one line per job (title, who, words),
   at most 8, each checked in code (no links, addresses or phone numbers). Saved after a run that
   finishes: with lines, the run's result is the plan and each line is matched to the chart (a
-  teammate under the head, an open seat in its department, or Zak; anyone else is left out and
+  teammate under the head, an open seat in its department, or the owner; anyone else is left out and
   the run summary says why). A teammate's line becomes a `focus` memory note for 7 days, replacing
   its earlier focus. Planning again the same week replaces the plan. With no lines and a plan this
   week, the result is saved as the review; with no plan yet, as the plan's words.
@@ -267,14 +267,14 @@ Monday morning schedule and chain it after its team to get the review.
 
 **Heads to Sonnet (decision 5).** After the migration, each head (Rico, Marlow, Sloane, Morgan) gets
 a new **draft** version: Sonnet, medium effort, $0.75 cap a run, with Goal progress, This week,
-Plan and review and Propose to Zak added and a paragraph in its job on planning and reviewing. Avery
-gets a draft without the "one line per department" paragraph. Nothing changes until Zak taps Try
+Plan and review and Propose to the owner added and a paragraph in its job on planning and reviewing. Avery
+gets a draft without the "one line per department" paragraph. Nothing changes until an approver taps Try
 it and Go live on each.
 
 **What it never does.** A plan grants nothing. A focus is a memory note: it never overrides a rule,
 adds a recipient, raises a cap or grants access, and it can't hold a link, an address or a phone
-number. A head can't give a focus to anyone outside its team, and a job for Zak is a suggestion he
-marks done. Heads still have no action tools. Nothing here runs, sends or spends.
+number. A head can't give a focus to anyone outside its team, and a job for the owner is a suggestion they
+mark done. Heads still have no action tools. Nothing here runs, sends or spends.
 
 **Data.** Migration `20261123090000_plans.sql`: the `plans` table (department, head, week, words,
 lines as `items`, review, the runs that wrote them; one per department per week) and two values on
@@ -297,7 +297,7 @@ has its own place.
 
 ## Slice 5: Avery, the front door, and the Desk
 
-**What Zak sees.**
+**What the owner sees.**
 
 - **The Desk** is home (`/`, "Desk" in the sidebar). A greeting and one line counted in code ("Two
   goals on track, one behind, one can't be measured yet. Three proposals need you."), the goal
@@ -307,12 +307,12 @@ has its own place.
   default on the Desk, a tab to open it elsewhere (the browser remembers open or closed). On a phone
   it's a bar at the bottom ("Ask Avery, or tell her something") that opens a full sheet. Starters:
   What needs me today?, How are the goals?, Hire someone, What are the heads planning this week?
-- **What she can do.** Answer from the company's data. **Save a rule** Zak dictates, for an agent,
+- **What she can do.** Answer from the company's data. **Save a rule** The owner dictates, for an agent,
   a department or everyone, always in his own words. **File a proposal** (hire, grant a read tool,
   new tool, retire), which waits on Proposals like a head's. Under her reply, code says what it
   actually saved ("Saved for Rowan in your words: “Skip chains.” Undo on the Memory tab.", "Filed for
   you to decide: Hire Tate for Follow-ups. It waits on Proposals."). Each reply links to its run.
-- **What she can't do.** Run, start, stop or change an agent; send, buy or post. If Zak asks, she
+- **What she can't do.** Run, start, stop or change an agent; send, buy or post. If the owner asks, she
   says where in the Control Room to do it.
 
 **How it holds.**
@@ -324,12 +324,12 @@ has its own place.
   steps), her read and calculate tools, Goal progress, and three chat-only tools that exist nowhere
   in the builder's tool list: **The crew now** (seats, who's on duty, each agent's last run, this
   week's plans, proposals waiting), **Save a rule** and **File a proposal**.
-- A rule's words are checked in code against Zak's message (`inZaksWords`: case, quotes, spacing and
+- A rule's words are checked in code against the owner's message (`inOwnWords`: case, quotes, spacing and
   the closing full stop don't matter; other words are refused). Who it's for is matched against
   the chart (`resolveRuleWho`). It's saved with the same `saveRule` reactions use, so it's a memory
   line (a note, never authority) with Undo on the Memory tab.
 - A proposal goes through `fileProposal` with the company seat's reach (any department), checked
-  again at Zak's tap. At most 3 rules and 3 proposals from one message, saved only after a run that
+  again at the owner's tap. At most 3 rules and 3 proposals from one message, saved only after a run that
   finishes.
 - Her memory (her standing orders) is loaded read-only, like a try, so chat doesn't count down
   next-run notes. A chat reply isn't saved as her output, so no agent reads it as a report, and chat
@@ -339,7 +339,7 @@ has its own place.
 words, the run that answered, code's notes about what it saved). Until it's applied she still
 answers but the conversation isn't kept, and the panel says so.
 
-**Code.** `core/chat-rules.ts` (pure: `cleanMessage`, `inZaksWords`, `resolveRuleWho`, `deptNamed`,
+**Code.** `core/chat-rules.ts` (pure: `cleanMessage`, `inOwnWords`, `resolveRuleWho`, `deptNamed`,
 `chatPrompt`, `savedLines`), `core/avery-chat.ts` (`askAvery`, the chat tools, `chatHistory`,
 `askedIn` for the replay), `saveRule` in `core/reactions.ts`, the runner's `chat` and `prompt`
 options, `dashboard/chatActions.ts`, `dashboard/components/avery.tsx`, `dashboard/desk.ts` (the
@@ -347,19 +347,19 @@ greeting and summary line), the Desk page and the layout.
 
 **What it replaces.** The Today page: its live floor map, shift board, spend by agent, memory per
 agent and joining the crew are gone with `getMemoryMeters`, `leadsForRun`, `weekFrom` and their
-styles (each agent's page still has its map, schedule, spend and memory). The /one-two-new-agent
+styles (each agent's page still has its map, schedule, spend and memory). The outside new-agent
 skill retires: hiring is a proposal from Avery (or a head), and New agent on Crew stays the builder.
-The skill lives in Zak's Claude account, so he deletes it there.
+The skill lives in the owner's Claude account, so they delete it there.
 
 **Checks.** `npm run check`, `npm run check:chat`, `npm run check:runner`, `npm run build`.
 
 ## Slice 6: MCP connections, Klaviyo first
 
 **What it does.** The runner can now call an MCP server itself, through the same gate as every
-other tool. Klaviyo is the first. Zak taps **Connect Klaviyo** on Connections, says yes on
+other tool. Klaviyo is the first. An approver taps **Connect Klaviyo** on Connections, says yes on
 Klaviyo's own sign-in page, and four read tools become available in the builder: **Email lists**,
 **Email list size**, **Campaign results** and **Flow results**. The **Email list size** goal measure
-turns on: Zak picks the list it counts on the Klaviyo panel.
+turns on: the owner picks the list it counts on the Klaviyo panel.
 
 **Why our runner calls the server, not the model provider.** Calls made from our code pass the gate:
 the agent's saved tools, the run log, the budget and the untrusted label. A provider-side connector
@@ -381,7 +381,7 @@ would call the server where our gate can't see each call, and only for one model
 **Signing in.** Klaviyo's remote server signs in with OAuth only (dynamic client registration), so
 there is no key to paste. Connect follows MCP's auth spec: it finds the sign-in details
 (`/.well-known/oauth-protected-resource`, then the authorization server's metadata), registers the
-Control Room as a public client, and sends Zak to the server's page with PKCE (S256), a random
+Control Room as a public client, and sends the owner to the server's page with PKCE (S256), a random
 state and the `resource` the token is for. The state and verifier wait in a sealed, httpOnly cookie
 for 10 minutes. Back on `/connections/klaviyo/callback`, code checks the state, trades the code for
 tokens and keeps them in `mcp_connections`, encrypted with AES-256-GCM under a key made from the

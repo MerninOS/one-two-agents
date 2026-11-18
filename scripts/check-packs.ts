@@ -2,27 +2,32 @@
 import assert from "node:assert/strict";
 import { readFileSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
+import { packDirs, packTables } from "./lib/schema";
 
 const files = (d: string): string[] => readdirSync(d).flatMap((f) => { const p = join(d, f); return statSync(p).isDirectory() ? files(p) : /\.tsx?$/.test(f) ? [p] : []; });
 const importsOf = (f: string) => [...readFileSync(f, "utf8").matchAll(/from "([^"]+)"/g)].map((m) => m[1]);
 
 // Outside templates/, only the registration points import a pack, and only through templates/index.ts.
 const REGISTRATION = new Set(["core/tools/catalog.ts", "core/measures.ts", "core/install.ts"]);
+// The pure registry (Shopify reads, goal measure definitions) is listed by core's pure rules.
+const PURE_REGISTRATION = new Set(["core/shopify-queries.ts", "core/goal-rules.ts"]);
 const outside = ["core", "agents", "dashboard", "app", "integrations", "scripts"].flatMap(files).filter((f) => !f.startsWith("scripts/check-"));
-let registered = 0;
+let registered = 0, pure = 0;
 for (const f of outside) {
   for (const m of importsOf(f)) {
     if (!/^@\/templates(\/|$)|^\.\.\/templates\//.test(m)) continue;
     if (m === "@/templates/types") continue; // the shape of a pack, not a pack
+    if (m === "@/templates/registry") { assert.ok(PURE_REGISTRATION.has(f), `${f} imports @/templates/registry: only ${[...PURE_REGISTRATION].join(" and ")} list pure pack parts`); pure++; continue; }
     if (m === "@/templates") { assert.ok(REGISTRATION.has(f), `${f} imports @/templates: only ${[...REGISTRATION].join(" and ")} register packs`); registered++; continue; }
     assert.fail(`${f} reaches into a pack (${m}); go through templates/index.ts`);
   }
 }
 assert.equal(registered, REGISTRATION.size, "the tool list, the goal measures and the installer register packs");
+assert.equal(pure, PURE_REGISTRATION.size, "the Shopify tools and the goal picker list pure pack parts");
 assert.ok(!statSync("templates").isFile());
 for (const gone of ["domain", "agents/cfo", "agents/chief-of-staff", "agents/bookkeeper", "agents/wholesale-hunter", "core/green.ts", "integrations/shopify/lots.ts", "integrations/shopify/settings.ts", "integrations/shopify/stock.ts"]) {
   let there = true; try { statSync(gone); } catch { there = false; }
-  assert.ok(!there, `${gone} moved into templates/one-two`);
+  assert.ok(!there, `${gone} belongs in a template pack, not core`);
 }
 
 // A pack reaches core only through core's public pieces: it reads through callMcpTool like core
@@ -35,22 +40,33 @@ for (const f of files("templates")) {
   assert.doesNotMatch(readFileSync(f, "utf8"), /\b(callWriteTool|callCustomTool|callLocalTool)\b/, `${f} calls past the read path`);
 }
 
-// A pack's own tables are tenant tables like any other, and only the pack reads or writes them.
+// Every pack under templates/ (a folder with an index.ts). There may be none.
+const registry = readFileSync("templates/index.ts", "utf8"), pureRegistry = readFileSync("templates/registry.ts", "utf8");
+const catalog = readFileSync("core/tools/catalog.ts", "utf8");
+const ids = (s: string) => [...s.matchAll(/^\s+id: "([a-z_]+)"/gm)].map((m) => m[1]);
+const core = ids(catalog);
+assert.ok(core.length > 20, "found the core tool ids");
+assert.match(catalog, /\[\.\.\.TOOLS_LIST, \.\.\.packTools\(\)\]/, "the tool list adds pack tools");
 const tenancy = readFileSync("core/tenancy.ts", "utf8");
-const packTables = [...readFileSync("templates/one-two/index.ts", "utf8").matchAll(/tables: \[([^\]]*)\]/g)].flatMap((m) => [...m[1].matchAll(/"([a-z_]+)"/g)].map((x) => x[1]));
-assert.ok(packTables.length >= 4, "found the pack's tables");
-for (const t of packTables) {
-  assert.match(tenancy, new RegExp(`"${t}"`), `${t} is a pack table, so it needs a place in TENANT_TABLES`);
-  for (const f of outside) assert.doesNotMatch(readFileSync(f, "utf8"), new RegExp(`from\\("${t}"\\)`), `${f} reads ${t}, a pack table`);
+let tables = 0, tools = 0;
+const seenTools = new Set<string>();
+for (const d of packDirs()) {
+  assert.match(registry, new RegExp(`from "\\./${d}"`), `templates/${d} is a pack, so templates/index.ts registers it`);
+  assert.match(pureRegistry, new RegExp(`from "\\./${d}/`), `templates/${d} is a pack, so templates/registry.ts lists its pure parts`);
+  // A pack's own tables are tenant tables like any other, and only the pack reads or writes them.
+  const own = packTables(d);
+  for (const t of own) {
+    assert.match(tenancy, new RegExp(`"${t}"`), `${t} is a pack table, so it needs a place in TENANT_TABLES`);
+    for (const f of outside) assert.doesNotMatch(readFileSync(f, "utf8"), new RegExp(`from\\("${t}"\\)`), `${f} reads ${t}, a pack table`);
+  }
+  tables += own.length;
+  // Pack tool ids are unique and don't clash with core's (catalog.ts also refuses this at load).
+  let packSrc = ""; try { packSrc = readFileSync(join("templates", d, "tools.ts"), "utf8"); } catch { /* a pack with no tools */ }
+  for (const id of ids(packSrc)) {
+    assert.ok(!core.includes(id), `${id} is in core and templates/${d}`);
+    assert.ok(!seenTools.has(id), `${id} is in two packs`);
+    seenTools.add(id); tools++;
+  }
 }
 
-// Pack tool ids are unique and don't clash with core's (catalog.ts also refuses this at load).
-const catalog = readFileSync("core/tools/catalog.ts", "utf8"), pack = readFileSync("templates/one-two/tools.ts", "utf8");
-const ids = (s: string) => [...s.matchAll(/^\s+id: "([a-z_]+)"/gm)].map((m) => m[1]);
-const core = ids(catalog), one = ids(pack);
-assert.ok(core.length > 20 && one.length >= 10, "found the tool ids");
-for (const id of one) assert.ok(!core.includes(id), `${id} is in core and the pack`);
-assert.equal(new Set(one).size, one.length, "pack tool ids are unique");
-assert.match(catalog, /\[\.\.\.TOOLS_LIST, \.\.\.packTools\(\)\]/, "the tool list adds pack tools");
-
-console.log(`check:packs ok (${one.length} pack tools, ${packTables.length} pack tables, ${core.length} core tools)`);
+console.log(`check:packs ok (${packDirs().length} packs, ${tools} pack tools, ${tables} pack tables, ${core.length} core tools)`);

@@ -4,7 +4,7 @@
 >
 > **Nov 13, builder flow slice 6:** the setup store is retired too: every agent runs its live version on the shared engine, and `core/setup.ts`, the menus and `agent_setup` are gone.
 
-Design (approved by Zak 2026-11-12): https://claude.ai/artifact/WvLXFtHnHbd2J94j6vQhmb.
+Design (approved by the owner 2026-11-12): https://claude.ai/artifact/WvLXFtHnHbd2J94j6vQhmb.
 Epic on the Build Board: "EPIC: Customizable agents (Agent Setup + canvas editor)".
 
 The goal: every phase of an agent's loop (Trigger, Reads, Memory, Thinking, Guardrails, Writes)
@@ -27,7 +27,7 @@ A fourth label, Database, marks a value that is a row in Supabase but has no scr
 - **Menu** (`agents/<folder>/menu.ts`, listed in `agents/menus.ts`): what the agent is able to do.
   Its thinking step and the models that step may use, its fact sources, its outputs, every tuning
   number with a default, lowest and highest value, and the built-in instructions.
-- **Setup** (table `agent_setup`): what Zak picked from the menu. One row per version, one active
+- **Setup** (table `agent_setup`): what the owner picked from the menu. One row per version, one active
   per agent, with a note. `agent_runs.setup_version` records which version a run used
   (null = the menu's built-in defaults).
 
@@ -35,7 +35,7 @@ A fourth label, Database, marks a value that is a row in Supabase but has no scr
 
 - A value the menu doesn't offer (a model not on the step's list, a number outside its range, a
   key the agent doesn't have) is ignored, the default is used, and the run summary and the canvas
-  say so. Nothing is clamped into a value Zak didn't pick.
+  say so. Nothing is clamped into a value the owner didn't pick.
 - A setup that can't be read (table missing, Supabase down) never stops a run: the agent runs on
   the menu's defaults and the summary says so.
 - `withRun` loads the setup for real runs, next to memory, and passes it to the job. A dry run
@@ -50,7 +50,7 @@ A fourth label, Database, marks a value that is a row in Supabase but has no scr
 - Only models with a price in `integrations/anthropic.ts` may be listed in a menu, so cost is
   always computed in code. An agent refuses to run on a model (or fallback model) without a price
   before it reads or sends anything.
-- The safety block is locked. It lives in the agent's code (`templates/one-two/agents/chief-of-staff/prompt.ts`,
+- The safety block is locked. It lives in the agent's code (`core/runner.ts`,
   `SAFETY`), is sent first on every model call, and a setup can only replace the instructions
   after it. The canvas shows it so nothing is hidden.
 - Loosening means a costlier model, a costlier fallback or more effort. Saving or rolling back to
@@ -142,7 +142,7 @@ and Writes are saved together as one version.
   in `integrations/notion.ts`), so the app can't widen access. A database must have every column
   the Briefs row writes (`menu.notion.dbProps`); a page gets one new page per day under it. The
   server opens the target again on save. With no target picked, `NOTION_BRIEFS_DB_ID`, then
-  `NOTION_BRIEF_PARENT_ID`, still work, so nothing changes until Zak picks one.
+  `NOTION_BRIEF_PARENT_ID`, still work, so nothing changes until the owner picks one.
 - The email recipient is never a choice: `integrations/email.ts` has no recipient argument and
   sends to `BRIEF_TO`.
 - Gateway action types show read only in Writes, with their tier. Avery has none.
@@ -206,7 +206,7 @@ line tagged "Enforced in code":
 - Money and email caps, crew-wide (`policies`): per purchase, per calendar month, emails per day,
   undo window. Lowering applies right away (the undo window is the other way round: shorter is
   looser). Loosening needs a confirm and `DASHBOARD_CONTROLS=on`, and stops at the limit in code
-  (`CAPS` in `core/gateway/policy.ts`, today equal to Zak's starting values: $500, $1,500, 20,
+  (`CAPS` in `core/gateway/policy.ts`, today equal to the owner's starting values: $500, $1,500, 20,
   30 minutes). Every change is a row in `policy_log`. `effectiveCap` holds a row inside the code
   limit, so editing the table directly can't pass it either.
 - Instructions and standing orders never appear here, and trust levels aren't editable.
@@ -223,7 +223,7 @@ vendors list (add needs `DASHBOARD_CONTROLS=on`) and addresses that get no email
 
 `agents/<id>/menu.ts` for each, registered in `agents/menus.ts`; migration
 `20261113090000_setup_rowan_quinn_morgan.sql` seeds v1 for each with the values it already ran
-with, so nothing changes until Zak saves a v2. Every number's highest value is today's limit in
+with, so nothing changes until the owner saves a v2. Every number's highest value is today's limit in
 code, so a setup can make a run smaller and cheaper, never bigger.
 
 - Rowan (`wholesale_hunter`): one step, Claude only (Anthropic's web tools), no fallback in

@@ -212,7 +212,7 @@ const BOOK_STATUS: [string, string, string][] = [
 ];
 
 function BooksCard({ books }: { books: Books | null }) {
-  if (!books) return <div className="card" style={{ gap: 8 }}><span className="card-t">Receipts</span><span className="muted" style={{ fontSize: 13.5, lineHeight: 1.5 }}>The expense_docs table isn’t there yet. Apply the bookkeeper migration to the one-two-agents Supabase project.</span></div>;
+  if (!books) return <div className="card" style={{ gap: 8 }}><span className="card-t">Receipts</span><span className="muted" style={{ fontSize: 13.5, lineHeight: 1.5 }}>The expense_docs table isn’t there yet. Apply the bookkeeper migration to your Supabase project.</span></div>;
   const shown = BOOK_STATUS.filter(([k]) => books.statuses[k]);
   return (
     <div className="card" style={{ gap: 12 }}>

@@ -1,6 +1,6 @@
 # Every integration over MCP
 
-Design: https://claude.ai/artifact/8SWRasPZ2DPeoxQBiSHhBg (approved by Zak, Nov 15 2026).
+Design: https://claude.ai/artifact/8SWRasPZ2DPeoxQBiSHhBg (approved by the owner, Nov 15 2026).
 Build Board: Orders 90 (design) to 98.
 
 The runner speaks only MCP. Each server has a profile in code (`core/mcp-rules.ts`): its address,
@@ -22,7 +22,7 @@ JSON-RPC `tools/call` over the tool list, crossing as JSON, read back with the s
 (`callTool`, `listTools`): the runner's explore and playbook steps, the playbook dry run and the
 builder's tool check. The server serves only tools that read or work numbers out (not reports,
 actions or Claude's own web tools), checks every input again, passes the caller's context in
-`_meta["one-two/ctx"]`, and drops numbers that aren't finite. A tool's error comes back as it was.
+`_meta["operator/ctx"]`, and drops numbers that aren't finite. A tool's error comes back as it was.
 `npm run check:mcp` fails if anything else calls a tool's `run`.
 
 Report and action tools stay out of MCP on purpose: code delivers reports after a run, and
@@ -40,7 +40,7 @@ actions are staged for the gateway.
 | Token values never reach a saved error, the log or the browser | `scrubSecrets` |
 | Requests carrying a code, token or client secret never follow a redirect; only discovery documents do | `fetchJson`, `rpc` |
 | A rotated refresh token replaces the old one at once | `readTokens` |
-| A failed renewal or a 401/403 pauses the connection (`paused_at`) until Zak signs in again | `pause`, `accessToken` |
+| A failed renewal or a 401/403 pauses the connection (`paused_at`) until the owner signs in again | `pause`, `accessToken` |
 | Disconnect asks the server to cancel the sign-in (RFC 7009) where it has a revoke address, then forgets it | `disconnectMcp` |
 | Sign-in log without token values: connected, refreshed, refresh_failed, refused, revoked, revoke_failed, disconnected, resealed | `mcp_connection_events` |
 
@@ -62,11 +62,11 @@ for, its read tools, its write tools with the gateway action type each becomes (
 who should sign in. Only a pull request changes a profile; a business only connects its account.
 The Connections page and the floor's health read every server from this registry.
 
-The tool check: when Zak signs in, the server's `tools/list` is fingerprinted (each read tool's
+The tool check: when the owner signs in, the server's `tools/list` is fingerprinted (each read tool's
 input schema, key order ignored) and saved in `mcp_connections.tools_seen`. Before a call, at most
 every `TOOL_CHECK_HOURS` (6), the list is compared again (`checkTools`). A read tool that's gone or
 whose inputs changed pauses the server with a note saying which, logged as `tools_changed`, until
-Zak looks and signs in again, which accepts the tools as they are then.
+The owner looks and signs in again, which accepts the tools as they are then.
 
 Migration: `supabase/migrations/20261127090000_mcp_tool_check.sql` (`tools_seen`,
 `tools_checked_at`, two new log events). The code reads the new columns, so apply it before merging.
@@ -77,16 +77,16 @@ Notion's hosted MCP server signs in with OAuth as a person, reaches everything t
 and has no read-only switch. So Notion runs on our own MCP server, in the app
 (`integrations/notion-server.ts`), over Notion's REST API (`integrations/notion-api.ts`) with the
 agents' internal integration key. That key sees only the pages and databases shared with the
-integration (Zak's choice, 2026-11-16).
+integration (the owner's choice, 2026-11-16).
 
-- The profile (`MCP_SERVERS.notion`) has `auth: "token"`: Zak pastes the integration's key once on
+- The profile (`MCP_SERVERS.notion`) has `auth: "token"`: the owner pastes the integration's key once on
   Connections. `saveMcpKey` checks its shape (`looksLikeNotionKey`), asks Notion whose it is
   (`users/me`, must be a bot), and seals it in the vault. It is never shown again. `NOTION_TOKEN`
   is gone from the code and should be deleted in Vercel.
 - Two read tools agents may be granted: `notion_page_text` and `notion_row_on`.
 - Four report tools (`reportTools`, `mayReport`): `notion_create_page`, `notion_create_row`,
-  `notion_update_row`, `notion_archive_row`. These write report pages and rows into One Two's own
-  workspace, like an email to Zak. Code calls them after a run (briefs, books pages, lead lists,
+  `notion_update_row`, `notion_archive_row`. These write report pages and rows into the business's own
+  workspace, like an email to the owner. Code calls them after a run (briefs, books pages, lead lists,
   Build Board cards). A model never calls one, and a hosted server can never have them.
 - Every call goes through `callLocalTool` in `integrations/mcp.ts`. It opens the key for that call,
   sends a JSON-RPC `tools/call` to the server as JSON, and reads the reply with the same code that
@@ -131,7 +131,7 @@ No migration.
 
 ## Slice 5b: gateway writes on their own Mercury sign-in
 
-Zak's choice (2026-11-16): split the write. Mercury's MCP server can set a charge's category and
+The owner's choice (2026-11-16): split the write. Mercury's MCP server can set a charge's category and
 memo (`updateTransaction`, scope `transactions:update`). It can't attach a file to a chosen charge:
 `createReceiptUploadUrl` + `matchReceipt` upload a receipt and let Mercury's OCR pick the charge,
 and there is no way to undo a wrong match. So:
@@ -139,15 +139,15 @@ and there is no way to undo a wrong match. So:
 - **Category and memo** go through a second sign-in to the same server, `MCP_SERVERS.mercury_write`.
   It asks for `transactions:update` and `offline_access` only, with no payment, transfer, receipt,
   budget or reimbursement scope. Its one write tool is `updateTransaction`, and it has no read
-  tools. Zak connects it under Connections → Mercury → Mercury writes.
+  tools. The owner connects it under Connections → Mercury → Mercury writes.
 - **Receipt files** stay on `MERCURY_WRITE_TOKEN` (`integrations/mercury-write.ts`, now
-  `attachReceipt` only), attached to the exact charge Zak approved.
+  `attachReceipt` only), attached to the exact charge an approver approved.
 - `callWriteTool` in `integrations/mcp.ts` calls only a profile's write tools. Lint lets only
   `core/gateway` import it, and `check:mcp` checks that too. The gateway still re-checks the
   charge live (through the read sign-in) before writing, and checks that both ways in are set up
   before it writes anything, so a change never lands half done.
 - The tool check watches write tools as well (`checkedTools`): if `updateTransaction` changes its
-  inputs, the write sign-in pauses until Zak signs in again.
+  inputs, the write sign-in pauses until the owner signs in again.
 
 No migration.
 
@@ -171,9 +171,9 @@ in the app, like Notion:
   - `gmail_read` ("Gmail (read only)"): `gmail.readonly` alone. Quinn's receipt search
     (`integrations/gmail-read.ts`, through `callMcpTool`).
   - `gmail` ("Gmail drafts"): `gmail.compose` alone, one write tool, `gmail_create_draft`. Only the
-    gateway uses it (`callWriteTool`), after Zak approves a draft; the address always comes from
-    the lead's row. Zak sends every email from Gmail.
-- **Signing in:** Connect sends Zak to Google's own page with One Two's OAuth client
+    gateway uses it (`callWriteTool`), after an approver approves a draft; the address always comes from
+    the lead's row. The owner sends every email from Gmail.
+- **Signing in:** Connect sends the owner to Google's own page with the business's OAuth client
   (`GMAIL_CLIENT_ID`), PKCE, `access_type=offline` and `prompt=consent`. Google's addresses are fixed
   in code (`GOOGLE_AUTH`); there is no discovery or registration. The client secret stays in Vercel
   (`GMAIL_CLIENT_SECRET`) and is never put in the vault, the cookie or the browser. After the code is
@@ -181,7 +181,7 @@ in the app, like Notion:
   an older grant riding along, cancels the sign-in at Google and nothing is kept. The mailbox it
   belongs to is read and shown on Connections. A token Google stops accepting pauses the sign-in.
 - **Disconnect** cancels the refresh token at Google. Both sign-ins use the same OAuth client, so
-  Google may cancel the other one too; it then shows Paused and Zak signs it in again.
+  Google may cancel the other one too; it then shows Paused and the owner signs it in again.
 - The tool check doesn't run for our own servers: their tools are in this repo.
 - Removed: `GMAIL_REFRESH_TOKEN` and `GMAIL_RECEIPTS_REFRESH_TOKEN` (their refresh tokens are now in
   the vault), `accessToken` and the REST calls in `integrations/gmail.ts` and `gmail-read.ts`.
@@ -198,9 +198,11 @@ No migration.
 Shopify's own MCP servers are for storefronts and building apps, not a read-only Admin view of one
 store, so Shopify runs on our own server in the app, like Notion and Gmail:
 
-- **`core/shopify-queries.ts`** (pure) holds every query that may run, one per tool, and builds each
-  tool's variables from checked inputs (`shopifyVariables`). No tool takes GraphQL or a search
-  string: the green-lot search and the stock collection are fixed in code and settings, dates must
+- **`core/shopify-rules.ts`** (pure) holds the rules and core's queries (a day's orders); a template
+  pack adds its own fixed queries in its code, listed in `templates/registry.ts`.
+  **`core/shopify-queries.ts`** lists them all, one per tool, and builds each tool's variables from
+  checked inputs (`shopifyVariables`). No tool takes GraphQL or a search string: a pack's searches
+  and settings are fixed in its code, dates must
   be `YYYY-MM-DD`, cursors must look like cursors. `assertReadOnly` refuses anything but a single
   named query, and `scripts/validate-graphql.mjs` still checks every document against Shopify's
   schema. Order reads carry no customer names, emails or addresses.
@@ -229,7 +231,7 @@ No migration.
   (`integrations/mercury-files-server.ts`) with one write tool, `mercury_attach_receipt`. It is
   checked on paste (shape, and Mercury must not answer 401). `integrations/mercury-write.ts` is
   gone. Vercel settings now hold only the app's own infrastructure (Supabase, Claude, Resend for
-  emails to Zak, `MCP_SECRET_KEY`, Google's OAuth client) and non-secret ids; `check:mcp` fails if
+  emails to the owner, `MCP_SECRET_KEY`, Google's OAuth client) and non-secret ids; `check:mcp` fails if
   an old service token comes back into `core/env.ts`.
 - **One tool path.** Agents read through `callMcpTool`; code writes reports through report tools;
   every other write is a profile's write tool through `callWriteTool`, now on every kind of server

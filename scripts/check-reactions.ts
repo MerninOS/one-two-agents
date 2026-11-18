@@ -3,7 +3,6 @@
 import assert from "node:assert/strict";
 
 import { MAX_REACTION, canReplace, planReaction, savedWords, tally, tallyWords } from "../core/reaction-rules";
-import { replyUrl } from "../templates/one-two/agents/chief-of-staff/email";
 
 const ok = (r: ReturnType<typeof planReaction>) => { if ("error" in r) throw new Error(r.error); return r.plan; };
 const err = (r: ReturnType<typeof planReaction>) => ("error" in r ? r.error : null);
@@ -63,10 +62,5 @@ assert.equal(tallyWords({ good: 0, not: 0, said: [] }), null);
 assert.match(savedWords(p, "Rowan", "Sales"), /Rowan follows it from the next run/);
 assert.match(savedWords(d, "Rowan", "Sales"), /Everyone in Sales follows it/);
 assert.match(savedWords({ verdict: "good", text: null, rule: null }, "Rowan", null), /scorecard/);
-
-// the brief's "Not right? Tell Avery" link opens the run's reactions, only when both parts are known
-assert.equal(replyUrl({ dashboardUrl: "https://cr.example", runId: id }), `https://cr.example/runs/${id}#react`);
-assert.equal(replyUrl({ dashboardUrl: "https://cr.example" }), undefined);
-assert.equal(replyUrl({ runId: id }), undefined);
 
 console.log("reaction rules: ok");

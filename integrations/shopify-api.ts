@@ -1,7 +1,7 @@
 import "server-only";
 // Shopify's Admin GraphQL API for our own Shopify MCP server (docs/mcp-everywhere.md, slice 7).
 // Every call takes the pasted key as an argument: integrations/mcp.ts opens it from the token vault
-// for each call. Only the documents in core/shopify-queries.ts run here, each checked to be a single
+// for each call. Only the documents listed in core/shopify-queries.ts run here, each checked to be a single
 // query first. Only integrations/shopify-server.ts imports this (lint enforces it).
 import { createHash } from "node:crypto";
 import { env } from "@/core/env";

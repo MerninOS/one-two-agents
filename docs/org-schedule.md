@@ -1,16 +1,16 @@
 # Turn on the org: Crew > Schedule
 
-Build Board card 100. Design (approved by Zak 2026-11-16): https://claude.ai/artifact/4KoN9VrHvJ48hiQJqQhrxB
+Build Board card 100. Design (approved by the owner 2026-11-16): https://claude.ai/artifact/4KoN9VrHvJ48hiQJqQhrxB
 
 ## Why
 
 Getting one agent to run on its own used to take three switches in two places: On the crew and
 Runs only by hand on its profile, then a chain on Crew > Schedule that is on. Pause all lived in
-Settings. Nothing showed when the whole org works or what it costs a month. Zak wants it to feel
+Settings. Nothing showed when the whole org works or what it costs a month. The owner wants it to feel
 like "turn on the org": one switch, a view of the org's day, Avery's morning brief as the anchor,
 and per-agent control over when each agent runs and what that costs.
 
-## Decisions (Zak, 2026-11-16)
+## Decisions (the owner, 2026-11-16)
 
 1. Both a one-tap org switch and per-agent controls.
 2. Each agent's schedule is a chain under the hood (a one-step chain of its own, or its step in a
@@ -21,7 +21,7 @@ and per-agent control over when each agent runs and what that costs.
    version) are left out of the org.
 5. It lives on Crew > Schedule.
 6. Each agent shows its cost per run and per month, and toggles between Scheduled and By hand, so
-   Zak controls what the org costs a month.
+   the owner controls what the org costs a month.
 
 ## The model
 
@@ -29,7 +29,7 @@ and per-agent control over when each agent runs and what that costs.
   `core/org-switch.ts`. A missing or unreadable row is off. While the org is off, nothing starts
   on its own: the dispatcher (`app/api/dispatch`) starts no scheduled chain, the worker
   (`app/api/jobs`) skips any step of a chain not started with Run chain, and a decided approval starts no chain (`approvalDecided`). The Run button and Run
-  chain still work for agents on duty, because Zak pressed them.
+  chain still work for agents on duty, because the owner pressed them.
 - **Turn on the org** (Controls on + a confirm that lists who wakes, each first run and the cost a
   month): every agent in the org goes on duty (`agents.enabled`), every chain whose agents are all
   in the org is saved on (one new `crew_flow` version), and then the flag turns on, last.
@@ -66,14 +66,14 @@ and per-agent control over when each agent runs and what that costs.
   and a confirm that says what runs and what it costs. Turning off always works.
 - A chain still never turns an agent on, and every run still goes through `withRun` (on duty,
   daily budget, department budget).
-- Nothing is turned on while building or testing this. The org stays off until Zak turns it on.
+- Nothing is turned on while building or testing this. The org stays off until the owner turns it on.
 
 ## Slice 2 as built
 
 - `dashboard/orgDay.ts` (pure): every agent in the org grouped as on the org chart (company seat,
   departments, then not on the chart), its schedule, next runs, cost a run and a month, and where its
   time falls in the day's window (4 AM to noon, stretched around the earliest and latest run). An
-  agent with a report tool that reaches Zak (`report_email_zak`, `report_morning_brief`) is marked
+  agent with a report tool that reaches the owner (`report_email_zak`, `report_morning_brief`) is marked
   "reports to you"; the first of them is the anchor on the timeline. No agent is named in code.
 - `core/flow-rules.ts` `withAgentTime` (pure): sets one agent's time or takes it to by hand, as a
   flow edit. By hand drops its step from every chain that starts on its own (a new first step takes

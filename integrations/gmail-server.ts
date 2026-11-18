@@ -31,7 +31,7 @@ export function gmailServer(profile: McpId, token: string) {
     if (req.jsonrpc !== "2.0" || typeof req.method !== "string") return { jsonrpc: "2.0", id, error: { code: -32600, message: "not a JSON-RPC 2.0 request" } };
     switch (req.method) {
       case "initialize":
-        return reply(id, { protocolVersion: MCP_PROTOCOL, capabilities: { tools: {} }, serverInfo: { name: "one-two-gmail", version: "1" } });
+        return reply(id, { protocolVersion: MCP_PROTOCOL, capabilities: { tools: {} }, serverInfo: { name: "operator-gmail", version: "1" } });
       case "tools/list":
         return reply(id, { tools: offered.map((name) => ({ name, description: DESCRIPTIONS[name].description, annotations: { readOnlyHint: DESCRIPTIONS[name].readOnly, destructiveHint: false, openWorldHint: true } })) });
       case "tools/call": {

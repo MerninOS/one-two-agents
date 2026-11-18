@@ -13,9 +13,9 @@
 import { MCP_PROTOCOL, parseRpc, toolPayload } from "@/core/mcp-rules";
 import { checkInput, inputSchema, paramsOf, type ToolCtx, type ToolDef, type ToolResult } from "./types";
 
-export const HOST_NAME = "one-two-tools";
+export const HOST_NAME = "operator-tools";
 /** Where the caller's context rides on a request (MCP's `_meta`): who is calling, and what the spec allows. */
-export const CTX_META = "one-two/ctx";
+export const CTX_META = "operator/ctx";
 
 type Rpc = { jsonrpc?: unknown; id?: unknown; method?: unknown; params?: unknown };
 type Json = Record<string, unknown>;

@@ -1,11 +1,12 @@
 // MCP connection rules (docs/company-mode.md, slice 6): `npm run check:mcp`. Pure: no network.
 import assert from "node:assert/strict";
 import { readFileSync, readdirSync, statSync } from "node:fs";
+import { migration } from "./lib/schema";
 import { join } from "node:path";
 import { CTX_META, callThrough, createHost, listThrough, served } from "../core/tools/mcp-host";
 import type { ToolDef } from "../core/tools/types";
 import { checkNotionArgs, looksLikeNotionKey, notionPageId } from "../core/notion-blocks";
-import { SHOPIFY_DOCS, WHO, assertReadOnly, shopifyKeyKind, shopifyVariables, writeScopes } from "../core/shopify-queries";
+import { SHOPIFY_DOCS, SHOPIFY_QUERIES, WHO, assertReadOnly, shopifyKeyKind, shopifyVariables, writeScopes } from "../core/shopify-queries";
 import { checkGmailArgs, draftRaw, isPlainAddress, readMail } from "../core/gmail-rules";
 import { checkReceiptArgs, looksLikeMercuryToken } from "../core/mercury-rules";
 import { cashOf, readAccounts, readCategories, readOneTxn, readOrgName, readTxnPage } from "../core/mercury-rules";
@@ -144,8 +145,8 @@ for (const bad of ["eyJhbGciOi.abc", "rt_123456789", "abcdefghijkl12", "xyz789",
 assert.ok(clean.includes("state=s") && clean.includes("401"), "the rest stays readable");
 assert.deepEqual([...MCP_EVENTS].sort(), ["connected", "disconnected", "refresh_failed", "refreshed", "refused", "resealed", "revoke_failed", "revoked", "tools_changed", "tools_checked", "added", "tool_on", "tool_off", "paused", "resumed", "tools_accepted"].sort());
 // the log's database check lists the same events
-const lastSql = readFileSync("supabase/migrations/20261130090000_custom_mcp_servers.sql", "utf8");
-for (const e of MCP_EVENTS) assert.ok(lastSql.includes(`'${e}'`), `migration allows ${e}`);
+const lastSql = migration("20261130090000_custom_mcp_servers.sql"); // check:baseline checks the events in the public repo
+if (lastSql) for (const e of MCP_EVENTS) assert.ok(lastSql.includes(`'${e}'`), `migration allows ${e}`);
 
 // ---- profiles and the tool check (slice 3)
 for (const srv of Object.values(MCP_SERVERS) as McpServer[]) {
@@ -260,17 +261,17 @@ assert.equal(shopifyKeyKind("shpat_" + "a1".repeat(16)), "token");
 assert.equal(shopifyKeyKind("shpss_" + "b2".repeat(16)), "secret");
 assert.equal(shopifyKeyKind("ntn_short"), null);
 assert.equal(shopifyKeyKind("shpat_abc def"), null);
-assert.deepEqual(shopifyVariables("shopify_green_lots", { query: "status:any" }, "our-coffees"), { tool: "shopify_green_lots", variables: { query: "tag:blended-green AND -status:archived" } }, "a caller never writes the search");
-assert.deepEqual(shopifyVariables("shopify_stock_coffees", { handle: "secret-drops" }, "our-coffees"), { tool: "shopify_stock_coffees", variables: { handle: "our-coffees" } }, "the collection comes from settings");
-assert.deepEqual(shopifyVariables("shopify_board_orders", { since: "2026-08-18" }, "x"), { tool: "shopify_board_orders", variables: { query: "tag:blended created_at:>=2026-08-18", after: null } });
-const btw = shopifyVariables("shopify_orders_between", { start: "2026-11-15", end: "2026-11-16", after: "eyJsYXN0X2lkIjo1fQ==" }, "x");
+const ctx = { stockCollection: "" };
+const btw = shopifyVariables("shopify_orders_between", { start: "2026-11-15", end: "2026-11-16", after: "eyJsYXN0X2lkIjo1fQ==" }, ctx);
 assert.ok(!("problem" in btw) && /created_at:>='2026-11-15T00:00:00-06:00' created_at:<'2026-11-16T00:00:00-06:00'/.test(String(btw.variables.query)) && btw.variables.after === "eyJsYXN0X2lkIjo1fQ==");
 for (const [tool, args, why] of [
-  ["shopify_recent_orders", { since: "2026-11-01 OR tag:x" }, /since/],
-  ["shopify_board_orders", { since: "2026-11-01", after: "x' OR '1" }, /after/],
   ["shopify_orders_between", { start: "2026-11-16", end: "2026-11-15" }, /end after start/],
+  ["shopify_orders_between", { start: "2026-11-15", end: "2026-11-16", after: "x' OR '1" }, /after/],
+  ["shopify_orders_between", { start: "2026-11-15 OR tag:x", end: "2026-11-16" }, /start and end/],
   ["shopify_graphql", { query: "{ shop { name } }" }, /isn't a Shopify tool/],
-] as const) { const r = shopifyVariables(tool, args, "our-coffees"); assert.ok("problem" in r && why.test(r.problem), tool); }
+] as const) { const r = shopifyVariables(tool, args, ctx); assert.ok("problem" in r && why.test(r.problem), tool); }
+// every tool, core's or a pack's, is named shopify_… and has an input schema and a description
+for (const q of SHOPIFY_QUERIES) assert.ok(q.description.length > 20 && q.inputSchema && /^shopify_/.test(q.tool), q.tool);
 
 // ---- Gmail on our own server, signed in with Google (slice 6)
 const RO = "https://www.googleapis.com/auth/gmail.readonly", COMPOSE = "https://www.googleapis.com/auth/gmail.compose";
@@ -350,7 +351,7 @@ const hostChecks = (async () => {
   assert.deepEqual(list.map((t) => t.name), ["lots", "math"], "only reads and calculations are listed");
   assert.equal(list[0].annotations.readOnlyHint, true);
   assert.deepEqual(await host({ jsonrpc: "2.0", id: 5, method: "resources/list" }), { jsonrpc: "2.0", id: 5, error: { code: -32601, message: "no method resources/list" } });
-  assert.equal(CTX_META, "one-two/ctx");
+  assert.equal(CTX_META, "operator/ctx");
 })();
 
 // only the in-app server runs a tool's code: nothing else calls `.run(` on a tool
@@ -433,9 +434,8 @@ hostChecks.then(() => console.log("mcp: ok"), (e) => { console.error(e); process
 // custom servers: the table exists in a migration, the client checks addresses before every request,
 // and nothing outside integrations/mcp.ts reaches a custom server
 {
-  const sql = readFileSync("supabase/migrations/20261130090000_custom_mcp_servers.sql", "utf8");
-  assert.match(sql, /create table mcp_custom_servers/);
-  assert.match(sql, /enable row level security/);
+  const sql = migration("20261130090000_custom_mcp_servers.sql");
+  if (sql) { assert.match(sql, /create table mcp_custom_servers/); assert.match(sql, /enable row level security/); }
   const client = readFileSync("integrations/mcp.ts", "utf8");
   assert.match(client, /if \(custom\) await assertPublic\(p\.url\)/, "every session with a custom server checks its address first");
   assert.match(client, /redirect: strict \? "error" : "follow"/, "a custom server's discovery never follows a redirect");
@@ -449,7 +449,7 @@ hostChecks.then(() => console.log("mcp: ok"), (e) => { console.error(e); process
   const odd = C.customToolId("c_ab12cd34", "posthog/query.insights");
   assert.ok(C.isCustomToolId(odd) && /^[a-zA-Z0-9_-]{1,128}$/.test(odd), "fits the Claude API's tool name rule");
   assert.notEqual(odd, C.customToolId("c_ab12cd34", "posthog_query_insights"), "names made safe never collide with a name already safe");
-  assert.ok(!C.isCustomToolId("shopify_green_lots") && !C.isCustomToolId("c_ab12cd34") && C.serverOfToolId("klaviyo_lists") === null);
+  assert.ok(!C.isCustomToolId("shopify_orders_between") && !C.isCustomToolId("c_ab12cd34") && C.serverOfToolId("klaviyo_lists") === null);
 
   const inputs = C.readInputs({ type: "object", properties: { project_id: { type: "string" }, days: { type: "integer" }, live: { type: "boolean" }, kind: { type: "string", enum: ["trends", "funnels"] }, ids: { type: "array" } }, required: ["project_id"] });
   const params = C.customParams(inputs, { project_id: "123" });

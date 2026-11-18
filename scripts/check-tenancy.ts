@@ -4,6 +4,7 @@ import { readFileSync, readdirSync } from "node:fs";
 import { createPublicKey, generateKeyPairSync, verify } from "node:crypto";
 import { REFRESH_MS, TOKEN_MS, orgToken, parseSigningKey } from "../core/org-token";
 import { join } from "node:path";
+import { hasHistory } from "./lib/schema";
 import { HOME_ORG_ID, ORGS_TABLE, TENANT_TABLES, conflictColumns, currentOrgId, scopeClient, stampRows, updateValues, withOrg } from "../core/tenancy";
 
 const OTHER = "0e1a7c4e-0002-4000-8000-000000000002";
@@ -115,7 +116,7 @@ assert.throws(() => updateValues({ org_id: OTHER }, HOME_ORG_ID), /can't be chan
   assert.deepEqual({ role: claims.role, aud: claims.aud, sub: claims.sub, org_id: claims.org_id }, { role: "authenticated", aud: "authenticated", sub: OTHER, org_id: OTHER });
   assert.equal(exp, now + TOKEN_MS);
   assert.ok(REFRESH_MS < TOKEN_MS);
-  assert.throws(() => orgToken(k, "one-two", now), /uuid/);
+  assert.throws(() => orgToken(k, "not-a-uuid", now), /uuid/);
   assert.throws(() => parseSigningKey("nope"), /isn’t JSON/);
   assert.throws(() => parseSigningKey(JSON.stringify({ ...jwk, d: undefined })), /ES256 private key/);
   assert.throws(() => parseSigningKey(JSON.stringify({ ...jwk, kid: undefined })), /kid/);
@@ -123,7 +124,7 @@ assert.throws(() => updateValues({ org_id: OTHER }, HOME_ORG_ID), /can't be chan
 
 // the current org: home by default, withOrg for the work inside it (sync and async), nested, then restored
 assert.equal(currentOrgId(), HOME_ORG_ID);
-assert.throws(() => withOrg("one-two", () => 1), /uuid/);
+assert.throws(() => withOrg("not-a-uuid", () => 1), /uuid/);
 const asyncCheck = (async () => {
   const { calls, client } = fake();
   const db = scopeClient(client);
@@ -140,37 +141,40 @@ const asyncCheck = (async () => {
   ]);
 })();
 
-// every table the migrations create is a tenant table (or orgs); tables made after slice 1 carry org_id
-const dir = join(process.cwd(), "supabase/migrations");
-const files = readdirSync(dir).filter((f) => f.endsWith(".sql")).sort();
-const SLICE1 = "20261202090000_orgs.sql";
-assert.ok(files.includes(SLICE1), "tenancy migration present");
-const created = new Map<string, string>();
-const dropped = new Set<string>();
-for (const f of files) {
-  const sql = readFileSync(join(dir, f), "utf8").replace(/--.*$/gm, "");
-  for (const m of sql.matchAll(/create table (?:if not exists )?(?:public\.)?([a-z_]+)\s*\(([\s\S]*?)\n\);/gi)) {
-    created.set(m[1], f);
-    dropped.delete(m[1]);
-    if (f > SLICE1) assert.match(m[2], /\borg_id\s+uuid\s+not null\b[^,]*references orgs/i, `${f}: table ${m[1]} needs org_id uuid not null references orgs`);
+// The migration history (the public repo ships only the baseline: check:baseline covers it there)
+if (hasHistory) {
+  // every table the migrations create is a tenant table (or orgs); tables made after slice 1 carry org_id
+  const dir = join(process.cwd(), "supabase/migrations");
+  const files = readdirSync(dir).filter((f) => f.endsWith(".sql")).sort();
+  const SLICE1 = "20261202090000_orgs.sql";
+  assert.ok(files.includes(SLICE1), "tenancy migration present");
+  const created = new Map<string, string>();
+  const dropped = new Set<string>();
+  for (const f of files) {
+    const sql = readFileSync(join(dir, f), "utf8").replace(/--.*$/gm, "");
+    for (const m of sql.matchAll(/create table (?:if not exists )?(?:public\.)?([a-z_]+)\s*\(([\s\S]*?)\n\);/gi)) {
+      created.set(m[1], f);
+      dropped.delete(m[1]);
+      if (f > SLICE1) assert.match(m[2], /\borg_id\s+uuid\s+not null\b[^,]*references orgs/i, `${f}: table ${m[1]} needs org_id uuid not null references orgs`);
+    }
+    for (const m of sql.matchAll(/drop table (?:if exists )?(?:public\.)?([a-z_]+)/gi)) dropped.add(m[1]);
   }
-  for (const m of sql.matchAll(/drop table (?:if exists )?(?:public\.)?([a-z_]+)/gi)) dropped.add(m[1]);
-}
-const live = [...created.keys()].filter((t) => !dropped.has(t) && t !== ORGS_TABLE).sort();
-assert.deepEqual(live, [...TENANT_TABLES].sort(), "TENANT_TABLES lists exactly the tables the migrations leave");
-const slice1 = readFileSync(join(dir, SLICE1), "utf8");
-// tables from before slice 1 got org_id there; later ones carry it in their own create table (checked above)
-for (const t of TENANT_TABLES) if ((created.get(t) ?? "") < SLICE1) assert.ok(slice1.includes(`'${t}'`), `slice 1 adds org_id to ${t}`);
+  const live = [...created.keys()].filter((t) => !dropped.has(t) && t !== ORGS_TABLE).sort();
+  assert.deepEqual(live, [...TENANT_TABLES].sort(), "TENANT_TABLES lists exactly the tables the migrations leave");
+  const slice1 = readFileSync(join(dir, SLICE1), "utf8");
+  // tables from before slice 1 got org_id there; later ones carry it in their own create table (checked above)
+  for (const t of TENANT_TABLES) if ((created.get(t) ?? "") < SLICE1) assert.ok(slice1.includes(`'${t}'`), `slice 1 adds org_id to ${t}`);
 
-// slice 2b: every tenant table has the org_rows policy, from the policies migration or its own create
-const POLICIES = "20261204090000_org_policies.sql";
-assert.ok(files.includes(POLICIES), "policies migration present");
-const policySql = readFileSync(join(dir, POLICIES), "utf8");
-assert.match(policySql, /create policy org_self on orgs/);
-for (const t of TENANT_TABLES) {
-  const from = created.get(t) ?? "";
-  if (from < POLICIES) assert.ok(policySql.includes(`'${t}'`), `${POLICIES} adds org_rows to ${t}`);
-  else assert.match(readFileSync(join(dir, from), "utf8"), new RegExp(`create policy \\w+ on ${t}\\b[\\s\\S]*org_id = \\(select public\\.jwt_org_id\\(\\)\\)`), `${from}: ${t} needs a policy holding it to jwt_org_id()`);
+  // slice 2b: every tenant table has the org_rows policy, from the policies migration or its own create
+  const POLICIES = "20261204090000_org_policies.sql";
+  assert.ok(files.includes(POLICIES), "policies migration present");
+  const policySql = readFileSync(join(dir, POLICIES), "utf8");
+  assert.match(policySql, /create policy org_self on orgs/);
+  for (const t of TENANT_TABLES) {
+    const from = created.get(t) ?? "";
+    if (from < POLICIES) assert.ok(policySql.includes(`'${t}'`), `${POLICIES} adds org_rows to ${t}`);
+    else assert.match(readFileSync(join(dir, from), "utf8"), new RegExp(`create policy \\w+ on ${t}\\b[\\s\\S]*org_id = \\(select public\\.jwt_org_id\\(\\)\\)`), `${from}: ${t} needs a policy holding it to jwt_org_id()`);
+  }
 }
 
 asyncCheck.then(() => console.log(`check:tenancy ok (${TENANT_TABLES.length} tenant tables)`), (e) => { console.error(e); process.exit(1); });

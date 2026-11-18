@@ -1,6 +1,6 @@
 # Every agent from data (Build Board card 57)
 
-Zak, Nov 14: an agent built in the app should behave exactly like the four that started in code, and
+The owner, Nov 14: an agent built in the app should behave exactly like the four that started in code, and
 nothing about an agent should be hard-coded. New integrations get added over time as shared tools
 any agent can use (`core/tools/catalog.ts`), never as code for one agent.
 
@@ -50,7 +50,7 @@ any agent can use (`core/tools/catalog.ts`), never as code for one agent.
 ## Memory
 
 Every agent run loads memory: its own lines, crew lines and its department's rules (`MEMORY_AGENTS`
-is gone). Engine runs don't leave working memory; anything an agent should keep, Zak teaches it as a
+is gone). Engine runs don't leave working memory; anything an agent should keep, the owner teaches it as a
 note or a standing order. Working memory a run does leave is stored as data, never notes
 (`KEEPS_WORKING` and `READS_OUTSIDE` are gone).
 

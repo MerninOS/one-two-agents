@@ -1,17 +1,18 @@
-# One Two Coffee Lab agents
+# OPERATOR
 
-Agents that help run One Two Coffee Lab (onetwocoffeelab.com). Next.js 16 app: agent API routes plus the Control Room dashboard (`dashboard/`,
-`app/(room)/`; see `docs/control-room.md`), deployed as the Vercel project `one-two-agents`, schedules (Vercel Schedules, not Cron Jobs) in `vercel.json`,
-state in the Supabase project `one-two-agents`. The storefront is a separate repo
-(`MerninOS/blended`); this repo never imports from it. See README.md for layout.
+A crew of AI agents for a small business, with an approval card between every agent and the outside
+world. Next.js 16 app: agent API routes plus the Control Room dashboard (`dashboard/`, `app/(room)/`;
+see `docs/control-room.md`), one schedule (`/api/dispatch`, in `vercel.json` or the self-host
+scheduler), state in Supabase. See README.md for layout.
+
+@templates/one-two/DEPLOY.md
 
 This version of Next.js has breaking changes from older versions: read the guide in
 `node_modules/next/dist/docs/` before writing framework code.
 
 ## Hard rules (from the agent system tech spec; never relax them in code)
 
-They hold for every business on OPERATOR. "The owner" is the business's owner (Zak, for One Two,
-the home org); "the business" is the org a run belongs to. "An approver" is the owner or a person
+They hold for every business on OPERATOR. "The owner" is the business's owner; "the business" is the org a run belongs to. "An approver" is the owner or a person
 the owner gave the approver role (`core/roles.ts`). A cap's start value is where every
 org begins and the most it can be set to (`CAPS` in `core/gateway/policy.ts`).
 
@@ -37,7 +38,9 @@ built, so no agent can send, pay or publish.
   (Mercury's MCP, scope `transactions:update` only), receipt files on the `mercury_files` key
   (our own server, attach only).
 - Shopify is read-only here: our own MCP server (`integrations/shopify-server.ts`), one fixed
-  query per tool (`core/shopify-queries.ts`), a key with any write scope is refused, and
+  read query per tool (core's in `core/shopify-rules.ts`; a template pack may add its own, each a
+  fixed read query in its code listed in `templates/registry.ts` and held to the same checks), a
+  key with any write scope is refused, and
   `scripts/validate-graphql.mjs` fails on any mutation. An agent that needs Shopify writes gets
   its own separately scoped app.
 - Email: first contact with a person who has never heard from the business is always Draft
@@ -88,7 +91,7 @@ built, so no agent can send, pay or publish.
   expired sign-in pauses until the owner signs in again. See `docs/mcp-everywhere.md`.
 - Every run goes through `withRun` so it is logged in `agent_runs` and respects
   `agents.enabled` and `agents.daily_budget_usd`.
-- Tenancy: every table has `org_id` (an org is a business; One Two is the home org). Every query
+- Tenancy: every table has `org_id` (an org is a business; the first one is the home org). Every query
   goes through `db()`, which scopes it to the current org (`core/tenancy.ts`): reads, updates and
   deletes are filtered by org, inserts are stamped, another org's row is refused. Only `core/db.ts`
   makes a Supabase client (lint enforces it), and a new table needs `org_id` and a place in

@@ -455,23 +455,6 @@ CREATE TABLE public.goals (
 );
 
 --
--- Name: home_office; Type: TABLE; Schema: public; Owner: -
---
-
-CREATE TABLE public.home_office (
-    tax_year smallint NOT NULL,
-    office_sqft numeric(8,1),
-    home_sqft numeric(8,1),
-    own_or_rent text,
-    costs_json jsonb DEFAULT '{}'::jsonb NOT NULL,
-    simplified_usd numeric(12,2),
-    actual_usd numeric(12,2),
-    updated_at timestamp with time zone DEFAULT now() NOT NULL,
-    org_id uuid NOT NULL,
-    CONSTRAINT home_office_own_or_rent_check CHECK ((own_or_rent = ANY (ARRAY['own'::text, 'rent'::text])))
-);
-
---
 -- Name: jobs; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -494,25 +477,6 @@ CREATE TABLE public.jobs (
     CONSTRAINT jobs_kind_check CHECK ((kind = 'chain_step'::text)),
     CONSTRAINT jobs_outcome_check CHECK ((length(outcome) <= 1000)),
     CONSTRAINT jobs_payload_check CHECK (((jsonb_typeof(payload) = 'object'::text) AND (length((payload)::text) <= 4000)))
-);
-
---
--- Name: kpi_snapshots; Type: TABLE; Schema: public; Owner: -
---
-
-CREATE TABLE public.kpi_snapshots (
-    date date NOT NULL,
-    revenue numeric(12,2) NOT NULL,
-    goods numeric(12,2) NOT NULL,
-    orders integer NOT NULL,
-    aov numeric(10,2),
-    repeat_rate numeric(5,4),
-    green_cost numeric(12,2),
-    green_margin numeric(5,4),
-    cash_usd numeric(14,2),
-    detail jsonb DEFAULT '{}'::jsonb NOT NULL,
-    created_at timestamp with time zone DEFAULT now() NOT NULL,
-    org_id uuid NOT NULL
 );
 
 --
@@ -823,38 +787,6 @@ CREATE TABLE public.status_alerts (
 );
 
 --
--- Name: tax_packets; Type: TABLE; Schema: public; Owner: -
---
-
-CREATE TABLE public.tax_packets (
-    tax_year smallint NOT NULL,
-    built_at timestamp with time zone,
-    receipt_coverage_pct numeric(5,2),
-    total_miles numeric(10,1),
-    mileage_usd numeric(12,2),
-    files_json jsonb DEFAULT '[]'::jsonb NOT NULL,
-    org_id uuid NOT NULL
-);
-
---
--- Name: trips; Type: TABLE; Schema: public; Owner: -
---
-
-CREATE TABLE public.trips (
-    id uuid DEFAULT gen_random_uuid() NOT NULL,
-    date date NOT NULL,
-    from_place text NOT NULL,
-    to_place text NOT NULL,
-    miles numeric(8,1) NOT NULL,
-    purpose text NOT NULL,
-    source text DEFAULT 'manual'::text NOT NULL,
-    linked_txn_id text,
-    created_at timestamp with time zone DEFAULT now() NOT NULL,
-    org_id uuid NOT NULL,
-    CONSTRAINT trips_miles_check CHECK ((miles > (0)::numeric))
-);
-
---
 -- Name: usage_ledger; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -1086,13 +1018,6 @@ ALTER TABLE ONLY public.goals
     ADD CONSTRAINT goals_pkey PRIMARY KEY (id);
 
 --
--- Name: home_office home_office_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.home_office
-    ADD CONSTRAINT home_office_pkey PRIMARY KEY (org_id, tax_year);
-
---
 -- Name: jobs jobs_org_id_dedupe_key_key; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -1105,13 +1030,6 @@ ALTER TABLE ONLY public.jobs
 
 ALTER TABLE ONLY public.jobs
     ADD CONSTRAINT jobs_pkey PRIMARY KEY (id);
-
---
--- Name: kpi_snapshots kpi_snapshots_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.kpi_snapshots
-    ADD CONSTRAINT kpi_snapshots_pkey PRIMARY KEY (org_id, date);
 
 --
 -- Name: mcp_connection_events mcp_connection_events_pkey; Type: CONSTRAINT; Schema: public; Owner: -
@@ -1259,20 +1177,6 @@ ALTER TABLE ONLY public.seats
 
 ALTER TABLE ONLY public.status_alerts
     ADD CONSTRAINT status_alerts_pkey PRIMARY KEY (org_id, key);
-
---
--- Name: tax_packets tax_packets_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.tax_packets
-    ADD CONSTRAINT tax_packets_pkey PRIMARY KEY (org_id, tax_year);
-
---
--- Name: trips trips_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.trips
-    ADD CONSTRAINT trips_pkey PRIMARY KEY (id);
 
 --
 -- Name: usage_ledger usage_ledger_org_id_run_id_kind_key; Type: CONSTRAINT; Schema: public; Owner: -
@@ -1533,12 +1437,6 @@ CREATE INDEX goals_department ON public.goals USING btree (department_id, state,
 CREATE INDEX goals_org_id_idx ON public.goals USING btree (org_id);
 
 --
--- Name: home_office_org_id_idx; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE INDEX home_office_org_id_idx ON public.home_office USING btree (org_id);
-
---
 -- Name: jobs_claimed; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -1555,12 +1453,6 @@ CREATE INDEX jobs_org_id_idx ON public.jobs USING btree (org_id);
 --
 
 CREATE INDEX jobs_waiting ON public.jobs USING btree (org_id, run_after) WHERE ((claimed_at IS NULL) AND (done_at IS NULL) AND (failed_at IS NULL));
-
---
--- Name: kpi_snapshots_org_id_idx; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE INDEX kpi_snapshots_org_id_idx ON public.kpi_snapshots USING btree (org_id);
 
 --
 -- Name: mcp_connection_events_by_connection; Type: INDEX; Schema: public; Owner: -
@@ -1705,24 +1597,6 @@ CREATE INDEX seats_org_id_idx ON public.seats USING btree (org_id);
 --
 
 CREATE INDEX seats_parent ON public.seats USING btree (parent_id);
-
---
--- Name: tax_packets_org_id_idx; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE INDEX tax_packets_org_id_idx ON public.tax_packets USING btree (org_id);
-
---
--- Name: trips_date; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE INDEX trips_date ON public.trips USING btree (date DESC);
-
---
--- Name: trips_org_id_idx; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE INDEX trips_org_id_idx ON public.trips USING btree (org_id);
 
 --
 -- Name: usage_ledger_org_agent_at; Type: INDEX; Schema: public; Owner: -
@@ -2020,25 +1894,11 @@ ALTER TABLE ONLY public.goals
     ADD CONSTRAINT goals_org_id_fkey FOREIGN KEY (org_id) REFERENCES public.orgs(id);
 
 --
--- Name: home_office home_office_org_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.home_office
-    ADD CONSTRAINT home_office_org_id_fkey FOREIGN KEY (org_id) REFERENCES public.orgs(id);
-
---
 -- Name: jobs jobs_org_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.jobs
     ADD CONSTRAINT jobs_org_id_fkey FOREIGN KEY (org_id) REFERENCES public.orgs(id);
-
---
--- Name: kpi_snapshots kpi_snapshots_org_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.kpi_snapshots
-    ADD CONSTRAINT kpi_snapshots_org_id_fkey FOREIGN KEY (org_id) REFERENCES public.orgs(id);
 
 --
 -- Name: mcp_connection_events mcp_connection_events_org_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
@@ -2230,20 +2090,6 @@ ALTER TABLE ONLY public.status_alerts
     ADD CONSTRAINT status_alerts_org_id_fkey FOREIGN KEY (org_id) REFERENCES public.orgs(id);
 
 --
--- Name: tax_packets tax_packets_org_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.tax_packets
-    ADD CONSTRAINT tax_packets_org_id_fkey FOREIGN KEY (org_id) REFERENCES public.orgs(id);
-
---
--- Name: trips trips_org_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.trips
-    ADD CONSTRAINT trips_org_id_fkey FOREIGN KEY (org_id) REFERENCES public.orgs(id);
-
---
 -- Name: usage_ledger usage_ledger_org_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -2387,22 +2233,10 @@ ALTER TABLE public.expense_docs ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.goals ENABLE ROW LEVEL SECURITY;
 
 --
--- Name: home_office; Type: ROW SECURITY; Schema: public; Owner: -
---
-
-ALTER TABLE public.home_office ENABLE ROW LEVEL SECURITY;
-
---
 -- Name: jobs; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
 ALTER TABLE public.jobs ENABLE ROW LEVEL SECURITY;
-
---
--- Name: kpi_snapshots; Type: ROW SECURITY; Schema: public; Owner: -
---
-
-ALTER TABLE public.kpi_snapshots ENABLE ROW LEVEL SECURITY;
 
 --
 -- Name: mcp_connection_events; Type: ROW SECURITY; Schema: public; Owner: -
@@ -2549,22 +2383,10 @@ CREATE POLICY org_rows ON public.expense_docs TO authenticated USING ((org_id = 
 CREATE POLICY org_rows ON public.goals TO authenticated USING ((org_id = ( SELECT public.jwt_org_id() AS jwt_org_id))) WITH CHECK ((org_id = ( SELECT public.jwt_org_id() AS jwt_org_id)));
 
 --
--- Name: home_office org_rows; Type: POLICY; Schema: public; Owner: -
---
-
-CREATE POLICY org_rows ON public.home_office TO authenticated USING ((org_id = ( SELECT public.jwt_org_id() AS jwt_org_id))) WITH CHECK ((org_id = ( SELECT public.jwt_org_id() AS jwt_org_id)));
-
---
 -- Name: jobs org_rows; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY org_rows ON public.jobs TO authenticated USING ((org_id = ( SELECT public.jwt_org_id() AS jwt_org_id))) WITH CHECK ((org_id = ( SELECT public.jwt_org_id() AS jwt_org_id)));
-
---
--- Name: kpi_snapshots org_rows; Type: POLICY; Schema: public; Owner: -
---
-
-CREATE POLICY org_rows ON public.kpi_snapshots TO authenticated USING ((org_id = ( SELECT public.jwt_org_id() AS jwt_org_id))) WITH CHECK ((org_id = ( SELECT public.jwt_org_id() AS jwt_org_id)));
 
 --
 -- Name: mcp_connection_events org_rows; Type: POLICY; Schema: public; Owner: -
@@ -2651,18 +2473,6 @@ CREATE POLICY org_rows ON public.seats TO authenticated USING ((org_id = ( SELEC
 CREATE POLICY org_rows ON public.status_alerts TO authenticated USING ((org_id = ( SELECT public.jwt_org_id() AS jwt_org_id))) WITH CHECK ((org_id = ( SELECT public.jwt_org_id() AS jwt_org_id)));
 
 --
--- Name: tax_packets org_rows; Type: POLICY; Schema: public; Owner: -
---
-
-CREATE POLICY org_rows ON public.tax_packets TO authenticated USING ((org_id = ( SELECT public.jwt_org_id() AS jwt_org_id))) WITH CHECK ((org_id = ( SELECT public.jwt_org_id() AS jwt_org_id)));
-
---
--- Name: trips org_rows; Type: POLICY; Schema: public; Owner: -
---
-
-CREATE POLICY org_rows ON public.trips TO authenticated USING ((org_id = ( SELECT public.jwt_org_id() AS jwt_org_id))) WITH CHECK ((org_id = ( SELECT public.jwt_org_id() AS jwt_org_id)));
-
---
 -- Name: usage_ledger org_rows; Type: POLICY; Schema: public; Owner: -
 --
 
@@ -2739,18 +2549,6 @@ ALTER TABLE public.seats ENABLE ROW LEVEL SECURITY;
 --
 
 ALTER TABLE public.status_alerts ENABLE ROW LEVEL SECURITY;
-
---
--- Name: tax_packets; Type: ROW SECURITY; Schema: public; Owner: -
---
-
-ALTER TABLE public.tax_packets ENABLE ROW LEVEL SECURITY;
-
---
--- Name: trips; Type: ROW SECURITY; Schema: public; Owner: -
---
-
-ALTER TABLE public.trips ENABLE ROW LEVEL SECURITY;
 
 --
 -- Name: usage_ledger; Type: ROW SECURITY; Schema: public; Owner: -
@@ -2953,28 +2751,12 @@ GRANT ALL ON TABLE public.goals TO authenticated;
 GRANT ALL ON TABLE public.goals TO service_role;
 
 --
--- Name: TABLE home_office; Type: ACL; Schema: public; Owner: -
---
-
-GRANT ALL ON TABLE public.home_office TO anon;
-GRANT ALL ON TABLE public.home_office TO authenticated;
-GRANT ALL ON TABLE public.home_office TO service_role;
-
---
 -- Name: TABLE jobs; Type: ACL; Schema: public; Owner: -
 --
 
 GRANT ALL ON TABLE public.jobs TO anon;
 GRANT ALL ON TABLE public.jobs TO authenticated;
 GRANT ALL ON TABLE public.jobs TO service_role;
-
---
--- Name: TABLE kpi_snapshots; Type: ACL; Schema: public; Owner: -
---
-
-GRANT ALL ON TABLE public.kpi_snapshots TO anon;
-GRANT ALL ON TABLE public.kpi_snapshots TO authenticated;
-GRANT ALL ON TABLE public.kpi_snapshots TO service_role;
 
 --
 -- Name: TABLE mcp_connection_events; Type: ACL; Schema: public; Owner: -
@@ -3111,22 +2893,6 @@ GRANT ALL ON TABLE public.seats TO service_role;
 GRANT ALL ON TABLE public.status_alerts TO anon;
 GRANT ALL ON TABLE public.status_alerts TO authenticated;
 GRANT ALL ON TABLE public.status_alerts TO service_role;
-
---
--- Name: TABLE tax_packets; Type: ACL; Schema: public; Owner: -
---
-
-GRANT ALL ON TABLE public.tax_packets TO anon;
-GRANT ALL ON TABLE public.tax_packets TO authenticated;
-GRANT ALL ON TABLE public.tax_packets TO service_role;
-
---
--- Name: TABLE trips; Type: ACL; Schema: public; Owner: -
---
-
-GRANT ALL ON TABLE public.trips TO anon;
-GRANT ALL ON TABLE public.trips TO authenticated;
-GRANT ALL ON TABLE public.trips TO service_role;
 
 --
 -- Name: TABLE usage_ledger; Type: ACL; Schema: public; Owner: -

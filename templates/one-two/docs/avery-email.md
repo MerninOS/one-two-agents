@@ -2,7 +2,7 @@
 
 Avery (Chief of Staff) emails the morning brief to Zak on weekdays at 6:45 AM CT. The
 email is the brief; Notion is the archive: one row per day in the Briefs database
-(`docs/avery-briefs-database.md`), or a page per day while that isn't set up.
+(`templates/one-two/docs/avery-briefs-database.md`), or a page per day while that isn't set up.
 
 ## Why
 

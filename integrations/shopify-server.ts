@@ -6,20 +6,11 @@ import "server-only";
 // Each tool runs one fixed query (core/shopify-queries.ts); there is no tool that takes GraphQL.
 import { MCP_PROTOCOL, MCP_SERVERS } from "@/core/mcp-rules";
 import { env } from "@/core/env";
-import { SHOPIFY_DOCS, shopifyKeyKind, shopifyVariables, writeScopes } from "@/core/shopify-queries";
+import { SHOPIFY_QUERIES, shopifyKeyKind, shopifyVariables, writeScopes } from "@/core/shopify-queries";
 import { shopifyQuery, whoIs } from "./shopify-api";
 
-const day = { type: "string", pattern: "^\\d{4}-\\d{2}-\\d{2}$" };
-const after = { type: "string", maxLength: 500 };
-const TOOLS: Record<string, { description: string; inputSchema: unknown }> = {
-  shopify_green_lots: { description: "Every green lot (products tagged blended-green, not archived) with grams in stock and its blended.* fields.", inputSchema: { type: "object", properties: {} } },
-  shopify_stock_coffees: { description: "The products in Our coffees, with variants, prices and blended.* fields.", inputSchema: { type: "object", properties: {} } },
-  shopify_shop_settings: { description: "The storefront's settings (shop metafield blended.settings).", inputSchema: { type: "object", properties: {} } },
-  shopify_recent_orders: { description: "Up to 100 orders since a day, newest first, with green usage and line items. No customer details.", inputSchema: { type: "object", required: ["since"], properties: { since: day } } },
-  shopify_board_orders: { description: "Storefront orders since a day with their tags and fulfillment status, 100 a page. No customer details.", inputSchema: { type: "object", required: ["since"], properties: { since: day, after } } },
-  shopify_orders_between: { description: "Orders from one Chicago day up to another, 100 a page, with totals and green usage. No names or addresses.", inputSchema: { type: "object", required: ["start", "end"], properties: { start: day, end: day, after } } },
-};
 const OFFERED = MCP_SERVERS.shopify.readTools as readonly string[];
+const TOOLS = Object.fromEntries(SHOPIFY_QUERIES.map((q) => [q.tool, q]));
 
 /** Before a key is kept: its shape, which shop it opens, and that every scope it carries is a read. */
 export async function checkShopifyKey(key: string): Promise<{ name: string; workspace: string }> {
@@ -41,16 +32,16 @@ export function shopifyServer(key: string) {
     if (req.jsonrpc !== "2.0" || typeof req.method !== "string") return { jsonrpc: "2.0", id, error: { code: -32600, message: "not a JSON-RPC 2.0 request" } };
     switch (req.method) {
       case "initialize":
-        return reply(id, { protocolVersion: MCP_PROTOCOL, capabilities: { tools: {} }, serverInfo: { name: "one-two-shopify", version: "1" } });
+        return reply(id, { protocolVersion: MCP_PROTOCOL, capabilities: { tools: {} }, serverInfo: { name: "operator-shopify", version: "1" } });
       case "tools/list":
         return reply(id, { tools: OFFERED.map((name) => ({ name, description: TOOLS[name].description, inputSchema: TOOLS[name].inputSchema, annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false } })) });
       case "tools/call": {
         const name = typeof req.params?.name === "string" ? req.params.name : "";
         if (!OFFERED.includes(name)) return toolError(id, `${name || "That"} isn't a tool this server serves.`);
-        const v = shopifyVariables(name, req.params?.arguments, env.shopifyStockCollection);
+        const v = shopifyVariables(name, req.params?.arguments, { stockCollection: env.shopifyStockCollection ?? "" });
         if ("problem" in v) return toolError(id, `Input refused: ${v.problem}`);
         try {
-          const result = await shopifyQuery(key, SHOPIFY_DOCS[v.tool], v.variables);
+          const result = await shopifyQuery(key, v.doc, v.variables);
           return reply(id, { structuredContent: { result }, content: [{ type: "text", text: "ok" }] });
         } catch (e) {
           return toolError(id, e instanceof Error ? e.message : String(e));

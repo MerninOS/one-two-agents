@@ -23,8 +23,8 @@ const SAPI_MSG = "Shopify's API is called only by our Shopify MCP server (integr
 const SAPI = { paths: ["@/integrations/shopify-api", "./shopify-api", "../integrations/shopify-api"].map((name) => ({ name, message: SAPI_MSG })), pattern: { group: ["**/shopify-api"], message: SAPI_MSG } };
 const SSRV_MSG = "Our Shopify MCP server is reached only through integrations/mcp.ts (callLocalTool), which opens its key from the vault.";
 const SSRV = { paths: ["@/integrations/shopify-server", "./shopify-server", "../integrations/shopify-server"].map((name) => ({ name, message: SSRV_MSG })), pattern: { group: ["**/shopify-server"], message: SSRV_MSG } };
-// MCP write tools (slice 5b): only the gateway calls one, after Zak approves.
-const MCPW_MSG = "Only core/gateway calls an MCP write tool, after Zak approves.";
+// MCP write tools (slice 5b): only the gateway calls one, after an approver approves.
+const MCPW_MSG = "Only core/gateway calls an MCP write tool, after an approver approves.";
 const MCPW = { name: "@/integrations/mcp", importNames: ["callWriteTool"], message: MCPW_MSG };
 // Custom-server tools (docs/custom-servers.md, slice 2): only the tool list for a run calls one.
 const MCPC_MSG = "Only core/tools/custom.ts calls a custom server's tool, as a read tool granted for a run.";
