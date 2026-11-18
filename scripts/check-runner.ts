@@ -218,7 +218,7 @@ async function main() {
   const leadIn = { business: "Fleet Coffee", city: "Denver", type: "cafe", website: "https://www.fleet.coffee", fit_score: 4, fit_reason: "Busy cafe.", subject: "Coffee", body: "Hi\n\nSam" };
   const r12 = await runExplore(rowan, { agentId: "wholesale_hunter", tools: lTools, deliver: true, client: fake((t, b) => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    if (t === 0) { assert.ok((b.tools as any[]).some((x) => x.type === "web_search_20260209" && x.name === "web_search")); return { ...reply([{ type: "server_tool_use", id: "s1", name: "web_search", input: { query: "austin cafes" } } as unknown as Block], "pause_turn") }; }
+    if (t === 0) { assert.ok((b.tools as any[]).some((x) => x.type === "web_search_20260209" && x.name === "web_search")); return { ...reply([{ type: "server_tool_use", id: "s1", name: "web_search", input: { query: "denver cafes" } } as unknown as Block], "pause_turn") }; }
     if (t === 1) return reply([{ type: "tool_use", id: "l1", name: "report_leads", input: leadIn }, { type: "tool_use", id: "l2", name: "report_leads", input: { ...leadIn, website: "fleet.coffee" } }]);
     return reply([{ type: "tool_use", id: "f", name: "finish", input: { result: "1 lead" } }]);
   }) });

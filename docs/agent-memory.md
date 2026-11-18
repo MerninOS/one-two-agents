@@ -25,7 +25,7 @@ corrects what it learned on the Memory tab, so he teaches an agent once instead 
 ## Storage (migration `20261112120000_agent_memory.sql`)
 
 - `agent_memory`: one row per line. `agent_id` (null = shared crew memory or a department rule), `grp` (`crew`,
-  `department` (with `department_id`, loaded by every agent seated there: docs/org-chart.md slice 2), `standing_order`, `lesson`, `note`, `working`), `text` (≤ 280), `source` (`zak`, `approval`,
+  `department` (with `department_id`, loaded by every agent seated there: docs/org-chart.md slice 2), `standing_order`, `lesson`, `note`, `working`), `text` (≤ 280), `source` (`owner`, `approval`,
   `agent`), `source_tag`, `notion_page_id` (a standing order may point at a Notion page to load,
   read fresh each run), `trust`, `state` (`proposed`, `kept`, `discarded`,
   `expired`, `forgotten`), `keep` (`next_run`, `days_30`, `always`), `runs_left`, `expires_at`, `tokens`.

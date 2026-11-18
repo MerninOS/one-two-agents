@@ -67,7 +67,7 @@ promotion; agents stay off until he says launched.
 - One `reactions` row per thing reacted to (a run, a lead in a run, an approval); reacting again
   changes it. It holds the verdict, his words when they became a rule, and the rule's id.
 - Not this with words: agent + always is a standing order, agent + 30 days or next run is a note,
-  department is a department rule, everyone is a crew line. `source = zak`,
+  department is a department rule, everyone is a crew line. `source = owner`,
   `source_tag = run:<id>` or `approval:<id>`. The new rule is saved first, then the one it replaces
   is forgotten (so a failed save never loses the old rule). A replaced rule must be kept and in the
   same scope, checked in code.
@@ -210,7 +210,7 @@ chart and tool list as they are then. Nothing here runs, sends or spends, so it 
 only (no Controls).
 
 **Data.** Migration `20261122090000_proposals.sql` (the `proposals` table: kind, title, source agent
-/ claude / zak, from_agent, department, run, the checked plan as `payload`, why, state pending /
+/ claude / owner, from_agent, department, run, the checked plan as `payload`, why, state pending /
 accepted / declined / built / failed, outcome, result_ref, decided_at). Until it's applied, the
 Proposals page says so and the tool refuses to save.
 
