@@ -17,3 +17,8 @@ export async function planBlock(ask: PlanAsk): Promise<string | null> {
   try { return await extensions.planBlock(ask); }
   catch (e) { return `Couldn’t check the plan: ${(e instanceof Error ? e.message : String(e)).slice(0, 100)}.`; }
 }
+
+/** Tells the paid layer People changed (the seat count on the bill). Never stops or fails the change. */
+export async function membersChanged(): Promise<void> {
+  try { await extensions.afterMembersChange(); } catch { /* the bill catches up on the next change or the next webhook */ }
+}

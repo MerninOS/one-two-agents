@@ -1,7 +1,9 @@
 // Copyright Operator Enterprises and Technologies, LLC. Licensed under ee/LICENSE, not the AGPL-3.0.
 // The paid layer's checks: `npm run check:ee`. Pure: no database, no network.
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
+import { createHmac } from "node:crypto";
+import { formEncode, ourStatus, rowFromSubscription, trialEndFor, validSignature } from "./stripe-rules";
 import { PLAN, monthlyUsd, planBlockFor, planState, planWords, type Subscription } from "./plan-rules";
 import type { PlanAsk } from "../core/extension-types";
 
@@ -57,4 +59,47 @@ for (const f of ["ee/plan-rules.ts", "ee/plan.ts", "ee/billing-card.tsx", "ee/in
 }
 assert.match(readFileSync("ee/plan.ts", "utf8"), /=== HOME_ORG_ID\) return planState\(null, \{ home: true/, "the home org never reads a row");
 
-console.log("check:ee ok (plan, trial, grace, home org exempt)");
+// Stripe: signatures, encoding, and the row a subscription leaves
+{
+  const secret = "whsec_test_secret";
+  const body = '{"type":"customer.subscription.updated"}';
+  const t = 1_800_000_000;
+  const sig = createHmac("sha256", secret).update(`${t}.${body}`).digest("hex");
+  assert.ok(validSignature(body, `t=${t},v1=${sig}`, secret, t + 10));
+  assert.ok(validSignature(body, `t=${t},v1=${"0".repeat(64)},v1=${sig}`, secret, t), "any v1 may match (secret rolling)");
+  assert.ok(!validSignature(body + " ", `t=${t},v1=${sig}`, secret, t), "a changed body fails");
+  assert.ok(!validSignature(body, `t=${t},v1=${sig}`, "whsec_other", t), "another secret fails");
+  assert.ok(!validSignature(body, `t=${t},v1=${sig}`, secret, t + 301), "an old signature fails");
+  assert.ok(!validSignature(body, null, secret, t) && !validSignature(body, `t=${t},v1=${sig}`, "", t), "no header or no secret fails");
+  assert.ok(!validSignature(body, `t=${t},v1=zz`, secret, t), "a malformed signature fails");
+}
+assert.equal(formEncode({ mode: "subscription", line_items: { 0: { price: "price_1", quantity: 3 } }, customer: undefined, subscription_data: { metadata: { org_id: "o" } } }),
+  "mode=subscription&line_items%5B0%5D%5Bprice%5D=price_1&line_items%5B0%5D%5Bquantity%5D=3&subscription_data%5Bmetadata%5D%5Borg_id%5D=o");
+assert.equal(ourStatus("unpaid"), "past_due");
+assert.equal(ourStatus("incomplete"), null, "an incomplete first payment changes nothing");
+assert.equal(ourStatus("incomplete_expired"), "canceled");
+{
+  const s = { id: "sub_ABC123", customer: "cus_XYZ789", status: "past_due", trial_end: null, metadata: { org_id: "0e1a7c4e-0002-4000-8000-000000000002" }, items: { data: [{ id: "si_1", quantity: 4, current_period_end: 1_800_000_000 }] } };
+  const nowIso = "2026-12-01T12:00:00.000Z";
+  const first = rowFromSubscription(s, { status: "active", past_due_since: null }, nowIso)!;
+  assert.deepEqual(first, { status: "past_due", trial_ends_at: null, past_due_since: nowIso, seats: 4, stripe_customer_id: "cus_XYZ789", stripe_subscription_id: "sub_ABC123", current_period_end: new Date(1_800_000_000_000).toISOString() });
+  assert.equal(rowFromSubscription(s, { status: "past_due", past_due_since: "2026-11-28T00:00:00.000Z" }, nowIso)!.past_due_since, "2026-11-28T00:00:00.000Z", "the grace period runs from the first failure");
+  assert.equal(rowFromSubscription({ ...s, status: "active" }, { status: "past_due", past_due_since: nowIso }, nowIso)!.past_due_since, null, "paid: grace cleared");
+  assert.equal(rowFromSubscription({ ...s, customer: "evil" }, null, nowIso), null, "ids must be Stripe's");
+  assert.equal(rowFromSubscription({ ...s, status: "incomplete" }, null, nowIso), null);
+}
+assert.equal(trialEndFor(iso(now + 3 * DAY), now), Math.floor((now + 3 * DAY) / 1000), "the rest of our trial carries over to Stripe");
+assert.equal(trialEndFor(iso(now + 47 * 3_600_000), now), undefined, "under 48 hours: Stripe charges at once");
+assert.equal(trialEndFor(null, now), undefined);
+
+// Stripe stays app infrastructure: one file calls it, nothing outside ee/ reaches it, no agent path
+assert.deepEqual(readdirSync("ee").filter((f) => f !== "check.ts" && /\.tsx?$/.test(f) && /api\.stripe\.com|STRIPE_SECRET_KEY/.test(readFileSync(`ee/${f}`, "utf8"))), ["stripe.ts"], "only ee/stripe.ts calls Stripe or reads its key");
+assert.match(readFileSync("ee/stripe.ts", "utf8"), /redirect: "error"/, "a request carrying the key never follows a redirect");
+assert.match(readFileSync("ee/stripe.ts", "utf8"), /scrubSecrets\(/, "errors never show the key");
+const billing = readFileSync("ee/billing.ts", "utf8");
+assert.doesNotMatch(billing, /core\/vault|core\/gateway|callWriteTool|callMcpTool|\.delete\(/, "billing touches no vault, gateway or tool, and deletes nothing");
+assert.deepEqual([...billing.matchAll(/db\(\)\.from\("(\w+)"\)/g)].map((m) => m[1]).filter((t, i, a) => a.indexOf(t) === i).sort(), ["ee_subscriptions", "orgs"], "billing reads only its row and whether the org exists");
+assert.match(billing, /if \(org === HOME_ORG_ID\) return "the home org is never billed"/, "the webhook never writes the home org");
+assert.match(readFileSync("ee/billing-actions.ts", "utf8"), /^"use server";/);
+
+console.log("check:ee ok (plan, trial, grace, home org exempt, Stripe signatures and rows)");

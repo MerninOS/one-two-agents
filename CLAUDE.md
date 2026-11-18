@@ -85,8 +85,8 @@ built, so no agent can send, pay or publish.
   sealed with its org's own random data key and bound to that org; the data key is kept only
   wrapped by `MCP_SECRET_KEY` (never derived from another secret), connected on Connections.
   Only `integrations/mcp.ts` and `core/gateway` import the vault (lint enforces it). Settings in
-  Vercel hold only the app's own infrastructure (Supabase, Claude, Resend for emails to the owner, the
-  vault key, the app's Google OAuth client) and non-secret ids. Ask for the profile's scopes only, and refuse a sign-in or key
+  Vercel hold only the app's own infrastructure (Supabase, Claude, Resend for emails to the owner, Stripe
+  for the hosted edition's own billing, which no agent calls, the vault key, the app's Google OAuth client) and non-secret ids. Ask for the profile's scopes only, and refuse a sign-in or key
   that carries more (Google scopes, Shopify write scopes). No token in a prompt, log, error or the
   browser (`scrubSecrets`); requests carrying a token or code never follow redirects. A refused or
   expired sign-in pauses until the owner signs in again. See `docs/mcp-everywhere.md`.

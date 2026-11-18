@@ -1,6 +1,6 @@
 // People and roles (docs/tenancy.md, slice 2): `npm run check:roles`. Pure: no network, no database.
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { atLeast, isRole, memberChangeProblem, normalEmail, refusal, safeNext } from "../core/roles";
 
 // roles: viewer < approver < owner
@@ -70,7 +70,7 @@ const run = async () => {
   assert.ok(!/^"use server"/.test(readFileSync("dashboard/signin.ts", "utf8")) && readFileSync("dashboard/signin.ts", "utf8").startsWith('import "server-only";'));
 
   // every server action checks a role; sign-in is the only exception
-  const files = ["dashboard/actions.ts", "dashboard/orgActions.ts", "dashboard/connectionActions.ts", "dashboard/goalActions.ts", "dashboard/proposalActions.ts", "dashboard/chatActions.ts", "dashboard/peopleActions.ts"];
+  const files = ["dashboard/actions.ts", "dashboard/orgActions.ts", "dashboard/connectionActions.ts", "dashboard/goalActions.ts", "dashboard/proposalActions.ts", "dashboard/chatActions.ts", "dashboard/peopleActions.ts", ...(existsSync("ee/billing-actions.ts") ? ["ee/billing-actions.ts"] : [])];
   let n = 0;
   for (const f of files) {
     const src = readFileSync(f, "utf8");

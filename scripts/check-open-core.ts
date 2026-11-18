@@ -34,6 +34,8 @@ assert.match(readFileSync("tsconfig.json", "utf8"), /"operator-extensions": \["\
 const nextConfig = readFileSync("next.config.ts", "utf8");
 assert.match(nextConfig, /cloud \? \{ turbopack: \{ resolveAlias: \{ "operator-extensions": "\.\/ee\/index\.ts" \} \} \}/, "only OPERATOR_EDITION=cloud swaps in ee/index.ts");
 // every place that could need a plan asks it (each is a no-op in the open edition)
+assert.match(open, /api: \{\}/, "the open edition has no extra routes");
+assert.equal(readFileSync("dashboard/peopleActions.ts", "utf8").match(/await membersChanged\(\)/g)?.length, 2, "adding and removing a person both tell the paid layer");
 const asks: Record<string, string> = { "core/runs.ts": "run", "dashboard/peopleActions.ts": "invite", "dashboard/actions.ts": "agent_on", "dashboard/connectionActions.ts": "custom_server" };
 for (const [f, kind] of Object.entries(asks)) assert.match(readFileSync(f, "utf8"), new RegExp(`planBlock\\(\\{ kind: "${kind}"`), `${f} asks the plan (${kind})`);
 assert.equal(readFileSync("dashboard/actions.ts", "utf8").match(/planBlock\(\{ kind: "agent_on"/g)?.length, 2, "both ways to put agents on duty ask the plan");

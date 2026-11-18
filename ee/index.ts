@@ -3,12 +3,15 @@
 import type { Extensions } from "@/core/extension-types";
 import { planBlock } from "./plan";
 import { BillingCard } from "./billing-card";
+import { stripeWebhook, syncSeats } from "./billing";
 
 const cloud: Extensions = {
   edition: "cloud",
   planBlock,
   SettingsCards: BillingCard,
   SignupPage: null,
+  api: { stripe: stripeWebhook },
+  afterMembersChange: syncSeats,
 };
 
 export default cloud;

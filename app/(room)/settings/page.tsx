@@ -20,7 +20,8 @@ import { loadBusiness } from "@/core/business";
 import { UNKNOWN_BUSINESS } from "@/core/business-rules";
 import { extensions } from "@/core/extensions";
 
-export default async function Settings() {
+export default async function Settings({ searchParams }: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
+  const query = Object.fromEntries(Object.entries(await searchParams).map(([k, v]) => [k, Array.isArray(v) ? v[0] : v]));
   const [f, caps, lists, me, members, biz] = await Promise.all([getFloor(), capLines(), getVendorsAndSuppressions(), requireSession(), listMembers().catch(() => null), loadBusiness().catch(() => UNKNOWN_BUSINESS)]);
   const [own, eff] = await Promise.all([ownSettings().catch(() => NO_SETTINGS), settings().catch(() => NO_SETTINGS)]);
   const asText = (b: BusinessSettings) => ({ ownerEmail: b.ownerEmail ?? "", siteUrl: b.siteUrl ?? "", shopifyDomain: b.shopifyDomain ?? "", shopifyClientId: b.shopifyClientId ?? "", mercuryAccountIds: b.mercuryAccountIds.join(", "), notionBriefParent: b.notionBriefParent ?? "", notionBriefsDb: b.notionBriefsDb ?? "", notionLeadsParent: b.notionLeadsParent ?? "", notionBooksParent: b.notionBooksParent ?? "" });
@@ -111,7 +112,7 @@ export default async function Settings() {
           : <div>{audit.rows.map((r, i) => <div key={i}>{line(<>{r.action.replace(/_/g, " ")}{r.target ? <span className="ink2"> · {r.target}</span> : null}<span className="muted" style={{ fontSize: 12 }}>{r.actor}{r.detail ? ` · ${facts(r.detail)}` : ""}</span></>, <span className="sub" style={{ whiteSpace: "nowrap" }}>{when(r.at)}</span>, i === 0)}</div>)}</div>}
       </div>
 
-      {Extra && <Extra />}
+      {Extra && <Extra query={query} />}
     </div>
   );
 }
