@@ -23,8 +23,8 @@ export interface Extensions {
    * (a card's own short messages, such as a problem after a redirect); null for none.
    */
   SettingsCards: ComponentType<{ query: Readonly<Record<string, string | undefined>> }> | null;
-  /** The sign-up page at /signup. null: no sign-up, /signup is not found (the open edition). */
-  SignupPage: ComponentType | null;
+  /** The sign-up page at /signup, given its query. null: no sign-up, /signup is not found (the open edition). */
+  SignupPage: ComponentType<{ query: Readonly<Record<string, string | undefined>> }> | null;
   /**
    * Routes at /api/ee/<name> (POST), such as a billing webhook. Each checks its own caller (a
    * signature), since /api is outside the sign-in guard. Empty: every /api/ee route is not found.

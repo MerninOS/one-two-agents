@@ -14,3 +14,21 @@ create table ee_subscriptions (
 );
 alter table ee_subscriptions enable row level security;
 create policy org_rows on ee_subscriptions for all to authenticated using (org_id = (select public.jwt_org_id())) with check (org_id = (select public.jwt_org_id()));
+
+-- Sign-up codes (card 128 slice 3c): sign-up is invite-only, one code makes one business. The codes
+-- belong to the home org (OPERATOR's own), which makes them on Settings > Billing. Only a hash is
+-- kept; a used or revoked code stays as a record, never deleted.
+create table ee_signup_codes (
+  org_id uuid not null references orgs(id),
+  id uuid not null default gen_random_uuid(),
+  code_hash text not null unique check (code_hash ~ '^[0-9a-f]{64}$'),
+  note text not null default '' check (length(note) <= 120),
+  created_by text not null,
+  created_at timestamptz not null default now(),
+  expires_at timestamptz not null,
+  used_at timestamptz,
+  used_org_id uuid references orgs(id),
+  primary key (org_id, id)
+);
+alter table ee_signup_codes enable row level security;
+create policy org_rows on ee_signup_codes for all to authenticated using (org_id = (select public.jwt_org_id())) with check (org_id = (select public.jwt_org_id()));

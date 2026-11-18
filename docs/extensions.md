@@ -74,3 +74,12 @@ next) and `STRIPE_WEBHOOK_SECRET`, set in the deployment's settings like Supabas
   failed payment or a cancel emails the owner through `integrations/email.ts`.
 - **Seats** follow People: adding or removing a person updates the subscription's quantity,
   prorated.
+
+**Invite-only sign-up.** `/signup` asks for a sign-up code, the business's name, the owner's name
+and email. A code is 12 letters and digits (no 0, 1, I, L or O), works once, for 30 days, and only
+its hash is kept (`ee_signup_codes`, rows of the home org). Using it makes the business through
+`core/install`'s `newOrg`, the same path as `npm run org:new`: its owner, its owner email in
+Settings, a 14-day trial, every agent off duty and every action type at Draft. Then the owner gets
+the usual sign-in link. The home org's owners make and end codes on Settings > Billing; a code is
+ended, never deleted. Sign-up is the one server action with no role check, like signing in: the
+code is its check (check:roles).

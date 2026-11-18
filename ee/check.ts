@@ -3,6 +3,7 @@
 import assert from "node:assert/strict";
 import { readFileSync, readdirSync } from "node:fs";
 import { createHmac } from "node:crypto";
+import { checkSignup, codeHash, newCode, normalCode, slugFor } from "./signup-rules";
 import { formEncode, ourStatus, rowFromSubscription, trialEndFor, validSignature } from "./stripe-rules";
 import { PLAN, monthlyUsd, planBlockFor, planState, planWords, type Subscription } from "./plan-rules";
 import type { PlanAsk } from "../core/extension-types";
@@ -102,4 +103,32 @@ assert.deepEqual([...billing.matchAll(/db\(\)\.from\("(\w+)"\)/g)].map((m) => m[
 assert.match(billing, /if \(org === HOME_ORG_ID\) return "the home org is never billed"/, "the webhook never writes the home org");
 assert.match(readFileSync("ee/billing-actions.ts", "utf8"), /^"use server";/);
 
-console.log("check:ee ok (plan, trial, grace, home org exempt, Stripe signatures and rows)");
+// Invite-only sign-up: codes, the form, and one code making one business
+{
+  const code = newCode(Buffer.from([0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 255]));
+  assert.match(code, /^[2-9A-HJKMNP-Z]{4}-[2-9A-HJKMNP-Z]{4}-[2-9A-HJKMNP-Z]{4}$/, "codes use letters that can't be misread");
+  assert.match(newCode(), /^[2-9A-HJKMNP-Z]{4}-[2-9A-HJKMNP-Z]{4}-[2-9A-HJKMNP-Z]{4}$/);
+  assert.notEqual(newCode(), newCode());
+  assert.equal(normalCode(` ${code.toLowerCase()} `), code.replace(/-/g, ""), "typed any case, with or without dashes");
+  assert.equal(normalCode("ABCD-EFGH-IJK0"), null, "0, 1, I, L and O never appear in a code");
+  assert.equal(codeHash("ABCDEFGHJKMN"), codeHash("ABCDEFGHJKMN"));
+  assert.match(codeHash("ABCDEFGHJKMN"), /^[0-9a-f]{64}$/);
+  assert.equal(slugFor("Café Olé & Sons!", "a1b2c3"), "cafe-ole-sons-a1b2c3");
+  assert.equal(slugFor("!!", "a1b2c3"), "business-a1b2c3");
+  assert.match(slugFor("x".repeat(200)), /^[a-z0-9][a-z0-9-]{1,40}$/, "a slug core/install accepts");
+  const good = { code: code.toLowerCase(), business: "  Acme   Coffee ", ownerName: "Sam", email: "Sam@Acme.example" };
+  assert.deepEqual(checkSignup(good), { ok: { code: code.replace(/-/g, ""), business: "Acme Coffee", ownerName: "Sam", email: "sam@acme.example" } });
+  assert.ok("problem" in checkSignup({ ...good, code: "nope" }));
+  assert.ok("problem" in checkSignup({ ...good, email: "sam@acme" }));
+  assert.ok("problem" in checkSignup({ ...good, business: "" }));
+  const signup = readFileSync("ee/signup.ts", "utf8");
+  assert.match(signup, /\.update\(\{ used_at: now \}\)\.eq\("code_hash", codeHash\(f\.code\)\)\.is\("used_at", null\)\.gt\("expires_at", now\)/, "a code is used once, only while it's open, before anything is made");
+  assert.ok(signup.indexOf("if (!claimed)") < signup.indexOf("await newOrg("), "no business without a used code");
+  assert.match(signup, /status: "trialing", trial_ends_at: new Date\(Date\.now\(\) \+ PLAN\.trialDays/, "a new business starts on the trial");
+  assert.doesNotMatch(signup, /\.delete\(|core\/vault|core\/gateway/, "codes are ended, never deleted");
+  const actions = readFileSync("ee/signup-actions.ts", "utf8");
+  assert.ok(actions.indexOf("checkSignup(") < actions.indexOf("signUpBusiness(ok)"), "the form is checked first");
+  assert.equal(actions.match(/if \(me\.orgId !== HOME_ORG_ID\)/g)?.length, 2, "only OPERATOR's own business makes and ends codes");
+}
+
+console.log("check:ee ok (plan, trial, grace, home org exempt, Stripe signatures and rows, sign-up codes)");
