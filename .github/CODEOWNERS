@@ -1,0 +1,14 @@
+# The parts that hold OPERATOR's hard rules (CLAUDE.md) need a maintainer's review.
+* @zdebrine
+/CLAUDE.md                    @zdebrine
+/core/gateway/                @zdebrine
+/core/vault.ts                @zdebrine
+/core/tenancy.ts              @zdebrine
+/core/db.ts                   @zdebrine
+/core/roles.ts                @zdebrine
+/core/mcp-rules.ts            @zdebrine
+/core/custom-mcp-rules.ts     @zdebrine
+/integrations/mcp.ts          @zdebrine
+/supabase/migrations/         @zdebrine
+/eslint.config.mjs            @zdebrine
+/ee/                          @zdebrine
