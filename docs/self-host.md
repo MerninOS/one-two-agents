@@ -1,6 +1,6 @@
 # Self-hosting OPERATOR
 
-Build Board: Order 127 (Open core 7), slice 1 (licenses and contributor docs: slice 2). Decided (Zak, 2026-11-17): self-host is our app plus
+Build Board: Order 127 (Open core 7), slice 1 (licenses and contributor docs: slice 2). Decided (the owner, 2026-11-17): self-host is our app plus
 Supabase's own open-source stack, not a rewrite onto bare Postgres. The app uses Supabase for every
 table read (PostgREST through `core/db.ts`), email sign-in (Supabase Auth, `dashboard/authActions.ts`)
 and receipt files (Supabase Storage), and Supabase's stack is open source and runs anywhere.
@@ -52,7 +52,7 @@ reported a failure with a wrong one.
 
 ## The starting migration
 
-This repo's `supabase/migrations` are its history and create One Two's rows. The public repo
+This repo's `supabase/migrations` are its history and create the business's rows. The public repo
 ships one squashed migration instead, `supabase/baseline/operator_baseline.sql`: the same schema
 (tables, checks, row level security, policies, grants, functions), the private receipts bucket and
 an empty home org called "My business", and no business's rows. `scripts/baseline.mjs` makes it from
@@ -60,7 +60,7 @@ a schema-only dump of a database with every migration applied (the steps are in 
 `npm run check:baseline` fails when a migration adds or drops a table it doesn't have.
 
 Tested 2026-11-18: a fresh Supabase database built from the baseline alone dumps byte for byte the
-same public schema as one built from every migration, and the One Two template installed into its
+same public schema as one built from every migration, and the the business template installed into its
 empty home org (5 departments, 10 agents, all off duty) and refused a second install.
 
 ## Not yet

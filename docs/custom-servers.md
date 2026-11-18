@@ -1,15 +1,15 @@
 # Custom servers: add your own MCP server
 
-Design: https://claude.ai/artifact/WG5cPBcJmAPv4bMZ3upQRr (approved by Zak, Nov 17 2026, with every
+Design: https://claude.ai/artifact/WG5cPBcJmAPv4bMZ3upQRr (approved by the owner, Nov 17 2026, with every
 recommendation). Build Board: Orders 110 (design) to 114.
 
 When an agent needs a tool the built-in connectors don't have, the owner can add any MCP server by
-its address. Nobody at One Two reviewed a custom server's code, so it gets every guard a built-in
+its address. Nobody at the business reviewed a custom server's code, so it gets every guard a built-in
 server has plus tighter limits. The limits are code (`core/custom-mcp-rules.ts`); the profile is a
 row the owner edits (`mcp_custom_servers`). Its sign-in sits in `mcp_connections` under the same id
 (`c_` and 8 letters or digits), sealed in the vault like every other.
 
-Decisions (Zak, 2026-11-17): custom servers are read-only now (writes later only as Draft-forever
+Decisions (the owner, 2026-11-17): custom servers are read-only now (writes later only as Draft-forever
 cards, with their own yes); warn but don't block when a money or email agent gets a custom tool;
 only the owner adds servers, from Connections with Controls on, and heads may ask for a service but
 never give an address; Find a tool shows a short list of known servers (not vetted); Piper's

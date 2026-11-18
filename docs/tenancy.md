@@ -1,6 +1,6 @@
 # Tenancy: one database, many businesses
 
-Design: OPERATOR architecture https://claude.ai/artifact/8ec8poMoGrDtE3XY1axWrj (approved by Zak,
+Design: OPERATOR architecture https://claude.ai/artifact/8ec8poMoGrDtE3XY1axWrj (approved by the owner,
 Nov 17 2026). Build Board: Orders 120 (epic) to 128. This file covers slice 1 (card 121) and grows
 with each slice.
 
@@ -13,20 +13,20 @@ Words: "org" here means the business that owns the data. It is not the org chart
 duty). Those keep their names; inside one business they still mean what they meant.
 
 Slices: 1 org id on every table, 2 people and roles, 2b the database refuses other orgs' rows, 3 queue and workers,
-4 vault keys per org, 5 One Two into a template pack, 6 traces and usage, 7 monorepo and
+4 vault keys per org, 5 the business into a template pack, 6 traces and usage, 7 monorepo and
 self-host, 8 paid layer.
 
 ## Slice 1: org id on every table
 
-One Two Coffee Lab becomes the first org, the **home org**, with a fixed id
-(`HOME_ORG_ID` in `core/tenancy.ts`). Nothing changes for One Two: every agent, page and approval
+The business becomes the first org, the **home org**, with a fixed id
+(`HOME_ORG_ID` in `core/tenancy.ts`). Nothing changes for the business: every agent, page and approval
 works as before.
 
 ### Database (`20261202090000_orgs.sql`)
 
 | Change | Detail |
 |---|---|
-| `orgs` | `id` uuid, `slug` (unique), `name`, `created_at`. RLS on, like every table. One row: One Two Coffee Lab, the home org. |
+| `orgs` | `id` uuid, `slug` (unique), `name`, `created_at`. RLS on, like every table. One row: the business, the home org. |
 | `org_id` on every table | `uuid not null references orgs`, backfilled to the home org, then the default is dropped, so an insert that forgets the org fails instead of landing in the wrong business. Indexed. |
 | Keys that were names | Ids that people or code choose (agent ids like `cfo`, department ids, connection ids like `mercury`, custom server ids, policy keys, chain firings, KPI dates, tax years, suppressed emails) become unique per org: the primary key now starts with `org_id`. |
 | Unique rules | Per org: one active spec and one approved playbook per agent, one active crew flow, one open action per tool and target, one company seat, one head per department, one seat per agent, a lead's domain, a Mercury transaction, a vendor's Mercury recipient, a plan per department and week, a connector request per service. |
@@ -43,7 +43,7 @@ works as before.
   be written through it. Call sites didn't change: they already went through `db()`.
 - **Current org.** `currentOrgId()` is the org set by `withOrg(id, fn)` for the work inside `fn`
   (async-safe), or the home org when none is set. In slice 1 nothing calls `withOrg` yet, so
-  everything runs as One Two, exactly as today. Slice 2 sets it from the signed-in member, slice 3
+  everything runs as the business, exactly as today. Slice 2 sets it from the signed-in member, slice 3
   from each job.
 - **Only one place makes a client.** Lint refuses `@supabase/supabase-js` anywhere but
   `core/db.ts`, so nothing can skip the scoping.
@@ -68,12 +68,12 @@ through the scoped `db()`.
 ### Done when
 
 The migration is applied, every table has a non-null `org_id`, `check:tenancy`, `check` and `build`
-pass, and One Two's dry runs, pages and approvals behave as before.
+pass, and the business's dry runs, pages and approvals behave as before.
 
 ### Not in this slice
 
 Sign-in per person and row-level security policies (slice 2), passing the org through the queue
-(slice 3), vault keys and file paths per org (slice 4), moving One Two's coffee code out (slice 5).
+(slice 3), vault keys and file paths per org (slice 4), moving the business's coffee code out (slice 5).
 
 ## Slice 2: people and roles
 
@@ -132,13 +132,13 @@ never swap the service key for a person's token.
 unique per org, set on first sign-in), `role` (owner, approver, viewer), `added_by`, `created_at`,
 `last_sign_in_at`. A tenant table like every other.
 
-### Setup (Zak, once)
+### Setup (the owner, once)
 
 1. Vercel: add `SESSION_SECRET` (`openssl rand -base64 32`) and `OPERATOR_OWNER_EMAIL` (your email).
    Delete `DASHBOARD_PASSWORD`.
 2. Supabase, Authentication > URL Configuration: Site URL `https://one-two-agents.vercel.app`;
    Redirect URLs `https://one-two-agents.vercel.app/auth/confirm` and
-   `https://one-two-agents-*-astromall.vercel.app/auth/confirm` (previews).
+   `https://<project>-*-<team>.vercel.app/auth/confirm` (previews).
 3. Supabase needs custom SMTP before its email templates can be edited. Use Resend (already used
    for the brief): a Resend API key with sending access only; Supabase, Authentication > Emails >
    SMTP Settings: host `smtp.resend.com`, port 465, username `resend`, password the key, sender on
@@ -189,7 +189,7 @@ read, inserted, updated, moved to another org or deleted; no claim or a malforme
 nothing; the home org's token sees exactly its own rows. The live database already grants
 `authenticated` the table privileges the policies need.
 
-### Setup (Zak, once)
+### Setup (the owner, once)
 
 1. Make the key: in Terminal, `npx supabase gen signing-key --algorithm ES256`. It prints a JSON
    key with a `kid`. Keep it secret.
@@ -245,7 +245,7 @@ Tested on a local Postgres: a second job with the same key in an org is refused,
 non-object payload is refused, a job is claimed once, and an org's token can't see, claim or update
 another org's job.
 
-### Setup (Zak, once)
+### Setup (the owner, once)
 
 Apply `20261205090000_jobs.sql` (Supabase SQL editor) before merging. While the org is off nothing starts on its own, so the
 scheduler finds nothing to do.
@@ -286,10 +286,10 @@ key opening can't open another org's sign-ins, and an org can be removed cleanly
 Tested on a local Postgres: one data key per org, a plain (unwrapped) key is refused, and org 2's
 token can't see, change or add org 1's key.
 
-### Setup (Zak, once)
+### Setup (the owner, once)
 
 Apply `20261206090000_org_keys.sql` (Supabase SQL editor) before merging. After the deploy, open
-Connections and tap **Re-lock now** once: every sign-in moves onto One Two's own key. Nothing to
+Connections and tap **Re-lock now** once: every sign-in moves onto the business's own key. Nothing to
 change in Vercel.
 
 ### Not in this slice

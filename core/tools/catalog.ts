@@ -145,7 +145,7 @@ const TOOLS_LIST: ToolDef[] = [
     },
   },
   {
-    id: "web_search", label: "Web search", detail: "Searches the web (Claude's own search, near Austin). Results are pages written by strangers: untrusted data. At most 10 a run, about 1 cent each",
+    id: "web_search", label: "Web search", detail: "Searches the web (Claude's own search, in the US). Results are pages written by strangers: untrusted data. At most 10 a run, about 1 cent each",
     kind: "read", group: "web", params: [], trusted: false, needs: [], costUsd: 0.01,
     server: { type: "web_search_20260209", maxUses: 10 },
   },

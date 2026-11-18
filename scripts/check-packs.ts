@@ -22,7 +22,7 @@ assert.equal(registered, REGISTRATION.size, "the tool list, the goal measures an
 assert.ok(!statSync("templates").isFile());
 for (const gone of ["domain", "agents/cfo", "agents/chief-of-staff", "agents/bookkeeper", "agents/wholesale-hunter", "core/green.ts", "integrations/shopify/lots.ts", "integrations/shopify/settings.ts", "integrations/shopify/stock.ts"]) {
   let there = true; try { statSync(gone); } catch { there = false; }
-  assert.ok(!there, `${gone} moved into templates/one-two`);
+  assert.ok(!there, `${gone} belongs in a template pack, not core`);
 }
 
 // A pack reaches core only through core's public pieces: it reads through callMcpTool like core
@@ -35,22 +35,33 @@ for (const f of files("templates")) {
   assert.doesNotMatch(readFileSync(f, "utf8"), /\b(callWriteTool|callCustomTool|callLocalTool)\b/, `${f} calls past the read path`);
 }
 
-// A pack's own tables are tenant tables like any other, and only the pack reads or writes them.
+// Every pack under templates/ (a folder with an index.ts). There may be none.
+const packDirs = readdirSync("templates").filter((d) => statSync(join("templates", d)).isDirectory()).filter((d) => { try { return statSync(join("templates", d, "index.ts")).isFile(); } catch { return false; } });
+const registry = readFileSync("templates/index.ts", "utf8");
+const catalog = readFileSync("core/tools/catalog.ts", "utf8");
+const ids = (s: string) => [...s.matchAll(/^\s+id: "([a-z_]+)"/gm)].map((m) => m[1]);
+const core = ids(catalog);
+assert.ok(core.length > 20, "found the core tool ids");
+assert.match(catalog, /\[\.\.\.TOOLS_LIST, \.\.\.packTools\(\)\]/, "the tool list adds pack tools");
 const tenancy = readFileSync("core/tenancy.ts", "utf8");
-const packTables = [...readFileSync("templates/one-two/index.ts", "utf8").matchAll(/tables: \[([^\]]*)\]/g)].flatMap((m) => [...m[1].matchAll(/"([a-z_]+)"/g)].map((x) => x[1]));
-assert.ok(packTables.length >= 4, "found the pack's tables");
-for (const t of packTables) {
-  assert.match(tenancy, new RegExp(`"${t}"`), `${t} is a pack table, so it needs a place in TENANT_TABLES`);
-  for (const f of outside) assert.doesNotMatch(readFileSync(f, "utf8"), new RegExp(`from\\("${t}"\\)`), `${f} reads ${t}, a pack table`);
+let tables = 0, tools = 0;
+const seenTools = new Set<string>();
+for (const d of packDirs) {
+  assert.match(registry, new RegExp(`from "\\./${d}"`), `templates/${d} is a pack, so templates/index.ts registers it`);
+  // A pack's own tables are tenant tables like any other, and only the pack reads or writes them.
+  const packTables = [...readFileSync(join("templates", d, "index.ts"), "utf8").matchAll(/tables: \[([^\]]*)\]/g)].flatMap((m) => [...m[1].matchAll(/"([a-z_]+)"/g)].map((x) => x[1]));
+  for (const t of packTables) {
+    assert.match(tenancy, new RegExp(`"${t}"`), `${t} is a pack table, so it needs a place in TENANT_TABLES`);
+    for (const f of outside) assert.doesNotMatch(readFileSync(f, "utf8"), new RegExp(`from\\("${t}"\\)`), `${f} reads ${t}, a pack table`);
+  }
+  tables += packTables.length;
+  // Pack tool ids are unique and don't clash with core's (catalog.ts also refuses this at load).
+  let packSrc = ""; try { packSrc = readFileSync(join("templates", d, "tools.ts"), "utf8"); } catch { /* a pack with no tools */ }
+  for (const id of ids(packSrc)) {
+    assert.ok(!core.includes(id), `${id} is in core and templates/${d}`);
+    assert.ok(!seenTools.has(id), `${id} is in two packs`);
+    seenTools.add(id); tools++;
+  }
 }
 
-// Pack tool ids are unique and don't clash with core's (catalog.ts also refuses this at load).
-const catalog = readFileSync("core/tools/catalog.ts", "utf8"), pack = readFileSync("templates/one-two/tools.ts", "utf8");
-const ids = (s: string) => [...s.matchAll(/^\s+id: "([a-z_]+)"/gm)].map((m) => m[1]);
-const core = ids(catalog), one = ids(pack);
-assert.ok(core.length > 20 && one.length >= 10, "found the tool ids");
-for (const id of one) assert.ok(!core.includes(id), `${id} is in core and the pack`);
-assert.equal(new Set(one).size, one.length, "pack tool ids are unique");
-assert.match(catalog, /\[\.\.\.TOOLS_LIST, \.\.\.packTools\(\)\]/, "the tool list adds pack tools");
-
-console.log(`check:packs ok (${one.length} pack tools, ${packTables.length} pack tables, ${core.length} core tools)`);
+console.log(`check:packs ok (${packDirs.length} packs, ${tools} pack tools, ${tables} pack tables, ${core.length} core tools)`);

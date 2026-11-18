@@ -3,7 +3,7 @@
 Spec (with the diagram): "Agent memory: spec" in Claude Docs, https://claude.ai/artifact/4cZFcAvFmpadpLSZXYHuWt.
 This file is the in-repo summary. Build card: "Agent memory" on the Notion Build Board.
 
-Each agent carries short notes into every run. Zak teaches by reacting to an agent's work where he
+Each agent carries short notes into every run. The owner teaches by reacting to an agent's work where they
 sees it (Good / Not this on a run, Reject with a reason: docs/company-mode.md, slice 1), and reads and
 corrects what it learned on the Memory tab, so he teaches an agent once instead of rewriting its prompt.
 
@@ -18,8 +18,8 @@ corrects what it learned on the Memory tab, so he teaches an agent once instead 
   (Rowan, Quinn) always store working memory as data.
 - Facts an agent may claim and "don't repeat" are worked out from Shopify and its own tables
   each run, never stored.
-- Zak's own words (a reaction, a Reject reason, a rule in builder step 1) are kept straight away.
-  Lessons proposed by a lead's or head's send-back wait for Zak's Keep. Nothing is deleted: Forget, Discard and expiry
+- The owner's own words (a reaction, a Reject reason, a rule in builder step 1) are kept straight away.
+  Lessons proposed by a lead's or head's send-back wait for the owner's Keep. Nothing is deleted: Forget, Discard and expiry
   change `state`, and every change lands in `memory_events`.
 
 ## Storage (migration `20261112120000_agent_memory.sql`)
@@ -45,7 +45,7 @@ corrects what it learned on the Memory tab, so he teaches an agent once instead 
    `integrations/notion.ts`) are read next, each capped at 1,500 tokens and all of them at what is
    left of the budget, so they come ahead of notes, lessons and working memory. A page that can't
    be read (not shared with the integration, deleted, Notion not connected, no room) is skipped and
-   the run summary names it. Pages are Zak's own workspace, so they are notes, framed as
+   the run summary names it. Pages are the owner's own workspace, so they are notes, framed as
    reference that never beats the rules. The Memory tab reads them the same way to show each
    page's title, size and any problem.
 3. The job hands `memory.block` to the model as its own system block after the instructions.
@@ -60,7 +60,7 @@ corrects what it learned on the Memory tab, so he teaches an agent once instead 
    form was replaced by reactions in company mode slice 1.)
 2. Lessons (since company mode slice 1, a Reject reason saves a kept rule instead; lessons now come
    from a lead's send-back). Originally: Reject on an approval asks "why not?" (optional). A reason became a proposed lesson
-   (`proposeLesson`, Zak's words, no model call), shown on the agent's Memory tab with Keep,
+   (`proposeLesson`, the owner's words, no model call), shown on the agent's Memory tab with Keep,
    Keep for crew, Edit and Discard, and in Needs you. Proposed lessons are never loaded.
    Edits to an approval (`edit_diff`) will propose lessons too once Edit exists on approvals.
 3. Notion pages linked from standing orders: Teach shows an optional Notion link when "A standing
@@ -70,13 +70,13 @@ corrects what it learned on the Memory tab, so he teaches an agent once instead 
 4. Rowan and Quinn load memory. Rowan gets it as a second system block and leaves working
    memory through `remember` on record_leads (stored as data, since Rowan reads the web; lines
    with an email, link, phone number or website name are dropped). Quinn's memory goes only to
-   the category call (Zak's notes like "Costco is packaging" help pick; Mercury's list still
+   the category call (the owner's notes like "Costco is packaging" help pick; Mercury's list still
    decides what is allowed) and keeps no working memory (`KEEPS_WORKING`); it returns
    `readMemory` so next-run notes count down. Facts and don't repeat stay derived each run
    (Shopify offer facts and the pipeline list for Rowan, expense_docs for Quinn), never stored.
    Mission control's "Memory per agent" shows each agent's next load against the budget, and the
    run canvas Memory node shows what that run loaded (`agent_runs.memory_json`).
 5. Teach by reacting (docs/company-mode.md, slice 1): Good / Not this on runs, leads and approval
-   cards; Zak's words save as a standing order, note, department rule or crew line straight away,
+   cards; the owner's words save as a standing order, note, department rule or crew line straight away,
    optionally replacing a rule in the same scope. `reactions` table holds the signal; heads read it
    in Your team.

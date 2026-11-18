@@ -211,7 +211,7 @@ export async function runExplore(spec: AgentSpec, opts: ExploreOpts): Promise<Ru
   const reportTools = granted.filter((t) => t.kind === "report");
   const serverUsed: Record<string, number> = {};
   const asTool = (t: ToolDef) => (t.server
-    ? { type: t.server.type, name: t.id, max_uses: Math.max(1, t.server.maxUses - (serverUsed[t.id] ?? 0)), ...(t.server.type === "web_search_20260209" ? { user_location: { type: "approximate", city: "Austin", region: "Texas", country: "US", timezone: "America/Chicago" } } : {}) }
+    ? { type: t.server.type, name: t.id, max_uses: Math.max(1, t.server.maxUses - (serverUsed[t.id] ?? 0)), ...(t.server.type === "web_search_20260209" ? { user_location: { type: "approximate", country: "US", timezone: "America/Chicago" } } : {}) }
     : { name: t.id, description: `${t.label}. ${t.detail}.`, input_schema: inputSchema(paramsOf(t, ctx)) });
   /** What the model may still call: server tools drop out once they reach their per-run cap. */
   let callable: ToolDef[] = offered;

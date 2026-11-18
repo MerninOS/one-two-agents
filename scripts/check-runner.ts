@@ -7,8 +7,6 @@ import { draftSteps, sameSteps, stepChanges } from "../core/playbook";
 import { runExplore, traceNumbers, type Step } from "../core/runner";
 import { TOOLS } from "../core/tools/catalog";
 import type { ToolDef } from "../core/tools/types";
-import { parseJudgment } from "../templates/one-two/agents/chief-of-staff";
-import { deptLine } from "../templates/one-two/agents/chief-of-staff/email";
 
 type Block = { type: "text"; text: string } | { type: "tool_use"; id: string; name: string; input: unknown };
 let n = 0;
@@ -204,16 +202,6 @@ async function main() {
   }) });
   assert.equal(r11.finished, true);
 
-  // Avery's focus and watch lines from a runner result
-  assert.deepEqual(parseJudgment("Focus: Reorder Ethiopia Guji. It runs out first.\n- Guji has 9 days left.\n- 2 orders on QC hold.\nsomething else"), { focus: { action: "Reorder Ethiopia Guji", reason: "It runs out first." }, watch: ["Guji has 9 days left.", "2 orders on QC hold."] });
-  assert.equal(parseJudgment("No focus here"), null);
-  // slice 3 of departments: department lines have no dash, so they never become watch items; counts come from code
-  assert.deepEqual(parseJudgment("Focus: Ship it. Now.\n- one\nFinance: Cash is fine.")?.watch, ["one"]);
-  // company mode slice 4: a department's line is its goals' status and its runs, all counted in code
-  assert.equal(deptLine({ name: "Finance", goals: ["Runway above 12 months: 14.3 months, at least 12 months, on track."], runs: 3, failed: 0, costUsd: 0.123 }), "Finance: Runway above 12 months: 14.3 months, at least 12 months, on track. 3 runs, all OK, $0.12, in the last 24 hours.");
-  assert.equal(deptLine({ name: "Sales", goals: [], runs: 0, failed: 0, costUsd: 0 }), "Sales: No goal set. No runs in the last 24 hours.");
-  assert.equal(deptLine({ name: "Ops", goals: ["A: 1 of 5 won, behind", "B: 2 days, at least 3 days, behind"], runs: 2, failed: 1, costUsd: 0.5 }), "Ops: A: 1 of 5 won, behind; B: 2 days, at least 3 days, behind. 2 runs, 1 failed, $0.50, in the last 24 hours.");
-
   // slice 7: multiline text keeps line breaks but no links; url and email shapes
   const body = [{ name: "body", type: "text", maxLength: 200, multiline: true, description: "" }] as const;
   assert.deepEqual(checkInput(body, { body: "Hi,\r\n\n\n\nSam" }), { input: { body: "Hi,\n\nSam" } });
@@ -227,7 +215,7 @@ async function main() {
   const rowan = readSpec({ name: "Rowan", directive: "x", model: "claude-opus-5-5", tools: ["web_search", "report_leads"], limits: { maxSteps: 6, maxCostUsd: 1 } }, "wholesale_hunter").spec;
   const delivered: unknown[] = [];
   const lTools: Record<string, ToolDef> = { ...TOOLS, report_leads: { ...TOOLS.report_leads, deliver: async (o) => { delivered.push(...o.rows); return "saved"; } } };
-  const leadIn = { business: "Fleet Coffee", city: "Austin", type: "cafe", website: "https://www.fleet.coffee", fit_score: 4, fit_reason: "Busy cafe.", subject: "Coffee", body: "Hi\n\nSam" };
+  const leadIn = { business: "Fleet Coffee", city: "Denver", type: "cafe", website: "https://www.fleet.coffee", fit_score: 4, fit_reason: "Busy cafe.", subject: "Coffee", body: "Hi\n\nSam" };
   const r12 = await runExplore(rowan, { agentId: "wholesale_hunter", tools: lTools, deliver: true, client: fake((t, b) => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     if (t === 0) { assert.ok((b.tools as any[]).some((x) => x.type === "web_search_20260209" && x.name === "web_search")); return { ...reply([{ type: "server_tool_use", id: "s1", name: "web_search", input: { query: "austin cafes" } } as unknown as Block], "pause_turn") }; }

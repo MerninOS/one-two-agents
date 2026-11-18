@@ -2,7 +2,7 @@
 
 Design: OPERATOR architecture https://claude.ai/artifact/8ec8poMoGrDtE3XY1axWrj, phase 5. Build
 Board: Order 125. Core is what every business runs; a template pack is what one kind of business
-adds on top. One Two Coffee Lab is the first pack (`templates/one-two`), and an example another
+adds on top. The business is the first pack (`templates/one-two`), and an example another
 business can learn from.
 
 ## What a pack is (`templates/types.ts`)
@@ -11,9 +11,9 @@ business can learn from.
   Calculate write nothing, numbers are worked out in code, reports reach only the owner or our own
   stores after a finished run, actions only through `core/gateway`). An id never clashes with
   core's; `core/tools/catalog.ts` refuses to load if it does.
-- **Goal measures**: readers for `core/goal-rules.ts` keys the pack counts (One Two: lowest days of
+- **Goal measures**: readers for `core/goal-rules.ts` keys the pack counts (the business: lowest days of
   green cover).
-- **Tables**: tables only the pack's code reads and writes (One Two: `kpi_snapshots`, `trips`,
+- **Tables**: tables only the pack's code reads and writes (the business: `kpi_snapshots`, `trips`,
   `home_office`, `tax_packets`). Each is still a tenant table with `org_id`, a place in
   `TENANT_TABLES` and an `org_rows` policy, and its migration stays in `supabase/migrations/` (one
   database). `check:packs` refuses core code that reads one.
@@ -53,13 +53,13 @@ through `core/gateway`'s front door (an approval card), never the vault, the gat
 `npm run check:packs` enforces this, checks pack tool ids, and checks that the old folders
 (`domain/`, `agents/cfo` and the rest, `core/green.ts`, the old Shopify reads) are gone.
 
-## One Two's pack (`templates/one-two`)
+## the business's pack (`templates/one-two`)
 
 | Path | What |
 | --- | --- |
 | `domain/` | Coffee constants and green math (copied from the storefront), bookkeeping rules |
-| `agents/` | The code One Two's tools call: Morgan's daily numbers (`cfo`), Avery's brief (`chief-of-staff`), Quinn's books sync (`bookkeeper`), Rowan's wholesale offer (`wholesale-hunter`) |
-| `shopify/` | Our Shopify reads for One Two's storefront fields: green lots, our coffees, roast loss, the green ledger and roasting board; `README.md` is the field contract with the storefront |
+| `agents/` | The code the business's tools call: Morgan's daily numbers (`cfo`), Avery's brief (`chief-of-staff`), Quinn's books sync (`bookkeeper`), Rowan's wholesale offer (`wholesale-hunter`) |
+| `shopify/` | Our Shopify reads for the business's storefront fields: green lots, our coffees, roast loss, the green ledger and roasting board; `README.md` is the field contract with the storefront |
 | `green.ts` | Green use and days of cover |
 | `tools.ts` | Green lots, open orders, green use, cover and reorder, the daily snapshot, the wholesale offer, Morgan's saved numbers, and the reports that save the snapshot, send the brief and sync the books |
 | `measures.ts` | Lowest days of green cover |
@@ -71,18 +71,18 @@ Tool ids, inputs and behaviour are unchanged, so every saved agent keeps its too
 
 1. **Pack mechanism** (done): the pack folder, registration of tools and measures, the check.
    No behaviour change.
-2. **Words** (done): the hard rules in CLAUDE.md say "the owner" and "the business", not Zak
-   and One Two, with the same meaning; Zak approves the wording before it merges. The cap start
+2. **Words** (done): the hard rules in CLAUDE.md say "the owner" and "the business", not the owner
+   and the business, with the same meaning; an approver approves the wording before it merges. The cap start
    values stay in core (`CAPS`), because each is also the most any org may set: a pack can't
    loosen a hard rule. Text that models or people read in the app (prompts, Control Room copy)
    is not changed here, since changing a prompt changes behaviour.
-3. **Shopify reads and tables** (done): the Shopify reads for One Two's storefront fields move
+3. **Shopify reads and tables** (done): the Shopify reads for the business's storefront fields move
    into `templates/one-two/shopify/`; a day's orders (`integrations/shopify/orders.ts`, what core's
    goal measures count) stays in core. The pack declares its tables. No behaviour change, no
    migration. The fixed queries and the Shopify server's profile stay in core, because profiles
    are hard rules (`core/mcp-rules.ts`).
-4. **Installer** (this one): One Two's crew, playbooks and goals are a snapshot in the pack
+4. **Installer** (this one): the business's crew, playbooks and goals are a snapshot in the pack
    (`crew.json`, matching the live specs and playbooks on 2026-11-17), installed into a new org by
-   `core/install.ts`. No migration, and One Two's own org is untouched. Still to come with signing
+   `core/install.ts`. No migration, and the business's own org is untouched. Still to come with signing
    in to other orgs: `BRIEF_TO` becomes the org's owner email, and app copy and the other docs say
    "the owner".

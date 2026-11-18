@@ -1,5 +1,5 @@
 // The business's own words (card 127): `npm run check:business`. Pure: no database.
-// Shared code names no business: "Zak", "One Two" and the storefront's address live only in a
+// Shared code names no business: the owner's name, the business's name and its address live only in a
 // template pack (templates/) and the business's own row (Settings), never in core, the Control Room
 // or the integrations.
 import assert from "node:assert/strict";
@@ -18,12 +18,12 @@ assert.equal(readBusiness({ name: "x".repeat(500), about: "y".repeat(500) }).abo
 assert.equal(businessProblem({ name: " ", about: "", ownerName: "" }), "The business needs a name.");
 assert.match(businessProblem({ name: "A", about: "z".repeat(301), ownerName: "" }) ?? "", /300/);
 assert.equal(businessProblem({ name: "A", about: "", ownerName: "" }), null);
-assert.equal(initials("One Two Coffee Lab"), "OT");
+assert.equal(initials("Blue Door Coffee"), "BD");
 assert.equal(initials("acme"), "AC");
 assert.equal(initials("  "), "OP");
 
 // no business named in shared code
-const BRAND = [/\bZak\b/, /\bzak\b/, /One Two/, /onetwocoffeelab/i, /0e1a7c4e-0001-4000-8000-000000000001/];
+const BRAND = [/\bZak\b/, /\bzak\b/, /One Two/, /onetwocoffeelab/i, /\bAustin\b/, /0e1a7c4e-0001-4000-8000-000000000001/];
 const ALLOW: Record<string, RegExp> = { "core/tenancy.ts": /0e1a7c4e/ };
 const walk = (d: string): string[] => readdirSync(d).flatMap((n) => { const p = join(d, n); return statSync(p).isDirectory() ? walk(p) : /\.(ts|tsx)$/.test(n) ? [p] : []; });
 const hits: string[] = [];

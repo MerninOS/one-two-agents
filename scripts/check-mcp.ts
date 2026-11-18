@@ -350,7 +350,7 @@ const hostChecks = (async () => {
   assert.deepEqual(list.map((t) => t.name), ["lots", "math"], "only reads and calculations are listed");
   assert.equal(list[0].annotations.readOnlyHint, true);
   assert.deepEqual(await host({ jsonrpc: "2.0", id: 5, method: "resources/list" }), { jsonrpc: "2.0", id: 5, error: { code: -32601, message: "no method resources/list" } });
-  assert.equal(CTX_META, "one-two/ctx");
+  assert.equal(CTX_META, "operator/ctx");
 })();
 
 // only the in-app server runs a tool's code: nothing else calls `.run(` on a tool

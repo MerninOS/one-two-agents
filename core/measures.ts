@@ -45,7 +45,7 @@ async function readOne(key: MeasureKey, today: string, shared: { month?: ReturnT
       return { reading: { value: key === "orders_month" ? m.count : m.revenue }, detail: null };
     }
     case "lowest_cover_days": {
-      // a template pack's measure (templates/one-two: green lot cover)
+      // a template pack's measure (templates/index.ts packMeasure)
       const read = packMeasure(key);
       if (!read) return { reading: { error: "no installed template pack counts this" }, detail: null };
       return read();
