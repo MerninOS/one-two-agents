@@ -2,6 +2,7 @@
   "name": "one-two-agents",
   "version": "0.1.0",
   "private": true,
+  "license": "AGPL-3.0-only",
   "scripts": {
     "dev": "next dev",
     "build": "next build",
@@ -29,6 +30,8 @@
     "check:audit": "npx --yes tsx scripts/check-audit.ts",
     "check:traces": "npx --yes tsx scripts/check-traces.ts",
     "check:status": "npx --yes tsx scripts/check-status.ts",
+    "check:open-core": "npx --yes tsx scripts/check-open-core.ts",
+    "check:all": "node scripts/check-all.mjs",
     "org:new": "npx --yes tsx --conditions=react-server --env-file=.env.local scripts/new-org.ts",
     "check": "npm run typecheck && npm run lint && npm run validate:graphql"
   },

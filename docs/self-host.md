@@ -1,6 +1,6 @@
 # Self-hosting OPERATOR
 
-Build Board: Order 127 (Open core 7), slice 1. Decided (Zak, 2026-11-17): self-host is our app plus
+Build Board: Order 127 (Open core 7), slice 1 (licenses and contributor docs: slice 2). Decided (Zak, 2026-11-17): self-host is our app plus
 Supabase's own open-source stack, not a rewrite onto bare Postgres. The app uses Supabase for every
 table read (PostgREST through `core/db.ts`), email sign-in (Supabase Auth, `dashboard/authActions.ts`)
 and receipt files (Supabase Storage), and Supabase's stack is open source and runs anywhere.

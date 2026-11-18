@@ -1,0 +1,23 @@
+OPERATOR Enterprise Edition (the ee/ folder) License
+
+Copyright (c) 2026 Operator Enterprises and Technologies, LLC. All rights reserved.
+
+Everything in the ee/ folder of this repository, and every file whose header says it is part of
+OPERATOR Enterprise Edition, is licensed under this license, not the AGPL-3.0 that covers the rest
+of the repository.
+
+1. You may read this code, and you may run it and change it for development and testing.
+2. You may not use this code in production, or offer it to others as a service, without a valid
+   commercial agreement with Operator Enterprises and Technologies, LLC for the features and number of seats you use.
+3. You may not remove or work around any license check, or any part of this notice.
+4. Changes you make to this code belong to Operator Enterprises and Technologies, LLC when contributed back; ee/ does not
+   take outside pull requests.
+
+Code outside ee/ never depends on ee/ (lint enforces it), so the AGPL-3.0 part of OPERATOR runs
+complete without it.
+
+THIS SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED. IN NO EVENT
+SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY ARISING
+FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR ITS USE.
+
+(Draft for legal review before the public repo opens.)
