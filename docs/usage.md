@@ -8,16 +8,16 @@ https://claude.ai/artifact/8ec8poMoGrDtE3XY1axWrj, phase 6. With many orgs and q
 
 1. **Usage ledger** (done): `usage_ledger`, one row per thing that cost money, and budgets
    read from it.
-2. **Audit log** (this one): an append-only row for each person's action (approvals, Connections changes, the
+2. **Audit log** (done): an append-only row for each person's action (approvals, Connections changes, the
    org switch, promotions, people and roles), shown in Settings.
-3. **Traces**: OpenTelemetry spans per job and run step (org, run, agent, tool), exportable to any
+3. **Traces** (this one): OpenTelemetry spans per job and run step (org, run, agent, tool), exportable to any
    OTel backend or a Vercel drain, scrubbed like every log.
 4. **Status and alerts**: dead jobs, paused custom servers, expired sign-ins, cap breaches and
    queue depth on one page, with alert emails to the owner through `integrations/email.ts`.
 
 ## The usage ledger (`supabase/migrations/20261207090000_usage_ledger.sql`, `core/usage.ts`)
 
-- A row has the org, kind (`run` today; `model_call` and `tool_call` come with traces), when it
+- A row has the org, kind (`run` today; `model_call` and `tool_call` rows wait for metered billing, card 128: each call's cost is already on its trace span), when it
   counts (the run's start, as budgets always counted), the run and agent, the source (the run's
   trigger), tokens and cost.
 - **The database writes it.** A trigger on `agent_runs` adds or updates the run's row whenever its
@@ -48,3 +48,23 @@ https://claude.ai/artifact/8ec8poMoGrDtE3XY1axWrj, phase 6. With many orgs and q
   the chart, memory and goals, which keep their own history).
 - A row that can't be written never undoes the action: the failure is logged, scrubbed.
 - Settings shows the latest 100 rows.
+
+## Traces (`instrumentation.ts`, `instrumentation.node.ts`, `core/trace.ts`, `core/trace-rules.ts`)
+
+- An OpenTelemetry span around each **job** (worker), **run** (`withRun`), **model call** (the
+  runner) and **tool call** (`callMcpTool`, `callWriteTool`, `callCustomTool`), nested as they
+  happen, each tagged with the org. A run's span has the agent, trigger, chain, run id, status,
+  tokens and cost; a model call's has the model that served it, tokens and cost; a tool call's has
+  the server, tool and kind (read, write, custom).
+- **Only ids, names and numbers.** `spanAttrs` drops any key not on its list and any value that
+  isn't a plain id, name or finite number, so an input, output, prompt, reply or token never lands
+  on our spans. Errors are scrubbed and cut to 200 characters.
+- **Every span is cleaned before it leaves**, Next.js's own and fetch's included: URLs lose their
+  query string (a sign-in callback carries a code there) and every string is scrubbed
+  (`cleanExported`, run by a span processor ahead of the exporter).
+- **Where they go**: `@vercel/otel` sends them wherever the environment says: a Vercel trace drain
+  (Vercel, Project, Settings, Drains, Traces), or any OTel backend through the standard
+  `OTEL_EXPORTER_OTLP_ENDPOINT` and `OTEL_EXPORTER_OTLP_HEADERS` settings. With neither, nothing is
+  sent and spans cost nothing.
+- Tracing never changes or stops the work: a span that can't be made or tagged is skipped.
+- `npm run check:traces` tests the filtering and cleaning, and that the four kinds of work are wrapped.

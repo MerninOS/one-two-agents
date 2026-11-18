@@ -4,6 +4,7 @@ import { isUuid, readChainPayload } from "@/core/job-rules";
 import { claimJob, finishJob, type Job } from "@/core/jobs";
 import { cronAuthorized } from "@/core/runs";
 import { withOrg } from "@/core/tenancy";
+import { traced } from "@/core/trace";
 
 export const maxDuration = 300;
 
@@ -30,6 +31,10 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
 }
 
 async function runJob(origin: string, job: Job): Promise<void> {
+  return traced("job", { "operator.job": job.id, "operator.job_kind": job.kind }, () => doJob(origin, job));
+}
+
+async function doJob(origin: string, job: Job): Promise<void> {
   try {
     if (job.kind !== "chain_step") return await finishJob(job.id, { failed: true, outcome: `Unknown kind ${job.kind}.` });
     const ctx = readChainPayload(job.payload);

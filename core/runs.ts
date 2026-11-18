@@ -1,6 +1,7 @@
 import "server-only";
 // Run plumbing shared by every agent: the run log, the enabled flag, the daily budget and
 // department budget checks, and the cron bearer check.
+import { traced } from "@/core/trace";
 import { db } from "@/core/db";
 import { agentSpend } from "@/core/usage";
 import { env } from "@/core/env";
@@ -72,11 +73,20 @@ async function deptBlocked(agentId: string): Promise<string | null> {
  * changing it.
  */
 export async function withRun(agentId: string, trigger: string, job: (runId: string, memory: MemoryLoad | null) => Promise<RunResult>, opts: { chain?: RunChain } = {}): Promise<RunResult & { runId: string }> {
+  return traced("run", { "operator.agent": agentId, "operator.trigger": trigger, "operator.chain": opts.chain?.key }, async (set) => {
+    const out = await loggedRun(agentId, trigger, job, opts, (runId) => set({ "operator.run": runId }));
+    set({ "operator.status": out.status, "operator.tokens_in": out.tokensIn ?? 0, "operator.tokens_out": out.tokensOut ?? 0, "operator.cost_usd": out.costUsd ?? 0 });
+    return out;
+  });
+}
+
+async function loggedRun(agentId: string, trigger: string, job: (runId: string, memory: MemoryLoad | null) => Promise<RunResult>, opts: { chain?: RunChain }, started: (runId: string) => void): Promise<RunResult & { runId: string }> {
   // chain columns arrive with the crew_flow migration; only a chain run names them
   const c = opts.chain;
   const chainCols = c ? { chain_id: c.chainId, chain_key: c.key, chain_step: c.step, ...(c.parent ? { parent_run_id: c.parent } : {}) } : {};
   const { data: run, error } = await db().from("agent_runs").insert({ agent_id: agentId, trigger, ...chainCols }).select("id").single();
   if (error || !run) throw new Error(`Could not start run: ${error?.message}`);
+  started(run.id);
   const finish = (patch: Record<string, unknown>) => db().from("agent_runs").update({ ended_at: new Date().toISOString(), ...patch }).eq("id", run.id);
   let memory: MemoryLoad | null = null, memoryNote = "";
   try {

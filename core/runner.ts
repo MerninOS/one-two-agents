@@ -22,6 +22,7 @@ import "server-only";
 //   owner's row, only after that server's tool check passes; their replies are untrusted, and at
 //   most MAX_CUSTOM_CALLS of them run.
 // - The caller wraps a run in withRun, so it is logged and respects the on-duty switch and budget.
+import { traced as span } from "@/core/trace";
 import { db } from "@/core/db";
 import { chicagoDate, dayTitle } from "@/core/time";
 import type { RunResult } from "@/core/runs";
@@ -376,17 +377,21 @@ export async function runExplore(spec: AgentSpec, opts: ExploreOpts): Promise<Ru
       const worst = costUsd(spec.model, lastIn + 3000, MAX_OUT);
       if (spent + worst > spec.limits.maxCostUsd) { stopped = `the $${spec.limits.maxCostUsd.toFixed(2)} cost limit`; break; }
       const t0 = Date.now();
-      const res = await (opts.client ?? claude()).beta.messages.create({
-        model: spec.model, max_tokens: MAX_OUT,
-        betas: ["server-side-fallback-2026-07-01"], fallbacks: "default",
-        output_config: { effort: spec.effort },
-        system, tools: toolList(), messages,
+      const { res, tin, tout, c } = await span("model_call", { "operator.agent": opts.agentId, "operator.run": opts.runId, "operator.model": spec.model }, async (set) => {
+        const res = await (opts.client ?? claude()).beta.messages.create({
+          model: spec.model, max_tokens: MAX_OUT,
+          betas: ["server-side-fallback-2026-07-01"], fallbacks: "default",
+          output_config: { effort: spec.effort },
+          system, tools: toolList(), messages,
+        });
+        const tin = inputTokens(res.usage), tout = res.usage.output_tokens;
+        const searches = res.usage.server_tool_use?.web_search_requests ?? 0;
+        // a refusal may be answered by another Claude model; bill whichever model served it
+        const billed = isModel(res.model) ? res.model : spec.model;
+        const c = costUsd(billed, tin, tout, searches);
+        set({ "operator.model": billed, "operator.tokens_in": tin, "operator.tokens_out": tout, "operator.cost_usd": c, "operator.status": res.stop_reason ?? "unknown" });
+        return { res, tin, tout, c };
       });
-      const tin = inputTokens(res.usage), tout = res.usage.output_tokens;
-      const searches = res.usage.server_tool_use?.web_search_requests ?? 0;
-      // a refusal may be answered by another Claude model; bill whichever model served it
-      const billed = isModel(res.model) ? res.model : spec.model;
-      const c = costUsd(billed, tin, tout, searches);
       tokensIn += tin; tokensOut += tout; spent += c; lastIn = tin;
       const text = res.content.filter((b) => b.type === "text").map((b) => (b as { text: string }).text).join("\n").trim();
       step({ kind: "model", output: text || undefined, ok: true, tokensIn: tin, tokensOut: tout, costUsd: c, ms: Date.now() - t0 });

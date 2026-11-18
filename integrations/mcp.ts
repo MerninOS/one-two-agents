@@ -9,6 +9,7 @@ import "server-only";
 // the run log or an error message (scrubSecrets), are never sent on after a redirect, and are
 // revoked at the server on Disconnect where it allows. Every sign-in event is logged, without
 // token values, in mcp_connection_events.
+import { traced } from "@/core/trace";
 import { createHash, randomBytes } from "node:crypto";
 import { lookup } from "node:dns/promises";
 import { db } from "@/core/db";
@@ -593,9 +594,11 @@ const stale = (at: string | null) => !at || Date.now() - Date.parse(at) > TOOL_C
  */
 export async function callMcpTool(id: McpId, tool: string, args: Record<string, unknown>): Promise<unknown> {
   if (!mayCall(id, tool)) throw new Error(`${tool} isn't on the list of ${MCP_SERVERS[id].name} tools code may call.`);
-  if (isGoogle(id)) return callGoogleTool(id, tool, args);
-  if (!isHosted(id)) return callLocalTool(id, tool, args);
-  return callRemote(id, tool, args);
+  return traced("tool_call", { "operator.server": id, "operator.tool": tool, "operator.tool_kind": "read" }, () => {
+    if (isGoogle(id)) return callGoogleTool(id, tool, args);
+    if (!isHosted(id)) return callLocalTool(id, tool, args);
+    return callRemote(id, tool, args);
+  });
 }
 
 /**
@@ -604,9 +607,11 @@ export async function callMcpTool(id: McpId, tool: string, args: Record<string, 
  */
 export async function callWriteTool(id: McpId, tool: string, args: Record<string, unknown>): Promise<unknown> {
   if (!mayWrite(id, tool)) throw new Error(`${tool} isn't a write tool the gateway may call on ${MCP_SERVERS[id].name}.`);
-  if (isGoogle(id)) return callGoogleTool(id, tool, args);
-  if (isHosted(id)) return callRemote(id, tool, args);
-  return localCall(id, tool, args, true);
+  return traced("tool_call", { "operator.server": id, "operator.tool": tool, "operator.tool_kind": "write" }, () => {
+    if (isGoogle(id)) return callGoogleTool(id, tool, args);
+    if (isHosted(id)) return callRemote(id, tool, args);
+    return localCall(id, tool, args, true);
+  });
 }
 
 /**
@@ -924,11 +929,11 @@ export async function callCustomTool(id: string, tool: string, checked: Record<s
   if (cantTurnOn(t) || t.fingerprint !== on.fingerprint) throw new Error(`${c.name} changed ${tool}. Accept the change on Connections first.`);
   const a = customArgs(t.inputs, on.pins, checked);
   if ("problem" in a) throw new Error(`Input refused: ${a.problem}`);
-  return withSession(customProf(c), async (call) => {
+  return traced("tool_call", { "operator.server": "custom", "operator.tool": tool, "operator.tool_kind": "custom" }, () => withSession(customProf(c), async (call) => {
     const out = toolPayload(await call("tools/call", { name: tool, arguments: a.args }));
     if ("error" in out) throw new Error(`${c.name} ${tool}: ${out.error.slice(0, 200)}`);
     return customReply(out.data);
-  });
+  }));
 }
 
 const OWNER_PAUSE = "Paused by you";
