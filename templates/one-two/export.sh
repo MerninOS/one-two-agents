@@ -40,10 +40,7 @@ rmdir supabase/baseline
 
 # 3. Nothing of One Two's may remain
 BRAND='\bzak\b|one[ _-]?two|onetwo|astromall|mernin|zakuccinos|lptfkikpiumiodpjaxal|blended|\baustin\b|zdebrine@'
-# Known and accepted for now: the storefront metafield namespace in the Shopify server's fixed queries
-# (core/shopify-queries.ts, integrations/shopify-server.ts and their check).
-ALLOW_SHOPIFY=${ALLOW_SHOPIFY:-}
-HITS=$(grep -rniE "$BRAND" . --exclude-dir=node_modules --exclude-dir=.git | { if [ -n "$ALLOW_SHOPIFY" ]; then grep -vE '^\./(core/shopify-queries\.ts|integrations/shopify-server\.ts|scripts/check-mcp\.ts):[0-9]+:.*blended' ; else cat; fi; } || true)
+HITS=$(grep -rniE "$BRAND" . --exclude-dir=node_modules --exclude-dir=.git || true)
 if [ -n "$HITS" ]; then echo "$HITS" | head -40 >&2; echo "export refused: One Two names above" >&2; exit 1; fi
 SECRET='sk-ant-[A-Za-z0-9_-]{10,}|shpat_[a-f0-9]{10,}|shpss_[a-f0-9]{10,}|secret_[A-Za-z0-9]{30,}|ntn_[A-Za-z0-9]{30,}|re_[A-Za-z0-9]{20,}|eyJhbGciOi[A-Za-z0-9._-]{40,}|-----BEGIN [A-Z ]*PRIVATE KEY'
 if grep -rnE "$SECRET" . --exclude-dir=node_modules --exclude-dir=.git; then echo "export refused: a key-shaped string above" >&2; exit 1; fi
