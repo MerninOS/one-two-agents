@@ -3,6 +3,7 @@
 // forgets the token; the email list is a choice for the Email list size measure. Neither grants a
 // tool: that stays a builder step.
 import { audit } from "@/core/audit";
+import { planBlock } from "@/core/extensions";
 import { revalidatePath } from "next/cache";
 import { isMcpId } from "@/core/mcp-rules";
 import { addCustomServer, checkCustomServer, disconnectMcp, removeClaudeKey, saveClaudeKey, pauseCustom, removeCustomServer, resealAll, saveCustomKey, saveCustomScopes, saveMcpKey, saveMcpSetting, setCustomTool } from "@/integrations/mcp";
@@ -95,6 +96,7 @@ const unknown: ActionResult = { ok: false, text: "Unknown server." };
 export async function customAdd(name: string, url: string, auth: string): Promise<ActionResult & { id?: string }> {
   const { me, no } = await asRole("owner"); if (no) return no;
   if (!controlsOn()) return CONTROLS_OFF;
+  const plan = await planBlock({ kind: "custom_server" }); if (plan) return { ok: false, text: plan };
   try {
     const id = await addCustomServer({ name: String(name ?? ""), url: String(url ?? ""), auth: String(auth ?? "") });
     // adding a server counts as an ask for that service, so the most wanted get built in (never stops the add)

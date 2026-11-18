@@ -7,6 +7,7 @@ import { agentSpend } from "@/core/usage";
 import { env } from "@/core/env";
 import { agentDepartment, claimBudgetAlert, deptBudgetBlock } from "@/core/org";
 import { emailOwner, hasEmail } from "@/integrations/email";
+import { planBlock } from "@/core/extensions";
 import { afterLoad, loadMemory, loadSummary, saveWorking, type MemoryLoad } from "@/core/memory";
 
 /** Vercel Cron sends `Authorization: Bearer $CRON_SECRET`; manual runs use the same header. */
@@ -29,8 +30,8 @@ export interface RunResult {
 export interface RunChain { chainId: string; key: string; step: number; parent?: string }
 
 /**
- * Why the agent may not run now (disabled, over today's budget, or its department over this
- * month's budget), or null. A Preview (Setup tab) writes and sends nothing, so it may run while
+ * Why the agent may not run now (disabled, over today's budget, its department over this
+ * month's budget, or the business's plan, core/extensions.ts), or null. A Preview (Setup tab) writes and sends nothing, so it may run while
  * the agent is off duty; it still needs budget.
  */
 async function blockedReason(agentId: string, trigger: string) {
@@ -40,7 +41,7 @@ async function blockedReason(agentId: string, trigger: string) {
   const since = new Date(); since.setUTCHours(0, 0, 0, 0);
   const spent = await agentSpend(agentId, since.toISOString());
   if (spent >= Number(agent.daily_budget_usd)) return `Daily budget of $${agent.daily_budget_usd} reached ($${spent.toFixed(2)} spent).`;
-  return deptBlocked(agentId);
+  return (await deptBlocked(agentId)) ?? planBlock({ kind: "run", agentId, trigger });
 }
 
 /**

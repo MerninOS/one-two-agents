@@ -2,6 +2,7 @@
 // Settings > People (docs/tenancy.md, slice 2): owners add people by email, change their role and
 // remove them. At least one owner always remains. Each action checks the role again.
 import { audit } from "@/core/audit";
+import { planBlock } from "@/core/extensions";
 import { revalidatePath } from "next/cache";
 import { addMember, removeMember, setMemberRole } from "@/core/members";
 import { isRole } from "@/core/roles";
@@ -14,6 +15,7 @@ const done = (text: string): ActionResult => { revalidatePath("/settings"); retu
 export async function peopleAdd(email: string, role: string): Promise<ActionResult> {
   const { me, no } = await asRole("owner"); if (no) return no;
   if (!isRole(role)) return { ok: false, text: "Pick a role." };
+  const plan = await planBlock({ kind: "invite", email: String(email ?? ""), role }); if (plan) return { ok: false, text: plan };
   try {
     const m = await addMember(String(email ?? ""), role, me.email);
     await audit(me, "add_person", m.email, { role });

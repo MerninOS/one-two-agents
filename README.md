@@ -40,14 +40,15 @@ integrations/        mcp.ts (the one MCP client) and our own MCP servers (Notion
                      Mercury receipt files)
 templates/           template packs: a kind of business's tools, tables and starting crew
 supabase/migrations/ the schema, starting from one squashed migration
-ee/                  the commercial layer (its own license; see ee/README.md)
+ee/                  the commercial layer (its own license; see ee/README.md), plugged in through
+                     the extension slots in core/extensions.ts (docs/extensions.md)
 ```
 
 ## Docs
 
 `docs/` holds a spec per part: the agent builder and builder flow, agent memory, company mode, the
 org chart and schedule, every integration over MCP, custom MCP servers, building a connector,
-template packs, tenancy, usage and traces, self-hosting.
+template packs, tenancy, usage and traces, self-hosting, and the extension slots the paid layer fills.
 
 ## Checks
 

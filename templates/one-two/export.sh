@@ -33,6 +33,10 @@ edit("package.json", (s) => s.replace(/^\s+"check:pack-one-two": .*\n/m, "").rep
 edit("package-lock.json", (s) => s.split('"name": "one-two-agents"').join('"name": "operator"'));
 EOF
 
+# 1b. The paid layer's code: the public tree keeps ee/LICENSE and ee/README.md only, and builds the
+# open edition (core/extensions/none.ts); OPERATOR_EDITION=cloud needs this repo.
+find ee -mindepth 1 -maxdepth 1 ! -name LICENSE ! -name README.md -exec rm -r {} +
+
 # 2. One starting migration instead of the history
 rm -f supabase/migrations/*.sql
 mv supabase/baseline/operator_baseline.sql "supabase/migrations/${STAMP}_operator_baseline.sql"
