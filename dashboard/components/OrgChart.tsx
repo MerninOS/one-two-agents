@@ -188,11 +188,11 @@ function DeptSummary({ d }: { d: DeptView }) {
   const faces = [...seats].sort((a, b) => rank(a) - rank(b));
   const shown = faces.slice(0, 7);
   const leads = d.head.kids.filter((k) => k.kids.length > 0).length;
-  const head = d.head.agent ? d.head.agent.name : d.head.holder === "zak" ? "you" : "open seat";
+  const head = d.head.agent ? d.head.agent.name : d.head.holder === "owner" ? "you" : "open seat";
   return (
     <div className="org-sum">
       <span className="org-faces" aria-hidden="true">
-        {shown.map((s) => s.agent ? <Face key={s.id} a={s.agent} size={24} /> : s.holder === "zak" ? <span key={s.id} className="av org-z" style={{ width: 24, height: 24 }}>Z</span> : <span key={s.id} className="av planned" style={{ width: 24, height: 24 }} />)}
+        {shown.map((s) => s.agent ? <Face key={s.id} a={s.agent} size={24} /> : s.holder === "owner" ? <span key={s.id} className="av org-z" style={{ width: 24, height: 24 }}>Z</span> : <span key={s.id} className="av planned" style={{ width: 24, height: 24 }} />)}
         {faces.length > shown.length && <span className="org-more">+{faces.length - shown.length}</span>}
       </span>
       <span className="ink2" style={{ fontSize: 12.5, flex: 1, textAlign: "right" }}>Head: {head}{leads ? ` · ${plural(leads, "lead")}` : ""}</span>
@@ -205,13 +205,13 @@ function Face({ a, size = 32 }: { a: SeatAgent; size?: number }) {
 }
 
 function SeatCard({ s, editing, onPick, head, wide }: { s: SeatView; editing: boolean; onPick: () => void; head?: boolean; wide?: boolean }) {
-  const cls = `org-seat${s.holder === "open" ? " open" : s.holder === "zak" ? " you" : s.agent?.planned ? " plan" : ""}${wide ? " wide" : ""}`;
+  const cls = `org-seat${s.holder === "open" ? " open" : s.holder === "owner" ? " you" : s.agent?.planned ? " plan" : ""}${wide ? " wide" : ""}`;
   const inner = (
     <>
-      {s.agent ? <Face a={s.agent} /> : s.holder === "zak" ? <span className="av" style={{ width: 32, height: 32, background: "var(--ink)", color: "var(--ws)", fontSize: 13, fontWeight: 700 }}>Z</span> : <span className="av org-plus" style={{ width: 32, height: 32 }}><Icon name="plus" size={15} /></span>}
+      {s.agent ? <Face a={s.agent} /> : s.holder === "owner" ? <span className="av" style={{ width: 32, height: 32, background: "var(--ink)", color: "var(--ws)", fontSize: 13, fontWeight: 700 }}>Z</span> : <span className="av org-plus" style={{ width: 32, height: 32 }}><Icon name="plus" size={15} /></span>}
       <span className="org-who">
-        <b>{s.agent ? s.agent.name : s.holder === "zak" ? "You" : s.title}</b>
-        <span>{s.agent || s.holder === "zak" ? [s.title, s.sub].filter(Boolean).join(" · ") : s.sub || "Open seat"}</span>
+        <b>{s.agent ? s.agent.name : s.holder === "owner" ? "You" : s.title}</b>
+        <span>{s.agent || s.holder === "owner" ? [s.title, s.sub].filter(Boolean).join(" · ") : s.sub || "Open seat"}</span>
         {s.agent && !s.agent.planned && <span className="org-last">{s.agent.look.label} · {s.agent.last}</span>}
         {s.holder === "open" && !editing && !s.proposals.length && <span className="org-last">Open · build an agent for it</span>}
         {!editing && s.proposals.map((p) => <span key={p.id} className="org-last" style={{ color: "var(--acc)" }}>Proposal · {p.text}</span>)}
@@ -275,7 +275,7 @@ function SeatEditor({ o, v, busy, run, actions, close }: { o: Extract<Open, { ki
             <span className="bf-k">Who sits here</span>
             <select className="input" value={who} onChange={(e) => setWho(e.target.value)}>
               <option value="open">Nobody yet (open)</option>
-              <option value="zak">You (a job that stays with a person)</option>
+              <option value="owner">You (a job that stays with a person)</option>
               {v.choices.map((c) => <option key={c.id} value={`agent:${c.id}`}>{c.label}{c.seat && `agent:${c.id}` !== (s.agent ? `agent:${s.agent.id}` : "") ? ` · now in ${c.seat}` : ""}</option>)}
             </select>
             <span className="sub">An agent that sits somewhere else moves here, and its old seat opens.</span>

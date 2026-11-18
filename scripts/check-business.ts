@@ -23,7 +23,7 @@ assert.equal(initials("acme"), "AC");
 assert.equal(initials("  "), "OP");
 
 // no business named in shared code
-const BRAND = [/\bZak\b/, /One Two/, /onetwocoffeelab/i, /0e1a7c4e-0001-4000-8000-000000000001/];
+const BRAND = [/\bZak\b/, /\bzak\b/, /One Two/, /onetwocoffeelab/i, /0e1a7c4e-0001-4000-8000-000000000001/];
 const ALLOW: Record<string, RegExp> = { "core/tenancy.ts": /0e1a7c4e/ };
 const walk = (d: string): string[] => readdirSync(d).flatMap((n) => { const p = join(d, n); return statSync(p).isDirectory() ? walk(p) : /\.(ts|tsx)$/.test(n) ? [p] : []; });
 const hits: string[] = [];

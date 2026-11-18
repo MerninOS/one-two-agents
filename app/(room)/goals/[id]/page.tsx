@@ -143,10 +143,10 @@ function PlanCard({ plan, plans, week, headName, bySeat }: { plan: Plan | null; 
         <div key={it.n} className="soft-box" style={{ flexDirection: "column", alignItems: "stretch", gap: 6, ...(it.kind === "seat" ? { border: "1.5px dashed var(--mut2)", background: "transparent" } : {}) }}>
           <div className="row wrap" style={{ gap: 8 }}>
             <b style={{ fontSize: 14.5, fontWeight: 600, flex: 1, minWidth: 0 }}>{it.n}. {it.title}</b>
-            {it.kind === "zak" && <ActionButton className="btn outline xs" action={planJobDone.bind(null, plan.id, it.n, !it.doneAt)}>{it.doneAt ? "Done · undo" : "Mark done"}</ActionButton>}
+            {it.kind === "owner" && <ActionButton className="btn outline xs" action={planJobDone.bind(null, plan.id, it.n, !it.doneAt)}>{it.doneAt ? "Done · undo" : "Mark done"}</ActionButton>}
             {it.kind === "seat" && it.seatId && bySeat[it.seatId]?.[0] && <Link className="btn outline xs" href={`/proposals/${bySeat[it.seatId][0].id}`}>Hire proposal waiting</Link>}
           </div>
-          <span className="sub">{it.kind === "agent" ? <>Focus for <b>{it.who}</b> for 7 days · a note, never authority</> : it.kind === "zak" ? <>A job for <b>you</b> · {who} only suggests</> : <>Nobody holds the <b>{it.who}</b> seat yet</>}</span>
+          <span className="sub">{it.kind === "agent" ? <>Focus for <b>{it.who}</b> for 7 days · a note, never authority</> : it.kind === "owner" ? <>A job for <b>you</b> · {who} only suggests</> : <>Nobody holds the <b>{it.who}</b> seat yet</>}</span>
           <span style={{ fontSize: 13.5, lineHeight: 1.5 }} className="ink2">“{it.words}”</span>
         </div>
       ))}

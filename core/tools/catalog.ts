@@ -167,7 +167,7 @@ const TOOLS_LIST: ToolDef[] = [
       if (why) throw new Error(why);
       const t = teamOf(o, ctx.agentId, live)!;
       const since = new Date(Date.now() - Number(days) * 864e5).toISOString();
-      const [stats, outs, names, { data: budgets }, zak] = await Promise.all([
+      const [stats, outs, names, { data: budgets }, said] = await Promise.all([
         runStats(t.agents, since), latestOutputs(t.agents), agentNames(t.agents),
         db().from("agents").select("id, daily_budget_usd").in("id", t.agents),
         reactionTally(t.agents, since),
@@ -176,16 +176,16 @@ const TOOLS_LIST: ToolDef[] = [
       const numbers: Record<string, number> = {};
       const team = t.agents.map((id, i) => {
         const s = stats[id], out = outs[id], k = `a${i + 1}`;
-        const z = zak[id];
+        const z = said[id];
         numbers[`${k}_runs`] = s.runs; numbers[`${k}_failed`] = s.failed; numbers[`${k}_cost_usd`] = s.costUsd;
-        numbers[`${k}_zak_good`] = z?.good ?? 0; numbers[`${k}_zak_not`] = z?.not ?? 0;
+        numbers[`${k}_owner_good`] = z?.good ?? 0; numbers[`${k}_owner_not`] = z?.not ?? 0;
         out?.numbers.forEach((n, j) => { numbers[`${k}_n${j + 1}`] = n.value; });
         return {
           key: k, agent: names[id], seat: seatOf(o, id)?.title ?? "",
           latest: out ? { output: out.name, at: out.at, summary: out.summary, numbers: out.numbers.map((n, j) => ({ key: `${k}_n${j + 1}`, label: n.label, value: n.value })) } : null,
           runs: s.runs, failed: s.failed, skipped: s.skipped, costUsd: s.costUsd, budgetUsd: Math.round((budget.get(id) ?? 0) * Number(days) * 100) / 100, lastError: s.lastError,
           // The owner's reactions to its work (Good / Not this), and their latest words, already saved as its rules
-          fromZak: { good: z?.good ?? 0, notThis: z?.not ?? 0, said: z?.said ?? [] },
+          fromOwner: { good: z?.good ?? 0, notThis: z?.not ?? 0, said: z?.said ?? [] },
         };
       });
       numbers.team_agents = team.length;
@@ -221,7 +221,7 @@ const TOOLS_LIST: ToolDef[] = [
         numbers[`${d.id}_spent_month_usd`] = deptSpent(o, d.id, month);
         out?.numbers.forEach((n, j) => { numbers[`${d.id}_n${j + 1}`] = n.value; });
         return {
-          department: d.name, head: headId ? names[headId] : head?.holder === "zak" ? "a person" : "open seat",
+          department: d.name, head: headId ? names[headId] : head?.holder === "owner" ? "a person" : "open seat",
           headReport: out ? { output: out.name, at: out.at, summary: out.summary, numbers: out.numbers.map((n, j) => ({ key: `${d.id}_n${j + 1}`, label: n.label, value: n.value })) } : null,
           agents: members.length, runs: numbers[`${d.id}_runs`], failed: numbers[`${d.id}_failed`], costUsd: cost,
           failures: members.filter((id) => stats[id]?.failed).map((id) => ({ agent: names[id], error: stats[id].lastError })),
@@ -425,7 +425,7 @@ const TOOLS_LIST: ToolDef[] = [
 
   // ---- Reports (slice 5): code delivers the finished result; the model never calls these
   {
-    id: "report_email_zak", label: "Email the owner the result", detail: "After a run that finishes, code emails its result and traced numbers to the owner (BRIEF_TO). No other recipient is possible",
+    id: "report_email_owner", label: "Email the owner the result", detail: "After a run that finishes, code emails its result and traced numbers to the owner (BRIEF_TO). No other recipient is possible",
     kind: "report", group: "email", params: [], trusted: true, needs: EMAIL, costUsd: 0,
     deliver: async (o) => {
       const nums = o.numbers.map((n) => `${n.label}: ${n.value}`);

@@ -6,12 +6,12 @@ import { avgCostOf, buildCrew, costLabel, hueFor, memberOf, scheduleOf, sinceLab
 import { PLANNED } from "../dashboard/crew";
 import { flowProblems, type Chain, type Crew } from "../core/flow-rules";
 
-const tools = { team_report: { label: "Your team", kind: "read" }, report_email_zak: { label: "Email the owner the result", kind: "report" }, gmail_draft_lead: { label: "Draft an email to a lead", kind: "action" } };
+const tools = { team_report: { label: "Your team", kind: "read" }, report_email_owner: { label: "Email the owner the result", kind: "report" }, gmail_draft_lead: { label: "Draft an email to a lead", kind: "action" } };
 const morning: Chain = { key: "morning", name: "Morning", on: true, start: { type: "schedule", days: "daily", time: "05:30" }, steps: [{ agent: "cfo" }, { agent: "b_reese", days: "weekdays", notBefore: "06:45" }] };
 
 // an agent built in the app looks like any other: name from its live version, role from its seat
 const reese = memberOf({ id: "b_reese", name: "Reese", role: "", icon: null, hue: null, manual_only: true, created_at: "2026-11-14T15:40:00Z" },
-  { name: "Rico", mandate: "Head of sales: watches the pipeline", tools: ["team_report", "report_email_zak"], maxCostUsd: 0.25 },
+  { name: "Rico", mandate: "Head of sales: watches the pipeline", tools: ["team_report", "report_email_owner"], maxCostUsd: 0.25 },
   { tools, avgCost: null, seatTitle: "Head of sales", chains: [morning] });
 assert.equal(reese.name, "Rico");
 assert.equal(reese.role, "Head of sales");

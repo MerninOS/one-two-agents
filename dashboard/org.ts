@@ -148,7 +148,7 @@ export async function mapOrgOf(org: Org | null, agentId: string): Promise<MapOrg
   const box: MapOrg["reportsTo"] = !up
     ? { title: "You", sub: "The company seat reports to you, in the morning brief", agentId: null, open: false }
     : up.holder === "agent" && up.agentId ? { title: name(up.agentId), sub: seatPath(org, up), agentId: up.agentId, open: false }
-    : up.holder === "zak" ? { title: "You", sub: seatPath(org, up), agentId: null, open: false }
+    : up.holder === "owner" ? { title: "You", sub: seatPath(org, up), agentId: null, open: false }
     : { title: up.title, sub: "No one sits here yet, so its result waits", agentId: null, open: true };
   return { reportsTo: box, team: team.map((id) => ({ id, name: name(id) })) };
 }

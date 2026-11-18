@@ -14,7 +14,7 @@ export const HISTORY_TURNS = 10;
 export const MAX_RULES = 3;
 export const MAX_FILED = 3;
 
-export interface ChatLine { role: "zak" | "avery"; text: string }
+export interface ChatLine { role: "owner" | "avery"; text: string }
 
 const norm = (s: string) => s.toLowerCase().replace(/[“”"‘’'`]/g, "").replace(/\s+/g, " ").replace(/[\s.!?,;:]+$/, "").trim();
 
@@ -65,7 +65,7 @@ export function deptNamed(name: string | undefined, departments: { id: string; n
  * and the owner's new message. Her earlier replies are her own words, shown as such.
  */
 export function chatPrompt(history: ChatLine[], message: string, today: string): string {
-  const earlier = history.slice(-HISTORY_TURNS).map((l) => `${l.role === "zak" ? "Them" : "You"}: ${l.text.replace(/\s+/g, " ").slice(0, 600)}`).join("\n");
+  const earlier = history.slice(-HISTORY_TURNS).map((l) => `${l.role === "owner" ? "Them" : "You"}: ${l.text.replace(/\s+/g, " ").slice(0, 600)}`).join("\n");
   return [
     `Today is ${today} (Central time). A person from the business is talking to you in the Control Room chat.`,
     earlier ? `Earlier in this conversation:\n${earlier}` : "",

@@ -8,7 +8,7 @@ import { useEffect, useRef, useState, useSyncExternalStore, useTransition } from
 import type { ChatAnswer } from "@/core/avery-chat";
 import { Icon } from "./Icon";
 
-export interface ChatMsg { id: string; role: "zak" | "avery"; text: string; runId: string | null; notes: string[] }
+export interface ChatMsg { id: string; role: "owner" | "avery"; text: string; runId: string | null; notes: string[] }
 
 const STARTERS = ["What needs me today?", "How are the goals?", "Hire someone", "What are the heads planning this week?"];
 const KEY = "cr_avery";
@@ -43,7 +43,7 @@ export function AveryChat({ name, initial, missing, send }: { name: string; init
     const t = (raw ?? text).trim();
     if (!t || busy) return;
     setText("");
-    setMsgs((m) => [...m, { id: `z${Date.now()}`, role: "zak", text: t, runId: null, notes: [] }]);
+    setMsgs((m) => [...m, { id: `z${Date.now()}`, role: "owner", text: t, runId: null, notes: [] }]);
     start(async () => {
       let a: ChatAnswer;
       try { a = await send(t); } catch (e) { a = { ok: false, reply: e instanceof Error ? e.message : "Something went wrong.", notes: [], runId: null, costUsd: 0, kept: false }; }
@@ -82,7 +82,7 @@ export function AveryChat({ name, initial, missing, send }: { name: string; init
               </p>
             )}
             {missing && <p className="avery-sub" style={{ lineHeight: 1.5 }}>{missing}</p>}
-            {msgs.map((m) => m.role === "zak"
+            {msgs.map((m) => m.role === "owner"
               ? <div key={m.id} className="avery-me">{m.text}</div>
               : (
                 <div key={m.id} className="avery-her">

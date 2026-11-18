@@ -11,7 +11,7 @@ export const MAX_SEATS = 80;
 /** A head is depth 1, a seat under it 2, and so on. */
 export const MAX_DEPTH = 4;
 
-export type Holder = "open" | "zak" | "agent";
+export type Holder = "open" | "owner" | "agent";
 
 export interface Department {
   id: string;

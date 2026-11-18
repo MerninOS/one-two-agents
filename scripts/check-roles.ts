@@ -12,7 +12,7 @@ assert.match(refusal("approver", "owner"), /Owners only: you’re signed in as a
 
 // emails
 assert.equal(normalEmail("  Sam@Example.COM "), "sam@example.com");
-for (const bad of ["", "zak", "zak@", "@x.co", "a b@x.co", "x".repeat(250) + "@x.co", null]) assert.equal(normalEmail(bad), null);
+for (const bad of ["", "owner", "zak@", "@x.co", "a b@x.co", "x".repeat(250) + "@x.co", null]) assert.equal(normalEmail(bad), null);
 
 // at least one owner always remains
 const ms = [{ id: "a", role: "owner" as const }, { id: "b", role: "approver" as const }];

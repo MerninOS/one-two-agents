@@ -501,7 +501,7 @@ export async function suppressEmail(address: string, reason: string): Promise<Ac
   const { me, no } = await asRole("approver"); if (no) return no;
   const email = String(address ?? "").trim().toLowerCase();
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return { ok: false, text: "That isn’t an email address." };
-  const { error } = await db().from("email_suppressions").upsert({ email, reason: String(reason ?? "").trim().slice(0, 200) || `Added by ${me.email}`, source: "zak" });
+  const { error } = await db().from("email_suppressions").upsert({ email, reason: String(reason ?? "").trim().slice(0, 200) || `Added by ${me.email}`, source: "owner" });
   if (error) return fail(error.message);
   revalidatePath("/settings");
   await audit(me, "suppress_email", address);

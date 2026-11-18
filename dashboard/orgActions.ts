@@ -62,13 +62,13 @@ export async function orgRemoveSeat(id: string): Promise<ActionResult> {
   try { await removeSeat(id); return done("Seat removed."); } catch (e) { return fail(e); }
 }
 
-/** Who sits in a seat: "open", "zak" or "agent:<id>". An agent moves from any seat it had. */
+/** Who sits in a seat: "open", "owner" or "agent:<id>". An agent moves from any seat it had. */
 export async function orgSetHolder(seatId: string, who: string): Promise<ActionResult> {
   const { me, no } = await asRole("owner"); if (no) return no;
   if (!UUID.test(String(seatId))) return { ok: false, text: "Unknown seat." };
   const w = String(who ?? "");
   try {
-    if (w === "open" || w === "zak") { await setHolder(seatId, w, null); await audit(me, "set_seat_holder", seatId, { who }); return done(w === "open" ? "The seat is open." : "That seat is yours."); }
+    if (w === "open" || w === "owner") { await setHolder(seatId, w, null); await audit(me, "set_seat_holder", seatId, { who }); return done(w === "open" ? "The seat is open." : "That seat is yours."); }
     const id = w.startsWith("agent:") ? w.slice(6) : "";
     if (!(await knownAgent(id))) return { ok: false, text: "Unknown agent." };
     await setHolder(seatId, "agent", id);
