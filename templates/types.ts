@@ -3,6 +3,7 @@
 // new, empty org.
 import type { MeasureRead } from "@/core/measures";
 import type { ToolDef } from "@/core/tools/types";
+import type { CrewMember } from "@/dashboard/crew";
 
 export interface TemplatePack {
   /** Short id, lowercase. */
@@ -18,6 +19,8 @@ export interface TemplatePack {
   measures?: Readonly<Record<string, () => Promise<MeasureRead>>>;
   /** The crew a new org can start from (core/install.ts), checked by check:install. */
   crew?: PackCrew;
+  /** Agents on the pack's plan that aren't built yet, shown in an org that has the pack's agents. */
+  planned?: readonly CrewMember[];
 }
 
 /**

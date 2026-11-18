@@ -11,7 +11,7 @@ import { loadCaps } from "@/core/gateway";
 import { addDepartmentRule, editMemory, forgetMemory } from "@/core/memory";
 import { addDepartment, addSeat, deptBudgetChange, deptEmailChange, editSeat, loadOrg, removeDepartment, removeSeat, renameDepartment, setDeptBudget, setDeptEmailCap, setHolder, setLeadChecks, unseat } from "@/core/org";
 import type { ActionResult } from "./actions";
-import { PLANNED } from "./crew";
+import { installPack, plannedIds } from "@/core/install";
 import { getFloor, asRole } from "./data";
 import { controlsOn } from "./session";
 import { saveBusiness } from "@/core/business";
@@ -24,7 +24,7 @@ const done = (text: string): ActionResult => { revalidatePath("/", "layout"); re
 /** An agent in the agents table, or a planned seat's agent (dashboard/crew.ts). */
 async function knownAgent(id: string): Promise<boolean> {
   if (!/^[a-z][a-z0-9_]{1,62}$/.test(id)) return false;
-  if (PLANNED.some((p) => p.id === id)) return true;
+  if (plannedIds().has(id)) return true;
   const { data } = await db().from("agents").select("id").eq("id", id).maybeSingle();
   return !!data;
 }
@@ -189,5 +189,18 @@ export async function saveBusinessProfile(f: { name: string; about: string; owne
     await saveBusiness(b);
     await audit(me, "save_business_profile", null, { name: b.name.trim() });
     return done("Saved. Agents get the new words from their next run.");
+  } catch (e) { return fail(e); }
+}
+
+/**
+ * Starts an empty org from a template pack's crew (core/install.ts): departments, the chart, agents,
+ * playbooks, chains and goals, every one switched off until the owner approves and turns things on.
+ */
+export async function installTemplate(packId: string): Promise<ActionResult> {
+  const { me, no } = await asRole("owner"); if (no) return no;
+  try {
+    const { counts } = await installPack(String(packId ?? ""));
+    await audit(me, "install_template", String(packId), counts);
+    return done(`Installed: ${counts.agents ?? 0} agents in ${counts.departments ?? 0} departments, all off duty. Approve each playbook on Crew before it runs.`);
   } catch (e) { return fail(e); }
 }

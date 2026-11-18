@@ -2,8 +2,8 @@
 // `agents` (role, avatar, since, by hand only), its live saved version (name, job, tools, cost cap),
 // its recent runs (what a run costs), its seat on the org chart (its role when the row has none) and
 // Crew > Schedule (when it runs). No agent is written in code; the planned seats that have no agent
-// yet come from dashboard/crew.ts. Pure: no database, so `npm run check:roster` can test it.
-import { PLANNED, type CrewMember, type Schedule, type Tier } from "./crew";
+// yet come from the org's template pack (core/install.ts plannedSeats). Pure: no database, so `npm run check:roster` can test it.
+import type { CrewMember, Schedule, Tier } from "./crew";
 import type { Chain } from "@/core/flow-rules";
 
 export interface RosterRow { id: string; name: string; role?: string | null; icon?: string | null; hue?: string | null; manual_only?: boolean | null; in_org?: boolean | null; created_at?: string | null }
@@ -66,10 +66,10 @@ export function memberOf(row: RosterRow, spec: RosterSpec | null, o: { tools: Re
 }
 
 /** Every agent with a live version (in the order given: oldest first), then the planned seats that no agent with the same id has taken. */
-export function buildCrew(members: CrewMember[]): { crew: CrewMember[]; built: CrewMember[]; planned: CrewMember[]; byId: Record<string, CrewMember> } {
+export function buildCrew(members: CrewMember[], plannedSeats: readonly CrewMember[] = []): { crew: CrewMember[]; built: CrewMember[]; planned: CrewMember[]; byId: Record<string, CrewMember> } {
   const built = members.filter((m) => m.built);
   const ids = new Set(built.map((m) => m.id));
-  const planned = PLANNED.filter((p) => !ids.has(p.id));
+  const planned = plannedSeats.filter((p) => !ids.has(p.id));
   const crew = [...built, ...planned];
   return { crew, built, planned, byId: Object.fromEntries(crew.map((m) => [m.id, m])) };
 }

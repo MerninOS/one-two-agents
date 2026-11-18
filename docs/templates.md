@@ -20,8 +20,13 @@ business can learn from.
 - **Crew**: a starting crew as data (`PackCrew`): departments, the org chart, agents with their
   specs and playbooks, the chains and starting goals. `core/install.ts` installs it into a new,
   empty org (see "The installer" below).
+- **Planned seats**: agents on the pack's plan that aren't built yet. The Control Room shows them
+  (Crew, the rail, the org chart) only in an org that has the pack's agents (`plannedSeats`).
 
 ## The installer (`core/install.ts`)
+
+An owner whose org has no departments and no agents sees "Start your crew" on the Desk: each pack
+with a crew, and an empty start. Picking one runs `installTemplate` (owner only, audited).
 
 `npm run org:new -- --slug acme --name "Acme" --owner owner@acme.example [--pack one-two]` makes a
 new org with its first owner, empty or from a pack's crew. What it installs is always switched off:

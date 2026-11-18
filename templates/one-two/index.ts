@@ -5,6 +5,7 @@ import type { TemplatePack } from "@/templates/types";
 import { ONE_TWO_CREW } from "./crew";
 import { ONE_TWO_MEASURES } from "./measures";
 import { ONE_TWO_TOOLS } from "./tools";
+import { ONE_TWO_PLANNED } from "./planned";
 
 export const oneTwo: TemplatePack = {
   id: "one-two",
@@ -14,4 +15,5 @@ export const oneTwo: TemplatePack = {
   tables: ["kpi_snapshots", "trips", "home_office", "tax_packets"],
   measures: ONE_TWO_MEASURES,
   crew: ONE_TWO_CREW,
+  planned: ONE_TWO_PLANNED,
 };

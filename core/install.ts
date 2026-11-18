@@ -16,6 +16,18 @@ const ORDER: (keyof InstallRows)[] = ["departments", "agents", "agent_defs", "ag
 /** The installed packs that bring a crew, for a new org to start from. */
 export const crewPacks = () => PACKS.filter((p) => p.crew).map((p) => ({ id: p.id, name: p.name, about: p.about }));
 
+/**
+ * The planned seats to show: those of each pack whose agents this org has (by id). An org that
+ * started empty, or from another pack, sees none of a pack's plan.
+ */
+export function plannedSeats(agentIds: Iterable<string>) {
+  const ids = new Set(agentIds);
+  return PACKS.filter((p) => p.planned?.length && p.crew?.agents.some((a) => ids.has(a.id))).flatMap((p) => [...p.planned!]);
+}
+
+/** Every pack's planned seat ids: an org chart seat may be held for one before it is built. */
+export const plannedIds = () => new Set(PACKS.flatMap((p) => (p.planned ?? []).map((x) => x.id)));
+
 /** Installs a pack's crew into the current org. Refuses an org that already has a crew. */
 export async function installPack(packId: string): Promise<{ counts: Record<string, number> }> {
   const pack = PACKS.find((p) => p.id === packId);
