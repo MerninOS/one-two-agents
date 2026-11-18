@@ -15,7 +15,7 @@ import { applyApproved, decide, loadCaps, queueBookkeeperProposals, retry } from
 import { CAPS, capChange, fmtCap, type CapKey } from "@/core/gateway/policy";
 import { env } from "@/core/env";
 import { approvalDecided, startStep } from "@/core/chain";
-import { currentOrgId, withOrg } from "@/core/tenancy";
+import { orgId, withOrg } from "@/core/tenancy";
 import { activateFlow, flowLooser, flowProblems, listFlowVersions, loadFlow, saveFlowVersion, withAgentTime, DAY_WORDS, type AgentTime, type Flow } from "@/core/flow";
 import { ANNOTATE } from "@/core/gateway";
 import { BUDGET_CEILING, activateSpecVersion, createBuiltAgent, draftOf, listSpecVersions, loadSpec, readSpec, saveSpecVersion, specLooser, type AgentSpec } from "@/core/agent-spec";
@@ -70,7 +70,9 @@ export async function realRun(agentId: string): Promise<ActionResult> {
 
   let markStarted: () => void = () => {};
   const started = new Promise<null>((resolve) => { markStarted = () => resolve(null); });
-  const run = withRun(agentId, "manual", (runId, memory) => { markStarted(); return jobOf(agentId)({ runId, memory }); })
+  // the run outlives this request, so it carries the org itself rather than reading the cookie later
+  const org = await orgId();
+  const run = withOrg(org, () => withRun(agentId, "manual", (runId, memory) => { markStarted(); return jobOf(agentId)({ runId, memory }); }))
     .then((res) => ({ res }), (err: unknown) => { console.error(`[control-room] ${agentId} run failed`, err); return { err }; });
   after(run);
   const first = await Promise.race([started, run]);
@@ -198,7 +200,7 @@ async function selfOrigin() {
 async function fireApprovalChains(decision: "approve" | "reject") {
   const origin = await selfOrigin();
   if (!origin) return;
-  const org = currentOrgId();
+  const org = await orgId();
   after(() => withOrg(org, async () => {
     try {
       const flow = await loadFlow(await loadCrew());

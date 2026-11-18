@@ -3,7 +3,7 @@
 // nothing and go nowhere. A span only carries what core/trace-rules.ts allows, and tracing never
 // changes or stops the work it wraps.
 import { SpanStatusCode, trace, type Span } from "@opentelemetry/api";
-import { currentOrgId } from "@/core/tenancy";
+import { orgId } from "@/core/tenancy";
 import { spanAttrs, spanError, type SpanAttrs, type SpanName } from "@/core/trace-rules";
 
 const tracer = () => trace.getTracer("operator");
@@ -14,7 +14,7 @@ export async function traced<T>(name: SpanName, attrs: SpanAttrs, fn: (set: (mor
   const set = (more: SpanAttrs) => { try { span?.setAttributes(spanAttrs(more)); } catch { /* tracing never stops the work */ } };
   const run = async (s: Span | null) => {
     span = s;
-    set({ "operator.org": currentOrgId(), ...attrs });
+    set({ "operator.org": await orgId(), ...attrs });
     try {
       const out = await fn(set);
       try { s?.setStatus({ code: SpanStatusCode.OK }); } catch { /* ignore */ }

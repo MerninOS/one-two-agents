@@ -19,7 +19,7 @@ import {
   type AuthServer, type McpEvent, type McpId, type Tokens,
 } from "@/core/mcp-rules";
 import { MIN_SECRET_CHARS, envWrapper, isBound, keyIdOf, newDataKey, open as openWith, seal as sealWith, vaultKey, type KeyWrapper, type VaultKey } from "@/core/vault";
-import { currentOrgId } from "@/core/tenancy";
+import { orgId } from "@/core/tenancy";
 import { looksLikeNotionKey } from "@/core/notion-blocks";
 import { checkNotionKey, notionServer } from "./notion-server";
 import { checkShopifyKey, shopifyServer } from "./shopify-server";
@@ -98,7 +98,7 @@ async function unwrapRow(row: OrgKeyRow, org: string): Promise<VaultKey | null> 
  * Null when the org has none yet, or no wrapping key opens it.
  */
 async function orgKey(make: boolean): Promise<VaultKey | null> {
-  const org = currentOrgId();
+  const org = await orgId();
   const hit = orgKeyCache.get(org);
   if (hit && Date.now() - hit.at < ORG_KEY_MS) return hit.key;
   let row = await readOrgKeyRow();
@@ -120,14 +120,14 @@ async function orgKey(make: boolean): Promise<VaultKey | null> {
 async function sealSecret(value: unknown): Promise<string> {
   const k = await orgKey(true);
   if (!k) throw new Error("This org's vault key can't be opened with MCP_SECRET_KEY or MCP_SECRET_KEY_OLD.");
-  return sealWith(value, k, currentOrgId());
+  return sealWith(value, k, await orgId());
 }
 
 /** Opens a saved sign-in: the org's data key for a v3 value, the env keys for one sealed before slice 4. */
 async function openSecret<T>(sealed: string): Promise<T | null> {
   if (!isBound(sealed)) return openWith<T>(sealed, keys().all);
   const k = await orgKey(false);
-  return k ? openWith<T>(sealed, [k], currentOrgId()) : null;
+  return k ? openWith<T>(sealed, [k], await orgId()) : null;
 }
 
 // ---- Who a connection is for: a built-in server's profile in code, or a custom server's row.
@@ -251,7 +251,7 @@ export async function resealAll(): Promise<{ moved: number; unreadable: string[]
     if (isBound(r.secret) && keyIdOf(r.secret) === k.id) continue;
     const s = await openSecret<Secret>(r.secret);
     if (!s) { unreadable.push(r.id); continue; }
-    const u = await db().from("mcp_connections").update({ secret: sealWith(s, k, currentOrgId()), updated_at: new Date().toISOString() }).eq("id", r.id);
+    const u = await db().from("mcp_connections").update({ secret: sealWith(s, k, await orgId()), updated_at: new Date().toISOString() }).eq("id", r.id);
     if (u.error) throw new Error(u.error.message);
     await logEvent(r.id, "resealed", `moved onto this org's key ${k.id}`);
     moved++;

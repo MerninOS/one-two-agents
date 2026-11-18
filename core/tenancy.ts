@@ -6,7 +6,7 @@
 // switch (core/org-switch.ts).
 import { AsyncLocalStorage } from "node:async_hooks";
 
-/** The home org: the first org, made by the migrations, that the app signs in to today. */
+/** The home org: the first org, made by the migrations; the scheduler's own calls and scripts run as it. */
 export const HOME_ORG_ID = "0e1a7c4e-0001-4000-8000-000000000001";
 
 /**
@@ -35,8 +35,31 @@ export function withOrg<T>(orgId: string, fn: () => T): T {
   return store.run(orgId, fn);
 }
 
-/** The org the current work is for: set by withOrg, else the home org (one business per deployment until slice 2). */
-export const currentOrgId = (): string => store.getStore() ?? HOME_ORG_ID;
+/**
+ * Where a request's org comes from when no withOrg is around it: the signed-in member's session
+ * (core/request-org.ts registers it). It answers null outside a request or with nobody signed in.
+ */
+type RequestOrg = () => Promise<string | null>;
+let requestOrg: RequestOrg | null = null;
+export function setRequestOrg(fn: RequestOrg): void { requestOrg = fn; }
+
+/**
+ * The org the current work is for: the one set by withOrg; else, in a Control Room request, the
+ * signed-in member's org; else the home org (the scheduler's own calls, scripts, signed-out pages).
+ * Async because a request's org is read from its cookie. Code never guesses the org synchronously:
+ * a sync guess outside withOrg would be the home org for another org's member.
+ */
+export async function orgId(): Promise<string> {
+  const set = store.getStore();
+  if (set) return set;
+  const fromRequest = requestOrg ? await requestOrg() : null;
+  return fromRequest && UUID.test(fromRequest) ? fromRequest : HOME_ORG_ID;
+}
+
+/** The org set by withOrg, or, with no request source registered (scripts, checks), the home org. Undefined when it must be read from the request. */
+function orgNow(): string | undefined {
+  return store.getStore() ?? (requestOrg ? undefined : HOME_ORG_ID);
+}
 
 /** An upsert's conflict columns with org_id in front, since every key that names a row is unique per org. */
 export function conflictColumns(onConflict: string | undefined): string | undefined {
@@ -111,21 +134,48 @@ function scopeTable<Q extends object>(qb: Q, table: string, orgId: string): Q {
 }
 
 /**
- * The client db() hands out: `from(table)` is scoped to the current org (read when `from` is
- * called) and, given `tablesFor`, goes through that org's own client; a table outside TENANT_TABLES and orgs is refused, and `rpc` is refused (no database
- * functions exist; one would skip the scoping). Storage and the rest pass through.
+ * A query whose org is read from the request (orgId) before it runs: every call on it is recorded,
+ * and when it is awaited the org is read, the table is scoped to it, and the calls are replayed.
+ * Lets a Control Room page keep writing `await db().from(...)...` while each member reads only
+ * their own org.
  */
-export function scopeClient<C extends object>(client: C, orgOf: () => string = currentOrgId, tablesFor?: (orgId: string) => C): C {
+function deferredQuery(start: (org: string) => object, steps: readonly [PropertyKey, unknown[]][] = []): object {
+  const run = async () => {
+    let q = start(await orgId()) as Record<PropertyKey, Fn>;
+    for (const [m, args] of steps) q = q[m](...args) as Record<PropertyKey, Fn>;
+    return q;
+  };
+  return new Proxy(function () {}, {
+    get(_t, prop) {
+      if (prop === "then") return (ok?: (v: unknown) => unknown, bad?: (e: unknown) => unknown) => run().then(ok, bad);
+      if (prop === "catch") return (bad?: (e: unknown) => unknown) => run().catch(bad);
+      if (prop === "finally") return (f?: () => void) => run().finally(f);
+      return (...args: unknown[]) => deferredQuery(start, [...steps, [prop, args]]);
+    },
+  });
+}
+
+/**
+ * The client db() hands out: `from(table)` is scoped to the current org and, given `tablesFor`,
+ * goes through that org's own client; a table outside TENANT_TABLES and orgs is refused, and `rpc`
+ * is refused (no database functions exist; one would skip the scoping). Storage and the rest pass
+ * through. The org is the one withOrg set when `from` is called; inside a request without one, it
+ * is read from the request when the query is awaited (deferredQuery).
+ */
+export function scopeClient<C extends object>(client: C, tablesFor?: (orgId: string) => C): C {
   return new Proxy(client, {
     get(target, prop, receiver) {
       if (prop === "from") {
         return (table: string) => {
           if (!tenant.has(table) && table !== ORGS_TABLE) throw new Error(`Refused: "${table}" isn't a tenant table (core/tenancy.ts TENANT_TABLES).`);
-          const org = orgOf();
-          // slice 2b: tables through the org's own client (a token the database holds to that org) when there is one
-          const via = tablesFor ? tablesFor(org) : target;
-          const qb = (Reflect.get(via, "from") as Fn).call(via, table) as object;
-          return scopeTable(qb, table, org);
+          const start = (org: string) => {
+            // slice 2b: tables through the org's own client (a token the database holds to that org) when there is one
+            const via = tablesFor ? tablesFor(org) : target;
+            const qb = (Reflect.get(via, "from") as Fn).call(via, table) as object;
+            return scopeTable(qb, table, org);
+          };
+          const org = orgNow();
+          return org ? start(org) : deferredQuery(start);
         };
       }
       if (prop === "rpc" || prop === "schema") return () => { throw new Error(`Refused: ${String(prop)}() skips org scoping.`); };

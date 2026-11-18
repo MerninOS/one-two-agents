@@ -128,7 +128,7 @@ const mcpSrc = readFileSync(join(process.cwd(), "integrations/mcp.ts"), "utf8");
 const sealCalls = [...mcpSrc.matchAll(/\bsecret: ((?:await )?\w+)\(/g)].map((m) => m[1]);
 assert.ok(sealCalls.length >= 4, "found where sign-ins are stored");
 for (const c of sealCalls) assert.ok(c === "await sealSecret" || c === "sealWith", `sign-ins are sealed with the org key, not ${c}`);
-assert.ok(!/secret: sealWith\(s, (?!k, currentOrgId\(\)\))/.test(mcpSrc), "re-sealing uses the org key and binds the org");
+assert.ok(!/secret: sealWith\(s, (?!k, await orgId\(\)\))/.test(mcpSrc), "re-sealing uses the org key and binds the org");
 
 // scopes: only the profile's read scopes, never the server's whole list
 for (const s of MCP_SERVERS.klaviyo.scopes) assert.match(s, /:read$/, s);

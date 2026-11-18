@@ -20,19 +20,27 @@ import type { CrewMember, IntegrationId } from "./crew";
 import { avgCostOf, buildCrew, memberOf, type RosterRow, type RosterSpec } from "./roster";
 import { plannedSeats } from "@/core/install";
 import type { CrewAgent, CrewCanvasData } from "./components/CrewCanvas";
-import { SESSION_COOKIE, controlsOn, sessionMemberId } from "./session";
+import { SESSION_COOKIE, controlsOn, sessionOf } from "./session";
+import { withOrg } from "@/core/tenancy";
 import { memberById } from "@/core/members";
 import { atLeast, refusal, type Member, type Role } from "@/core/roles";
 
-/** The member a session cookie names, read again from the database; null when signed out or removed. */
-export async function memberFromCookie(token: string | undefined): Promise<Member | null> {
-  const id = sessionMemberId(token);
-  const m = id ? await memberById(id) : null;
-  return m ? { id: m.id, email: m.email, role: m.role } : null;
+/** A signed-in member: who they are and the org this session is in. */
+export type SessionMember = Member & { orgId: string };
+
+/**
+ * The member a session cookie names, read again from the database inside the org the cookie names;
+ * null when signed out or removed from that org.
+ */
+export async function memberFromCookie(token: string | undefined): Promise<SessionMember | null> {
+  const s = sessionOf(token);
+  if (!s) return null;
+  const m = await withOrg(s.orgId, () => memberById(s.memberId));
+  return m ? { id: m.id, email: m.email, role: m.role, orgId: s.orgId } : null;
 }
 
 /** The signed-in member (any role), once per request; anyone else goes to sign-in. */
-export const requireSession = cache(async (): Promise<Member> => {
+export const requireSession = cache(async (): Promise<SessionMember> => {
   const jar = await cookies();
   const me = await memberFromCookie(jar.get(SESSION_COOKIE)?.value);
   if (!me) redirect("/login");
@@ -43,7 +51,7 @@ export const requireSession = cache(async (): Promise<Member> => {
  * For an action: the signed-in member when their role reaches `min`, else a refusal to return.
  * `const { me, no } = await asRole("owner"); if (no) return no;`
  */
-export async function asRole(min: Role): Promise<{ me: Member; no?: undefined } | { me?: undefined; no: { ok: false; text: string } }> {
+export async function asRole(min: Role): Promise<{ me: SessionMember; no?: undefined } | { me?: undefined; no: { ok: false; text: string } }> {
   const me = await requireSession();
   return atLeast(me.role, min) ? { me } : { no: { ok: false, text: refusal(me.role, min) } };
 }
