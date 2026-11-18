@@ -39,5 +39,5 @@ check that throws counts as a "no". A new slot needs a pull request to core with
 
 ## The public repo
 
-`templates/one-two/export.sh` keeps `ee/LICENSE` and `ee/README.md` and leaves out the rest of
+The export to the public repo keeps `ee/LICENSE` and `ee/README.md` and leaves out the rest of
 `ee/`, so the public tree builds the open edition.
