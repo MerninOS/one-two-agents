@@ -129,7 +129,7 @@ export default async function Approvals({ searchParams }: { searchParams: Promis
       </div>
 
       {!view ? (
-        <Empty title="The approvals tables aren’t there yet">Apply the gateway migration (supabase/migrations/20261110120000_gateway.sql) to the one-two-agents Supabase project.</Empty>
+        <Empty title="The approvals tables aren’t there yet">Apply the gateway migration (supabase/migrations/20261110120000_gateway.sql) to your Supabase project.</Empty>
       ) : (
         <>
           {view.departments.length > 0 && (

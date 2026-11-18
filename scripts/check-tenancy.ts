@@ -116,7 +116,7 @@ assert.throws(() => updateValues({ org_id: OTHER }, HOME_ORG_ID), /can't be chan
   assert.deepEqual({ role: claims.role, aud: claims.aud, sub: claims.sub, org_id: claims.org_id }, { role: "authenticated", aud: "authenticated", sub: OTHER, org_id: OTHER });
   assert.equal(exp, now + TOKEN_MS);
   assert.ok(REFRESH_MS < TOKEN_MS);
-  assert.throws(() => orgToken(k, "one-two", now), /uuid/);
+  assert.throws(() => orgToken(k, "not-a-uuid", now), /uuid/);
   assert.throws(() => parseSigningKey("nope"), /isn’t JSON/);
   assert.throws(() => parseSigningKey(JSON.stringify({ ...jwk, d: undefined })), /ES256 private key/);
   assert.throws(() => parseSigningKey(JSON.stringify({ ...jwk, kid: undefined })), /kid/);
@@ -124,7 +124,7 @@ assert.throws(() => updateValues({ org_id: OTHER }, HOME_ORG_ID), /can't be chan
 
 // the current org: home by default, withOrg for the work inside it (sync and async), nested, then restored
 assert.equal(currentOrgId(), HOME_ORG_ID);
-assert.throws(() => withOrg("one-two", () => 1), /uuid/);
+assert.throws(() => withOrg("not-a-uuid", () => 1), /uuid/);
 const asyncCheck = (async () => {
   const { calls, client } = fake();
   const db = scopeClient(client);

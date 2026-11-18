@@ -41,7 +41,7 @@ export function shopifyServer(key: string) {
     if (req.jsonrpc !== "2.0" || typeof req.method !== "string") return { jsonrpc: "2.0", id, error: { code: -32600, message: "not a JSON-RPC 2.0 request" } };
     switch (req.method) {
       case "initialize":
-        return reply(id, { protocolVersion: MCP_PROTOCOL, capabilities: { tools: {} }, serverInfo: { name: "one-two-shopify", version: "1" } });
+        return reply(id, { protocolVersion: MCP_PROTOCOL, capabilities: { tools: {} }, serverInfo: { name: "operator-shopify", version: "1" } });
       case "tools/list":
         return reply(id, { tools: OFFERED.map((name) => ({ name, description: TOOLS[name].description, inputSchema: TOOLS[name].inputSchema, annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false } })) });
       case "tools/call": {

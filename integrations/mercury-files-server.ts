@@ -31,7 +31,7 @@ export function mercuryFilesServer(key: string) {
     if (req.jsonrpc !== "2.0" || typeof req.method !== "string") return { jsonrpc: "2.0", id, error: { code: -32600, message: "not a JSON-RPC 2.0 request" } };
     switch (req.method) {
       case "initialize":
-        return reply(id, { protocolVersion: MCP_PROTOCOL, capabilities: { tools: {} }, serverInfo: { name: "one-two-mercury-files", version: "1" } });
+        return reply(id, { protocolVersion: MCP_PROTOCOL, capabilities: { tools: {} }, serverInfo: { name: "operator-mercury-files", version: "1" } });
       case "tools/list":
         return reply(id, { tools: OFFERED.map((name) => ({ name, description: "Attaches one receipt file to an existing Mercury charge.", annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false } })) });
       case "tools/call": {

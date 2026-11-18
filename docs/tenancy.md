@@ -136,8 +136,8 @@ unique per org, set on first sign-in), `role` (owner, approver, viewer), `added_
 
 1. Vercel: add `SESSION_SECRET` (`openssl rand -base64 32`) and `OPERATOR_OWNER_EMAIL` (your email).
    Delete `DASHBOARD_PASSWORD`.
-2. Supabase, Authentication > URL Configuration: Site URL `https://one-two-agents.vercel.app`;
-   Redirect URLs `https://one-two-agents.vercel.app/auth/confirm` and
+2. Supabase, Authentication > URL Configuration: Site URL `https://<your app>`;
+   Redirect URLs `https://<your app>/auth/confirm` and
    `https://<project>-*-<team>.vercel.app/auth/confirm` (previews).
 3. Supabase needs custom SMTP before its email templates can be edited. Use Resend (already used
    for the brief): a Resend API key with sending access only; Supabase, Authentication > Emails >

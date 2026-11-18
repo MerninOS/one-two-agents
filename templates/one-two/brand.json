@@ -1,4 +1,4 @@
 {
   "why": "Words that name One Two. Shared code (check:business) and the starting migration (scripts/baseline.mjs, check:baseline) may not contain them.",
-  "words": ["\\bZak\\b", "\\bzak\\b", "One Two", "(?i)onetwo", "\\bAustin\\b", "(?i)mernin"]
+  "words": ["\\bZak\\b", "\\bzak\\b", "One Two", "(?i)onetwo", "(?i)one-two", "\\bAustin\\b", "(?i)mernin"]
 }

@@ -17,7 +17,7 @@ https://claude.ai/artifact/UtmdGkLKTTezQNGmg5oWHu. Status lives on the Build Boa
 3. The owner's reactions save straight away as rules in their words, with Undo. Avery may suggest wording
    or scope; only his tap applies it. Lessons a lead or head proposes still wait for his Keep.
 4. Avery becomes the front door: a chat in the app that reads the company's data and can only file
-   proposals and save the rules the owner dictates. The /one-two-new-agent skill retires once she can hire.
+   proposals and save the rules the owner dictates. The outside new-agent skill retires once she can hire.
 5. Heads move to Sonnet, medium effort, $0.75 cap a run. Specialists stay on Haiku unless the job
    needs judgment.
 6. MCP connections: our runner calls MCP servers itself (never the model provider's server-side
@@ -36,7 +36,7 @@ promotion; agents stay off until he says launched.
 | 2 | Goals and measures | Today's stat chips |
 | 3 | Proposals: hire, grant a tool, new tool, retire | The new-agent skill's direct database writes (New agent stays the builder, see slice 3) |
 | 4 | Heads plan, review and set focus | Hand-written focus in department rules |
-| 5 | Avery, the front door, and the Desk | The Today page; the /one-two-new-agent skill |
+| 5 | Avery, the front door, and the Desk | The Today page; the outside new-agent skill |
 | 6 | MCP connections, Klaviyo first | (new kind of connection) |
 
 ## Slice 1: Teach by reacting
@@ -221,7 +221,7 @@ Proposals page says so and the tool refuses to save.
 `dashboard/proposalActions.ts`, `dashboard/components/proposals.tsx`, `app/(room)/proposals/`,
 `/build/new?proposal=`.
 
-**What it replaces.** The /one-two-new-agent skill's direct inserts into `agents`, `agent_defs` and
+**What it replaces.** The outside new-agent skill's direct inserts into `agents`, `agent_defs` and
 `seats`: it now files a pending proposal (source `claude`) that the owner decides here. New agent on Crew
 stays the builder: it is already the blank form, and the owner's own tap needs no proposal to approve.
 
@@ -347,7 +347,7 @@ greeting and summary line), the Desk page and the layout.
 
 **What it replaces.** The Today page: its live floor map, shift board, spend by agent, memory per
 agent and joining the crew are gone with `getMemoryMeters`, `leadsForRun`, `weekFrom` and their
-styles (each agent's page still has its map, schedule, spend and memory). The /one-two-new-agent
+styles (each agent's page still has its map, schedule, spend and memory). The outside new-agent
 skill retires: hiring is a proposal from Avery (or a head), and New agent on Crew stays the builder.
 The skill lives in the owner's Claude account, so they delete it there.
 

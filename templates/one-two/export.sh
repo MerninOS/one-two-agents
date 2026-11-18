@@ -38,7 +38,7 @@ mv supabase/baseline/operator_baseline.sql "supabase/migrations/${STAMP}_operato
 rmdir supabase/baseline
 
 # 3. Nothing of One Two's may remain
-BRAND='\bzak\b|one ?two|onetwo|mernin|zakuccinos|lptfkikpiumiodpjaxal|blended|\baustin\b|zdebrine@'
+BRAND='\bzak\b|one[ _-]?two|onetwo|astromall|mernin|zakuccinos|lptfkikpiumiodpjaxal|blended|\baustin\b|zdebrine@'
 # Known and accepted for now: the storefront metafield namespace in the Shopify server's fixed queries
 # (core/shopify-queries.ts, integrations/shopify-server.ts and their check).
 ALLOW_SHOPIFY=${ALLOW_SHOPIFY:-}

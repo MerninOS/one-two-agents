@@ -11,7 +11,7 @@ export const env = {
   // its owner on first sign-in. After that, owners add people on Settings > People.
   ownerEmail: v("OPERATOR_OWNER_EMAIL")?.toLowerCase(),
 
-  // Supabase project one-two-agents (service role, server only; every table has RLS, docs/tenancy.md)
+  // The Supabase project (service role, server only; every table has RLS, docs/tenancy.md)
   supabaseUrl: v("SUPABASE_URL"),
   supabaseServiceKey: v("SUPABASE_SERVICE_ROLE_KEY"),
   // The database lock (docs/tenancy.md, slice 2b): our ES256 private key (JWK), imported into

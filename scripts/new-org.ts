@@ -1,5 +1,5 @@
 // Makes a new org with its first owner, empty or from a template pack's crew (core/install.ts).
-// Run: npm run org:new -- --slug acme --name "Acme Coffee" --owner owner@acme.example [--pack one-two]
+// Run: npm run org:new -- --slug acme --name "Acme Coffee" --owner owner@acme.example [--pack <id>]
 import { newOrg, crewPacks } from "../core/install";
 
 const arg = (k: string) => { const i = process.argv.indexOf(`--${k}`); return i > 0 ? process.argv[i + 1] : undefined; };
