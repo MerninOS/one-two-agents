@@ -1,4 +1,4 @@
-// What core tools and template pack tools share (docs/templates.md): the settings or sign-ins a
+// What core tools share: the settings or sign-ins a
 // tool needs before the builder offers it, and small helpers.
 import type { Param } from "./types";
 

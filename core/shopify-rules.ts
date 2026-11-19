@@ -1,5 +1,5 @@
 // The rules every Shopify query on our own MCP server follows (docs/mcp-everywhere.md, slice 7).
-// Pure, with no imports from packs, so core and template packs can both build on it. There is no
+// Pure, so the server and the checks can both build on it. There is no
 // "run any GraphQL" tool: a model or agent picks a tool, never a query, and each tool's variables
 // are built in code from checked inputs. Every document is a read (`assertReadOnly`, and
 // scripts/validate-graphql.mjs against Shopify's schema), and the app's key is refused at paste time

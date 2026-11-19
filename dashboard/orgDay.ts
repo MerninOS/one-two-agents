@@ -52,7 +52,7 @@ export function orgDay(o: {
   org: Org | null;
   now: number;
 }): OrgDay {
-  const inOrg = o.members.filter((m) => m.built && m.inOrg !== false);
+  const inOrg = o.members.filter((m) => m.inOrg !== false);
   const base = inOrg.map((m) => {
     const schedule = m.schedule ?? { kind: "manual" as const };
     const perRun = m.avgCost ?? m.capPerRun ?? null;
@@ -87,6 +87,6 @@ export function orgDay(o: {
     totalMonth: rows.reduce((s, r) => s + r.perMonth, 0),
     scheduled: scheduled.length, byHand: rows.length - scheduled.length,
     unknownCost: scheduled.filter((r) => r.perRun == null).map((r) => r.name),
-    left: o.members.filter((m) => m.built && m.inOrg === false).map((m) => m.name),
+    left: o.members.filter((m) => m.inOrg === false).map((m) => m.name),
   };
 }

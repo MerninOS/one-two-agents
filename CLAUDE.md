@@ -5,7 +5,7 @@ world. Next.js 16 app: agent API routes plus the Control Room dashboard (`dashbo
 see `docs/control-room.md`), one schedule (`/api/dispatch`, in `vercel.json` or the self-host
 scheduler), state in Supabase. See README.md for layout.
 
-@templates/one-two/DEPLOY.md
+@private/DEPLOY.md
 
 This version of Next.js has breaking changes from older versions: read the guide in
 `node_modules/next/dist/docs/` before writing framework code.
@@ -38,9 +38,7 @@ built, so no agent can send, pay or publish.
   (Mercury's MCP, scope `transactions:update` only), receipt files on the `mercury_files` key
   (our own server, attach only).
 - Shopify is read-only here: our own MCP server (`integrations/shopify-server.ts`), one fixed
-  read query per tool (core's in `core/shopify-rules.ts`; a template pack may add its own, each a
-  fixed read query in its code listed in `templates/registry.ts` and held to the same checks), a
-  key with any write scope is refused, and
+  read query per tool, all in `core/shopify-rules.ts`, a key with any write scope is refused, and
   `scripts/validate-graphql.mjs` fails on any mutation. An agent that needs Shopify writes gets
   its own separately scoped app.
 - Email: first contact with a person who has never heard from the business is always Draft

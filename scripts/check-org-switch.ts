@@ -110,7 +110,7 @@ assert.deepEqual(ok(withAgentTime(button, "b_piper", "Piper", null)), button);
 
 // ---- the org's day (dashboard/orgDay.ts)
 const m = (id: string, name: string, schedule: CrewMember["schedule"], avgCost: number | null, extra: Partial<CrewMember> = {}): CrewMember =>
-  ({ id, name, role: name, icon: "cpu", tier: "Report", mandate: "", job: "", built: true, hue: "#F2884B", schedule, avgCost, inOrg: true, ...extra });
+  ({ id, name, role: name, icon: "cpu", tier: "Report", mandate: "", job: "", hue: "#F2884B", schedule, avgCost, inOrg: true, ...extra });
 const org = { departments: [{ id: "finance", name: "Finance", sort: 1, monthlyBudgetUsd: null, maxEmailsPerDay: null, leadChecksDrafts: false }], seats: [
   { id: "s0", departmentId: null, parentId: null, title: "Chief of Staff", sub: "", holder: "agent" as const, agentId: "chief_of_staff", sort: 0 },
   { id: "s1", departmentId: "finance", parentId: null, title: "CFO", sub: "", holder: "agent" as const, agentId: "cfo", sort: 0 },

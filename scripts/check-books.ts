@@ -89,7 +89,6 @@ assert.match(prompt, /never estimate or compute a total/);
 for (const f of ["core/books/rules.ts", "core/books/sync.ts", "core/books/prompt.ts", "docs/books.md"]) {
   const src = readFileSync(f, "utf8");
   for (const re of brandWords()) assert.doesNotMatch(src, re, `${f} names a business`);
-  assert.doesNotMatch(src, /from "@\/templates|from "\.\.\/\.\.\/templates/, `${f} reaches into a template pack`);
 }
 // the rules stay pure, so this check needs no database
 assert.doesNotMatch(readFileSync("core/books/rules.ts", "utf8"), /server-only|@\/core\/db|@\/integrations/, "core/books/rules.ts is pure");

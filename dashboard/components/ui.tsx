@@ -7,8 +7,8 @@ import { Icon } from "./Icon";
 export function Avatar({ a, size = 30, working }: { a: CrewMember; size?: number; working?: boolean }) {
   const icon = Math.round(size * 0.46);
   return (
-    <span className={"av" + (a.built ? "" : " planned") + (working ? " working" : "")} title={working ? `${a.name} is working` : undefined} style={{ width: size, height: size, background: a.built ? a.hue : undefined }}>
-      <Icon name={a.icon} size={icon} style={a.built ? undefined : { opacity: 0.55 }} />
+    <span className={"av" + (working ? " working" : "")} title={working ? `${a.name} is working` : undefined} style={{ width: size, height: size, background: a.hue }}>
+      <Icon name={a.icon} size={icon} />
     </span>
   );
 }

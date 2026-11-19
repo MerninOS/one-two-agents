@@ -11,7 +11,7 @@ import { loadCaps } from "@/core/gateway";
 import { addDepartmentRule, editMemory, forgetMemory } from "@/core/memory";
 import { addDepartment, addSeat, deptBudgetChange, deptEmailChange, editSeat, loadOrg, removeDepartment, removeSeat, renameDepartment, setDeptBudget, setDeptEmailCap, setHolder, setLeadChecks, unseat } from "@/core/org";
 import type { ActionResult } from "./actions";
-import { installPack, plannedIds } from "@/core/install";
+import { installTemplates } from "@/core/install";
 import { getFloor, asRole } from "./data";
 import { controlsOn } from "./session";
 import { saveBusiness } from "@/core/business";
@@ -25,10 +25,9 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const fail = (e: unknown): ActionResult => ({ ok: false, text: e instanceof Error ? e.message : String(e) });
 const done = (text: string): ActionResult => { revalidatePath("/", "layout"); return { ok: true, text }; };
 
-/** An agent in the agents table, or a planned seat's agent (dashboard/crew.ts). */
+/** An agent in the agents table. */
 async function knownAgent(id: string): Promise<boolean> {
   if (!/^[a-z][a-z0-9_]{1,62}$/.test(id)) return false;
-  if (plannedIds().has(id)) return true;
   const { data } = await db().from("agents").select("id").eq("id", id).maybeSingle();
   return !!data;
 }
@@ -245,14 +244,15 @@ export async function saveDailyNumbers(f: Pick<SettingsEdit, "costSource" | "cos
 }
 
 /**
- * Starts an empty org from a template pack's crew (core/install.ts): departments, the chart, agents,
- * playbooks, chains and goals, every one switched off until the owner approves and turns things on.
+ * Starts an empty org from the picked department templates (core/install.ts): departments, the chart,
+ * agents, playbooks, chains and goals, every one switched off until the owner approves and turns things on.
  */
-export async function installTemplate(packId: string): Promise<ActionResult> {
+export async function installTemplate(picked: string[]): Promise<ActionResult> {
   const { me, no } = await asRole("owner"); if (no) return no;
   try {
-    const { counts } = await installPack(String(packId ?? ""));
-    await audit(me, "install_template", String(packId), counts);
+    const ids = (Array.isArray(picked) ? picked : []).map(String).slice(0, 20);
+    const { counts } = await installTemplates(ids);
+    await audit(me, "install_template", ids.join(","), counts);
     return done(`Installed: ${counts.agents ?? 0} agents in ${counts.departments ?? 0} departments, all off duty. Approve each playbook on Crew before it runs.`);
   } catch (e) { return fail(e); }
 }

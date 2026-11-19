@@ -29,7 +29,7 @@ export default async function NewAgent({ searchParams }: { searchParams: Promise
       agentId={null}
       saved={null}
       nextVersion={1}
-      menu={builderMenu(floor.built, floor.health, await customMenuFor())}
+      menu={builderMenu(floor.crew, floor.health, await customMenuFor())}
       step={sp.step}
       controls={controlsOn()}
       templates={templates}

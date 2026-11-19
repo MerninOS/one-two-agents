@@ -11,13 +11,12 @@ export const RUN_LOOK: Record<RunStatus, Look> = {
   failed: { label: "Failed", dot: "var(--red)", bg: "var(--red-soft)", fg: "var(--red-ink)" },
 };
 
-export type AgentState = "planned" | "missing" | "running" | "paused" | "over" | "manual" | "active";
+export type AgentState = "missing" | "running" | "paused" | "over" | "manual" | "active";
 
 /** A run row stuck at "running" past the function limit (5 min) died without finishing. */
 export const isLive = (r: Run, now = Date.now()) => r.status === "running" && now - Date.parse(r.started_at) < 6 * 6e4;
 
 export function stateOf(a: CrewMember, row: AgentRow | undefined, runs: Run[], spent: number): AgentState {
-  if (!a.built) return "planned";
   if (!row) return "missing";
   if (runs.some((r) => r.agent_id === a.id && isLive(r))) return "running";
   if (!row.enabled) return "paused";
@@ -27,7 +26,6 @@ export function stateOf(a: CrewMember, row: AgentRow | undefined, runs: Run[], s
 }
 
 export const STATE_LOOK: Record<AgentState, Look> = {
-  planned: { label: "Joining after launch", dot: "var(--mut2)", bg: "var(--soft)", fg: "var(--mut)" },
   missing: { label: "Not in the database", dot: "var(--red)", bg: "var(--red-soft)", fg: "var(--red-ink)" },
   running: { label: "Working now", dot: "var(--acc)", bg: "var(--acc-soft)", fg: "var(--acc-ink)", pulse: true },
   paused: { label: "Off duty", dot: "var(--mut)", bg: "var(--soft)", fg: "var(--ink2)" },

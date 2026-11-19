@@ -6,7 +6,6 @@ import { round2 } from "@/core/num";
 import { db } from "@/core/db";
 import { chicagoDate, nextDay } from "@/core/time";
 import { ordersBetween } from "@/integrations/shopify/orders";
-import { packMeasure } from "@/templates";
 import { burnRate } from "@/core/money";
 import { measureOf, type MeasureKey, type Reading } from "@/core/goal-rules";
 import { mcpStatus } from "@/integrations/mcp";
@@ -61,12 +60,8 @@ async function readOne(key: MeasureKey, today: string, shared: { month?: ReturnT
       if (!list) return { reading: { error: "pick the email list on Connections › Klaviyo" }, detail: null };
       return { reading: { value: (await klaviyoListSize(list)).profiles }, detail: null };
     }
-    default: {
-      // a template pack's measure (templates/index.ts packMeasure)
-      const read = packMeasure(key);
-      if (!read) return { reading: { error: "no installed template pack counts this" }, detail: null };
-      return read();
-    }
+    default:
+      return { reading: { error: "nothing counts this measure" }, detail: null };
   }
 }
 

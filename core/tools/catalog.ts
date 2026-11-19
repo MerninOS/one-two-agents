@@ -40,7 +40,6 @@ import { klaviyoListSize, klaviyoLists, klaviyoReport } from "@/integrations/kla
 import { REPORT_PERIODS } from "@/core/mcp-rules";
 import type { Pick, ReportInput, ToolDef } from "./types";
 import { EMAIL, GMAIL, KLAVIYO, MERCURY, NOTION, SHOPIFY, SUPABASE, daysParam, usd } from "./shared";
-import { packTools } from "@/templates";
 import { snapshot } from "@/core/daily-numbers";
 import { deliverBrief } from "@/core/brief";
 import { openCounts } from "@/core/brief/rules";
@@ -653,8 +652,8 @@ const TOOLS_LIST: ToolDef[] = [
   },
 ];
 
-/** Core tools, then the tools of each installed template pack (templates/index.ts). An id is never used twice. */
-const ALL: ToolDef[] = [...TOOLS_LIST, ...packTools()];
+/** Every tool. An id is never used twice. */
+const ALL: ToolDef[] = [...TOOLS_LIST];
 const dupes = ALL.map((t) => t.id).filter((id, i, a) => a.indexOf(id) !== i);
 if (dupes.length) throw new Error(`Tool ids used twice: ${dupes.join(", ")}`);
 export const TOOLS: Readonly<Record<string, ToolDef>> = Object.fromEntries(ALL.map((t) => [t.id, t]));

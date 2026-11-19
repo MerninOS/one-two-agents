@@ -49,10 +49,10 @@ export default async function AgentPage({ params, searchParams }: { params: Prom
   const has = (tool: string) => (f.grants[id] ?? []).includes(tool);
   const pipeline = has("report_leads") ? await getPipeline() : null;
   const books = has("report_books_sync") ? await getBooks() : null;
-  const mem = a.built && (tab === "memory" || tab === "overview") ? await getMemory(id) : null;
-  const how = a.built && tab === "overview" ? await howItWorks(id) : null;
+  const mem = tab === "memory" || tab === "overview" ? await getMemory(id) : null;
+  const how = tab === "overview" ? await howItWorks(id) : null;
   const place = tab === "overview" ? await placeOf(id, f) : null;
-  const reactions = a.built && tab === "overview" ? await getReactionsFor(id) : null;
+  const reactions = tab === "overview" ? await getReactionsFor(id) : null;
   const score = tallyWords(reactions?.tally);
   const runs = f.runs.filter((r) => r.agent_id === id);
   const unseen = needs(f, f.now, parseSeen((await cookies()).get(SEEN_COOKIE)?.value)).some((n) => n.run && n.agentId === id);
@@ -63,13 +63,13 @@ export default async function AgentPage({ params, searchParams }: { params: Prom
       {tab === "overview" ? <HeroFull a={a} f={f} controls={controls} /> : (
         <div className="row wrap" style={{ gap: 14 }}>
           <Avatar a={a} size={48} working={st === "running"} />
-          <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 2, minWidth: 200 }}><span style={{ fontSize: 24, fontWeight: 600, letterSpacing: "-.02em" }}>{a.name}</span><span className="muted" style={{ fontSize: 13 }}>{a.role} · {a.built ? `on the crew since ${a.since}` : `joining after launch · phase ${a.phase}`}</span></div>
+          <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 2, minWidth: 200 }}><span style={{ fontSize: 24, fontWeight: 600, letterSpacing: "-.02em" }}>{a.name}</span><span className="muted" style={{ fontSize: 13 }}>{a.role} · on the crew since {a.since}</span></div>
           <Pill look={stateLook(st, f.org.on)} />
-          {a.built && <DryRun action={dryRun.bind(null, id)} compact />}
+          <DryRun action={dryRun.bind(null, id)} compact />
         </div>
       )}
 
-      {a.built && tab === "overview" && <Stats a={a} f={f} pipelineTotal={has("report_leads") ? pipeline?.total ?? null : undefined} books={has("report_books_sync") ? books : undefined} />}
+      {tab === "overview" && <Stats a={a} f={f} pipelineTotal={has("report_leads") ? pipeline?.total ?? null : undefined} books={has("report_books_sync") ? books : undefined} />}
 
       <AgentTabs id={id} on={tab} editable={id in f.grants} />
 
@@ -78,7 +78,7 @@ export default async function AgentPage({ params, searchParams }: { params: Prom
           <div className="stack">
             <div className="card" style={{ gap: 0 }}>
               <span className="card-t" style={{ marginBottom: 10 }}>How {a.name} works</span>
-              {[...(place ? [place] : []), ...(a.built ? [["From you, last 30 days", score ?? "No reactions yet. Say Good or Not this on any of its runs."] as [string, string]] : []), ...(how ?? (a.built ? [["Setup", "No saved version yet."]] : [["What it will do", a.job], ["Phase", `${a.phase} · build after launch`], ["Tier", TIERS[a.tier]], ["Intended trigger", a.trigger ?? "Set when built"]]))].map(([k, v]) => <div key={k} className="kv"><span>{k}</span><span style={{ lineHeight: 1.45 }}>{v}</span></div>)}
+              {[...(place ? [place] : []), ["From you, last 30 days", score ?? "No reactions yet. Say Good or Not this on any of its runs."] as [string, string], ...(how ?? [["Setup", "No saved version yet."]])].map(([k, v]) => <div key={k} className="kv"><span>{k}</span><span style={{ lineHeight: 1.45 }}>{v}</span></div>)}
             </div>
             <Toolbelt a={a} f={f} />
           </div>
@@ -101,7 +101,7 @@ export default async function AgentPage({ params, searchParams }: { params: Prom
 
       {tab === "memory" && <Memory a={a} f={f} domains={pipeline?.domains} mem={mem} />}
 
-      {tab === "runs" && (a.built ? <RunTable runs={runs.slice(0, 200)} showAgent={false} foot={`${runs.length} runs in the last 60 days · ${m4(runs.reduce((s, r) => s + r.cost_usd, 0))} spent`} /> : <div className="card dashed" style={{ padding: 40, textAlign: "center" }}><span className="muted">{a.name} hasn’t joined yet. No runs.</span></div>)}
+      {tab === "runs" && <RunTable runs={runs.slice(0, 200)} showAgent={false} foot={`${runs.length} runs in the last 60 days · ${m4(runs.reduce((s, r) => s + r.cost_usd, 0))} spent`} />}
 
     </>
   );
@@ -138,7 +138,7 @@ function HeroFull({ a, f, controls }: { a: CrewMember; f: Floor; controls: boole
             <Pill look={stateLook(st, f.org.on)} />
             <span title={TIERS[a.tier]} className="pill" style={{ border: "1px solid var(--bd)" }}>{a.tier} tier</span>
           </div>
-          <span className="muted" style={{ fontSize: 14 }}>{a.role} · {a.built ? `on the crew since ${a.since}` : `joining after launch · phase ${a.phase}`}</span>
+          <span className="muted" style={{ fontSize: 14 }}>{a.role} · on the crew since {a.since}</span>
           <p style={{ fontSize: 16, lineHeight: 1.55, maxWidth: 600, textWrap: "pretty" }} className="ink2">“{a.mandate}”</p>
           <div className="row wrap" style={{ gap: 6, fontSize: 12.5 }}>
             <span className="pill" style={{ background: "var(--soft)", fontWeight: 500 }}><span className="muted">Model</span>{row?.model ?? "Set when built"}</span>
@@ -148,7 +148,6 @@ function HeroFull({ a, f, controls }: { a: CrewMember; f: Floor; controls: boole
         </div>
       </div>
       <div style={{ display: "flex", flexDirection: "column", gap: 12, justifyContent: "center" }}>
-        {a.built ? (
           <>
             <div className="row wrap" style={{ gap: 8 }}>
               <DryRun action={dryRun.bind(null, a.id)} />
@@ -165,16 +164,6 @@ function HeroFull({ a, f, controls }: { a: CrewMember; f: Floor; controls: boole
             <span style={{ fontSize: 12.5 }} className="ink2">{combined(a, row)}</span>
             {!controls && <span className="sub">Real runs are off here until DASHBOARD_CONTROLS=on. Dry runs always work.</span>}
           </>
-        ) : (
-          <>
-            <div style={{ padding: 16, borderRadius: 18, background: "var(--soft)", display: "flex", flexDirection: "column", gap: 8 }}>
-              <span style={{ fontSize: 13.5, fontWeight: 600 }}>Phase {a.phase} · build after launch</span>
-              <span style={{ fontSize: 13 }} className="ink2">{a.job}</span>
-              <span className="row" style={{ gap: 8, fontSize: 12.5 }}><span className="pill sm" style={{ background: "var(--card)", border: "1px solid var(--bd)", fontSize: 11 }}>Intended trigger</span>{a.trigger}</span>
-            </div>
-            <div><button className="btn ghost" disabled>Dry run · after launch</button></div>
-          </>
-        )}
       </div>
     </div>
   );
@@ -246,7 +235,7 @@ function Toolbelt({ a, f, title = "Toolbelt", noRules }: { a: CrewMember; f: Flo
           <span className={`pill sm ${ABILITY_CLASS[r.ability]}`} style={{ fontWeight: 700, fontSize: 11.5 }}>{ABILITY_WORD[r.ability]}</span>
         </Link>
       ))}
-      {!reach.length && <span style={{ fontSize: 13, lineHeight: 1.5 }} className="ink2">{a.built ? `${a.name} has no saved setup yet, so nothing is listed.` : `What ${a.name} can reach is set when it is built.`}</span>}
+      {!reach.length && <span style={{ fontSize: 13, lineHeight: 1.5 }} className="ink2">{`${a.name} has no saved setup yet, so nothing is listed.`}</span>}
       {!noRules && (
         <div style={{ display: "flex", flexDirection: "column", gap: 2, marginTop: 6, padding: "14px 16px", borderRadius: 18, border: "1px solid var(--bd)" }}>
           <span className="row" style={{ gap: 8, fontSize: 13, fontWeight: 600, marginBottom: 6 }}><Icon name="lock" size={14} />Always on, for every agent</span>
@@ -279,13 +268,10 @@ function Journal({ a, f, mem, reactions }: { a: CrewMember; f: Floor; mem: Await
             <span style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 6 }}><span className="muted" style={{ fontSize: 11.5, whiteSpace: "nowrap" }}>{when(j.t)}</span><Link href={j.href} className="btn outline xs">{j.key === "skipped" ? "See all" : j.href.includes("tab=memory") ? "Memory" : j.href === "/approvals" ? "Approvals" : "Replay"}</Link></span>
           </div>
         ))}
-        {a.built && (
-          <div className="rule" style={{ display: "grid", gridTemplateColumns: "32px minmax(0,1fr)", gap: 12, padding: "12px 0" }}>
-            <span style={{ width: 32, height: 32, borderRadius: 999, background: "var(--soft)", display: "grid", placeItems: "center" }}><Icon name="user-plus" size={14} /></span>
-            <span style={{ display: "flex", flexDirection: "column", gap: 3 }}><span style={{ fontSize: 13.5, fontWeight: 600 }}>Joined the crew · {a.since}</span><span style={{ fontSize: 13 }} className="ink2">{a.name} joined as {a.role}. Tier: {a.tier}.</span></span>
-          </div>
-        )}
-        {!a.built && <span style={{ fontSize: 13 }} className="muted">{a.name} hasn’t joined yet. The journal starts on day one.</span>}
+        <div className="rule" style={{ display: "grid", gridTemplateColumns: "32px minmax(0,1fr)", gap: 12, padding: "12px 0" }}>
+          <span style={{ width: 32, height: 32, borderRadius: 999, background: "var(--soft)", display: "grid", placeItems: "center" }}><Icon name="user-plus" size={14} /></span>
+          <span style={{ display: "flex", flexDirection: "column", gap: 3 }}><span style={{ fontSize: 13.5, fontWeight: 600 }}>Joined the crew · {a.since}</span><span style={{ fontSize: 13 }} className="ink2">{a.name} joined as {a.role}. Tier: {a.tier}.</span></span>
+        </div>
       </div>
     </div>
   );
@@ -314,7 +300,6 @@ const toLine = (r: MemoryRow, pages: PageLoad[] = []): LineView => {
 const EVENT_WORDS: Record<string, string> = { added: "Taught", edited: "Edited", forgotten: "Forgot", expired: "Expired", rewritten: "Working memory rewritten", proposed: "Lesson proposed", kept: "Kept", discarded: "Discarded" };
 
 function Memory({ a, f, domains, mem }: { a: CrewMember; f: Floor; domains?: string[]; mem: Awaited<ReturnType<typeof getMemory>> | null }) {
-  if (!a.built) return <div className="card" style={{ padding: 56, textAlign: "center", fontSize: 16 }}><span className="ink2">{a.name} hasn’t joined yet. Memory starts on day one.</span></div>;
   const tab = mem?.tab ?? null;
   const reads = reachOf(a.id, f.grants).filter((r) => r.has.includes("read"));
   const mine = (g: string) => (tab?.rows ?? []).filter((r) => r.grp === g && r.state === "kept" && (g === "crew" ? r.agent_id === null : g === "department" ? r.department_id === tab?.dept?.id : r.agent_id === a.id));

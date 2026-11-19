@@ -28,7 +28,7 @@ export default async function BuildAgent({ params, searchParams }: { params: Pro
   const b = await getBuilder(id);
   if (!b) notFound();
   const f = await getFloor();
-  const menu = builderMenu(f.built, f.health, await customMenuFor());
+  const menu = builderMenu(f.crew, f.health, await customMenuFor());
   const controls = controlsOn();
   const live = b.active;
   const working = b.draft ?? (live ? { ...live, active: true } : null);

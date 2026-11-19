@@ -66,8 +66,9 @@ follow it. Checks that read one file of this repo's history (`check:jobs`, `chec
 `check:baseline` checks the same things in the baseline (`scripts/lib/schema.ts`).
 
 Tested 2026-11-18: a fresh Supabase database built from the baseline alone dumps byte for byte the
-same public schema as one built from every migration, and a template pack's crew installed into its
-empty home org (5 departments, 10 agents, all off duty) and refused a second install.
+same public schema as one built from every migration, and a starting crew installed into its
+empty home org (all off duty) and refused a second install. Since card 134 a new business picks
+department templates on the Desk (docs/templates.md).
 
 ## Not yet
 

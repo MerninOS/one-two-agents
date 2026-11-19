@@ -159,15 +159,14 @@ function Tree({ s, editing, onPick, head, cols }: { s: SeatView; editing: boolea
 }
 
 const plural = (n: number, w: string) => `${n} ${w}${n === 1 ? "" : "s"}`;
-const deptCounts = (d: DeptView) => `${plural(d.seats, "seat")}${d.planned ? ` · ${d.planned} planned` : ""}${d.open ? ` · ${d.open} open` : ""}`;
+const deptCounts = (d: DeptView) => `${plural(d.seats, "seat")}${d.open ? ` · ${d.open} open` : ""}`;
 const allSeats = (s: SeatView): SeatView[] => [s, ...s.kids.flatMap(allSeats)];
-/** What sits under a lead, counted in code: "1 planned · 2 open". */
+/** What sits under a lead, counted in code: "3 filled · 2 open". */
 function teamCounts(s: SeatView) {
   const team = s.kids.flatMap(allSeats);
   const open = team.filter((k) => k.holder === "open").length;
-  const planned = team.filter((k) => k.agent?.planned).length;
-  const filled = team.length - open - planned;
-  return [filled && `${filled} filled`, planned && `${planned} planned`, open && `${open} open`].filter(Boolean).join(" · ");
+  const filled = team.length - open;
+  return [filled && `${filled} filled`, open && `${open} open`].filter(Boolean).join(" · ");
 }
 
 /** A department's goals lead its card (docs/company-mode.md, slice 2), with Set a goal when it has room. */
@@ -184,7 +183,7 @@ function DeptGoals({ d }: { d: DeptView }) {
 /** A folded department on a phone: a face per seat (filled first, open last) and who heads it. */
 function DeptSummary({ d }: { d: DeptView }) {
   const seats = allSeats(d.head);
-  const rank = (s: SeatView) => (s.holder === "open" ? 2 : s.agent?.planned ? 1 : 0);
+  const rank = (s: SeatView) => (s.holder === "open" ? 1 : 0);
   const faces = [...seats].sort((a, b) => rank(a) - rank(b));
   const shown = faces.slice(0, 7);
   const leads = d.head.kids.filter((k) => k.kids.length > 0).length;
@@ -192,7 +191,7 @@ function DeptSummary({ d }: { d: DeptView }) {
   return (
     <div className="org-sum">
       <span className="org-faces" aria-hidden="true">
-        {shown.map((s) => s.agent ? <Face key={s.id} a={s.agent} size={24} /> : s.holder === "owner" ? <span key={s.id} className="av org-z" style={{ width: 24, height: 24 }}>Z</span> : <span key={s.id} className="av planned" style={{ width: 24, height: 24 }} />)}
+        {shown.map((s) => s.agent ? <Face key={s.id} a={s.agent} size={24} /> : s.holder === "owner" ? <span key={s.id} className="av org-z" style={{ width: 24, height: 24 }}>Z</span> : <span key={s.id} className="av empty" style={{ width: 24, height: 24 }} />)}
         {faces.length > shown.length && <span className="org-more">+{faces.length - shown.length}</span>}
       </span>
       <span className="ink2" style={{ fontSize: 12.5, flex: 1, textAlign: "right" }}>Head: {head}{leads ? ` · ${plural(leads, "lead")}` : ""}</span>
@@ -201,23 +200,22 @@ function DeptSummary({ d }: { d: DeptView }) {
 }
 
 function Face({ a, size = 32 }: { a: SeatAgent; size?: number }) {
-  return <span className={`av${a.planned ? " planned" : ""}`} style={{ width: size, height: size, background: a.hue ?? undefined }}><Icon name={a.icon} size={Math.round(size * 0.47)} style={a.hue ? undefined : { opacity: 0.6 }} /></span>;
+  return <span className="av" style={{ width: size, height: size, background: a.hue ?? undefined }}><Icon name={a.icon} size={Math.round(size * 0.47)} style={a.hue ? undefined : { opacity: 0.6 }} /></span>;
 }
 
 function SeatCard({ s, editing, onPick, head, wide }: { s: SeatView; editing: boolean; onPick: () => void; head?: boolean; wide?: boolean }) {
-  const cls = `org-seat${s.holder === "open" ? " open" : s.holder === "owner" ? " you" : s.agent?.planned ? " plan" : ""}${wide ? " wide" : ""}`;
+  const cls = `org-seat${s.holder === "open" ? " open" : s.holder === "owner" ? " you" : ""}${wide ? " wide" : ""}`;
   const inner = (
     <>
       {s.agent ? <Face a={s.agent} /> : s.holder === "owner" ? <span className="av" style={{ width: 32, height: 32, background: "var(--ink)", color: "var(--ws)", fontSize: 13, fontWeight: 700 }}>Z</span> : <span className="av org-plus" style={{ width: 32, height: 32 }}><Icon name="plus" size={15} /></span>}
       <span className="org-who">
         <b>{s.agent ? s.agent.name : s.holder === "owner" ? "You" : s.title}</b>
         <span>{s.agent || s.holder === "owner" ? [s.title, s.sub].filter(Boolean).join(" · ") : s.sub || "Open seat"}</span>
-        {s.agent && !s.agent.planned && <span className="org-last">{s.agent.look.label} · {s.agent.last}</span>}
+        {s.agent && <span className="org-last">{s.agent.look.label} · {s.agent.last}</span>}
         {s.holder === "open" && !editing && !s.proposals.length && <span className="org-last">Open · build an agent for it</span>}
         {!editing && s.proposals.map((p) => <span key={p.id} className="org-last" style={{ color: "var(--acc)" }}>Proposal · {p.text}</span>)}
       </span>
       {head && <span className="tag" style={{ flex: "none" }}>HEAD</span>}
-      {s.agent?.planned && <span className="tag" style={{ flex: "none" }}>PLANNED</span>}
       {editing && <Icon name="pencil" size={13} style={{ flex: "none", opacity: 0.5 }} />}
     </>
   );
@@ -229,7 +227,7 @@ function SeatCard({ s, editing, onPick, head, wide }: { s: SeatView; editing: bo
 
 function AgentCard({ a }: { a: SeatAgent }) {
   return (
-    <Link href={a.href} className={`card crew-card${a.planned ? " dashed" : ""}`}>
+    <Link href={a.href} className="card crew-card">
       <span className="row" style={{ gap: 12 }}>
         <Face a={a} />
         <span style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", gap: 2 }}><span style={{ fontSize: 15, fontWeight: 600 }}>{a.name}</span><span className="muted clip" style={{ fontSize: 12.5 }}>{a.role}</span></span>

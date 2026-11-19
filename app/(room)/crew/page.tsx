@@ -66,10 +66,10 @@ async function Chart({ f }: { f: Awaited<ReturnType<typeof getFloor>> }) {
 
 async function Schedule({ f }: { f: Awaited<ReturnType<typeof getFloor>> }) {
   const [d, org] = await Promise.all([getCrewCanvas(f), loadOrg().catch(() => null)]);
-  const members = f.built.map((a) => ({ id: a.id, name: a.name, inOrg: a.inOrg !== false, avgCost: a.avgCost ?? null, capPerRun: a.capPerRun }));
+  const members = f.crew.map((a) => ({ id: a.id, name: a.name, inOrg: a.inOrg !== false, avgCost: a.avgCost ?? null, capPerRun: a.capPerRun }));
   const plan = planOrgOn(members, d.flow.chains, f.now);
   const day = orgDay({
-    members: f.built,
+    members: f.crew,
     enabled: Object.fromEntries(Object.values(f.agents).map((x) => [x.id, x.enabled])),
     budget: Object.fromEntries(Object.values(f.agents).map((x) => [x.id, x.daily_budget_usd])),
     grants: f.grants, org, now: f.now,

@@ -19,7 +19,6 @@ export interface SeatAgent {
   href: string;
   icon: string;
   hue: string | null;
-  planned: boolean;
   look: Look;
   last: string;
 }
@@ -35,7 +34,7 @@ export interface SeatView {
   proposals: { id: string; text: string }[];
 }
 export interface DeptView {
-  id: string; name: string; head: SeatView; seats: number; filled: number; planned: number; open: number;
+  id: string; name: string; head: SeatView; seats: number; filled: number; open: number;
   /** Monthly AI budget (null: none) and what its agents spent this Chicago month, added up in code. */
   budget: number | null; spent: number;
   /** Its email cap (null: the company cap) and the company cap it sits under. */
@@ -61,12 +60,12 @@ export interface OrgView {
 
 const OFF_LOOK: Look = { label: "Off duty", dot: "var(--mut)", bg: "var(--soft)", fg: "var(--ink2)" };
 
-/** Every agent the chart knows: each agent with a live version, then the planned seats (dashboard/roster.ts). */
+/** Every agent the chart knows: each agent with a live version (dashboard/roster.ts). */
 function agentsOf(f: Floor): SeatAgent[] {
   return f.crew.map((a): SeatAgent => {
     const st = stateOf(a, f.agents[a.id], f.runs, f.spentToday[a.id] ?? 0);
     const last = f.runs.find((r) => r.agent_id === a.id && r.status !== "skipped");
-    return { id: a.id, name: a.name, role: a.role, href: `/agents/${a.id}`, icon: a.icon, hue: a.built ? a.hue ?? null : null, planned: !a.built, look: stateLook(st, f.org.on), last: !a.built ? `Phase ${a.phase}` : last ? `Last ran ${when(last.started_at)}` : "Never run" };
+    return { id: a.id, name: a.name, role: a.role, href: `/agents/${a.id}`, icon: a.icon, hue: a.hue ?? null, look: stateLook(st, f.org.on), last: last ? `Last ran ${when(last.started_at)}` : "Never run" };
   });
 }
 
@@ -75,7 +74,7 @@ export function orgView(f: Floor, org: Org, x: DeptExtras, goals: Record<string,
   const byId = new Map(all.map((a) => [a.id, a]));
   const view = (s: Seat, depth: number): SeatView => ({
     id: s.id, title: s.title, sub: s.sub, holder: s.holder,
-    agent: s.holder === "agent" && s.agentId ? byId.get(s.agentId) ?? { id: s.agentId, name: s.agentId, role: "Not found", href: "/crew", icon: "cpu", hue: null, planned: false, look: OFF_LOOK, last: "" } : null,
+    agent: s.holder === "agent" && s.agentId ? byId.get(s.agentId) ?? { id: s.agentId, name: s.agentId, role: "Not found", href: "/crew", icon: "cpu", hue: null, look: OFF_LOOK, last: "" } : null,
     kids: depth > 6 ? [] : childrenOf(org, s.id).map((c) => view(c, depth + 1)),
     proposals: proposals[s.id] ?? [],
   });
@@ -86,7 +85,7 @@ export function orgView(f: Floor, org: Org, x: DeptExtras, goals: Record<string,
     const head = view(h, 1);
     const seats = count(head);
     return [{
-      id: d.id, name: d.name, head, seats: seats.length, filled: seats.filter((s) => s.holder !== "open" && !s.agent?.planned).length, planned: seats.filter((s) => s.agent?.planned).length, open: seats.filter((s) => s.holder === "open").length,
+      id: d.id, name: d.name, head, seats: seats.length, filled: seats.filter((s) => s.holder !== "open").length, open: seats.filter((s) => s.holder === "open").length,
       budget: d.monthlyBudgetUsd, spent: deptSpent(org, d.id, x.spend), emails: d.maxEmailsPerDay, companyEmails: x.companyEmails,
       rules: x.rules.filter((r) => r.departmentId === d.id).map((r) => ({ id: r.id, text: r.text })),
       leadChecks: d.leadChecksDrafts,
@@ -98,7 +97,7 @@ export function orgView(f: Floor, org: Org, x: DeptExtras, goals: Record<string,
     company: top ? view(top, 0) : null,
     departments,
     offChart: all.filter((a) => !seatOf(org, a.id)),
-    choices: all.map((a) => { const s = seatOf(org, a.id); return { id: a.id, label: `${a.name}${a.planned ? " (planned)" : ""}`, seat: s ? seatPath(org, s) : null }; }),
+    choices: all.map((a) => { const s = seatOf(org, a.id); return { id: a.id, label: a.name, seat: s ? seatPath(org, s) : null }; }),
     problems: orgProblems(org),
   };
 }

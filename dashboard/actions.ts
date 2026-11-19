@@ -39,7 +39,7 @@ export interface ActionResult { ok: boolean; text: string }
 
 const CONTROLS_OFF = "Controls are off. Set DASHBOARD_CONTROLS=on in Vercel to allow this.";
 /** An agent with a live version, as the Control Room shows it (docs/agent-roster.md); null otherwise. */
-const crewAgent = async (id: string) => { const a = (await getFloor()).byId[id]; return a?.built ? a : null; };
+const crewAgent = async (id: string) => { const a = (await getFloor()).byId[id]; return a ?? null; };
 /** An agent's name, or its id when it isn't on the roster. */
 const nameOf = async (id: string) => (await getFloor()).byId[id]?.name ?? id;
 const fail = (e: unknown): ActionResult => ({ ok: false, text: e instanceof Error ? e.message : String(e) });
@@ -142,7 +142,7 @@ export async function setAgentTime(agentId: string, t: AgentTime | null, confirm
 async function orgPlanNow() {
   const f = await getFloor();
   const flow = await loadFlow(f.palette);
-  const members = f.built.map((a) => ({ id: a.id, name: a.name, inOrg: a.inOrg !== false, avgCost: a.avgCost ?? null, capPerRun: a.capPerRun }));
+  const members = f.crew.map((a) => ({ id: a.id, name: a.name, inOrg: a.inOrg !== false, avgCost: a.avgCost ?? null, capPerRun: a.capPerRun }));
   return { flow, plan: planOrgOn(members, flow.flow.chains, Date.now()) };
 }
 

@@ -40,7 +40,7 @@ No sample data ships. Where the design used sample numbers, the build shows the 
 ## 3. Architecture
 
 - Next.js 16 App Router pages next to the existing API routes. Server components read Supabase with the existing service-role client (`core/db.ts`); nothing reaches the browser except rendered data. No new tables in phase 1.
-- `dashboard/` holds the code: `crew.ts` (the planned seats and the hard rules; every agent that exists comes from the database through `roster.ts`), `connections.ts` (integrations, their tools as Can read / Can do / Hands you, who has what), `data.ts` (server-only queries), `auth.ts` (session), `format.ts` (Central Time, money), `actions.ts` (server actions), `components/`.
+- `dashboard/` holds the code: `crew.ts` (how an agent shows and the hard rules; every agent comes from the database through `roster.ts`), `connections.ts` (integrations, their tools as Can read / Can do / Hands you, who has what), `data.ts` (server-only queries), `auth.ts` (session), `format.ts` (Central Time, money), `actions.ts` (server actions), `components/`.
 - Styling: one `app/globals.css` with the design's CSS variables and a handful of classes, light and dark (`data-theme` on `<html>`, remembered in a cookie). Icons from `lucide-react`. Font via `next/font` (Plus Jakarta Sans).
 - Routes: `/` mission control, `/agents/[id]?tab=…`, `/runs` (filters in the query string), `/runs/[id]` replay, `/connections` (`/access` and `/integrations` redirect there), `/build`, `/build/new`, `/build/[id]` (`?edit` opens the flow), `/approvals`, `/settings`, `/login`.
 

@@ -3184,6 +3184,6 @@ GRANT ALL ON TABLE public.wholesale_leads TO service_role;
 -- Receipt files (private): the Bookkeeper's receipts and the gateway's attachments.
 INSERT INTO storage.buckets (id, name, public) VALUES ('receipts', 'receipts', false) ON CONFLICT (id) DO NOTHING;
 
--- The home org (HOME_ORG_ID in core/tenancy.ts), empty: the owner names it on Settings and picks a
--- template pack, or starts from nothing, on the Desk. OPERATOR_OWNER_EMAIL becomes its first owner.
+-- The home org (HOME_ORG_ID in core/tenancy.ts), empty: the owner names it on Settings and picks
+-- department templates, or starts from nothing, on the Desk. OPERATOR_OWNER_EMAIL becomes its first owner.
 INSERT INTO public.orgs (id, slug, name) VALUES ('0e1a7c4e-0001-4000-8000-000000000001', 'home', 'My business') ON CONFLICT (id) DO NOTHING;

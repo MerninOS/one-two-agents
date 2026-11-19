@@ -122,9 +122,8 @@ export const MCP_SERVERS = {
     name: "Shopify",
     // Our own server (integrations/shopify-server.ts) over the Admin GraphQL API with the read-only
     // custom app (for example "Agents (read)"). Shopify's own MCP servers are for storefronts and app building, not
-    // a read-only Admin view (slice 7). Each tool runs one fixed query (core/shopify-queries.ts lists core's and each pack's); no
-    // tool takes GraphQL, no mutation can run, and a key whose app has any write scope is refused.
-    // A template pack may add read tools, each one fixed read query in its code (templates/registry.ts).
+    // a read-only Admin view (slice 7). Each tool runs one fixed query (core/shopify-rules.ts); no tool takes GraphQL, no mutation
+    // can run, and a key whose app has any write scope is refused.
     auth: "token",
     url: "https://shopify.dev/docs/api/admin-graphql",
     readTools: SHOPIFY_TOOLS,

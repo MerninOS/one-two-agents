@@ -1,5 +1,4 @@
 import { chicagoDate } from "./time";
-import { PACK_MEASURE_DEFS } from "@/templates/registry";
 
 // Goals and measures (docs/company-mode.md, slice 2). Pure: no database, no network, so
 // `npm run check:goals` can test it.
@@ -9,7 +8,7 @@ import { PACK_MEASURE_DEFS } from "@/templates/registry";
 // here from the reading, the target and the dates. A goal whose measure can't be counted yet
 // shows "No measure yet" and says which read is missing.
 
-/** Core's measures; a template pack adds its own keys (templates/registry.ts). */
+/** Core's measures. A business adds its own as goal numbers from its own tools (core/goal-number-rules.ts). */
 export type CoreMeasureKey = "wholesale_won" | "revenue_month" | "orders_month" | "runway_months" | "email_list_size";
 export type MeasureKey = CoreMeasureKey | (string & {});
 /**
@@ -44,7 +43,7 @@ const CORE_MEASURES: readonly MeasureDef[] = [
   { key: "email_list_size", label: "Email list size", how: "profiles on the email list picked on Connections › Klaviyo, as Klaviyo counts them.", unit: "count", shape: "total", noun: "subscribers", available: true, hint: "marketing" },
 ];
 /** Core's measures, then each pack's. A pack never replaces a core measure. */
-export const MEASURES: readonly MeasureDef[] = [...CORE_MEASURES, ...PACK_MEASURE_DEFS.filter((m) => !CORE_MEASURES.some((c) => c.key === m.key))];
+export const MEASURES: readonly MeasureDef[] = CORE_MEASURES;
 /** A measure by key: core's, a pack's, or one of the business's own goal numbers (`extra`, core/goal-number-rules.ts). */
 export const measureOf = (key: string | null | undefined, extra: readonly MeasureDef[] = []): MeasureDef | null => MEASURES.find((m) => m.key === key) ?? extra.find((m) => m.key === key) ?? null;
 

@@ -1,7 +1,6 @@
 // The business's own words (card 127): `npm run check:business`. Pure: no database.
-// Shared code names no business: the owner's name, the business's name and its address live only in a
-// template pack (templates/) and the business's own row (Settings), never in core, the Control Room
-// or the integrations.
+// The repo names no business: the owner's name, the business's name and its address live only in the
+// business's own row (Settings) and, for this deploy, in private/ (card 134).
 import assert from "node:assert/strict";
 import { brandWords } from "./lib/brand.mjs";
 import { readFileSync, readdirSync, statSync } from "node:fs";
@@ -23,16 +22,21 @@ assert.equal(initials("Blue Door Coffee"), "BD");
 assert.equal(initials("acme"), "AC");
 assert.equal(initials("  "), "OP");
 
-// no business named in shared code
-const BRAND = [...brandWords(), /0e1a7c4e-0001-4000-8000-000000000001/];
-const ALLOW: Record<string, RegExp> = { "core/tenancy.ts": /0e1a7c4e/ };
-const walk = (d: string): string[] => readdirSync(d).flatMap((n) => { const p = join(d, n); return statSync(p).isDirectory() ? walk(p) : /\.(ts|tsx)$/.test(n) ? [p] : []; });
+// no business named anywhere in the repo but private/ (this deploy's own notes) and the migration
+// history (the public repo replaces it with the starting migration)
+const BRAND = brandWords();
+const SKIP = new Set(["node_modules", ".git", ".next", ".schemas", "private", "supabase/migrations"]);
+const walk = (d: string): string[] => readdirSync(d).flatMap((n) => {
+  const p = d === "." ? n : join(d, n);
+  if (SKIP.has(p)) return [];
+  return statSync(p).isDirectory() ? walk(p) : /\.(ts|tsx|mjs|js|json|md|sql|css|sh|ya?ml|txt)$/.test(n) && n !== "package-lock.json" ? [p] : [];
+});
 const hits: string[] = [];
-for (const f of ["core", "dashboard", "app", "integrations"].flatMap(walk)) {
+for (const f of walk(".")) {
   readFileSync(f, "utf8").split("\n").forEach((line, i) => {
-    for (const re of BRAND) if (re.test(line) && !(ALLOW[f]?.test(line))) hits.push(`${f}:${i + 1}: ${line.trim().slice(0, 100)}`);
+    for (const re of BRAND) if (re.test(line)) hits.push(`${f}:${i + 1}: ${line.trim().slice(0, 100)}`);
   });
 }
-assert.deepEqual(hits, [], `shared code names a business; say "the owner" or "the business", or move it to a template pack:\n${hits.join("\n")}`);
+assert.deepEqual(hits, [], `the repo names a business; say "the owner" or "the business", or move it to private/:\n${hits.join("\n")}`);
 
 console.log("check:business ok");
