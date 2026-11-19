@@ -26,7 +26,7 @@ const tables = process.argv[2].split(" ").filter(Boolean);
 const edit = (f, fn) => { const a = fs.readFileSync(f, "utf8"), b = fn(a); if (a === b) throw new Error(`${f}: nothing changed`); fs.writeFileSync(f, b); };
 edit("templates/index.ts", (s) => s.replace(/^import \{ oneTwo \} from "\.\/one-two";\n/m, "").replace("PACKS: readonly TemplatePack[] = [oneTwo];", "PACKS: readonly TemplatePack[] = [];"));
 edit("core/tenancy.ts", (s) => s.replace(/"ee_[a-z_]+",[ \t]*/g, ""));
-edit("core/tenancy.ts", (s) => { for (const t of tables) { const re = new RegExp(`"${t}",[ \\t]*`); if (!re.test(s)) throw new Error(`${t} not in TENANT_TABLES`); s = s.replace(re, ""); } return s; });
+if (tables.length) edit("core/tenancy.ts", (s) => { for (const t of tables) { const re = new RegExp(`"${t}",[ \\t]*`); if (!re.test(s)) throw new Error(`${t} not in TENANT_TABLES`); s = s.replace(re, ""); } return s; });
 edit("CLAUDE.md", (s) => s.replace("@templates/one-two/DEPLOY.md\n\n", ""));
 edit("package.json", (s) => s.replace(/^\s+"check:pack-one-two": .*\n/m, "").replace(/^\s+"check:ee": .*\n/m, "").replace('"name": "one-two-agents"', '"name": "operator"'));
 edit("package-lock.json", (s) => s.split('"name": "one-two-agents"').join('"name": "operator"'));
