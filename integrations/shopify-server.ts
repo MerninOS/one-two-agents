@@ -40,7 +40,8 @@ export function shopifyServer(key: string) {
       case "tools/call": {
         const name = typeof req.params?.name === "string" ? req.params.name : "";
         if (!OFFERED.includes(name)) return toolError(id, `${name || "That"} isn't a tool this server serves.`);
-        const v = shopifyVariables(name, req.params?.arguments, { stockCollection: env.shopifyStockCollection ?? "" });
+        const s = await settings();
+        const v = shopifyVariables(name, req.params?.arguments, { stockCollection: env.shopifyStockCollection ?? "", productCollections: s.productCollections, productFields: s.productFields });
         if ("problem" in v) return toolError(id, `Input refused: ${v.problem}`);
         try {
           const result = await shopifyQuery(key, v.doc, v.variables);

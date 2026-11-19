@@ -208,7 +208,7 @@ from the tools the spec grants, code runs them, hard limits stop it.
   and `bookkeeper` (Quinn), each with an approved starting playbook, behind the same
   `agents.on_runner` switch as Morgan and Avery (off). Compare and Switch on the builder screen
   now cover all four.
-  - Rowan: Wholesale offer and Leads list (playbook), then the model searches and reads the web
+  - Rowan: Product facts and Leads list (playbook), then the model searches and reads the web
     (Opus 5.5, medium, 12 steps, $1.25 cap) and hands each lead to Add leads to the leads list.
     The SOP from his own code is the directive, with the offer and email rules.
   - Quinn: Charges (30 days) and Expense categories (playbook), then Sync the books and match

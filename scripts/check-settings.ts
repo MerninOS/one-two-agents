@@ -48,7 +48,7 @@ assert.equal(h.shopifyDomain, "mine.myshopify.com", "the org's own value wins");
 assert.equal(h.notionLeadsParent, DASHED, "leads fall back to the briefs page");
 
 // edits: the owner email is always one of the org's owners
-const edit = (p: Partial<SettingsEdit>): SettingsEdit => ({ ownerEmail: "", siteUrl: "", shopifyDomain: "", shopifyClientId: "", mercuryAccountIds: "", notionBriefParent: "", notionBriefsDb: "", notionLeadsParent: "", notionBooksParent: "", ...p });
+const edit = (p: Partial<SettingsEdit>): SettingsEdit => ({ ownerEmail: "", siteUrl: "", shopifyDomain: "", shopifyClientId: "", mercuryAccountIds: "", notionBriefParent: "", notionBriefsDb: "", notionLeadsParent: "", notionBooksParent: "", productCollections: "", productFields: "", offerTerms: "", ...p });
 const owners = ["owner@example.com"];
 assert.ok("problem" in checkSettingsEdit(edit({ ownerEmail: "someone@else.com" }), owners));
 assert.ok("settings" in checkSettingsEdit(edit({ ownerEmail: "Owner@Example.com" }), owners));

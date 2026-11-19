@@ -19,8 +19,6 @@ const GREEN_LOTS = gql`
         process: metafield(namespace: "blended", key: "process") { value }
         roast_level: metafield(namespace: "blended", key: "roast_level") { value }
         green_price: metafield(namespace: "blended", key: "green_price") { value }
-        wholesale_price: metafield(namespace: "blended", key: "wholesale_price") { value }
-        retail_price: metafield(namespace: "blended", key: "retail_price") { value }
       }
     }
   }
@@ -34,7 +32,6 @@ const STOCK = gql`
           id handle title description status
           variants(first: 10) { nodes { id price availableForSale selectedOptions { name value } } }
           roast: metafield(namespace: "blended", key: "roast_level") { value }
-          wholesale: metafield(namespace: "blended", key: "wholesale_price") { value }
           subtitle: metafield(namespace: "blended", key: "subtitle") { value }
           kind: metafield(namespace: "blended", key: "kind") { value }
           recipe: metafield(namespace: "blended", key: "recipe") { value }

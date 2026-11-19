@@ -261,7 +261,7 @@ assert.equal(shopifyKeyKind("shpat_" + "a1".repeat(16)), "token");
 assert.equal(shopifyKeyKind("shpss_" + "b2".repeat(16)), "secret");
 assert.equal(shopifyKeyKind("ntn_short"), null);
 assert.equal(shopifyKeyKind("shpat_abc def"), null);
-const ctx = { stockCollection: "" };
+const ctx = { stockCollection: "", productCollections: [], productFields: [] };
 const btw = shopifyVariables("shopify_orders_between", { start: "2026-11-15", end: "2026-11-16", after: "eyJsYXN0X2lkIjo1fQ==" }, ctx);
 assert.ok(!("problem" in btw) && /created_at:>='2026-11-15T00:00:00-06:00' created_at:<'2026-11-16T00:00:00-06:00'/.test(String(btw.variables.query)) && btw.variables.after === "eyJsYXN0X2lkIjo1fQ==");
 for (const [tool, args, why] of [

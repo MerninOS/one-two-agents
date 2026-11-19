@@ -12,8 +12,8 @@ import { People } from "@/dashboard/components/people";
 import { capLines } from "@/dashboard/guardrails";
 import { controlsOn } from "@/dashboard/session";
 import { ThemeToggle } from "@/dashboard/components/client";
-import { BusinessForm, CapForm, SuppressForm, VendorForm, WhereForm } from "@/dashboard/components/settingsForms";
-import { saveBusinessProfile, saveWhereThingsGo } from "@/dashboard/orgActions";
+import { BusinessForm, CapForm, ProductFactsForm, SuppressForm, VendorForm, WhereForm } from "@/dashboard/components/settingsForms";
+import { saveBusinessProfile, saveProductFacts, saveWhereThingsGo } from "@/dashboard/orgActions";
 import { ownSettings, settings } from "@/core/settings";
 import { NO_SETTINGS, type BusinessSettings } from "@/core/settings-rules";
 import { loadBusiness } from "@/core/business";
@@ -57,6 +57,12 @@ export default async function Settings({ searchParams }: { searchParams: Promise
         <span className="card-t">Where things go</span>
         <span className="sub">This business’s own addresses: where the brief and alerts are emailed, its website, its Shopify store and Mercury accounts, and the Notion pages reports go under. Sign-ins and keys stay on Connections.</span>
         <WhereForm initial={ownText} starting={starting} owners={(members ?? []).filter((m) => m.role === "owner").map((m) => m.email)} canEdit={me.role === "owner"} save={saveWhereThingsGo} />
+      </div>
+
+      <div className="card" style={{ padding: "16px 22px", gap: 10 }}>
+        <span className="card-t">What agents may say about your products</span>
+        <span className="sub">The only facts about your products an agent may put in an outside message, like a first email to a lead: the products in these Shopify collections, these product fields, and your offer terms. Nothing else is read from Shopify for it.</span>
+        <ProductFactsForm initial={{ productCollections: own.productCollections.join(", "), productFields: own.productFields.join(", "), offerTerms: own.offerTerms ?? "" }} canEdit={me.role === "owner"} save={saveProductFacts} />
       </div>
 
       <div className="card" style={{ padding: "16px 22px", gap: 6 }}>

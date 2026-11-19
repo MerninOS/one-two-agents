@@ -11,7 +11,7 @@ type MF = { value: string } | null;
 type Node = {
   id: string; handle: string; title: string; description: string; status: string;
   variants: { nodes: { id: string; price: string; availableForSale: boolean; selectedOptions: { name: string; value: string }[] }[] };
-  roast: MF; wholesale: MF; subtitle: MF; kind: MF; recipe: MF;
+  roast: MF; subtitle: MF; kind: MF; recipe: MF;
 };
 
 const num = (v: string | null | undefined, d: number) => {
@@ -30,7 +30,6 @@ function stockFromProduct(p: Node): StockCoffee {
   return {
     id: p.handle, gid: p.id, name: p.title, sub,
     roast: num(p.roast?.value, 3),
-    price: num(p.wholesale?.value, 0),
     variants,
     // same rule as the storefront: the kind field, else "blend" in the subtitle's first part
     kind: kindField ? (kindField.startsWith("blend") ? "blend" : "single") : /blend/i.test(sub.split(/\s*·\s*/)[0] ?? "") ? "blend" : "single",
