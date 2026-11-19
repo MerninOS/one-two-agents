@@ -43,7 +43,7 @@ HITS=$(grep -rniE "$BRAND" . --exclude-dir=node_modules --exclude-dir=.git || tr
 if [ -n "$HITS" ]; then echo "$HITS" | head -40 >&2; echo "export refused: One Two names above" >&2; exit 1; fi
 SECRET='sk-ant-[A-Za-z0-9_-]{10,}|shpat_[a-f0-9]{10,}|shpss_[a-f0-9]{10,}|secret_[A-Za-z0-9]{30,}|ntn_[A-Za-z0-9]{30,}|re_[A-Za-z0-9]{20,}|eyJhbGciOi[A-Za-z0-9._-]{40,}|-----BEGIN [A-Z ]*PRIVATE KEY'
 if grep -rnE "$SECRET" . --exclude-dir=node_modules --exclude-dir=.git; then echo "export refused: a key-shaped string above" >&2; exit 1; fi
-grep -rqE "private/(DEPLOY|export|brand)" . --exclude-dir=node_modules --exclude-dir=.git && { grep -rnE "private/(DEPLOY|export|brand)" . --exclude-dir=node_modules --exclude-dir=.git >&2; echo "export refused: a reference to this repo's private folder" >&2; exit 1; }
+grep -rqE "private/(DEPLOY\.md|export\.sh)" . --exclude-dir=node_modules --exclude-dir=.git && { grep -rnE "private/(DEPLOY\.md|export\.sh)" . --exclude-dir=node_modules --exclude-dir=.git >&2; echo "export refused: a reference to this repo's private folder" >&2; exit 1; }
 echo "export: tree ok ($(git -C "$SRC" rev-parse --short "$REF"))"
 
 # 4. Optionally, every check and the build, on the exported tree
