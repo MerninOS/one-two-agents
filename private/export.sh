@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # Builds the public OPERATOR tree (Operator-A/Operator) from a commit of this repo (card 127).
 # It lives in private/, which the public tree leaves out, so it never ships itself. The public tree
-# has no migration history (one starting migration instead), and no One Two names, ids or keys.
-# Card 136 retires it, when the cloud runs from the public repo.
+# has no migration history (the starting migration and the paid layer's tables instead), and no One
+# Two names, ids or keys. Card 136 runs it one last time: from then on the public repo is the repo.
 #
 #   private/export.sh <out dir> [ref, default HEAD]
 #
@@ -13,6 +13,7 @@ REF=${2:-HEAD}
 CHECK=${3:-}
 SRC=$(git rev-parse --show-toplevel)
 STAMP=20261219000000
+EE_STAMP=20261219000100
 
 rm -rf "$OUT" && mkdir -p "$OUT"
 git -C "$SRC" archive "$REF" | tar -x -C "$OUT"
@@ -23,18 +24,15 @@ rm -rf private
 node - <<'EOF'
 const fs = require("fs");
 const edit = (f, fn) => { const a = fs.readFileSync(f, "utf8"), b = fn(a); if (a === b) throw new Error(`${f}: nothing changed`); fs.writeFileSync(f, b); };
-edit("core/tenancy.ts", (s) => s.replace(/"ee_[a-z_]+",[ \t]*/g, ""));
 edit("CLAUDE.md", (s) => s.replace("@private/DEPLOY.md\n\n", ""));
-edit("package.json", (s) => s.replace(/^\s+"check:ee": .*\n/m, ""));
 EOF
 
-# 1b. The paid layer's code: the public tree keeps ee/LICENSE and ee/README.md only, and builds the
-# open edition (core/extensions/none.ts); OPERATOR_EDITION=cloud needs this repo.
-find ee -mindepth 1 -maxdepth 1 ! -name LICENSE ! -name README.md -exec rm -r {} +
+# 1b. The paid layer ships in full under ee/LICENSE (card 136, Zak decided): no outside pull requests.
 
-# 2. One starting migration instead of the history
+# 2. The starting migration and the paid layer's tables instead of the history
 rm -f supabase/migrations/*.sql
 mv supabase/baseline/operator_baseline.sql "supabase/migrations/${STAMP}_operator_baseline.sql"
+mv supabase/baseline/ee_tables.sql "supabase/migrations/${EE_STAMP}_ee_tables.sql"
 rmdir supabase/baseline
 
 # 3. Nothing of One Two's may remain

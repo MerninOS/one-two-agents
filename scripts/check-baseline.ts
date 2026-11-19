@@ -8,11 +8,11 @@ import { readFileSync } from "node:fs";
 import { HOME_ORG_ID, ORGS_TABLE, TENANT_TABLES } from "../core/tenancy";
 import { JOB_KINDS } from "../core/job-rules";
 import { MCP_EVENTS } from "../core/mcp-rules";
-import { BASELINE, isEeTable } from "./lib/schema";
+import { BASELINE, EE_TABLES, isEeTable } from "./lib/schema";
 import { brandWords } from "./lib/brand.mjs";
 
 const sql = readFileSync(BASELINE, "utf8");
-// ee_* tables are the paid layer's, not core's: they stay out of the baseline
+// ee_* tables are the paid layer's: the baseline has core's, ee_tables.sql the rest (card 136)
 const eeOnly = TENANT_TABLES.filter(isEeTable);
 const coreTables = TENANT_TABLES.filter((t) => !isEeTable(t));
 const tables = [...sql.matchAll(/^CREATE TABLE public\.([a-z_]+) \(([\s\S]*?)\n\);/gm)].map((m) => ({ name: m[1], body: m[2] }));
@@ -44,4 +44,16 @@ assert.match(sql, /^ALTER TABLE ONLY public\.jobs\n\s+ADD CONSTRAINT \w+ UNIQUE 
 const auditGrants = [...sql.matchAll(/^GRANT (\S+) ON TABLE public\.audit_log TO /gm)].map((m) => m[1]);
 assert.ok(auditGrants.length && auditGrants.every((g) => !/ALL|UPDATE|DELETE|TRUNCATE/.test(g)), "the audit log can't be changed or emptied");
 
-console.log(`check:baseline ok (${tables.length} tables, ${eeOnly.length} left to ee/)`);
+// the paid layer's own file: exactly the ee_ tables, each held to its org like every other table
+const ee = readFileSync(EE_TABLES, "utf8");
+const eeMade = [...ee.matchAll(/^create table ([a-z_]+) \(([\s\S]*?)\n\);/gm)];
+assert.deepEqual(eeMade.map((m) => m[1]).sort(), [...eeOnly].sort(), "ee_tables.sql makes exactly the ee_ tables in TENANT_TABLES");
+for (const [, t, body] of eeMade) {
+  assert.match(body, /^\s+org_id uuid not null references orgs\(id\)/m, `${t}: org_id references orgs`);
+  assert.match(ee, new RegExp(`^alter table ${t} enable row level security;`, "m"), `${t}: row level security`);
+  assert.match(ee, new RegExp(`^create policy org_rows on ${t} for all to authenticated using \\(org_id = \\(select public\\.jwt_org_id\\(\\)\\)\\)`, "m"), `${t}: the org_rows policy`);
+}
+assert.doesNotMatch(ee, /^\s*(insert|update|delete) /im, "ee_tables.sql holds no rows");
+for (const re of brandWords()) assert.doesNotMatch(ee, re, "ee_tables.sql names no business");
+
+console.log(`check:baseline ok (${tables.length} tables, ${eeOnly.length} in ee_tables.sql)`);

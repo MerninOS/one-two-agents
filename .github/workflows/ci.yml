@@ -1,5 +1,6 @@
-# Public CI (docs, CONTRIBUTING.md): the same checks as before every push. No secrets: every check
-# is pure, and the build needs no settings.
+# Public CI (docs, CONTRIBUTING.md): the same checks as before every push, and both builds. Every
+# check is pure and the builds need no settings. The one secret is BRAND_WORDS, the names
+# check:business refuses: required on main, absent (and the names check skipped) on a fork's PR.
 name: CI
 on:
   pull_request:
@@ -21,4 +22,10 @@ jobs:
       - run: npm run schemas
       - run: npm run check
       - run: npm run check:all
+        env:
+          BRAND_WORDS: ${{ secrets.BRAND_WORDS }}
+          BRAND_REQUIRED: ${{ github.event_name == 'push' && '1' || '' }}
       - run: npm run build
+      - run: npm run build
+        env:
+          OPERATOR_EDITION: cloud

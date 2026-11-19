@@ -41,8 +41,9 @@ check that throws counts as a "no". A new slot needs a pull request to core with
 
 ## The public repo
 
-The export to the public repo keeps `ee/LICENSE` and `ee/README.md` and leaves out the rest of
-`ee/`, so the public tree builds the open edition.
+The public repo ships `ee/` in full, under its own license (`ee/LICENSE`). A build without
+`OPERATOR_EDITION=cloud` never resolves it, so the same tree builds the open edition; CI builds
+both. The hosted cloud deploys this repo with `OPERATOR_EDITION=cloud`.
 
 ## Billing (cloud edition, card 128 slice 3)
 
@@ -58,7 +59,8 @@ sign-up and Stripe's webhook; the app only reads it.
 
 Nothing is deleted when a plan runs out, and approvals already waiting can still be tapped. The
 paid layer's tables are named `ee_*`: they sit in `TENANT_TABLES` with an `org_rows` policy like
-any other, and stay out of the public baseline and export. `npm run check:ee` tests the plan.
+any other, and come from their own migration after the starting one (`*_ee_tables.sql`), so an
+open-edition install has them empty. `npm run check:ee` tests the plan.
 
 **Stripe.** Paying for OPERATOR is not an agent action: no agent calls Stripe, and it is not an MCP
 server or a gateway action type. Only `ee/stripe.ts` calls its API, with `STRIPE_SECRET_KEY` and
