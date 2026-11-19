@@ -1,6 +1,7 @@
 // Copyright Operator Enterprises and Technologies, LLC. Licensed under ee/LICENSE, not the AGPL-3.0.
 // The paid layer's checks: `npm run check:ee`. Pure: no database, no network.
 import assert from "node:assert/strict";
+import { EE_TABLES } from "../scripts/lib/schema";
 import { readFileSync, readdirSync } from "node:fs";
 import { createHmac } from "node:crypto";
 import { checkSignup, codeHash, newCode, normalCode, slugFor } from "./signup-rules";
@@ -59,7 +60,7 @@ for (const f of ["ee/plan-rules.ts", "ee/plan.ts", "ee/billing-card.tsx", "ee/in
   assert.match(s, /^\/\/ Copyright Operator Enterprises and Technologies, LLC\. Licensed under ee\/LICENSE/, `${f} carries the ee license line`);
 }
 for (const f of readdirSync("ee").filter((f) => /\.tsx?$/.test(f) && f !== "check.ts")) assert.doesNotMatch(readFileSync(`ee/${f}`, "utf8"), /HOME_ORG_ID/, `ee/${f}: no business is special by being first (card 135)`);
-assert.match(readFileSync("supabase/migrations/20261217090000_comped_plan.sql", "utf8"), /'comped'\)\)/, "the database allows a comped row");
+assert.match(readFileSync(EE_TABLES, "utf8"), /'canceled', 'comped'\)\)/, "the database allows a comped row");
 
 // Stripe: signatures, encoding, and the row a subscription leaves
 {

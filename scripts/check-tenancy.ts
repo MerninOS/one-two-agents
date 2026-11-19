@@ -194,7 +194,7 @@ const asyncCheck = (async () => {
   assert.match(signin, /if \(found\.length\) return found;\n\s+const first = await withOrg\(HOME_ORG_ID, \(\) => memberToSignIn\(email\)\);/, "only while the address belongs to no business");
 }
 
-// The migration history (the public repo ships only the baseline: check:baseline covers it there)
+// The migration history (a fresh copy ships only the starting migrations: check:baseline covers it there)
 if (hasHistory) {
   // every table the migrations create is a tenant table (or orgs); tables made after slice 1 carry org_id
   const dir = join(process.cwd(), "supabase/migrations");
