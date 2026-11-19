@@ -1,6 +1,6 @@
 // Bookkeeping rules in plain code: which charges need evidence, whether a receipt
 // matches a charge, and the mileage and home office math. No model decides any of it.
-import { round2 } from "./coffee";
+import { round2 } from "@/core/num";
 
 export type DocStatus = "open" | "matched" | "needs_photo" | "bank_record_only" | "personal" | "not_needed";
 
@@ -26,11 +26,11 @@ export const cents = (usd: number) => Math.round(Math.abs(usd) * 100);
 const DAY = 864e5;
 export const daysBetween = (a: string, b: string) => Math.round(Math.abs(Date.parse(`${a}T12:00:00Z`) - Date.parse(`${b}T12:00:00Z`)) / DAY);
 
-/** Mercury transaction kinds that move money between One Two's own accounts or pay its own card: no receipt needed. */
+/** Mercury transaction kinds that move money between the business's own accounts or pay its own card: no receipt needed. */
 const OWN_MONEY_KINDS = new Set(["internalTransfer", "treasuryTransfer", "creditCardCredit", "cardInternationalTransactionFee"]);
 const OWN_MONEY_WORDS = /\b(mercury (io|credit)|card payment|transfer (to|from) (checking|savings|treasury))\b/i;
 
-/** A charge needs evidence unless it only moves money between One Two's own accounts. */
+/** A charge needs evidence unless it only moves money between the business's own accounts. */
 export function needsEvidence(kind: string | null | undefined, merchant: string) {
   if (kind && OWN_MONEY_KINDS.has(kind)) return false;
   return !OWN_MONEY_WORDS.test(merchant);

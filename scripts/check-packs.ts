@@ -25,9 +25,15 @@ for (const f of outside) {
 assert.equal(registered, REGISTRATION.size, "the tool list, the goal measures and the installer register packs");
 assert.equal(pure, PURE_REGISTRATION.size, "the Shopify tools and the goal picker list pure pack parts");
 assert.ok(!statSync("templates").isFile());
-for (const gone of ["domain", "agents/cfo", "agents/chief-of-staff", "agents/bookkeeper", "agents/wholesale-hunter", "core/green.ts", "integrations/shopify/lots.ts", "integrations/shopify/settings.ts", "integrations/shopify/stock.ts"]) {
+for (const gone of ["domain", "agents/cfo", "agents/chief-of-staff", "agents/wholesale-hunter", "core/green.ts", "integrations/shopify/lots.ts", "integrations/shopify/settings.ts", "integrations/shopify/stock.ts"]) {
   let there = true; try { statSync(gone); } catch { there = false; }
   assert.ok(!there, `${gone} belongs in a template pack, not core`);
+}
+// The books (receipts, mileage, home office, tax packets) are core: every business has them.
+for (const core of ["core/books/rules.ts", "core/books/sync.ts", "core/books/prompt.ts"]) assert.ok(statSync(core).isFile(), `${core} is core's`);
+for (const d of packDirs()) {
+  for (const f of files(join("templates", d))) assert.doesNotMatch(readFileSync(f, "utf8"), /report_books_sync|from\("(trips|home_office|tax_packets|expense_docs)"\)/, `${f} has books code; the books are core's (core/books)`);
+  for (const t of ["trips", "home_office", "tax_packets", "expense_docs"]) assert.ok(!packTables(d).includes(t), `${t} is a core table, not templates/${d}'s`);
 }
 
 // A pack reaches core only through core's public pieces: it reads through callMcpTool like core
