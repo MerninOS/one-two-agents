@@ -1,6 +1,6 @@
 // People and roles (docs/tenancy.md, slice 2): `npm run check:roles`. Pure: no network, no database.
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { atLeast, isRole, memberChangeProblem, normalEmail, refusal, safeNext } from "../core/roles";
 
 // roles: viewer < approver < owner
@@ -70,11 +70,14 @@ const run = async () => {
   assert.ok(!/^"use server"/.test(readFileSync("dashboard/signin.ts", "utf8")) && readFileSync("dashboard/signin.ts", "utf8").startsWith('import "server-only";'));
 
   // every server action checks a role; sign-in is the only exception
-  const files = ["dashboard/actions.ts", "dashboard/orgActions.ts", "dashboard/connectionActions.ts", "dashboard/goalActions.ts", "dashboard/proposalActions.ts", "dashboard/chatActions.ts", "dashboard/peopleActions.ts"];
+  const files = ["dashboard/actions.ts", "dashboard/orgActions.ts", "dashboard/connectionActions.ts", "dashboard/goalActions.ts", "dashboard/proposalActions.ts", "dashboard/chatActions.ts", "dashboard/peopleActions.ts", ...["ee/billing-actions.ts", "ee/signup-actions.ts"].filter((f) => existsSync(f))];
+  // sign-up comes before there is a member, like signing in: the sign-up code is its check
+  const NO_MEMBER_YET: Record<string, string> = { "ee/signup-actions.ts": "signUp" };
   let n = 0;
   for (const f of files) {
     const src = readFileSync(f, "utf8");
     for (const m of src.matchAll(/export async function (\w+)\([^\n]*\{\n([^\n]*\n){0,3}/g)) {
+      if (NO_MEMBER_YET[f] === m[1]) continue;
       n++;
       assert.match(m[0], /await asRole\("(approver|owner)"\)|await asRole\(\w+ \? "(approver|owner)" : "(approver|owner)"\)/, `${f}: ${m[1]} checks a role`);
     }

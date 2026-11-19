@@ -17,7 +17,7 @@ export const HOME_ORG_ID = "0e1a7c4e-0001-4000-8000-000000000001";
 export const TENANT_TABLES = [
   "agent_actions", "agent_defs", "agent_memory", "agent_outputs", "agent_playbook_holds", "agent_playbooks",
   "agent_runs", "agents", "approvals", "audit_log", "avery_chat", "chain_fires", "connector_requests",
-  "crew_flow", "departments", "email_suppressions", "expense_docs", "goals", "home_office", "jobs", "kpi_snapshots",
+  "crew_flow", "departments", "ee_signup_codes", "ee_subscriptions", "email_suppressions", "expense_docs", "goals", "home_office", "jobs", "kpi_snapshots",
   "mcp_connection_events", "mcp_connections", "mcp_custom_servers", "members", "memory_events", "org_keys", "plans", "policies",
   "policy_log", "proposals", "reactions", "run_steps", "seats", "status_alerts", "tax_packets", "trips", "usage_ledger", "vendors", "wholesale_leads",
 ] as const;

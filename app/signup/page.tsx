@@ -5,8 +5,9 @@ import { extensions } from "@/core/extensions";
 // an owner adds people on Settings > People, so this page is not found.
 export const metadata = { title: "Sign up · Control Room" };
 
-export default function Signup() {
+export default async function Signup({ searchParams }: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
   const Page = extensions.SignupPage;
   if (!Page) notFound();
-  return <Page />;
+  const query = Object.fromEntries(Object.entries(await searchParams).map(([k, v]) => [k, Array.isArray(v) ? v[0] : v]));
+  return <Page query={query} />;
 }

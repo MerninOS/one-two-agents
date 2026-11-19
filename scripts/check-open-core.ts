@@ -25,7 +25,7 @@ for (const f of files) if (f !== "core/extensions.ts") assert.doesNotMatch(readF
 assert.match(readFileSync("core/extensions.ts", "utf8"), SLOT_IMPORT, "core/extensions.ts is the door to the slots");
 const slots = [...(readFileSync("core/extension-types.ts", "utf8").match(/SLOTS = \[([^\]]*)\]/)?.[1] ?? "").matchAll(/"(\w+)"/g)].map((m) => m[1]);
 assert.ok(slots.length >= 4, "core/extension-types.ts lists its SLOTS");
-const fills = (f: string) => { const s = readFileSync(f, "utf8"); for (const k of slots) assert.match(s, new RegExp(`^\\s+${k}:`, "m"), `${f} fills the ${k} slot`); return s; };
+const fills = (f: string) => { const s = readFileSync(f, "utf8"); for (const k of slots) assert.match(s, new RegExp(`^\\s+${k}[:,]`, "m"), `${f} fills the ${k} slot`); return s; };
 const open = fills("core/extensions/none.ts");
 assert.match(open, /edition: "open"/, "the default edition is open");
 assert.match(open, /planBlock: async \(\) => null/, "the open edition blocks nothing");
@@ -34,6 +34,8 @@ assert.match(readFileSync("tsconfig.json", "utf8"), /"operator-extensions": \["\
 const nextConfig = readFileSync("next.config.ts", "utf8");
 assert.match(nextConfig, /cloud \? \{ turbopack: \{ resolveAlias: \{ "operator-extensions": "\.\/ee\/index\.ts" \} \} \}/, "only OPERATOR_EDITION=cloud swaps in ee/index.ts");
 // every place that could need a plan asks it (each is a no-op in the open edition)
+assert.match(open, /api: \{\}/, "the open edition has no extra routes");
+assert.equal(readFileSync("dashboard/peopleActions.ts", "utf8").match(/await membersChanged\(\)/g)?.length, 2, "adding and removing a person both tell the paid layer");
 const asks: Record<string, string> = { "core/runs.ts": "run", "dashboard/peopleActions.ts": "invite", "dashboard/actions.ts": "agent_on", "dashboard/connectionActions.ts": "custom_server" };
 for (const [f, kind] of Object.entries(asks)) assert.match(readFileSync(f, "utf8"), new RegExp(`planBlock\\(\\{ kind: "${kind}"`), `${f} asks the plan (${kind})`);
 assert.equal(readFileSync("dashboard/actions.ts", "utf8").match(/planBlock\(\{ kind: "agent_on"/g)?.length, 2, "both ways to put agents on duty ask the plan");

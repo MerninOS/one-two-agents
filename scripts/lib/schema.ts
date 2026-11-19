@@ -16,6 +16,9 @@ export const BASELINE = existsSync("supabase/baseline/operator_baseline.sql")
   ? "supabase/baseline/operator_baseline.sql"
   : join(MIGRATIONS, readdirSync(MIGRATIONS).filter((f) => f.endsWith("_operator_baseline.sql")).sort()[0] ?? "missing_operator_baseline.sql");
 
+/** The paid layer's tables (ee/, docs/extensions.md): named ee_*, never in the public baseline. */
+export const isEeTable = (t: string) => t.startsWith("ee_");
+
 /** Every template pack folder (one with an index.ts). There may be none. */
 export const packDirs = (): string[] =>
   readdirSync("templates").filter((d) => statSync(join("templates", d)).isDirectory() && existsSync(join("templates", d, "index.ts")));
