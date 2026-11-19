@@ -9,11 +9,9 @@ import { ONE_TWO_CREW as crew } from "./crew";
 import { ONE_TWO_PLANNED as PLANNED } from "./planned";
 import { parseJudgment } from "./agents/chief-of-staff";
 import { deptLine, replyUrl } from "./agents/chief-of-staff/email";
-import { MEASURES, planGoal, progress, type GoalRow } from "../../core/goal-rules";
 import { MCP_SERVERS } from "../../core/mcp-rules";
 import { SHOPIFY_TOOLS, assertReadOnly, shopifyVariables } from "../../core/shopify-queries";
 import { ONE_TWO_SHOPIFY } from "./shopify/queries";
-import { ONE_TWO_MEASURE_DEFS } from "./measure-defs";
 
 // the crew installs cleanly, switched off, exactly as written
 assert.deepEqual(crewProblems(crew), [], "the One Two pack's crew installs cleanly");
@@ -67,13 +65,12 @@ for (const [tool, args, why] of [
   ["shopify_green_orders_between", { start: "2026-11-16", end: "2026-11-15" }, /end after start/],
 ] as const) { const r = shopifyVariables(tool, args, ctx); assert.ok("problem" in r && why.test(r.problem), tool); }
 
-// the green-cover goal: listed in the picker, a floor in days
-for (const m of ONE_TWO_MEASURE_DEFS) assert.ok(MEASURES.some((x) => x.key === m.key), `${m.key} is in the goal picker`);
-assert.ok("plan" in planGoal({ title: "Never run out", measure: "lowest_cover_days", target: 45 }, "2026-11-18"));
-const cover: GoalRow = { measure: "lowest_cover_days", target: 45, start_value: null, due_on: null, state: "active", paced_from: "2026-11-01T18:00:00Z" };
-assert.equal(progress(cover, { value: 62 }, "2026-11-18").status, "on_track");
-const behind = progress(cover, { value: 40 }, "2026-11-18");
-assert.deepEqual([behind.status, behind.line], ["behind", "40 days, at least 45 days"]);
+// card 133: green lots, use, cover and reorder come from One Two's own server (MerninOS/blended
+// /api/agents-mcp, a custom server on Connections), and the cover goal is a goal number from it
+for (const f of ["green.ts", "measures.ts", "measure-defs.ts"]) assert.ok(!existsSync(`templates/one-two/${f}`), `${f} is gone`);
+for (const f of ["templates/one-two/tools.ts", "templates/one-two/crew.json", "templates/registry.ts"]) {
+  assert.ok(!/calc_green_use|calc_green_cover|calc_reorder_amount|lowest_cover_days|"shopify_green_lots"/.test(readFileSync(f, "utf8").replace(/callMcpTool\("shopify", "shopify_green_lots"/g, "")), `${f} keeps no coffee tool or measure`);
+}
 
 // card 132: Rowan's offer is core's Product facts; the pack keeps no offer of its own
 assert.ok(!existsSync("templates/one-two/agents/wholesale-hunter"), "the pack's wholesale offer is gone");

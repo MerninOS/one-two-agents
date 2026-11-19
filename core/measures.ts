@@ -11,12 +11,14 @@ import { burnRate } from "@/core/money";
 import { measureOf, type MeasureKey, type Reading } from "@/core/goal-rules";
 import { mcpStatus } from "@/integrations/mcp";
 import { klaviyoListSize } from "@/integrations/klaviyo";
+import { numberDefs, type NumberSource } from "@/core/goal-number-rules";
+import { ownNumberSources, readOwnNumber } from "@/core/tools/custom";
 
 /** The leads list by stage, in funnel order (wholesale_leads.stage). */
 export const FUNNEL = ["new", "drafted", "contacted", "replied", "tasting", "won"] as const;
 export type Funnel = Record<(typeof FUNNEL)[number], number>;
-/** Extra detail a goal page can draw: the leads funnel, or each lot's days of cover. */
-export type Detail = { funnel: Funnel } | { lots: { lot: string; days: number | null }[] } | null;
+/** Extra detail a goal page can draw: the leads funnel. */
+export type Detail = { funnel: Funnel } | null;
 export type MeasureRead = { reading: Reading; detail: Detail };
 
 const TIMEOUT_MS = 20_000;
@@ -29,7 +31,9 @@ async function monthOrders(today: string) {
   return { count: orders.length, revenue: round2(orders.reduce((s, o) => s + Number(o.totalPriceSet.shopMoney.amount), 0)) };
 }
 
-async function readOne(key: MeasureKey, today: string, shared: { month?: ReturnType<typeof monthOrders> }): Promise<MeasureRead> {
+async function readOne(key: MeasureKey, today: string, shared: { month?: ReturnType<typeof monthOrders> }, own: readonly NumberSource[]): Promise<MeasureRead> {
+  const mine = own.find((s) => s.key === key);
+  if (mine) return { reading: await readOwnNumber(mine), detail: null };
   switch (key) {
     case "wholesale_won": {
       const { data, error } = await db().from("wholesale_leads").select("stage").limit(5000);
@@ -66,13 +70,20 @@ async function readOne(key: MeasureKey, today: string, shared: { month?: ReturnT
   }
 }
 
+/** The business's own goal numbers (core/goal-number-rules.ts), as measures. Empty when none, or when they can't be listed. */
+export async function ownMeasures(): Promise<{ sources: NumberSource[]; defs: ReturnType<typeof numberDefs> }> {
+  const sources = await ownNumberSources().catch(() => []);
+  return { sources, defs: numberDefs(sources) };
+}
+
 /** Reads each measure once, however many goals use it. Unknown or not-yet-countable keys are left out. */
-export async function readMeasures(keys: readonly (string | null)[], now = new Date()): Promise<Record<string, MeasureRead>> {
+export async function readMeasures(keys: readonly (string | null)[], now = new Date(), own?: Awaited<ReturnType<typeof ownMeasures>>): Promise<Record<string, MeasureRead>> {
   const today = chicagoDate(0, now);
-  const want = [...new Set(keys)].map((k) => measureOf(k)).filter((m) => m?.available) as { key: MeasureKey }[];
+  const o = own ?? (keys.some((k) => k?.startsWith("n_")) ? await ownMeasures() : { sources: [], defs: [] });
+  const want = [...new Set(keys)].map((k) => measureOf(k, o.defs)).filter((m) => m?.available) as { key: MeasureKey; label: string }[];
   const shared: { month?: ReturnType<typeof monthOrders> } = {};
   const got = await Promise.all(want.map(async (m): Promise<[string, MeasureRead]> => {
-    try { return [m.key, await withTimeout(readOne(m.key, today, shared), measureOf(m.key)!.label)]; }
+    try { return [m.key, await withTimeout(readOne(m.key, today, shared, o.sources), m.label)]; }
     catch (e) { return [m.key, { reading: { error: msg(e) }, detail: null }]; }
   }));
   return Object.fromEntries(got);

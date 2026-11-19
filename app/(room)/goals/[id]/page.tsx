@@ -7,7 +7,7 @@ import { GOAL_LOOK } from "@/dashboard/components/goals";
 import { GoalForm } from "@/dashboard/components/GoalForm";
 import { ActionButton } from "@/dashboard/components/client";
 import { Pill } from "@/dashboard/components/ui";
-import { getGoal, goalsNow, ownerOf } from "@/core/goals";
+import { getGoal, goalsNow, ownMeasureDefs, ownerOf } from "@/core/goals";
 import { agentNames, agentsIn, deptSpent, loadOrg, monthSpendByAgent } from "@/core/org";
 import { FUNNEL } from "@/core/measures";
 import { recentPlans, type Plan } from "@/core/plans";
@@ -36,20 +36,21 @@ export default async function GoalPage({ params }: { params: Promise<{ id: strin
   if (!g || g.state === "dropped" || !org) notFound();
   const owner = ownerOf(org, g.department_id);
   const members = agentsIn(org, g.department_id);
-  const [[now], names, spend, plans, pending, headSpec] = await Promise.all([
+  const [[now], names, spend, plans, pending, headSpec, own] = await Promise.all([
     goalsNow([g]),
     agentNames([...members, ...(owner.agentId ? [owner.agentId] : [])]).catch(() => ({} as Record<string, string>)),
     monthSpendByAgent(members).catch(() => ({} as Record<string, number>)),
     recentPlans(g.department_id, 2).catch(() => null),
     listProposals(["pending"]).catch(() => null),
     owner.agentId ? listSpecVersions(owner.agentId).then((v) => v.find((x) => x.active)?.spec ?? null).catch(() => null) : Promise.resolve(null),
+    ownMeasureDefs(),
   ]);
   const week = weekOf(chicagoDate(0));
   const plan = plans?.find((p) => p.week_of === week) ?? null;
   const reviewed = plans?.find((p) => p.review) ?? null;
   const bySeat = pending ? proposalsBySeat(org, pending) : {};
   const headName = owner.agentId ? names[owner.agentId] ?? "The head" : null;
-  const v = goalView(now, org, names);
+  const v = goalView(now, org, names, own);
   const dept = org.departments.find((d) => d.id === g.department_id);
   const spent = deptSpent(org, g.department_id, spend);
   const form = { title: g.title, measure: g.measure ?? "", target: g.target == null ? "" : String(g.target), dueOn: g.due_on ?? "" };
@@ -76,11 +77,6 @@ export default async function GoalPage({ params }: { params: Promise<{ id: strin
             {FUNNEL.map((s) => <span key={s}><b>{d.funnel[s]}</b>{STAGE[s]}</span>)}
           </div>
         )}
-        {d && "lots" in d && (
-          <div className="stack" style={{ gap: 4 }}>
-            {d.lots.map((l) => <div key={l.lot} className="row" style={{ gap: 8, fontSize: 13 }}><span style={{ flex: 1 }}>{l.lot}</span><b style={{ fontWeight: 600 }}>{l.days == null ? "not used in 30 days" : `${l.days} days`}</b></div>)}
-          </div>
-        )}
         <span className="muted" style={{ fontSize: 11.5 }}>Counted when this page opened. {owner.agentId ? `${names[owner.agentId] ?? "The head"} reads the same numbers with the Goal progress tool.` : "A head reads the same numbers with the Goal progress tool."}</span>
       </div>
 
@@ -100,7 +96,7 @@ export default async function GoalPage({ params }: { params: Promise<{ id: strin
       <div className="home-grid" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 320px), 1fr))" }}>
         <div className="card" style={{ gap: 12 }}>
           <span className="card-t">Change the goal</span>
-          <GoalForm initial={form} save={goalEdit.bind(null, g.id)} />
+          <GoalForm initial={form} own={own} save={goalEdit.bind(null, g.id)} />
           <div className="row wrap rule" style={{ gap: 8, paddingTop: 12 }}>
             {g.state === "active" && <ActionButton className="btn outline sm" action={goalSetState.bind(null, g.id, "paused")}>Pause it</ActionButton>}
             {g.state === "paused" && <ActionButton className="btn outline sm" action={goalSetState.bind(null, g.id, "active")}>Turn it back on</ActionButton>}

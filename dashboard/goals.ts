@@ -2,8 +2,8 @@ import "server-only";
 // Goals as the Control Room draws them (docs/company-mode.md, slice 2): plain data for
 // components/goals.tsx, built from core/goals.ts. Every number and status comes from code.
 import { agentNames, loadOrg, type Org } from "@/core/org";
-import { measureOf, STATUS_WORDS, type GoalStatus } from "@/core/goal-rules";
-import { goalsNow, listGoals, ownerOf, type GoalNow } from "@/core/goals";
+import { measureOf, STATUS_WORDS, type GoalStatus, type MeasureDef } from "@/core/goal-rules";
+import { goalsNow, listGoals, ownMeasureDefs, ownerOf, type GoalNow } from "@/core/goals";
 import type { Detail } from "@/core/measures";
 
 export interface GoalView {
@@ -16,8 +16,8 @@ export interface GoalView {
   detail: Detail;
 }
 
-export function goalView(n: GoalNow, org: Org, names: Record<string, string>): GoalView {
-  const g = n.goal, m = measureOf(g.measure), o = ownerOf(org, g.department_id);
+export function goalView(n: GoalNow, org: Org, names: Record<string, string>, own: readonly MeasureDef[] = []): GoalView {
+  const g = n.goal, m = measureOf(g.measure, own), o = ownerOf(org, g.department_id);
   return {
     id: g.id, deptId: g.department_id, deptName: org.departments.find((d) => d.id === g.department_id)?.name ?? g.department_id, title: g.title,
     status: n.progress.status, statusLabel: STATUS_WORDS[n.progress.status], line: n.progress.line, pace: n.progress.pace, pct: n.progress.pct,
@@ -33,11 +33,11 @@ export async function goalsByDept(org: Org | null): Promise<Record<string, GoalV
   if (!org) return {};
   const goals = await listGoals();
   if (goals == null) return null;
-  const now = await goalsNow(goals);
+  const [now, own] = await Promise.all([goalsNow(goals), ownMeasureDefs()]);
   const heads = org.departments.map((d) => ownerOf(org, d.id).agentId).filter((x): x is string => !!x);
   const names = await agentNames(heads).catch(() => ({} as Record<string, string>));
   const out: Record<string, GoalView[]> = {};
-  for (const n of now) (out[n.goal.department_id] ??= []).push(goalView(n, org, names));
+  for (const n of now) (out[n.goal.department_id] ??= []).push(goalView(n, org, names, own));
   return out;
 }
 

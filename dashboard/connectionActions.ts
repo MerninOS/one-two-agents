@@ -6,7 +6,7 @@ import { audit } from "@/core/audit";
 import { planBlock } from "@/core/extensions";
 import { revalidatePath } from "next/cache";
 import { isMcpId } from "@/core/mcp-rules";
-import { addCustomServer, checkCustomServer, disconnectMcp, removeClaudeKey, saveClaudeKey, pauseCustom, removeCustomServer, resealAll, saveCustomKey, saveCustomScopes, saveMcpKey, saveMcpSetting, setCustomTool } from "@/integrations/mcp";
+import { addCustomServer, checkCustomServer, disconnectMcp, removeClaudeKey, saveClaudeKey, pauseCustom, removeCustomServer, resealAll, saveCustomKey, setCustomNumber, saveCustomScopes, saveMcpKey, saveMcpSetting, setCustomTool } from "@/integrations/mcp";
 import { isCustomId } from "@/core/custom-mcp-rules";
 import { knownByAddress } from "@/core/connector-rules";
 import { askFor, closeRequest } from "@/core/connector-requests";
@@ -147,6 +147,19 @@ export async function customToolOn(id: string, tool: string, label: string, line
   if (!isCustomId(id)) return unknown;
   if (typeof tool !== "string" || tool.length > 120 || !pins || typeof pins !== "object") return { ok: false, text: "That isn’t a tool." };
   try { await setCustomTool(id, tool, { label: String(label ?? ""), line: String(line ?? ""), pins }); await audit(me, "custom_tool_on", id, { tool }); return done("On. No agent can use it yet: giving custom tools to agents comes in the next update."); } catch (e) { return fail(e); }
+}
+
+/** Uses a turned-on tool as a goal number, or stops (`f` null). Owner, Controls on to set one; stopping is always allowed. */
+export async function customNumber(id: string, tool: string, f: { field: string; label: string; unit: string; shape: string } | null): Promise<ActionResult> {
+  const { me, no } = await asRole("owner"); if (no) return no;
+  if (f && !controlsOn()) return CONTROLS_OFF;
+  if (!isCustomId(id)) return unknown;
+  if (typeof tool !== "string" || tool.length > 120 || (f != null && typeof f !== "object")) return { ok: false, text: "That isn’t a tool." };
+  try {
+    await setCustomNumber(id, tool, f ? { field: f.field, label: f.label, unit: f.unit, shape: f.shape } : null);
+    await audit(me, f ? "custom_goal_number" : "custom_goal_number_off", id, { tool, ...(f ? { field: String(f.field).slice(0, 80) } : {}) });
+    return done(f ? "Saved. It shows in the goal picker under From your own tools." : "No longer a goal number. Goals on it show No measure yet.");
+  } catch (e) { return fail(e); }
 }
 
 export async function customToolOff(id: string, tool: string): Promise<ActionResult> {

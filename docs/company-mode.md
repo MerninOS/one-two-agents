@@ -121,9 +121,9 @@ reaction). `proposeLesson` stays for a lead's or head's send-back.
 | Wholesale accounts won | total, by a date | `wholesale_leads` at stage Won |
 | Revenue this month | month | Shopify orders this Chicago month, cancelled left out |
 | Orders this month | month | the same orders, counted |
-| Lowest days of green cover | floor | each listed lot: on hand ÷ use per day over 30 days (`templates/<pack>/green.ts`) |
 | Months of runway | floor | Mercury cash ÷ net burn per 30 days over 90 days (`core/money.ts`) |
 | Email list size | total, by a date | profiles on the list picked on Connections › Klaviyo, read over Klaviyo's MCP server (slice 6) |
+| Your own goal numbers | total or floor | one field of a turned-on custom tool's reply, marked as a goal number on Connections (docs/custom-servers.md, "Goal numbers") |
 
 - **total:** pace counts from where the measure stood when the goal was set (`start_value`, read in
   code on save) to the target by the date. On track when the count is at or above that line,

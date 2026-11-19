@@ -11,8 +11,10 @@ import "server-only";
 // - Its reply is untrusted data, cut to 20,000 characters, with no numbers worked out in code and
 //   no rows an action could name, so it can never choose a recipient, URL, product or category.
 // - At most 20 custom calls a run (core/runner.ts counts them).
-import { callCustomTool, listCustomServers, mcpStatus, readyCustomServers } from "@/integrations/mcp";
+import { callCustomTool, callCustomToolData, listCustomServers, mcpStatus, readyCustomServers } from "@/integrations/mcp";
 import { cantTurnOn, customParams, customToolId, serverOfToolId, type CustomServer } from "@/core/custom-mcp-rules";
+import { numberFrom, numberSources, unpinned, type NumberSource } from "@/core/goal-number-rules";
+import type { Reading } from "@/core/goal-rules";
 import type { ToolDef } from "./types";
 
 /** The read tools a server's turned-on tools become, exactly as the owner accepted them. */
@@ -60,4 +62,26 @@ export async function customMenu(): Promise<{ server: CustomServer; setUp: boole
     const why = !s?.connected ? "Not connected" : s.paused ? `Paused: ${s.lastError ?? "its sign-in stopped working"}` : null;
     return { server: c, setUp: !why, why, tools: customDefs(c) };
   }));
+}
+
+// ---- Goal numbers (card 133, core/goal-number-rules.ts): a turned-on tool the owner marked as one.
+
+/** Every goal number on the business's servers. No network: the rows only. */
+export async function ownNumberSources(): Promise<NumberSource[]> {
+  return numberSources(await listCustomServers());
+}
+
+/**
+ * Reads one goal number: the server must be connected, not paused and pass its tool check now; the
+ * tool is called with its pins only (no model, no other input); code reads the field. Anything else
+ * reads as an error the goal page shows.
+ */
+export async function readOwnNumber(s: NumberSource): Promise<Reading> {
+  const [r] = await readyCustomServers([s.serverId]);
+  if (!r?.ok || !r.server) return { error: r?.why || "the server isn't ready" };
+  const on = r.server.toolsOn[s.tool], t = r.server.tools.find((x) => x.name === s.tool);
+  if (!on?.number || !t) return { error: `${s.tool} isn't a goal number on ${r.server.name} any more` };
+  if (cantTurnOn(t) || t.fingerprint !== on.fingerprint) return { error: `${r.server.name} changed ${s.tool}; accept the change on Connections` };
+  if (unpinned(t, on).length) return { error: `${s.tool} needs ${unpinned(t, on).join(", ")} pinned` };
+  return numberFrom(await callCustomToolData(r.server.id, s.tool, {}), on.number.field);
 }

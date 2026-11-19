@@ -45,7 +45,8 @@ const CORE_MEASURES: readonly MeasureDef[] = [
 ];
 /** Core's measures, then each pack's. A pack never replaces a core measure. */
 export const MEASURES: readonly MeasureDef[] = [...CORE_MEASURES, ...PACK_MEASURE_DEFS.filter((m) => !CORE_MEASURES.some((c) => c.key === m.key))];
-export const measureOf = (key: string | null | undefined): MeasureDef | null => MEASURES.find((m) => m.key === key) ?? null;
+/** A measure by key: core's, a pack's, or one of the business's own goal numbers (`extra`, core/goal-number-rules.ts). */
+export const measureOf = (key: string | null | undefined, extra: readonly MeasureDef[] = []): MeasureDef | null => MEASURES.find((m) => m.key === key) ?? extra.find((m) => m.key === key) ?? null;
 
 export const MAX_GOALS_PER_DEPT = 3;
 export const MAX_GOAL_TITLE = 120;
@@ -65,13 +66,13 @@ const validDate = (d: string) => DATE.test(d) && new Date(`${d}T12:00:00Z`).toIS
  * Checks what the owner typed for a goal. `today` is the Chicago date. A measure code can't count yet is
  * kept (so the goal says what's missing) with no target needed.
  */
-export function planGoal(input: GoalInput, today: string): { plan: GoalPlan } | { error: string } {
+export function planGoal(input: GoalInput, today: string, extra: readonly MeasureDef[] = []): { plan: GoalPlan } | { error: string } {
   const title = String(input.title ?? "").replace(/\s+/g, " ").trim();
   if (title.length < 3) return { error: "Say what the goal is, like “Land 5 wholesale accounts by Mar 31”." };
   if (title.length > MAX_GOAL_TITLE) return { error: `Keep the goal to ${MAX_GOAL_TITLE} characters.` };
   if (/https?:\/\/|www\./i.test(title)) return { error: "A goal can't hold a link." };
   const raw = input.measure == null || input.measure === "" ? null : String(input.measure);
-  const m = raw == null ? null : measureOf(raw);
+  const m = raw == null ? null : measureOf(raw, extra);
   if (raw != null && !m) return { error: "Pick a measure from the list." };
 
   const due = input.dueOn == null || input.dueOn === "" ? null : String(input.dueOn);
@@ -131,8 +132,8 @@ const monthDays = (today: string) => { const [y, m] = today.split("-").map(Numbe
  * Where a goal stands, from what code read. `today` is the Chicago date. Everything here is plain
  * arithmetic on the reading, the target and the dates.
  */
-export function progress(g: GoalRow, reading: Reading | null, today: string): Progress {
-  const m = measureOf(g.measure);
+export function progress(g: GoalRow, reading: Reading | null, today: string, extra: readonly MeasureDef[] = []): Progress {
+  const m = measureOf(g.measure, extra);
   const blank = (status: GoalStatus, line: string): Progress => ({ status, value: null, pct: null, line, pace: null });
   if (!m || !m.available || g.target == null) return blank(g.state === "done" ? "done" : "no_measure", m && !m.available ? `Code can't count ${m.label.toLowerCase()} until ${m.needs} exists.` : "Pick a measure so code can count it.");
   if (!reading) return blank("unreadable", "Not read yet.");
