@@ -1,46 +1,41 @@
 import "server-only";
-// Avery's morning brief, as the engine's report tool report_morning_brief delivers it
-// (core/tools/catalog.ts). Everything with a number in it is worked out here in code; the
-// focus and watch list come from the run's finished result. The brief goes to Zak by email
-// (templates/one-two/docs/avery-email.md), with a Notion copy as the archive: a row in the Briefs database
-// (templates/one-two/docs/avery-briefs-database.md), or a page per day when that isn't set up. Either the email
-// or Notion alone also works.
-import { G_PER_LB } from "@/templates/one-two/domain/coffee";
+// The morning brief for any business (docs/morning-brief.md), as the report tool report_morning_brief
+// delivers it (core/tools/catalog.ts). Everything with a number in it is worked out here in code; the
+// focus and watch list come from the run's finished result. The brief goes to the owner email on
+// Settings (integrations/email.ts has no recipient argument), with a Notion copy as the archive: a row
+// in the Briefs database (docs/briefs-database.md), or a page per day when that isn't set up. Either the
+// email or Notion alone also works.
 import { db } from "@/core/db";
 import { env } from "@/core/env";
 import { settings } from "@/core/settings";
 import { chicagoDate, dayTitle } from "@/core/time";
 import { emailOwner, hasEmail } from "@/integrations/email";
 import { h2, li, notionArchive, notionPage, notionRow, notionConnected, notionRowOn, notionUpdateRow, p, prop, type Block, type Props } from "@/integrations/notion";
-import { getInventoryLots } from "@/templates/one-two/shopify/lots";
-import { getBoardOrders, greenLedger } from "@/templates/one-two/shopify/orders";
-import { getRoastLoss } from "@/templates/one-two/shopify/settings";
-import { fetchStockCoffees } from "@/templates/one-two/shopify/stock";
+import { openOrders } from "@/integrations/shopify/orders";
 import { agentNames, agentsIn, companySeat, loadOrg, seatOf } from "@/core/org";
-import { goalsNow, listGoals } from "@/core/goals";
+import { goalsNow, listGoals, type GoalNow } from "@/core/goals";
 import { STATUS_WORDS } from "@/core/goal-rules";
-import { SECTIONS, briefEmail, deptLine, type BriefDept, type BriefView, type Kpi } from "./email";
-
-interface Judgment { watch: string[]; focus: { action: string; reason: string }; remember?: string[] }
+import { numberText } from "@/core/goal-number-rules";
+import { ownNumberSources, readOwnNumber } from "@/core/tools/custom";
+import { SECTIONS, briefEmail, deptLine, openLine, rateLine, NO_SNAPSHOT, type BriefDept, type BriefView, type Kpi } from "./email";
+import { openCounts, parseJudgment, rulesJudgment, type GoalBehind, type Judgment } from "./rules";
 
 const usd = (n: number | null | undefined) => (n == null ? "n/a" : `$${Number(n).toLocaleString("en-US", { maximumFractionDigits: 0 })}`);
-const pct = (n: number | null | undefined) => (n == null ? "n/a" : `${Math.round(Number(n) * 100)}%`);
 
-/** How far back the brief looks, and when a green lot counts as low. */
-const KPI_DAYS = 8, GREEN_DAYS = 30, COVER_WARN_DAYS = 21;
+/** How far back the brief looks: daily numbers, and open orders. */
+const KPI_DAYS = 8, OPEN_ORDER_DAYS = 90;
 
 const NO_DEPT = "Not in a department";
 
 /**
- * Each department on the org chart (docs/org-chart.md, slice 3; docs/company-mode.md, slice 4): its
- * goals' status and the last day's runs, all counted in code, then the agents not in a department.
- * Avery's own runs (the company seat) are left out. Empty when the org chart isn't there.
+ * Each department on the org chart (docs/org-chart.md): its goals' status and the last day's runs, all
+ * counted in code, then the agents not in a department. The company seat's own runs are left out.
+ * Empty when the org chart isn't there.
  */
-async function departmentRuns(runs: { agent_id: string; status: string; cost_usd: number | string | null }[]): Promise<BriefDept[]> {
+async function departmentRuns(runs: { agent_id: string; status: string; cost_usd: number | string | null }[], goals: GoalNow[]): Promise<{ departments: BriefDept[]; chief: string | null }> {
   const o = await loadOrg().catch(() => null);
-  if (!o) return [];
+  if (!o) return { departments: [], chief: null };
   const top = companySeat(o)?.agentId;
-  const goals = await listGoals(o.departments.map((d) => d.id)).then((g) => (g ? goalsNow(g) : [])).catch(() => []);
   const goalLines = (deptId: string) => goals.filter((x) => x.goal.department_id === deptId)
     .map(({ goal, progress }) => `${goal.title}: ${progress.line}, ${STATUS_WORDS[progress.status].toLowerCase()}`);
   const tally = (ids: (id: string) => boolean, name: string, deptGoals: string[]): BriefDept => {
@@ -49,105 +44,93 @@ async function departmentRuns(runs: { agent_id: string; status: string; cost_usd
   };
   const out = o.departments.map((d) => { const ids = new Set(agentsIn(o, d.id)); return tally((id) => ids.has(id), d.name, goalLines(d.id)); });
   const loose = tally((id) => !seatOf(o, id), NO_DEPT, []);
-  return loose.runs ? [...out, loose] : out;
+  const chief = top ? (await agentNames([top]).catch(() => ({} as Record<string, string>)))[top] ?? null : null;
+  return { departments: loose.runs ? [...out, loose] : out, chief };
+}
+
+/** The business's own numbers marked "Show in the morning brief", read in code after the tool check. */
+async function ownNumberLines(): Promise<string[]> {
+  const sources = (await ownNumberSources().catch(() => [])).filter((s) => s.number.brief).slice(0, 8);
+  return Promise.all(sources.map(async (s) => {
+    const r = await readOwnNumber(s).catch((e: unknown) => ({ error: e instanceof Error ? e.message : String(e) }));
+    return "value" in r ? numberText(s.number, r.value) : `${s.number.label}: couldn't read (${String("error" in r ? r.error : "no number").slice(0, 120)})`;
+  }));
 }
 
 /** Today's facts, every number worked out in code. */
 async function facts() {
   const dayAgo = new Date(Date.now() - 864e5).toISOString();
-  const [{ data: kpis }, { data: runs }, { data: pending }, { count: newDrafts }, orders, green] = await Promise.all([
+  const since = chicagoDate(OPEN_ORDER_DAYS);
+  const [{ data: kpis }, { data: runs }, { data: pending }, { count: newDrafts }, orders, goals, ownNumbers] = await Promise.all([
     db().from("kpi_snapshots").select("*").order("date", { ascending: false }).limit(KPI_DAYS),
     // a try from the builder is not a run the brief reports on
     db().from("agent_runs").select("id, agent_id, status, summary, error, started_at, cost_usd").gte("started_at", dayAgo).not("trigger", "in", "(preview,chat)").order("started_at"),
     db().from("approvals").select("created_at").eq("status", "pending").order("created_at").limit(500),
     db().from("wholesale_leads").select("id", { count: "exact", head: true }).not("gmail_draft_id", "is", null).gte("created_at", dayAgo),
-    getBoardOrders(),
-    Promise.all([getInventoryLots(), fetchStockCoffees(), getRoastLoss()]).then(async ([lots, stock, loss]) => ({ lots, ledger: await greenLedger({ stock, lots, loss }, GREEN_DAYS) })),
+    // Shopify not connected, or not readable: the brief leaves open orders out
+    openOrders(since).then(openCounts, () => null),
+    listGoals().then((g) => (g ? goalsNow(g) : [])).catch(() => [] as GoalNow[]),
+    ownNumberLines(),
   ]);
-  const open = orders.filter((o) => o.status !== "shipped");
-  const used = new Map<string, number>();
-  for (const r of green.ledger) if (r.state === "deducted") for (const l of r.lots) used.set(l.id, (used.get(l.id) ?? 0) + l.g);
-  const cover = green.lots.filter((l) => l.listed).map((l) => {
-    const perDay = (used.get(l.id) ?? 0) / GREEN_DAYS, onHand = l.availG;
-    return { lot: l.name, onHandLb: Math.round(onHand / G_PER_LB * 10) / 10, daysOfCover: perDay > 0 ? Math.round(onHand / perDay) : null };
-  });
+  const { departments, chief } = await departmentRuns(runs ?? [], goals);
+  const behind: GoalBehind[] = goals.filter((g) => g.progress.status === "behind" || g.progress.status === "missed")
+    .map((g) => ({ title: g.goal.title, line: g.progress.line, status: g.progress.status as GoalBehind["status"] }));
   return {
     today: chicagoDate(0),
-    yesterday: kpis?.[0] ?? null,
-    lastWeek: (kpis ?? []).slice(1),
-    openOrders: {
-      paid: open.filter((o) => o.status === "paid").length,
-      roasting: open.filter((o) => o.status === "roasting").length,
-      packing: open.filter((o) => o.status === "packing").length,
-      qcHold: open.filter((o) => o.qcHold).map((o) => o.name),
-    },
-    lowGreen: cover.filter((c) => c.daysOfCover != null && c.daysOfCover < COVER_WARN_DAYS),
+    yesterday: (kpis?.[0] as Kpi | undefined) ?? null,
+    lastWeek: (kpis ?? []).slice(1) as Kpi[],
+    openOrders: orders,
+    ownNumbers,
+    behind,
     agentRuns: runs ?? [],
-    departments: await departmentRuns(runs ?? []),
+    departments,
+    chief,
     approvals: { pending: pending?.length ?? 0, oldestHours: pending?.length ? (Date.now() - Date.parse(pending[0].created_at)) / 36e5 : null },
     newDrafts: newDrafts ?? 0,
-    neverDeducted: green.ledger.filter((r) => r.state === "missing").map((r) => r.name),
     // each agent's name from its live version, whether it started in code or the app
     names: await agentNames([...new Set((runs ?? []).map((r) => r.agent_id as string))]).catch(() => ({} as Record<string, string>)),
   };
 }
 type Facts = Awaited<ReturnType<typeof facts>>;
 
-export function rulesJudgment(f: Facts): Judgment {
-  const low = [...f.lowGreen].sort((a, b) => (a.daysOfCover ?? 0) - (b.daysOfCover ?? 0));
-  const watch = [
-    ...low.map((l) => `${l.lot} has about ${l.daysOfCover} days of green left (${l.onHandLb} lb).`),
-    ...(f.openOrders?.qcHold.length ? [`${f.openOrders.qcHold.length} order(s) on QC hold: ${f.openOrders.qcHold.join(", ")}.`] : []),
-    ...(f.neverDeducted.length ? [`Green was never deducted for ${f.neverDeducted.join(", ")}.`] : []),
-    ...f.agentRuns.filter((r) => r.status === "failed").map((r) => `The ${r.agent_id} run failed: ${r.error ?? "no error recorded"}.`),
-  ].slice(0, 5);
-  const focus = low.length
-    ? { action: `Reorder ${low[0].lot}`, reason: `It runs out first, in about ${low[0].daysOfCover} days.` }
-    : f.openOrders?.paid
-      ? { action: `Roast the ${f.openOrders.paid} paid order(s)`, reason: "They are waiting on a machine." }
-      : { action: "Work the wholesale pipeline", reason: "No orders or stock need you this morning." };
-  return { watch, focus };
-}
-
-/** Each department's counts (code) with Avery's line for it (the model, from the head's report). */
-
 /** The Notion page body: the same sections, in the same order, as the email. */
 export function briefBlocks(f: Facts, j: Judgment, sections: readonly string[] = SECTIONS): Block[] {
   const y = f.yesterday, o = f.openOrders;
   const depts = f.departments;
+  const ol = openLine(o);
   const waiting = [
     ...(f.approvals?.pending ? [li(`Approvals waiting: ${f.approvals.pending}`)] : []),
-    ...(f.newDrafts ? [li(`New wholesale drafts from Rowan: ${f.newDrafts}`)] : []),
-    ...(o ? [li(`Orders to roast: ${o.paid} paid, ${o.roasting} roasting, ${o.packing} packing`)] : []),
-    ...(o?.qcHold.length ? [li(`QC hold: ${o.qcHold.join(", ")}`)] : []),
-    ...(f.neverDeducted.length ? [li(`Green never deducted: ${f.neverDeducted.join(", ")}`)] : []),
+    ...(f.newDrafts ? [li(`New lead drafts in Gmail: ${f.newDrafts}`)] : []),
+    ...(ol ? [li(ol)] : []),
+    ...(o?.onHold.length ? [li(`On hold: ${o.onHold.join(", ")}`)] : []),
   ];
   const part: Record<string, () => Block[]> = {
     focus: () => [h2("Today's focus"), p(`${j.focus.action}. ${j.focus.reason}`)],
     waiting: () => [h2("Waiting on you"), ...(waiting.length ? waiting : [p("Nothing is waiting on you.")])],
     numbers: () => [h2("Numbers"), ...(y
-      ? [li(`${y.date}: ${usd(y.revenue)} revenue from ${y.orders} orders, AOV ${usd(y.aov)}`), li(`Repeat rate ${pct(y.repeat_rate)}, green margin ${pct(y.green_margin)}`), li(`Cash ${usd(y.cash_usd)}`)]
-      : [p("No snapshot yet. The CFO runs at 5:30 AM CT.")])],
+      ? [li(`${y.date}: ${usd(Number(y.revenue))} revenue from ${y.orders} orders, AOV ${usd(y.aov == null ? null : Number(y.aov))}`), li(rateLine(y)), li(`Cash ${usd(y.cash_usd == null ? null : Number(y.cash_usd))}`)]
+      : [p(NO_SNAPSHOT)]), ...f.ownNumbers.map((t) => li(t))],
     watch: () => [h2("Watch"), ...(j.watch.length ? j.watch.map(li) : [p("Nothing flagged.")])],
     departments: () => [h2("Departments"), ...(depts.length ? depts.map((d) => li(deptLine(d))) : [p("No departments on the org chart yet.")])],
   };
   return sections.flatMap((id) => part[id]?.() ?? []);
 }
 
-/** The day's row in the Briefs database. Every value is a fact computed above; "Focus done" is Zak's and only carried over. */
+/** The day's row in the Briefs database. Every value is a fact computed above; "Focus done" is the owner's and only carried over. */
 export function briefRow(f: Facts, j: Judgment, focusDone: boolean): Props {
   const y = f.yesterday;
+  const n = (v: number | string | null | undefined) => (v == null || v === "" ? null : Number(v));
   return {
     Name: prop.title(dayTitle(f.today)),
     Date: prop.date(f.today),
     Focus: prop.text(`${j.focus.action}. ${j.focus.reason}`.replace(/\s+/g, " ").trim()),
     "Focus done": prop.check(focusDone),
-    Revenue: prop.num(y?.revenue),
+    Revenue: prop.num(n(y?.revenue)),
     Orders: prop.num(y?.orders),
-    AOV: prop.num(y?.aov),
-    Cash: prop.num(y?.cash_usd),
-    "Repeat rate": prop.num(y?.repeat_rate),
-    "Green margin": prop.num(y?.green_margin),
+    AOV: prop.num(n(y?.aov)),
+    Cash: prop.num(n(y?.cash_usd)),
+    "Repeat rate": prop.num(n(y?.repeat_rate)),
+    Margin: prop.num(n(y?.margin)),
     "Numbers from": prop.date(y?.date),
     "Approvals waiting": prop.num(f.approvals?.pending),
     "Failed runs": prop.num(f.agentRuns.filter((r) => r.status === "failed").length),
@@ -157,7 +140,7 @@ export function briefRow(f: Facts, j: Judgment, focusDone: boolean): Props {
 
 /**
  * Writes today's row. A second run on the same day replaces the first row (the old one goes
- * to Notion's trash) and keeps Zak's "Focus done" tick, so there is one row per day.
+ * to Notion's trash) and keeps the owner's "Focus done" tick, so there is one row per day.
  */
 async function writeBriefRow(databaseId: string, f: Facts, j: Judgment, sections: readonly string[]) {
   const old = await notionRowOn(databaseId, "Date", f.today);
@@ -173,10 +156,10 @@ async function writeBriefRow(databaseId: string, f: Facts, j: Judgment, sections
 /** What the email is built from. Every value is a fact computed above, plus the model's two sections. */
 const briefView = (f: Facts, j: Judgment, sections: readonly string[], notionUrl?: string, runId?: string | null): BriefView => ({
   today: f.today,
-  yesterday: (f.yesterday as Kpi | null) ?? null,
-  earlier: f.lastWeek as Kpi[],
+  yesterday: f.yesterday,
+  earlier: f.lastWeek,
   openOrders: f.openOrders,
-  neverDeducted: f.neverDeducted,
+  ownNumbers: f.ownNumbers,
   runs: f.agentRuns,
   departments: f.departments,
   approvals: f.approvals,
@@ -187,6 +170,7 @@ const briefView = (f: Facts, j: Judgment, sections: readonly string[], notionUrl
   runId: runId ?? undefined,
   notionUrl,
   names: f.names,
+  chief: f.chief ?? undefined,
   sections,
 });
 
@@ -231,25 +215,10 @@ async function sendBrief(f: Facts, judgment: Judgment, sections: readonly string
 }
 
 /**
- * Avery's focus and watch list from a run's result: a line
- * starting "Focus:" and up to five lines starting "- ". Null when there is no Focus line.
- */
-export function parseJudgment(text: string): Judgment | null {
-  const lines = text.split("\n").map((l) => l.trim()).filter(Boolean);
-  const f = lines.find((l) => /^focus\s*:/i.test(l));
-  if (!f) return null;
-  const body = f.replace(/^focus\s*:\s*/i, "");
-  const cut = body.search(/\.\s/);
-  const focus = cut > 0 ? { action: body.slice(0, cut), reason: body.slice(cut + 1).trim() } : { action: body.replace(/\.$/, ""), reason: "" };
-  const watch = lines.filter((l) => /^[-•*]\s+/.test(l)).map((l) => l.replace(/^[-•*]\s+/, "").slice(0, 300)).slice(0, 5);
-  return focus.action ? { watch, focus } : null;
-}
-
-/**
  * The report tool report_morning_brief: the email and Briefs row, with every number worked out
  * here in code from today's facts, and the focus and watch list taken from the run's finished
- * result. When the result has no Focus line, the
- * fixed rules write both, as they do when no model can be reached.
+ * result. When the result has no Focus line, the fixed rules write both, as they do when no model
+ * can be reached.
  */
 export async function deliverBrief(result: string, runId: string | null = null): Promise<string> {
   const f = await facts();

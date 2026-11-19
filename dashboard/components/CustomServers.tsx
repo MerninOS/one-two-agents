@@ -113,7 +113,7 @@ function ToolRow({ c, t, paused, controls }: { c: CustomServer; t: CustomTool; p
         <span className="pill sm" style={why ? { background: "var(--red-soft)", color: "var(--red-ink)" } : { background: "var(--card)", color: "var(--ink2)" }}>{why ? (t.readOnly ? "Odd inputs" : "Changes things") : "Reads"}</span>
       </span>
       {on && <span style={{ fontSize: 12.5, lineHeight: 1.5 }}>Agents read: “{on.line}”{pins.length ? ` Pinned: ${pins.map(([k, v]) => `${k} = ${String(v)}`).join(", ")}.` : ""}</span>}
-      {on?.number && <span style={{ fontSize: 12.5, lineHeight: 1.5 }}>Goal number: “{on.number.label}”, read from <code>{on.number.field}</code>.</span>}
+      {on?.number && <span style={{ fontSize: 12.5, lineHeight: 1.5 }}>Goal number: “{on.number.label}”, read from <code>{on.number.field}</code>.{on.number.brief ? " Shown in the morning brief." : ""}</span>}
       {t.about && <span className="ink2" style={{ fontSize: 12.5, lineHeight: 1.5 }}><span className="muted">The server says: </span>{t.about}</span>}
       {t.inputs.length > 0 && <span className="muted" style={{ fontSize: 12 }}>Inputs: {t.inputs.map((i) => `${i.name}${i.required ? "" : "?"} (${i.kind === "other" ? "list or object" : i.kind})`).join(", ")}</span>}
       {why && <span className="muted" style={{ fontSize: 12 }}>{why}</span>}

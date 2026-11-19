@@ -898,7 +898,7 @@ export async function setCustomTool(id: string, tool: string, on: { label: strin
  * Uses a turned-on tool as a goal number (core/goal-number-rules.ts), or stops (`n` null). Only
  * while it is on, with every required input pinned, so code can call it with no model.
  */
-export async function setCustomNumber(id: string, tool: string, n: { field: unknown; label: unknown; unit: unknown; shape: unknown } | null): Promise<void> {
+export async function setCustomNumber(id: string, tool: string, n: { field: unknown; label: unknown; unit: unknown; shape: unknown; brief?: unknown } | null): Promise<void> {
   const c = await getCustomServer(id);
   if (!c) throw new Error("That server isn't on Connections any more.");
   const on = c.toolsOn[tool], t = c.tools.find((x) => x.name === tool);
@@ -915,7 +915,7 @@ export async function setCustomNumber(id: string, tool: string, n: { field: unkn
   if ("problem" in r) throw new Error(r.problem);
   next[tool].number = r.number;
   await updateCustom(id, { tools_on: next });
-  await logEvent(id, "tool_on", `${tool}: goal number “${r.number.label}” from ${r.number.field}`);
+  await logEvent(id, "tool_on", `${tool}: goal number “${r.number.label}” from ${r.number.field}${r.number.brief ? ", shown in the morning brief" : ""}`);
 }
 
 // ---- Slice 2: agents call turned-on custom tools. Only core/tools/custom.ts calls these.

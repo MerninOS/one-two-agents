@@ -6,5 +6,7 @@ Cron Jobs) in `vercel.json`, state in the Supabase project `one-two-agents`. The
 separate repo (`MerninOS/blended`); this repo never imports from it. The public repo is
 `Operator-A/Operator`, exported without `templates/one-two` (docs/self-host.md, card 127).
 
-Settings only One Two's pack reads: `SHOPIFY_STOCK_COLLECTION`, the collection holding "Our coffees"
-(blank = `our-coffees`).
+One Two's coffee numbers (green lots, cover, reorder amounts, a day's green cost, orders by roasting
+stage) come from its own server in the storefront, `MerninOS/blended` `/api/agents-mcp`, added on
+Connections as a custom server (cards 133 and 133.5, `templates/one-two/docs/pack.md`). The pack has
+no settings of its own.

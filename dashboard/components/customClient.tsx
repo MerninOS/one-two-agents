@@ -143,7 +143,7 @@ export function ToolOnForm({ tool, inputs, initial, save, controls, editing }: {
   );
 }
 
-export interface NumberFormValue { field: string; label: string; unit: string; shape: string }
+export interface NumberFormValue { field: string; label: string; unit: string; shape: string; brief?: boolean }
 
 /**
  * Use a turned-on tool as a goal number (core/goal-number-rules.ts): which field of its reply holds
@@ -190,6 +190,10 @@ export function GoalNumberForm({ tool, initial, save, stop, controls }: { tool: 
           </select>
         </label>
       </span>
+      <label className="row" style={{ gap: 8, fontSize: 12.5, alignItems: "center" }}>
+        <input id={`num-${sid}-brief`} type="checkbox" checked={!!f.brief} onChange={(e) => setF({ ...f, brief: e.target.checked })} />
+        Also show it under Numbers in the morning brief
+      </label>
       <span className="row wrap" style={{ gap: 8 }}>
         <button className="btn dark sm" disabled={busy || !f.field.trim() || !f.label.trim()} onClick={() => run(() => save(f))}>{busy ? "Saving…" : "Save"}</button>
         <button className="btn ghost sm" disabled={busy} onClick={() => setOpen(false)}>Cancel</button>

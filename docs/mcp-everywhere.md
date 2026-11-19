@@ -218,8 +218,8 @@ store, so Shopify runs on our own server in the app, like Notion and Gmail:
   store, or one whose app has **any** scope that isn't a read, is refused. A key Shopify stops
   accepting pauses the connection.
 - Removed: `integrations/shopify/client.ts`, `SHOPIFY_ADMIN_ACCESS_TOKEN` and `SHOPIFY_CLIENT_SECRET`.
-  `SHOPIFY_STORE_DOMAIN`, `SHOPIFY_API_VERSION`, `SHOPIFY_CLIENT_ID` and `SHOPIFY_STOCK_COLLECTION`
-  stay: none is a secret.
+  `SHOPIFY_STORE_DOMAIN`, `SHOPIFY_API_VERSION` and `SHOPIFY_CLIENT_ID` stay: none is a secret.
+  (`SHOPIFY_STOCK_COLLECTION` stayed until card 133.5, when the pack read that used it left.)
 
 No migration.
 

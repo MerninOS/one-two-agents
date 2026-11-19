@@ -12,8 +12,9 @@ import { People } from "@/dashboard/components/people";
 import { capLines } from "@/dashboard/guardrails";
 import { controlsOn } from "@/dashboard/session";
 import { ThemeToggle } from "@/dashboard/components/client";
-import { BusinessForm, CapForm, ProductFactsForm, SuppressForm, VendorForm, WhereForm } from "@/dashboard/components/settingsForms";
-import { saveBusinessProfile, saveProductFacts, saveWhereThingsGo } from "@/dashboard/orgActions";
+import { BusinessForm, CapForm, DailyNumbersForm, ProductFactsForm, SuppressForm, VendorForm, WhereForm } from "@/dashboard/components/settingsForms";
+import { saveBusinessProfile, saveDailyNumbers, saveProductFacts, saveWhereThingsGo } from "@/dashboard/orgActions";
+import { ownMeasureDefs } from "@/core/goals";
 import { ownSettings, settings } from "@/core/settings";
 import { NO_SETTINGS, type BusinessSettings } from "@/core/settings-rules";
 import { loadBusiness } from "@/core/business";
@@ -23,7 +24,7 @@ import { extensions } from "@/core/extensions";
 export default async function Settings({ searchParams }: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
   const query = Object.fromEntries(Object.entries(await searchParams).map(([k, v]) => [k, Array.isArray(v) ? v[0] : v]));
   const [f, caps, lists, me, members, biz] = await Promise.all([getFloor(), capLines(), getVendorsAndSuppressions(), requireSession(), listMembers().catch(() => null), loadBusiness().catch(() => UNKNOWN_BUSINESS)]);
-  const [own, eff] = await Promise.all([ownSettings().catch(() => NO_SETTINGS), settings().catch(() => NO_SETTINGS)]);
+  const [own, eff, ownNumbers] = await Promise.all([ownSettings().catch(() => NO_SETTINGS), settings().catch(() => NO_SETTINGS), ownMeasureDefs().catch(() => [])]);
   const asText = (b: BusinessSettings) => ({ ownerEmail: b.ownerEmail ?? "", siteUrl: b.siteUrl ?? "", shopifyDomain: b.shopifyDomain ?? "", shopifyClientId: b.shopifyClientId ?? "", mercuryAccountIds: b.mercuryAccountIds.join(", "), notionBriefParent: b.notionBriefParent ?? "", notionBriefsDb: b.notionBriefsDb ?? "", notionLeadsParent: b.notionLeadsParent ?? "", notionBooksParent: b.notionBooksParent ?? "" });
   const ownText = asText(own), effText = asText(eff);
   // what the home org still takes from the app-wide settings in Vercel, shown as hints
@@ -63,6 +64,12 @@ export default async function Settings({ searchParams }: { searchParams: Promise
         <span className="card-t">What agents may say about your products</span>
         <span className="sub">The only facts about your products an agent may put in an outside message, like a first email to a lead: the products in these Shopify collections, these product fields, and your offer terms. Nothing else is read from Shopify for it.</span>
         <ProductFactsForm initial={{ productCollections: own.productCollections.join(", "), productFields: own.productFields.join(", "), offerTerms: own.offerTerms ?? "" }} canEdit={me.role === "owner"} save={saveProductFacts} />
+      </div>
+
+      <div className="card" style={{ padding: "16px 22px", gap: 10 }}>
+        <span className="card-t">Daily numbers</span>
+        <span className="sub">Each morning code works out yesterday’s revenue, orders, average order, repeat rate and cash, for the brief and goals. Pick where cost of goods comes from, so margin can be worked out too.</span>
+        <DailyNumbersForm initial={{ costSource: own.costSource, costNumber: own.costNumber ?? "" }} numbers={ownNumbers.filter((d) => d.unit === "usd").map((d) => ({ key: d.key, label: d.label }))} canEdit={me.role === "owner"} save={saveDailyNumbers} />
       </div>
 
       <div className="card" style={{ padding: "16px 22px", gap: 6 }}>

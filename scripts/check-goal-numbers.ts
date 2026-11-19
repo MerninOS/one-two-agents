@@ -3,7 +3,7 @@
 // number must be a plain finite number, and only the owner sets it up.
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { FIELD, checkGoalNumber, isNumberKey, numberDefs, numberFrom, numberKey, numberSources, unpinned } from "../core/goal-number-rules";
+import { FIELD, checkGoalNumber, isNumberKey, numberDefs, numberFrom, numberKey, numberSources, numberText, unpinned } from "../core/goal-number-rules";
 import { acceptTools, type CustomServer, type CustomTool, type ToolOn } from "../core/custom-mcp-rules";
 import { measureOf, planGoal, progress } from "../core/goal-rules";
 
@@ -73,5 +73,16 @@ assert.match(custom, /export async function readOwnNumber[\s\S]*readyCustomServe
 assert.match(readFileSync("eslint.config.mjs", "utf8"), /importNames: \["callCustomTool", "callCustomToolData"\]/);
 assert.match(readFileSync("dashboard/connectionActions.ts", "utf8"), /export async function customNumber\([^\n]*\n\s+const \{ me, no \} = await asRole\("owner"\)/);
 assert.match(readFileSync("dashboard/components/GoalForm.tsx", "utf8"), /From your own tools/);
+
+// ---- "Show in the morning brief" (card 133.5)
+assert.equal((checkGoalNumber({ ...good, brief: "on" }, tool(), on()) as { number: { brief?: true } }).number.brief, true);
+assert.equal((checkGoalNumber({ ...good, brief: true }, tool(), on()) as { number: { brief?: true } }).number.brief, true);
+assert.equal("brief" in (checkGoalNumber({ ...good, brief: "yes please" }, tool(), on()) as { number: object }).number, false);
+assert.equal("brief" in (checkGoalNumber(good, tool(), on()) as { number: object }).number, false);
+assert.equal(numberText({ label: "Orders to roast", unit: "count" }, 4), "Orders to roast: 4");
+assert.equal(numberText({ label: "Day's cost", unit: "usd" }, 1234.4), "Day's cost: $1,234");
+assert.equal(numberText({ label: "Cover", unit: "days" }, 21.04), "Cover: 21 days");
+assert.equal(numberText({ label: "Runway", unit: "months" }, 14.33), "Runway: 14.3 months");
+assert.match(readFileSync("dashboard/components/customClient.tsx", "utf8"), /Also show it under Numbers in the morning brief/);
 
 console.log("check:goal-numbers ok");

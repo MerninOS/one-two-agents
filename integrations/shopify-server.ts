@@ -5,7 +5,6 @@ import "server-only";
 // integrations/mcp.ts callLocalTool, which opens the read-only app's key from the token vault.
 // Each tool runs one fixed query (core/shopify-queries.ts); there is no tool that takes GraphQL.
 import { MCP_PROTOCOL, MCP_SERVERS } from "@/core/mcp-rules";
-import { env } from "@/core/env";
 import { settings } from "@/core/settings";
 import { SHOPIFY_QUERIES, shopifyKeyKind, shopifyVariables, writeScopes } from "@/core/shopify-queries";
 import { shopifyQuery, whoIs } from "./shopify-api";
@@ -41,7 +40,7 @@ export function shopifyServer(key: string) {
         const name = typeof req.params?.name === "string" ? req.params.name : "";
         if (!OFFERED.includes(name)) return toolError(id, `${name || "That"} isn't a tool this server serves.`);
         const s = await settings();
-        const v = shopifyVariables(name, req.params?.arguments, { stockCollection: env.shopifyStockCollection ?? "", productCollections: s.productCollections, productFields: s.productFields });
+        const v = shopifyVariables(name, req.params?.arguments, { productCollections: s.productCollections, productFields: s.productFields });
         if ("problem" in v) return toolError(id, `Input refused: ${v.problem}`);
         try {
           const result = await shopifyQuery(key, v.doc, v.variables);

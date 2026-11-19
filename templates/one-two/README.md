@@ -12,8 +12,8 @@ ten agents is the "One Two Coffee Lab Agent System" tech spec.
 
 | Route | Schedule | What it does |
 | --- | --- | --- |
-| `/api/agents/cfo` | Morning chain: daily 5:30 AM Central (off) | Yesterday's revenue, orders, AOV, repeat rate, green cost and margin from Shopify, cash from Mercury → `kpi_snapshots`. The numbers are code; the model only writes the summary |
-| `/api/agents/chief_of_staff` | Morning chain: after Morgan, weekdays not before 6:45 AM Central (off) | Morning brief → an email to Zak (when `RESEND_API_KEY`, `BRIEF_FROM` and `BRIEF_TO` are set; see `templates/one-two/docs/avery-email.md`) and a Notion page. Numbers come from code; the model writes only the Watch list and today's focus |
+| `/api/agents/cfo` | Morning chain: daily 5:30 AM Central (off) | Yesterday's revenue, orders, AOV, repeat rate and channels from Shopify, cost of goods from One Two's own server (Settings › Daily numbers), cash from Mercury → `kpi_snapshots` (docs/daily-numbers.md). The numbers are code; the model only writes the summary |
+| `/api/agents/chief_of_staff` | Morning chain: after Morgan, weekdays not before 6:45 AM Central (off) | Morning brief → an email to Zak (the owner email on Settings; see docs/morning-brief.md) and a row in the Briefs database (docs/briefs-database.md). Numbers come from code; the model writes only the Watch list and today's focus |
 | `/api/agents/bookkeeper` | manual only until launch (planned daily 6:00 AM Central) | Business charges from Mercury → `expense_docs`, receipts found in Gmail (read-only sign-in) saved to the private `receipts` bucket, category suggestions from Mercury's own list (as approval cards), charges that need a photo, month close on the 3rd → a Notion page. Haiku reads receipts; code decides every match. **Never writes to Mercury itself**: receipt, category and memo are proposals that the tool gateway applies after Zak approves them in the Control Room. A few cents a run. Ships off (`agents.enabled = false`). The code is core's (`core/books`, docs/books.md) |
 | `/api/agents/wholesale_hunter` | manual only | Claude searches the web for a few new wholesale/private label prospects in Austin, Lakeway and Bee Cave, scores fit, writes a first-touch email → `wholesale_leads`, Gmail drafts (after Zak approves, if the Gmail drafts sign-in is connected) and a Notion page. Drafts only; nothing is sent. About $1 a run |
 
@@ -75,12 +75,12 @@ dashboard/                Control Room data, actions, session and components
 agents/                   registry.ts (every agent with a live version can run)
 core/                     the runner and agent specs for agents built in the app, the tool list (core/tools), env, Supabase client (scoped to the current org, core/tenancy.ts and docs/tenancy.md), withRun (log, enabled flag, budget, memory), agent memory, time helpers, the tool gateway
 integrations/             mcp.ts (the one MCP client and the vault), our own servers (Notion, Gmail, Shopify, Mercury receipt files), facades agents call (shopify/orders.ts, mercury.ts, notion.ts, gmail*.ts, klaviyo.ts), Anthropic
-templates/                template packs (docs/templates.md); templates/one-two is One Two Coffee Lab's: coffee constants and green math (copied from the storefront), bookkeeping rules, its Shopify reads and tables, and the code its tools call
+templates/                template packs (docs/templates.md); templates/one-two is One Two Coffee Lab's: its starting crew, its checks and the public export (its coffee numbers come from the storefront's own server)
 supabase/migrations/      agent tables, each with org_id (docs/tenancy.md)
 ```
 
-`templates/one-two/shopify/README.md` lists the Shopify fields the storefront writes and the
-agents read. That is the contract between the two repos.
+The storefront's `/api/agents-mcp` route (MerninOS/blended) is the contract between the two repos:
+a custom server on Connections, read-only, signed in with `AGENTS_MCP_KEY`.
 
 ## Setup
 

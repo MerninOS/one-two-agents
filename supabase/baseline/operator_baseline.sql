@@ -497,6 +497,27 @@ CREATE TABLE public.jobs (
 );
 
 --
+-- Name: kpi_snapshots; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.kpi_snapshots (
+    date date NOT NULL,
+    revenue numeric(12,2) NOT NULL,
+    goods numeric(12,2) NOT NULL,
+    orders integer NOT NULL,
+    aov numeric(10,2),
+    repeat_rate numeric(5,4),
+    cost_of_goods numeric(12,2),
+    margin numeric(5,4),
+    cash_usd numeric(14,2),
+    detail jsonb DEFAULT '{}'::jsonb NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    org_id uuid NOT NULL,
+    cost_source text DEFAULT 'none'::text NOT NULL,
+    CONSTRAINT kpi_snapshots_cost_source_check CHECK ((cost_source = ANY (ARRAY['none'::text, 'shopify'::text, 'own'::text])))
+);
+
+--
 -- Name: mcp_connection_events; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -1088,6 +1109,13 @@ ALTER TABLE ONLY public.jobs
     ADD CONSTRAINT jobs_pkey PRIMARY KEY (id);
 
 --
+-- Name: kpi_snapshots kpi_snapshots_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.kpi_snapshots
+    ADD CONSTRAINT kpi_snapshots_pkey PRIMARY KEY (org_id, date);
+
+--
 -- Name: mcp_connection_events mcp_connection_events_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -1529,6 +1557,12 @@ CREATE INDEX jobs_org_id_idx ON public.jobs USING btree (org_id);
 --
 
 CREATE INDEX jobs_waiting ON public.jobs USING btree (org_id, run_after) WHERE ((claimed_at IS NULL) AND (done_at IS NULL) AND (failed_at IS NULL));
+
+--
+-- Name: kpi_snapshots_org_id_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX kpi_snapshots_org_id_idx ON public.kpi_snapshots USING btree (org_id);
 
 --
 -- Name: mcp_connection_events_by_connection; Type: INDEX; Schema: public; Owner: -
@@ -2002,6 +2036,13 @@ ALTER TABLE ONLY public.jobs
     ADD CONSTRAINT jobs_org_id_fkey FOREIGN KEY (org_id) REFERENCES public.orgs(id);
 
 --
+-- Name: kpi_snapshots kpi_snapshots_org_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.kpi_snapshots
+    ADD CONSTRAINT kpi_snapshots_org_id_fkey FOREIGN KEY (org_id) REFERENCES public.orgs(id);
+
+--
 -- Name: mcp_connection_events mcp_connection_events_org_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -2360,6 +2401,12 @@ ALTER TABLE public.home_office ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.jobs ENABLE ROW LEVEL SECURITY;
 
 --
+-- Name: kpi_snapshots; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.kpi_snapshots ENABLE ROW LEVEL SECURITY;
+
+--
 -- Name: mcp_connection_events; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
@@ -2514,6 +2561,12 @@ CREATE POLICY org_rows ON public.home_office TO authenticated USING ((org_id = (
 --
 
 CREATE POLICY org_rows ON public.jobs TO authenticated USING ((org_id = ( SELECT public.jwt_org_id() AS jwt_org_id))) WITH CHECK ((org_id = ( SELECT public.jwt_org_id() AS jwt_org_id)));
+
+--
+-- Name: kpi_snapshots org_rows; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY org_rows ON public.kpi_snapshots TO authenticated USING ((org_id = ( SELECT public.jwt_org_id() AS jwt_org_id))) WITH CHECK ((org_id = ( SELECT public.jwt_org_id() AS jwt_org_id)));
 
 --
 -- Name: mcp_connection_events org_rows; Type: POLICY; Schema: public; Owner: -
@@ -2916,6 +2969,14 @@ GRANT ALL ON TABLE public.home_office TO service_role;
 GRANT ALL ON TABLE public.jobs TO anon;
 GRANT ALL ON TABLE public.jobs TO authenticated;
 GRANT ALL ON TABLE public.jobs TO service_role;
+
+--
+-- Name: TABLE kpi_snapshots; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT ALL ON TABLE public.kpi_snapshots TO anon;
+GRANT ALL ON TABLE public.kpi_snapshots TO authenticated;
+GRANT ALL ON TABLE public.kpi_snapshots TO service_role;
 
 --
 -- Name: TABLE mcp_connection_events; Type: ACL; Schema: public; Owner: -

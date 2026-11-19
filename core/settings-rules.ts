@@ -26,14 +26,22 @@ export interface BusinessSettings {
   productFields: string[];
   /** The owner's own words on what the business offers (minimums, sizes, terms, the page to send people to). */
   offerTerms: string | null;
+  /** Where the daily numbers' cost of goods comes from (docs/daily-numbers.md): none, Shopify's unit cost, or a number from the business's own tool. */
+  costSource: CostSource;
+  /** With costSource "own": the own number (its n_ key) that gives one day's cost of goods in dollars. */
+  costNumber: string | null;
 }
+
+export type CostSource = "none" | "shopify" | "own";
+export const COST_SOURCES: readonly CostSource[] = ["none", "shopify", "own"];
+const COST_NUMBER = /^n_[0-9a-f]{12}$/;
 
 export const SETTINGS_KEY = "business_settings";
 
 export const NO_SETTINGS: BusinessSettings = {
   ownerEmail: null, siteUrl: null, shopifyDomain: null, shopifyClientId: null, mercuryAccountIds: [],
   notionBriefParent: null, notionBriefsDb: null, notionLeadsParent: null, notionBooksParent: null,
-  productCollections: [], productFields: [], offerTerms: null,
+  productCollections: [], productFields: [], offerTerms: null, costSource: "none", costNumber: null,
 };
 
 export const MAX_COLLECTIONS = 5, MAX_PRODUCT_FIELDS = 20, OFFER_TERMS_MAX = 1500;
@@ -108,7 +116,15 @@ export function readSettings(raw: unknown): BusinessSettings {
     productCollections: collectionHandles(r.productCollections),
     productFields: productFields(r.productFields),
     offerTerms: offerTerms(r.offerTerms),
+    ...costOf(r.costSource, r.costNumber),
   };
+}
+
+/** The cost of goods source: "own" only with a number picked; anything else reads as none. */
+function costOf(source: unknown, num: unknown): Pick<BusinessSettings, "costSource" | "costNumber"> {
+  const n = text(num);
+  if (source === "own") return COST_NUMBER.test(n) ? { costSource: "own", costNumber: n } : { costSource: "none", costNumber: null };
+  return { costSource: source === "shopify" ? "shopify" : "none", costNumber: null };
 }
 
 /** The settings an org works with: its own, and only for the home org, the old app-wide values where it has none. */
@@ -130,6 +146,7 @@ export interface SettingsEdit {
   ownerEmail: string; siteUrl: string; shopifyDomain: string; shopifyClientId: string; mercuryAccountIds: string;
   notionBriefParent: string; notionBriefsDb: string; notionLeadsParent: string; notionBooksParent: string;
   productCollections: string; productFields: string; offerTerms: string;
+  costSource: string; costNumber: string;
 }
 
 /** Stored settings as Settings' text fields: what one card keeps when another card saves. */
@@ -138,6 +155,7 @@ export const editOf = (b: BusinessSettings): SettingsEdit => ({
   mercuryAccountIds: b.mercuryAccountIds.join(", "), notionBriefParent: b.notionBriefParent ?? "", notionBriefsDb: b.notionBriefsDb ?? "",
   notionLeadsParent: b.notionLeadsParent ?? "", notionBooksParent: b.notionBooksParent ?? "",
   productCollections: b.productCollections.join(", "), productFields: b.productFields.join(", "), offerTerms: b.offerTerms ?? "",
+  costSource: b.costSource, costNumber: b.costNumber ?? "",
 });
 
 /**
@@ -162,5 +180,7 @@ export function checkSettingsEdit(e: SettingsEdit, ownerEmails: readonly string[
   if (asked("productFields").length !== s.productFields.length) return { problem: "Product fields are metafields written namespace.key, like custom.origin, separated by commas." };
   if (text(e.offerTerms).length > OFFER_TERMS_MAX) return { problem: `Offer terms are at most ${OFFER_TERMS_MAX} characters.` };
   if (text(e.offerTerms) && !s.offerTerms) return { problem: "Offer terms are plain text; any link in them must start with https://." };
+  if (e.costSource && !COST_SOURCES.includes(e.costSource as CostSource)) return { problem: "Pick where cost of goods comes from." };
+  if (e.costSource === "own" && s.costSource !== "own") return { problem: "Pick the number from your own tool that gives a day’s cost of goods." };
   return { settings: s };
 }

@@ -19,6 +19,7 @@ import { ownSettings, saveSettings } from "@/core/settings";
 import { OFFER_TERMS_MAX, checkSettingsEdit, editOf, type BusinessSettings, type SettingsEdit } from "@/core/settings-rules";
 import { listMembers } from "@/core/members";
 import { businessProblem } from "@/core/business-rules";
+import { ownMeasureDefs } from "@/core/goals";
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const fail = (e: unknown): ActionResult => ({ ok: false, text: e instanceof Error ? e.message : String(e) });
@@ -198,6 +199,7 @@ export async function saveBusinessProfile(f: { name: string; about: string; owne
 /** Where things go (Settings): the owner email, website, Shopify store, Mercury accounts and Notion pages of this business. */
 const WHERE_KEYS = ["ownerEmail", "siteUrl", "shopifyDomain", "shopifyClientId", "mercuryAccountIds", "notionBriefParent", "notionBriefsDb", "notionLeadsParent", "notionBooksParent"] as const;
 const PRODUCT_KEYS = ["productCollections", "productFields", "offerTerms"] as const;
+const COST_KEYS = ["costSource", "costNumber"] as const;
 
 /** One Settings card's fields over what the org already saved, so the other card's fields stay; checked, then saved. */
 async function saveSettingsCard(f: Partial<SettingsEdit>, keys: readonly (keyof SettingsEdit)[], max: (k: keyof SettingsEdit) => number): Promise<{ problem: string } | { settings: BusinessSettings }> {
@@ -208,7 +210,7 @@ async function saveSettingsCard(f: Partial<SettingsEdit>, keys: readonly (keyof 
   return checked;
 }
 
-export async function saveWhereThingsGo(f: Omit<SettingsEdit, "productCollections" | "productFields" | "offerTerms">): Promise<ActionResult> {
+export async function saveWhereThingsGo(f: Omit<SettingsEdit, "productCollections" | "productFields" | "offerTerms" | "costSource" | "costNumber">): Promise<ActionResult> {
   const { me, no } = await asRole("owner"); if (no) return no;
   try {
     const r = await saveSettingsCard(f, WHERE_KEYS, () => 300);
@@ -227,6 +229,18 @@ export async function saveProductFacts(f: Pick<SettingsEdit, "productCollections
     const s = r.settings;
     await audit(me, "save_product_facts", null, { collections: s.productCollections.join(", "), fields: s.productFields.length, offer_terms: !!s.offerTerms });
     return done("Saved. Agents use the new product facts from their next run.");
+  } catch (e2) { return fail(e2); }
+}
+
+/** Daily numbers (docs/daily-numbers.md): where cost of goods comes from. A number from your own tool must be one of this business's, in dollars. Owners only. */
+export async function saveDailyNumbers(f: Pick<SettingsEdit, "costSource" | "costNumber">): Promise<ActionResult> {
+  const { me, no } = await asRole("owner"); if (no) return no;
+  try {
+    if (f?.costSource === "own" && !(await ownMeasureDefs()).some((d) => d.key === f.costNumber && d.unit === "usd")) return { ok: false, text: "Pick a number in dollars from your own tools." };
+    const r = await saveSettingsCard(f, COST_KEYS, () => 20);
+    if ("problem" in r) return { ok: false, text: r.problem };
+    await audit(me, "save_daily_numbers", null, { cost_source: r.settings.costSource });
+    return done("Saved. The next daily numbers use it.");
   } catch (e2) { return fail(e2); }
 }
 

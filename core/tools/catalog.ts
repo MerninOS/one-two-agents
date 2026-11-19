@@ -41,6 +41,10 @@ import { REPORT_PERIODS } from "@/core/mcp-rules";
 import type { Pick, ReportInput, ToolDef } from "./types";
 import { EMAIL, GMAIL, KLAVIYO, MERCURY, NOTION, SHOPIFY, SUPABASE, daysParam, usd } from "./shared";
 import { packTools } from "@/templates";
+import { snapshot } from "@/core/daily-numbers";
+import { deliverBrief } from "@/core/brief";
+import { openCounts } from "@/core/brief/rules";
+import { openOrders } from "@/integrations/shopify/orders";
 
 const LEAD_TYPES = ["cafe", "restaurant", "office", "grocery", "other"] as const;
 const html = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
@@ -117,6 +121,56 @@ const TOOLS_LIST: ToolDef[] = [
         numbers: { collections: collections.length, products },
       };
     },
+  },
+
+  // ---- Daily numbers and the morning brief (docs/daily-numbers.md, docs/morning-brief.md): every
+  // number worked out in code from the business's own Shopify, Mercury and Settings
+  {
+    id: "shopify_open_orders", label: "Open orders", detail: "Open Shopify orders from the last 90 days that aren't fully shipped, by Shopify's own fulfillment status: to ship, partly shipped, on hold. Order numbers only, no customer details",
+    kind: "read", group: "shopify", params: [], trusted: true, needs: SHOPIFY, costUsd: 0,
+    run: async () => {
+      const c = openCounts(await openOrders(chicagoDate(90)));
+      return { data: c, numbers: { open_orders: c.unfulfilled + c.partial + c.onHold.length, to_ship: c.unfulfilled, partly_shipped: c.partial, on_hold: c.onHold.length } };
+    },
+  },
+  {
+    id: "calc_daily_snapshot", label: "Daily numbers snapshot", detail: "One day's numbers in code: revenue, orders, average order, repeat rate, cash, orders by sales channel, and cost of goods and margin from the source on Settings › Daily numbers. Worked out, not saved",
+    kind: "calculate", group: "calculate", params: [daysParam(1, 30, "How many days ago (1 = yesterday).")], trusted: true, needs: SHOPIFY, costUsd: 0,
+    run: async ({ days }) => {
+      const s = await snapshot(chicagoDate(Number(days)), { dryRun: true });
+      const numbers: Record<string, number> = { revenue_usd: s.revenue, orders: s.orders };
+      if (s.aov != null) numbers.aov_usd = s.aov;
+      if (s.repeat_rate != null) numbers.repeat_rate = s.repeat_rate;
+      if (s.cost_of_goods != null) numbers.cost_of_goods_usd = s.cost_of_goods;
+      if (s.margin != null) numbers.margin = s.margin;
+      if (s.cash_usd != null) numbers.cash_usd = s.cash_usd;
+      return { data: s, numbers };
+    },
+  },
+  {
+    id: "kpi_snapshots", label: "Saved daily numbers", detail: "The latest saved daily numbers: revenue, orders, average order, repeat rate, cost of goods, margin, cash",
+    kind: "read", group: "supabase", params: [daysParam(8, 30, "How many days of snapshots.")], trusted: true, needs: SUPABASE, costUsd: 0,
+    run: async ({ days }) => {
+      const { data, error } = await db().from("kpi_snapshots").select("date, revenue, orders, aov, repeat_rate, cost_of_goods, margin, cash_usd").order("date", { ascending: false }).limit(Number(days));
+      if (error) throw new Error(error.message);
+      const latest = data?.[0];
+      const numbers: Record<string, number> = { snapshots: data?.length ?? 0 };
+      if (latest) { numbers.latest_revenue_usd = Number(latest.revenue); numbers.latest_orders = Number(latest.orders); }
+      return { data: data ?? [], numbers };
+    },
+  },
+  {
+    id: "report_kpi_snapshot", label: "Save yesterday's numbers", detail: "Works out yesterday's daily numbers again in code and saves them, for the morning brief and goals. Never uses the model's words",
+    kind: "report", group: "supabase", params: [], trusted: true, needs: [...SHOPIFY, ...SUPABASE], costUsd: 0, codeOnly: true,
+    deliver: async () => {
+      const s = await snapshot(chicagoDate(1));
+      return `saved ${s.date}: ${s.orders} orders, ${usd(s.revenue)} revenue${s.cost_of_goods != null ? `, ${usd(s.cost_of_goods)} cost of goods` : ""}`;
+    },
+  },
+  {
+    id: "report_morning_brief", label: "Send the morning brief", detail: "The morning brief email and Briefs row: the Focus line and watch lines from the result, every number worked out again in code from today's facts. Only to the owner email and the Briefs target on Settings",
+    kind: "report", group: "email", params: [], trusted: true, needs: EMAIL, costUsd: 0,
+    deliver: async (o, ctx) => deliverBrief(o.summary, ctx.runId ?? null),
   },
 
   // ---- Wholesale (slice 7): who is already on the leads list

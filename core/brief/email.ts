@@ -1,10 +1,10 @@
-// The morning brief as an email: subject, HTML and plain text from facts that are already
-// computed. Pure (no I/O, no secrets) so it can be rendered and checked on its own.
+// The morning brief as an email (docs/morning-brief.md): subject, HTML and plain text from facts that
+// are already computed. Pure (no I/O, no secrets) so check:brief can render and check it on its own.
 // Everything that came from a model or another agent's summary is escaped.
 
-export interface Kpi { date: string; revenue: number | string; orders: number; aov: number | string | null; repeat_rate: number | string | null; green_margin: number | string | null; cash_usd: number | string | null }
+export interface Kpi { date: string; revenue: number | string; orders: number; aov: number | string | null; repeat_rate: number | string | null; margin: number | string | null; cash_usd: number | string | null }
 export interface BriefRun { id: string; agent_id: string; status: string; summary: string | null; error: string | null }
-/** One department on the org chart (docs/org-chart.md, slice 3): Avery's line from the head's report, and run counts worked out in code. */
+/** One department on the org chart (docs/org-chart.md): its goals and run counts, all worked out in code. */
 /** goals: each goal's status, counted in code ("Land 5 accounts: 1 of 5 won, behind"). */
 export interface BriefDept { name: string; goals: string[]; runs: number; failed: number; costUsd: number }
 export interface BriefView {
@@ -13,29 +13,35 @@ export interface BriefView {
   yesterday: Kpi | null;
   /** Earlier snapshots, newest first */
   earlier: Kpi[];
-  /** Null when the Open orders source is turned off in the setup. */
-  openOrders: { paid: number; roasting: number; packing: number; qcHold: string[] } | null;
-  neverDeducted: string[];
+  /** Open orders by Shopify's fulfillment status; null when Shopify isn't connected or couldn't be read. */
+  openOrders: OpenCounts | null;
+  /** The business's own numbers marked "Show in the morning brief", as lines ("Open tickets: 4"). */
+  ownNumbers: string[];
   runs: BriefRun[];
   /** One line per department, then the agents not in one ("Not in a department"). Empty before the org chart exists. */
   departments: BriefDept[];
   /** Null when the Approvals source is turned off. */
   approvals: { pending: number; oldestHours: number | null } | null;
-  /** Gmail drafts Rowan wrote in the last 24 hours */
+  /** Lead email drafts put in Gmail in the last 24 hours */
   newDrafts: number;
   watch: string[];
   focus: { action: string; reason: string };
   /** Control Room base URL without a trailing slash, when known */
   dashboardUrl?: string;
-  /** Avery's run that wrote this brief, so "Tell Avery" opens Good / Not this on it */
+  /** The run that wrote this brief, so "Not right?" opens Good / Not this on it */
   runId?: string;
   /** The Notion archive page, when one was written */
   notionUrl?: string;
   /** Persona names by agent id, for failed runs */
   names?: Record<string, string>;
+  /** The company seat's agent name ("Not right? Tell …"); "your Chief of Staff" when unknown. */
+  chief?: string;
   /** Sections to include, in order Default: all, in the built-in order (SECTIONS). */
   sections?: readonly string[];
 }
+
+/** Open orders by Shopify's own fulfillment status (docs/morning-brief.md). onHold lists order numbers. */
+export interface OpenCounts { unfulfilled: number; partial: number; onHold: string[] }
 
 /** The built-in section order; the setup may reorder or drop any but the focus. */
 export const SECTIONS = ["focus", "waiting", "numbers", "watch", "departments"] as const;
@@ -73,7 +79,7 @@ export function cashChange(y: Kpi | null, earlier: Kpi[]): Change | null {
 }
 
 const shortDay = (date: string) => new Date(`${date}T12:00:00Z`).toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" });
-/** True when the newest snapshot is for the day before the brief; false when Morgan hasn't run and it is older. */
+/** True when the newest snapshot is for the day before the brief; false when the daily numbers haven't run and it is older. */
 const isYesterday = (v: BriefView) => !!v.yesterday && Date.parse(`${v.today}T12:00:00Z`) - Date.parse(`${v.yesterday.date}T12:00:00Z`) === 864e5;
 
 interface Item { text: string; href?: string }
@@ -86,16 +92,24 @@ function waiting(v: BriefView): Item[] {
     const age = h == null ? "" : h < 1 ? ", oldest under an hour" : h < 48 ? `, oldest ${plural(Math.round(h), "hour")}` : `, oldest ${plural(Math.round(h / 24), "day")}`;
     out.push({ text: `${plural(v.approvals.pending, "approval")} waiting for your OK${age}`, href: base && `${base}/approvals` });
   }
-  if (v.newDrafts) out.push({ text: `${plural(v.newDrafts, "new wholesale draft")} from Rowan in Gmail to review`, href: "https://mail.google.com/mail/#drafts" });
+  if (v.newDrafts) out.push({ text: `${plural(v.newDrafts, "new lead draft")} in Gmail to review`, href: "https://mail.google.com/mail/#drafts" });
   for (const r of v.runs.filter((r) => r.status === "failed")) {
     out.push({ text: `${v.names?.[r.agent_id] ?? r.agent_id}'s run failed: ${oneLine(r.error ?? r.summary ?? "no error recorded").slice(0, 160)}`, href: base && `${base}/runs/${r.id}` });
   }
   const o = v.openOrders;
-  if (o && (o.paid || o.roasting || o.packing)) out.push({ text: `Orders: ${o.paid} to roast, ${o.roasting} roasting, ${o.packing} packing` });
-  if (o?.qcHold.length) out.push({ text: `On QC hold: ${o.qcHold.join(", ")}` });
-  if (v.neverDeducted.length) out.push({ text: `Green never deducted: ${v.neverDeducted.join(", ")}` });
+  const ol = openLine(o);
+  if (ol) out.push({ text: ol });
+  if (o?.onHold.length) out.push({ text: `On hold: ${o.onHold.join(", ")}` });
   return out;
 }
+
+/** "Open orders: 3 to ship, 1 partly shipped", or null when there are none. */
+export function openLine(o: OpenCounts | null): string | null {
+  if (!o || !(o.unfulfilled || o.partial)) return null;
+  return `Open orders: ${o.unfulfilled} to ship${o.partial ? `, ${o.partial} partly shipped` : ""}`;
+}
+/** "Repeat rate 30%, margin 61%": margin only when cost of goods was worked out. */
+export const rateLine = (y: Kpi, sep = ", ") => `Repeat rate ${pct(y.repeat_rate)}${num(y.margin) == null ? "" : `${sep}margin ${pct(y.margin)}`}`;
 
 /** "Finance: Runway above 12 months: 14.3 months, at least 12 months, on track. 3 runs, all OK, $0.12, in the last 24 hours." Every part is code's: goal status and run counts. */
 export function deptLine(d: BriefDept) {
@@ -104,8 +118,9 @@ export function deptLine(d: BriefDept) {
   return `${d.name}: ${goals}${runs} in the last 24 hours.`;
 }
 const NO_DEPTS = "No departments on the org chart yet.";
+export const NO_SNAPSHOT = "No daily numbers yet. They're worked out each morning once an agent has Save yesterday's numbers.";
 
-/** Where "Not right? Tell Avery" goes: Good / Not this on the run that wrote the brief (docs/company-mode.md). */
+/** Where "Not right? Tell …" goes: Good / Not this on the run that wrote the brief (docs/company-mode.md). */
 export const replyUrl = (v: Pick<BriefView, "dashboardUrl" | "runId">) => (v.dashboardUrl && v.runId ? `${v.dashboardUrl}/runs/${v.runId}#react` : undefined);
 
 export function briefSubject(v: BriefView) {
@@ -136,7 +151,8 @@ export function briefEmail(v: BriefView): { subject: string; html: string; text:
   const action = oneLine(v.focus.action), reason = oneLine(v.focus.reason);
   const order = (v.sections ?? SECTIONS).filter((id) => (SECTIONS as readonly string[]).includes(id));
   const reply = replyUrl(v);
-  const tell = reply ? `<p style="margin:8px 0 0;font:13px/18px ${FONT}"><a href="${esc(reply)}" style="color:${C.ink2}">Not right? Tell Avery</a></p>` : "";
+  const chief = oneLine(v.chief ?? "").slice(0, 40) || "your Chief of Staff";
+  const tell = reply ? `<p style="margin:8px 0 0;font:13px/18px ${FONT}"><a href="${esc(reply)}" style="color:${C.ink2}">Not right? Tell ${esc(chief)}</a></p>` : "";
 
   const html: Record<string, () => string> = {
     focus: () => `<table role="presentation" cellpadding="0" cellspacing="0" width="100%" style="margin-top:14px"><tr><td style="padding:20px;border:1px solid ${C.line};border-left:4px solid ${C.acc};border-radius:14px">` +
@@ -154,8 +170,9 @@ export function briefEmail(v: BriefView): { subject: string; html: string; text:
           stat("Orders", String(y.orders), y.orders ? `AOV ${usd(y.aov)}` : "no orders", null) +
           stat("Cash", usd(y.cash_usd), num(y.cash_usd) == null ? "Mercury not connected" : "no earlier balance", cash) +
           `</tr></table>` +
-          `<p style="margin:10px 0 0;font:13px/18px ${FONT};color:${C.ink2}">Repeat rate ${pct(y.repeat_rate)} &middot; green margin ${pct(y.green_margin)}</p>`
-        : `<p style="margin:0;font:15px/22px ${FONT};color:${C.ink2}">No snapshot yet. Morgan runs at 5:30 AM CT.</p>`),
+          `<p style="margin:10px 0 0;font:13px/18px ${FONT};color:${C.ink2}">${esc(rateLine(y, " · "))}</p>`
+        : `<p style="margin:0;font:15px/22px ${FONT};color:${C.ink2}">${NO_SNAPSHOT}</p>`) +
+      (v.ownNumbers.length ? rows(v.ownNumbers.map((t) => ({ text: oneLine(t) }))) : ""),
     watch: () => label("Watch") +
       (v.watch.length ? rows(v.watch.slice(0, 5).map((t) => ({ text: oneLine(t) }))) : `<p style="margin:0;font:15px/22px ${FONT};color:${C.ink2}">Nothing flagged.</p>`) + tell,
     departments: () => label("Departments") +
@@ -170,18 +187,19 @@ export function briefEmail(v: BriefView): { subject: string; html: string; text:
     `<p style="margin:0;font:13px/18px ${FONT};color:${C.mut}">Morning brief &middot; ${esc(longDay(v.today))}</p>` +
     order.map((id) => html[id]()).join("") +
     // footer
-    `<p style="margin:32px 0 0;padding-top:16px;border-top:1px solid ${C.line};font:12px/18px ${FONT};color:${C.mut}">Sent by Avery, your Chief of Staff agent, to this one fixed address. Numbers are computed in code; goal status is counted in code too; the focus and watch list are written by the model from those numbers.` +
+    `<p style="margin:32px 0 0;padding-top:16px;border-top:1px solid ${C.line};font:12px/18px ${FONT};color:${C.mut}">Sent by ${esc(chief === "your Chief of Staff" ? "your Chief of Staff agent" : `${chief}, your Chief of Staff agent`)}, to this one fixed address. Numbers are computed in code; goal status is counted in code too; the focus and watch list are written by the model from those numbers.` +
     (v.notionUrl ? ` <a href="${esc(v.notionUrl)}" style="color:${C.mut}">Notion copy</a>.` : "") +
     `</p></td></tr></table></td></tr></table></body></html>`;
 
   const text: Record<string, () => string[]> = {
-    focus: () => ["TODAY'S FOCUS", `${action}. ${reason}`, ...(v.dashboardUrl ? [`Control Room: ${v.dashboardUrl}`] : []), ...(reply ? [`Not right? Tell Avery: ${reply}`] : [])],
+    focus: () => ["TODAY'S FOCUS", `${action}. ${reason}`, ...(v.dashboardUrl ? [`Control Room: ${v.dashboardUrl}`] : []), ...(reply ? [`Not right? Tell ${chief}: ${reply}`] : [])],
     waiting: () => ["WAITING ON YOU", ...(todo.length ? todo.map((i) => `- ${i.text}${i.href ? ` (${i.href})` : ""}`) : ["Nothing is waiting on you."])],
     numbers: () => [
       y && !isYesterday(v) ? `NUMBERS (${shortDay(y.date)}, the latest snapshot)` : "NUMBERS",
       ...(y
-        ? [`Revenue ${usd(y.revenue)}${rev ? ` (${rev.text})` : ""}`, `Orders ${y.orders}${y.orders ? `, AOV ${usd(y.aov)}` : ""}`, `Cash ${usd(y.cash_usd)}${cash ? ` (${cash.text})` : ""}`, `Repeat rate ${pct(y.repeat_rate)}, green margin ${pct(y.green_margin)}`]
-        : ["No snapshot yet. Morgan runs at 5:30 AM CT."]),
+        ? [`Revenue ${usd(y.revenue)}${rev ? ` (${rev.text})` : ""}`, `Orders ${y.orders}${y.orders ? `, AOV ${usd(y.aov)}` : ""}`, `Cash ${usd(y.cash_usd)}${cash ? ` (${cash.text})` : ""}`, rateLine(y)]
+        : [NO_SNAPSHOT]),
+      ...v.ownNumbers.map(oneLine),
     ],
     watch: () => ["WATCH", ...(v.watch.length ? v.watch.slice(0, 5).map((w) => `- ${oneLine(w)}`) : ["Nothing flagged."])],
     departments: () => ["DEPARTMENTS", ...(v.departments.length ? v.departments.map((d) => `- ${deptLine(d)}`) : [NO_DEPTS]), ...failed.map((r) => `- ${v.names?.[r.agent_id] ?? r.agent_id} failed: ${oneLine(r.error ?? "no error recorded").slice(0, 160)}`)],
