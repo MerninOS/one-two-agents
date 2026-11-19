@@ -33,6 +33,7 @@
     "check:open-core": "npx --yes tsx scripts/check-open-core.ts",
     "check:business": "npx --yes tsx scripts/check-business.ts",
     "check:settings": "npx --yes tsx scripts/check-settings.ts",
+    "check:books": "npx --yes tsx scripts/check-books.ts",
     "check:baseline": "npx --yes tsx scripts/check-baseline.ts",
     "check:ee": "npx --yes tsx ee/check.ts",
     "check:pack-one-two": "npx --yes tsx --conditions=react-server templates/one-two/check.ts",

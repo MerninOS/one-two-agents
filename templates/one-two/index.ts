@@ -12,7 +12,7 @@ export const oneTwo: TemplatePack = {
   name: "One Two Coffee Lab",
   about: "A small-batch coffee roaster: green lot cover and reorders, daily numbers, the morning brief, books and receipts, wholesale leads.",
   tools: ONE_TWO_TOOLS,
-  tables: ["kpi_snapshots", "trips", "home_office", "tax_packets"],
+  tables: ["kpi_snapshots"],
   measures: ONE_TWO_MEASURES,
   crew: ONE_TWO_CREW,
   planned: ONE_TWO_PLANNED,

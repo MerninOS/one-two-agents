@@ -34,7 +34,7 @@ a pull request can't loosen them without a maintainer's review (`.github/CODEOWN
 app/(room)/          the Control Room (sign-in in app/login, guarded by proxy.ts)
 app/api/             agent runs, the dispatcher (/api/dispatch), job workers (/api/jobs), health
 core/                the runner, agent specs, the tool list (core/tools), the tool gateway, tenancy,
-                     the vault, memory, jobs, traces, usage and the audit log
+                     the vault, memory, jobs, traces, usage, the audit log and the books (core/books)
 dashboard/           Control Room data, server actions (each checks the member's role) and components
 integrations/        mcp.ts (the one MCP client) and our own MCP servers (Notion, Gmail, Shopify,
                      Mercury receipt files)
@@ -47,7 +47,7 @@ ee/                  the commercial layer (its own license; see ee/README.md), p
 ## Docs
 
 `docs/` holds a spec per part: the agent builder and builder flow, agent memory, company mode, the
-org chart and schedule, every integration over MCP, custom MCP servers, building a connector,
+org chart and schedule, the books, every integration over MCP, custom MCP servers, building a connector,
 template packs, tenancy, usage and traces, self-hosting, and the extension slots the paid layer fills.
 
 ## Checks

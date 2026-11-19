@@ -24,6 +24,7 @@ import { goalProgress } from "@/core/goals";
 import { planProposal, proposalTitle, toolInfoOf } from "@/core/proposal-rules";
 import { MAX_PLAN_LINES, checkLine } from "@/core/plan-rules";
 import { saveReview, savePlan, weekView } from "@/core/plans";
+import { syncBooks } from "@/core/books/sync";
 import { mercuryCash, mercuryCategories, mercuryTransactions } from "@/integrations/mercury";
 import { divider, h2, h3, li, notionConnected, notionPage, notionPageText, p as para, quote } from "@/integrations/notion";
 import { emailOwner } from "@/integrations/email";
@@ -446,6 +447,15 @@ const TOOLS_LIST: ToolDef[] = [
     },
   },
 
+  {
+    id: "report_books_sync", label: "Sync the books and match receipts", detail: "The books sync, in code: one row per Mercury charge, receipts found in Gmail and matched in code (exact amount, date window, merchant), photo reminders, receipt approval cards, and the Notion books page. A small model only reads receipts; it never decides a match",
+    kind: "report", group: "mercury", params: [], trusted: true, needs: [...MERCURY, ...SUPABASE], costUsd: 0, codeOnly: true,
+    deliver: async (_o, ctx) => {
+      // the Notion page picked in the hands-you step, else the books page on Settings
+      const r = await syncBooks(ctx.runId ?? undefined, { notionParent: ctx.reportPage?.id ?? (await settings()).notionBooksParent ?? undefined });
+      return { note: r.summary.slice(0, 600), costUsd: r.costUsd, tokensIn: r.tokensIn, tokensOut: r.tokensOut };
+    },
+  },
   {
     id: "report_leads", label: "Add leads to the leads list", detail: "The model hands one checked lead per call (business, website, a public email if there is one, fit, and a first email); after a run that finishes, code saves the new ones to the leads list and a Notion page, and, when this agent also has Draft an email to a lead and Gmail is connected, puts each first email in front of the owner as a draft card",
     kind: "report", group: "supabase", trusted: false, needs: SUPABASE, costUsd: 0,
