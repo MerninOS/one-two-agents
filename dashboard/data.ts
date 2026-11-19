@@ -15,7 +15,7 @@ import type { Tally } from "@/core/reaction-rules";
 import { APPROVAL_LABELS, APPROVAL_TOOLS, MAX_CHAINS, MAX_STEPS, METRICS, listFlowVersions, loadFlow, nextFirings, readFlow, type Chain, type Crew } from "@/core/flow";
 import { TOOLS } from "@/core/tools/catalog";
 import { CLAUDE_KEY_ID, mcpStatus, vaultReady } from "@/integrations/mcp";
-import { HOME_ORG_ID, orgId, withOrg } from "@/core/tenancy";
+import { withOrg } from "@/core/tenancy";
 import { MCP_IDS } from "@/core/mcp-rules";
 import { orgState, type OrgState } from "@/core/org-switch";
 import type { CrewMember, IntegrationId } from "./crew";
@@ -122,7 +122,8 @@ export function health(): Record<IntegrationId, boolean> {
     supabase: !!(env.supabaseUrl && env.supabaseServiceKey),
     // its key is pasted on Connections (the vault): getFloor reads mcp_connections
     shopify: false,
-    claude: !!process.env.ANTHROPIC_API_KEY,
+    // the business's own key, pasted on Connections (the vault): getFloor reads mcp_connections
+    claude: false,
     // signed in on Connections: getFloor reads mcp_connections
     mercury: false,
     // signed in on Connections (its key in the vault): getFloor reads mcp_connections
@@ -132,8 +133,8 @@ export function health(): Record<IntegrationId, boolean> {
     // both Gmail sign-ins (read only, drafts) are made on Connections: getFloor reads mcp_connections
     gmail: false,
     gmail_read: false,
-    // web search runs through the Claude API key
-    web: !!process.env.ANTHROPIC_API_KEY,
+    // web search runs through the business's Claude key: getFloor sets it with claude
+    web: false,
     // planned for the Conversion Optimizer; nothing uses it yet
     github: false,
     // signed in on Connections, not a setting: getFloor reads mcp_connections
@@ -178,9 +179,9 @@ export const getFloor = cache(async (): Promise<Floor> => {
   // every server in the registry: set up when signed in and not paused (Notion also needs its parent page, Mercury its accounts)
   const s = await settings();
   if (!s.ownerEmail) h.email = false;
-  // Claude: the business's own key, or for the home org only, the app's (integrations/anthropic.ts)
+  // Claude (and web search through it): the business's own key (integrations/anthropic.ts)
   const ck = await mcpStatus(CLAUDE_KEY_ID);
-  h.claude = (!!ck?.connected && !ck.paused) || (h.claude && (await orgId()) === HOME_ORG_ID);
+  h.claude = h.web = !!ck?.connected && !ck.paused;
   const extra: Partial<Record<string, boolean>> = { shopify: !!s.shopifyDomain, notion: !!s.notionBriefParent, mercury: s.mercuryAccountIds.length > 0 };
   for (const [id, st] of mcp) if (st?.connected && !st.paused && extra[id] !== false) h[id] = true;
   if (a.error || r.error) return { ...empty, problem: `Supabase: ${(a.error ?? r.error)?.message}` };

@@ -13,6 +13,13 @@ import { afterLoad, loadMemory, loadSummary, saveWorking, type MemoryLoad } from
 /** Vercel Cron sends `Authorization: Bearer $CRON_SECRET`; manual runs use the same header. */
 export const cronAuthorized = (req: Request) => !!env.cronSecret && req.headers.get("authorization") === `Bearer ${env.cronSecret}`;
 
+/** The business a call with the cron secret names (?org=<org id>); no business is assumed (card 135). */
+export const orgParam = (req: Request): string | null => {
+  const v = new URL(req.url).searchParams.get("org")?.trim().toLowerCase() ?? "";
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(v) ? v : null;
+};
+export const NO_ORG_PARAM = "Name the business: add ?org=<its org id>.";
+
 export interface RunResult {
   status: "ok" | "skipped"; summary: string; tokensIn?: number; tokensOut?: number; costUsd?: number;
   /**

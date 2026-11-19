@@ -123,7 +123,7 @@ const WHERE_FIELDS: { k: WhereKey; label: string; hint: string }[] = [
 ];
 
 /** Where things go (Settings): this business's owner email, store, accounts and Notion pages. Owners only. */
-export function WhereForm({ initial, starting, owners, canEdit, save }: { initial: Record<WhereKey, string>; starting: Partial<Record<WhereKey, string>>; owners: string[]; canEdit: boolean; save: (f: Record<WhereKey, string>) => Promise<ActionResult> }) {
+export function WhereForm({ initial, owners, canEdit, save }: { initial: Record<WhereKey, string>; owners: string[]; canEdit: boolean; save: (f: Record<WhereKey, string>) => Promise<ActionResult> }) {
   const [f, setF] = useState(initial);
   const { busy, run, toast } = useAct();
   const changed = (Object.keys(initial) as WhereKey[]).some((k) => f[k] !== initial[k]);
@@ -131,18 +131,18 @@ export function WhereForm({ initial, starting, owners, canEdit, save }: { initia
     <label key={k} style={{ display: "flex", flexDirection: "column", gap: 4, fontSize: 13 }} className="ink2">
       {label}
       {control}
-      <span className="muted" style={{ fontSize: 12 }}>{starting[k] && !f[k] ? `Now using ${starting[k]} (from the app-wide setting or the briefs page)` : hint}</span>
+      <span className="muted" style={{ fontSize: 12 }}>{hint}</span>
     </label>
   );
   return (
     <div className="stack" style={{ gap: 10 }}>
       {field("ownerEmail", "Owner email", "The morning brief and alerts go here. Always one of this business’s owners.",
         <select className="input" aria-label="Owner email" value={f.ownerEmail} disabled={!canEdit} onChange={(e) => setF({ ...f, ownerEmail: e.target.value })}>
-          <option value="">{starting.ownerEmail ? `App-wide setting (${starting.ownerEmail})` : "Nobody: no emails"}</option>
+          <option value="">Nobody: no emails</option>
           {owners.map((o) => <option key={o} value={o}>{o}</option>)}
         </select>)}
       {WHERE_FIELDS.map(({ k, label, hint }) => field(k, label, hint,
-        <input className="input" aria-label={label} value={f[k]} maxLength={300} disabled={!canEdit} placeholder={starting[k] ?? ""} onChange={(e) => setF({ ...f, [k]: e.target.value })} />))}
+        <input className="input" aria-label={label} value={f[k]} maxLength={300} disabled={!canEdit} onChange={(e) => setF({ ...f, [k]: e.target.value })} />))}
       <div className="row" style={{ gap: 8, justifyContent: "flex-end" }}>
         <button className="btn dark sm" disabled={busy || !canEdit || !changed} title={canEdit ? "Agents use the new settings from their next run" : "Owners only"} onClick={() => run(() => save(f))}>{busy ? "Saving…" : "Save"}</button>
       </div>

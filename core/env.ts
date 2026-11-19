@@ -25,24 +25,10 @@ export const env = {
   mcpSecretKey: v("MCP_SECRET_KEY"),
   mcpSecretKeyOld: v("MCP_SECRET_KEY_OLD"),
 
-  // Shopify Admin API, read-only custom app (for example "Agents (read)"), on our own MCP server (slice 7). The
-  // app's key (access token or client secret) is pasted on Connections into the token vault; these
-  // aren't secrets: the store, the API version and, for a Dev Dashboard app, its client id.
-  shopifyDomain: v("SHOPIFY_STORE_DOMAIN"),
+  // Shopify Admin API version for our own Shopify server. Each business's store, client id and key
+  // are its own (Settings and Connections).
   shopifyApiVersion: v("SHOPIFY_API_VERSION") || "2026-07",
-  shopifyClientId: v("SHOPIFY_CLIENT_ID"),
 
-  // Mercury's sign-ins (reads, category and memo, receipt files) are on Connections, in the vault.
-  // Accounts that count as cash: "all" (every non-credit account) or comma-separated IDs; blank = cash not reported.
-  mercuryAccountIds: (v("MERCURY_ACCOUNT_IDS") ?? "").split(",").map((s) => s.trim()).filter(Boolean),
-
-  // Notion internal integration, shared only with the page briefs and lead lists go under.
-  notionBriefParent: v("NOTION_BRIEF_PARENT_ID"),
-  // Each agent's own page for its run pages. Blank = they go under NOTION_BRIEF_PARENT_ID, as before.
-  notionLeadsParent: v("NOTION_LEADS_PARENT_ID") ?? v("NOTION_BRIEF_PARENT_ID"),
-  notionBooksParent: v("NOTION_BOOKS_PARENT_ID") ?? v("NOTION_BRIEF_PARENT_ID"),
-  // The "Briefs" database (one row per morning brief). Blank = the brief is a page under the parent, as before.
-  notionBriefsDb: v("NOTION_BRIEFS_DB_ID"),
   // The Build Board database. A yes on a new-tool proposal adds a card in Up next. Blank = no card.
   notionBuildBoardDb: v("NOTION_BUILD_BOARD_DB_ID"),
 
@@ -53,14 +39,10 @@ export const env = {
   gmailClientSecret: v("GMAIL_CLIENT_SECRET"),
 
   // Email to the owner only (morning brief, alerts) through Resend. Each business picks its owner
-  // email on Settings; BRIEF_TO is only the home org's starting value (core/settings.ts).
+  // email on Settings (core/settings.ts).
   // BRIEF_FROM is a sender on a domain verified in Resend. Blank = no email.
   resendKey: v("RESEND_API_KEY"),
   briefFrom: v("BRIEF_FROM"),
-  briefTo: v("BRIEF_TO"),
   // Where the Control Room lives, for links in the brief. Defaults to the Vercel production URL.
   dashboardUrl: (v("DASHBOARD_URL") || (v("VERCEL_PROJECT_PRODUCTION_URL") ? `https://${v("VERCEL_PROJECT_PRODUCTION_URL")}` : "")).replace(/\/+$/, "") || undefined,
-
-  // Public storefront, named in outreach drafts.
-  siteUrl: (v("SITE_URL") ?? "").replace(/\/+$/, ""),
 };

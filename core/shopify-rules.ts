@@ -51,7 +51,7 @@ export function assertReadOnly(doc: string): void {
 /** Every scope is a read (read_* or unauthenticated_read_*). A key with any other scope is refused. */
 export const writeScopes = (handles: readonly string[]) => handles.filter((h) => !/^(unauthenticated_)?read_[a-z_]+$/.test(h));
 
-/** The pasted key: the app's Admin API access token, or the client secret of a Dev Dashboard app (its client id is SHOPIFY_CLIENT_ID). */
+/** The pasted key: the app's Admin API access token, or the client secret of a Dev Dashboard app (its client id is on Settings). */
 export function shopifyKeyKind(key: string): "token" | "secret" | null {
   if (/^shpat_[A-Za-z0-9]{20,100}$/.test(key)) return "token";
   if (/^(shpss_)?[A-Za-z0-9_-]{24,100}$/.test(key)) return "secret";

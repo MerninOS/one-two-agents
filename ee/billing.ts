@@ -6,7 +6,7 @@
 // request signed with the webhook secret, and only ever for that org's billing row.
 import "server-only";
 import { db } from "@/core/db";
-import { HOME_ORG_ID, orgId, withOrg } from "@/core/tenancy";
+import { orgId, withOrg } from "@/core/tenancy";
 import { listMembers } from "@/core/members";
 import { emailOwner, hasEmail } from "@/integrations/email";
 import { stripe, stripePrice, stripeReady, webhookSecret } from "./stripe";
@@ -24,8 +24,8 @@ const people = async () => Math.max(1, (await listMembers()).length);
 /** A Stripe Checkout page for the current business; the rest of our own trial carries over. */
 export async function checkoutUrl(base: string): Promise<string> {
   const org = await orgId();
-  if (org === HOME_ORG_ID) throw new Error("This is OPERATOR’s own business: it has no plan to pay for.");
   const r = await row();
+  if (r?.status === "comped") throw new Error("This business is comped: there’s nothing to pay.");
   if (r?.stripe_subscription_id && r.status !== "canceled") throw new Error("This business already has a card on file: use Manage billing.");
   const trialEnd = r?.status === "trialing" ? trialEndFor(r.trial_ends_at, Date.now()) : undefined;
   const s = await stripe<{ url?: string }>("POST", "/v1/checkout/sessions", {
@@ -53,9 +53,9 @@ export async function portalUrl(base: string): Promise<string> {
 
 /** The afterMembersChange slot: the bill's quantity follows the number of people, prorated. */
 export async function syncSeats(): Promise<void> {
-  if (!stripeReady() || (await orgId()) === HOME_ORG_ID) return;
+  if (!stripeReady()) return;
   const r = await row();
-  if (!r?.stripe_subscription_id || !isSubscriptionId(r.stripe_subscription_id) || r.status === "canceled") return;
+  if (r?.status === "comped" || !r?.stripe_subscription_id || !isSubscriptionId(r.stripe_subscription_id) || r.status === "canceled") return;
   const n = await people();
   const sub = await stripe<StripeSubscription>("GET", `/v1/subscriptions/${r.stripe_subscription_id}`);
   const item = sub.items?.data?.[0];
@@ -73,11 +73,11 @@ async function tellOwner(subject: string, line: string) {
 async function record(s: StripeSubscription, orgFromSession?: string): Promise<string> {
   const org = s.metadata?.org_id;
   if (!isOrgId(org) || (orgFromSession && orgFromSession !== org)) return "no org on the subscription";
-  if (org === HOME_ORG_ID) return "the home org is never billed";
   return withOrg(org, async () => {
     const { data: exists } = await db().from("orgs").select("id").maybeSingle();
     if (!exists) return "unknown org";
     const prev = await row();
+    if (prev?.status === "comped") return "a comped business is never billed";
     if (prev?.stripe_customer_id && prev.stripe_customer_id !== s.customer) return "a different customer already pays for this org";
     const next = rowFromSubscription(s, prev, new Date().toISOString());
     if (!next) return "nothing to record";

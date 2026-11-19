@@ -2,7 +2,7 @@
 import assert from "node:assert/strict";
 import { readFileSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
-import { NO_SETTINGS, accountIds, checkSettingsEdit, effectiveSettings, notionId, readSettings, siteUrl, type SettingsEdit } from "../core/settings-rules";
+import { NO_SETTINGS, accountIds, checkSettingsEdit, notionId, readSettings, siteUrl, type SettingsEdit } from "../core/settings-rules";
 
 // Notion ids from ids or links; nothing else
 const ID = "0123456789abcdef0123456789abcdef";
@@ -37,16 +37,6 @@ assert.equal(r.shopifyClientId, null, "too short for a client id");
 assert.deepEqual(readSettings(null), NO_SETTINGS);
 assert.deepEqual(readSettings("junk"), NO_SETTINGS);
 
-// the app-wide values count only for the home org, and only where it saved none
-const home = readSettings({ ownerEmail: "home@example.com", shopifyDomain: "home.myshopify.com", notionBriefParent: ID });
-const own = readSettings({ shopifyDomain: "mine.myshopify.com" });
-assert.deepEqual(effectiveSettings(own, null).ownerEmail, null, "another org never gets the home org's address");
-assert.equal(effectiveSettings(own, null).shopifyDomain, "mine.myshopify.com");
-const h = effectiveSettings(own, home);
-assert.equal(h.ownerEmail, "home@example.com");
-assert.equal(h.shopifyDomain, "mine.myshopify.com", "the org's own value wins");
-assert.equal(h.notionLeadsParent, DASHED, "leads fall back to the briefs page");
-
 // edits: the owner email is always one of the org's owners
 const edit = (p: Partial<SettingsEdit>): SettingsEdit => ({ ownerEmail: "", siteUrl: "", shopifyDomain: "", shopifyClientId: "", mercuryAccountIds: "", notionBriefParent: "", notionBriefsDb: "", notionLeadsParent: "", notionBooksParent: "", productCollections: "", productFields: "", offerTerms: "", costSource: "", costNumber: "", ...p });
 const owners = ["owner@example.com"];
@@ -59,15 +49,16 @@ assert.ok("problem" in checkSettingsEdit(edit({ mercuryAccountIds: "savings" }),
 const ok = checkSettingsEdit(edit({ shopifyDomain: "s.myshopify.com", notionBriefParent: `https://www.notion.so/${ID}` }), owners);
 assert.ok("settings" in ok && ok.settings.notionBriefParent === DASHED);
 
-// the app-wide settings are read only by core/settings.ts (and core/env.ts, which defines them)
-const OLD = /env\.(briefTo|siteUrl|shopifyDomain|shopifyClientId|mercuryAccountIds|notionBriefParent|notionLeadsParent|notionBooksParent|notionBriefsDb)\b/;
+// no business takes a setting from the app's environment (card 135): the old names are gone from
+// core/env.ts and nothing reads them, and core/settings.ts reads only the org's own row
+const OLD = /\b(BRIEF_TO|SITE_URL|SHOPIFY_STORE_DOMAIN|SHOPIFY_CLIENT_ID|MERCURY_ACCOUNT_IDS|NOTION_BRIEF_PARENT_ID|NOTION_LEADS_PARENT_ID|NOTION_BOOKS_PARENT_ID|NOTION_BRIEFS_DB_ID)\b|env\.(briefTo|siteUrl|shopifyDomain|shopifyClientId|mercuryAccountIds|notionBriefParent|notionLeadsParent|notionBooksParent|notionBriefsDb)\b/;
 const walk = (d: string): string[] => readdirSync(d).flatMap((f) => { const p = join(d, f); return statSync(p).isDirectory() ? (f === "node_modules" || f.startsWith(".") ? [] : walk(p)) : /\.(ts|tsx)$/.test(f) ? [p] : []; });
-for (const dir of ["app", "core", "dashboard", "integrations", "agents", "templates"]) {
-  for (const f of walk(dir)) {
-    if (f === "core/settings.ts" || f === "core/env.ts") continue;
-    assert.ok(!OLD.test(readFileSync(f, "utf8")), `${f} reads a business setting from the environment; use settings() (core/settings.ts)`);
-  }
+for (const dir of ["app", "core", "dashboard", "integrations", "agents", "ee"]) {
+  for (const f of walk(dir)) assert.ok(!OLD.test(readFileSync(f, "utf8")), `${f} reads a business setting from the environment; use settings() (core/settings.ts)`);
 }
+assert.ok(!OLD.test(readFileSync(".env.example", "utf8")), ".env.example still lists a business setting");
+const own = readFileSync("core/settings.ts", "utf8");
+assert.doesNotMatch(own, /HOME_ORG_ID|@\/core\/env/, "settings are only the org's own row");
 // cost of goods source (card 133.5): "own" needs a goal number key, anything else reads as none
 const KEY = "n_0123456789ab";
 assert.equal(readSettings({ costSource: "shopify" }).costSource, "shopify");

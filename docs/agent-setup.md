@@ -109,7 +109,7 @@ stored id that falls off the list is ignored like any other invalid setup value.
 - Each menu step says what it `requires`; its picker lists only models with those abilities
   (`modelsFor`). Avery's step requires `structured-output` because the answer must be the watch
   list, focus and memory shape.
-- Claude models go straight to the Claude API (`ANTHROPIC_API_KEY`), so they keep effort, the
+- Claude models go straight to the Claude API with the business's own key (Connections > Claude API), so they keep effort, the
   server-side refusal fallback and Anthropic's own tools.
 - OpenAI and Google models go through Vercel AI Gateway's Anthropic-compatible endpoint
   (`integrations/gateway.ts`). On Vercel the deployment signs in by itself (OIDC); elsewhere

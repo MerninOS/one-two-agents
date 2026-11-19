@@ -58,7 +58,7 @@ const TOOLS_LIST: ToolDef[] = [
       const numbers: Record<string, number> = { spend_per_30d_usd: b.spendPer30dUsd, income_per_30d_usd: b.incomePer30dUsd, net_burn_per_30d_usd: b.netBurnPer30dUsd };
       if (b.cashUsd != null) numbers.cash_usd = b.cashUsd;
       if (b.runwayMonths != null) numbers.runway_months = b.runwayMonths;
-      return { data: { ...b, note: b.runwayMonths == null ? (b.cashUsd == null ? "Cash isn't set up (MERCURY_ACCOUNT_IDS), so no runway." : "Not burning cash over this window, so no runway limit.") : undefined }, numbers };
+      return { data: { ...b, note: b.runwayMonths == null ? (b.cashUsd == null ? "Cash isn't set up (Mercury accounts on Settings), so no runway." : "Not burning cash over this window, so no runway limit.") : undefined }, numbers };
     },
   },
 
@@ -528,7 +528,7 @@ const TOOLS_LIST: ToolDef[] = [
     kind: "report", group: "mercury", params: [], trusted: true, needs: [...MERCURY, ...SUPABASE], costUsd: 0, codeOnly: true,
     deliver: async (_o, ctx) => {
       // the Notion page picked in the hands-you step, else the books page on Settings
-      const r = await syncBooks(ctx.runId ?? undefined, { notionParent: ctx.reportPage?.id ?? (await settings()).notionBooksParent ?? undefined });
+      const r = await syncBooks(ctx.runId ?? undefined, { notionParent: ctx.reportPage?.id ?? (await settings().then((b) => b.notionBooksParent ?? b.notionBriefParent)) ?? undefined });
       return { note: r.summary.slice(0, 600), costUsd: r.costUsd, tokensIn: r.tokensIn, tokensOut: r.tokensOut };
     },
   },
@@ -586,7 +586,7 @@ const TOOLS_LIST: ToolDef[] = [
         });
         if (res.status === "queued") cards++; else if (res.status === "refused") refused++;
       }
-      const parent = await notionConnected() ? (ctx.reportPage?.id ?? (await settings()).notionLeadsParent) : undefined;
+      const parent = await notionConnected() ? (ctx.reportPage?.id ?? (await settings().then((b) => b.notionLeadsParent ?? b.notionBriefParent))) : undefined;
       let url = "";
       if (parent && saved.length) {
         url = await notionPage(`Wholesale leads · ${o.date}`, [

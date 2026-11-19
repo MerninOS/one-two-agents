@@ -6,7 +6,11 @@
 // switch (core/org-switch.ts).
 import { AsyncLocalStorage } from "node:async_hooks";
 
-/** The home org: the first org, made by the migrations; the scheduler's own calls and scripts run as it. */
+/**
+ * The first org, made by the migrations so a fresh install has a business to sign in to. Used only
+ * for that (the first owner, dashboard/signin.ts, and the baseline's one row): otherwise it is an
+ * ordinary business, and no code treats it differently (card 135, check:tenancy).
+ */
 export const HOME_ORG_ID = "0e1a7c4e-0001-4000-8000-000000000001";
 
 /**
@@ -43,22 +47,25 @@ type RequestOrg = () => Promise<string | null>;
 let requestOrg: RequestOrg | null = null;
 export function setRequestOrg(fn: RequestOrg): void { requestOrg = fn; }
 
+export const NO_ORG = "Refused: no business named for this work (wrap it in withOrg, or sign in).";
+
 /**
  * The org the current work is for: the one set by withOrg; else, in a Control Room request, the
- * signed-in member's org; else the home org (the scheduler's own calls, scripts, signed-out pages).
- * Async because a request's org is read from its cookie. Code never guesses the org synchronously:
- * a sync guess outside withOrg would be the home org for another org's member.
+ * signed-in member's org. Anything else (a script, the scheduler's own calls, a signed-out page) has
+ * no business, and is refused rather than run as one (card 135). Async because a request's org is
+ * read from its cookie.
  */
 export async function orgId(): Promise<string> {
   const set = store.getStore();
   if (set) return set;
   const fromRequest = requestOrg ? await requestOrg() : null;
-  return fromRequest && UUID.test(fromRequest) ? fromRequest : HOME_ORG_ID;
+  if (fromRequest && UUID.test(fromRequest)) return fromRequest;
+  throw new Error(NO_ORG);
 }
 
-/** The org set by withOrg, or, with no request source registered (scripts, checks), the home org. Undefined when it must be read from the request. */
+/** The org set by withOrg. Undefined when it must be read from the request (or the work is refused). */
 function orgNow(): string | undefined {
-  return store.getStore() ?? (requestOrg ? undefined : HOME_ORG_ID);
+  return store.getStore();
 }
 
 /** An upsert's conflict columns with org_id in front, since every key that names a row is unique per org. */

@@ -1,15 +1,22 @@
 import { NextResponse } from "next/server";
 import { resolveAgent } from "@/agents/registry";
-import { cronAuthorized, withRun } from "@/core/runs";
+import { NO_ORG_PARAM, cronAuthorized, orgParam, withRun } from "@/core/runs";
+import { withOrg } from "@/core/tenancy";
 
 export const maxDuration = 300;
 
-// One entry point for every agent. Vercel Schedules (vercel.json) call it with the CRON_SECRET bearer;
-// a manual run adds ?trigger=manual. ?dryRun=1 reads real data but writes nothing
+// One entry point for every agent, called by hand with the CRON_SECRET bearer and the business it is
+// for (?org=<org id>; no business is assumed, card 135). A manual run adds ?trigger=manual. ?dryRun=1 reads real data but writes nothing
 // (no agent_runs row, no Supabase, Notion or Gmail writes) and calls no model.
 // Chain steps don't come here: each is a job run by /api/jobs (core/chain.ts, docs/tenancy.md slice 3).
-export async function GET(req: Request, { params }: { params: Promise<{ agent: string }> }) {
+export async function GET(req: Request, ctx: { params: Promise<{ agent: string }> }) {
   if (!cronAuthorized(req)) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const org = orgParam(req);
+  if (!org) return NextResponse.json({ error: NO_ORG_PARAM }, { status: 400 });
+  return withOrg(org, () => run(req, ctx));
+}
+
+async function run(req: Request, { params }: { params: Promise<{ agent: string }> }) {
   let found;
   try { found = await resolveAgent((await params).agent); }
   catch (e) { return NextResponse.json({ error: `Agents can't be read: ${e instanceof Error ? e.message : e}` }, { status: 500 }); }

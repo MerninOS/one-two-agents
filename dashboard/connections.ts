@@ -37,12 +37,12 @@ export const CONNECTIONS: Connection[] = [
   {
     id: "shopify", name: "Shopify", sub: "Orders, products, stock", icon: "shopping-bag", builtIn: false, mcp: "shopify",
     about: "Our own Shopify server, run in the app with the read-only custom app the business makes in Shopify. Each tool runs one fixed query written in code; no tool takes GraphQL and no change can run. A key whose app has any write scope is refused when you paste it. Order reads carry no customer names or addresses.",
-    checks: [{ key: "shopify", label: "Store", setup: "Paste the read-only app’s key below, and set SHOPIFY_STORE_DOMAIN (and SHOPIFY_CLIENT_ID if the key is a client secret)." }],
+    checks: [{ key: "shopify", label: "Store", setup: "Paste the read-only app’s key below, and fill in the store (and the client id if the key is a client secret) on Settings > Where things go." }],
   },
   {
     id: "mercury", name: "Mercury", sub: "Bank", icon: "landmark", builtIn: false, mcp: "mercury", mcpMore: ["mercury_write", "mercury_files"],
     about: "Mercury’s own MCP server, signed in with the read scope only, so this sign-in can’t use any tool that changes Mercury or moves money. Code may call only the read tools named in code (accounts, charges, categories). Sums are worked out in code. After you approve, the gateway sets a charge’s category and memo through its own Mercury sign-in (that one change only), and attaches the receipt file with a separate Mercury token, also locked in the vault, that only it uses.",
-    checks: [{ key: "mercury", label: "Bank", setup: "Tap Connect and sign in to Mercury, picking the business’s Mercury org. Set MERCURY_ACCOUNT_IDS (all, or a comma list) for the cash number." }],
+    checks: [{ key: "mercury", label: "Bank", setup: "Tap Connect and sign in to Mercury, picking the business’s Mercury org. Pick the accounts that count as cash (all, or a comma list) on Settings > Where things go." }],
   },
   {
     id: "gmail", name: "Gmail", sub: "Receipts in, drafts out", icon: "mail", builtIn: false, mcp: "gmail_read", mcpMore: ["gmail"],
@@ -55,7 +55,7 @@ export const CONNECTIONS: Connection[] = [
   {
     id: "notion", name: "Notion", sub: "Pages and the Briefs database", icon: "file-text", builtIn: false, mcp: "notion",
     about: "Our own Notion server, run in the app with the agents’ integration key, so it sees only pages and databases shared with that integration. Agents may read a page you link; code writes report pages under a page you pick, plus rows in Briefs and the Build Board. Notion’s hosted server isn’t used: it signs in as you and reaches your whole workspace.",
-    checks: [{ key: "notion", label: "Workspace", setup: "Paste the integration’s key below, and set NOTION_BRIEF_PARENT_ID with that page shared with the integration. Set NOTION_BRIEFS_DB_ID too for brief rows, and NOTION_BUILD_BOARD_DB_ID for a Build Board card when you say yes to a new tool." }],
+    checks: [{ key: "notion", label: "Workspace", setup: "Paste the integration’s key below, and pick the briefs page (shared with the integration) on Settings > Where things go, with the briefs database too for brief rows. Set NOTION_BUILD_BOARD_DB_ID for a Build Board card when you say yes to a new tool." }],
   },
   {
     id: "klaviyo", name: "Klaviyo", sub: "Email lists, campaigns, flows", icon: "send", builtIn: false, mcp: "klaviyo",
@@ -70,7 +70,7 @@ export const CONNECTIONS: Connection[] = [
   {
     id: "web", name: "The web", sub: "Search and read pages", icon: "globe", builtIn: false,
     about: "Claude’s own web search and fetch. Pages are written by strangers, so they are information only: a page never chooses a recipient, URL, product or category.",
-    checks: [{ key: "web", label: "Web", setup: "Runs through the Claude API key (ANTHROPIC_API_KEY)." }],
+    checks: [{ key: "web", label: "Web", setup: "Runs through this business’s Claude API key (Connections > Claude API)." }],
   },
   {
     id: "agents", name: "Your other agents", sub: "What they saved on their last run", icon: "users", builtIn: true,

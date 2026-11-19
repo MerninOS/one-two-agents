@@ -15,7 +15,7 @@ export interface ModelDef {
   id: string;
   label: string;
   provider: "Anthropic" | "OpenAI" | "Google";
-  /** "anthropic": the Claude API with ANTHROPIC_API_KEY. "gateway": Vercel AI Gateway. */
+  /** "anthropic": the Claude API with the business's own key (integrations/anthropic.ts). "gateway": Vercel AI Gateway. */
   route: "anthropic" | "gateway";
   /** $ per token. */
   in: number;

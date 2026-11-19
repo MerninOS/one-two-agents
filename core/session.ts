@@ -4,7 +4,6 @@
 // (dashboard/data.ts requireSession), so a removed member or a changed role takes effect on their
 // next click. No SESSION_SECRET means nobody gets in. Pure apart from node:crypto.
 import { createHash, createHmac, timingSafeEqual } from "node:crypto";
-import { HOME_ORG_ID } from "@/core/tenancy";
 
 export const SESSION_COOKIE = "op_session";
 export const SESSION_DAYS = 30;
@@ -37,10 +36,7 @@ export function newSessionToken(memberId: string, orgId: string, now = Date.now(
   return `${payload}.${sign(payload)}`;
 }
 
-/**
- * The member and org a valid, unexpired cookie names; null otherwise. A v2 cookie (before orgs had
- * their own sign-in) names a member of the home org, so nobody is signed out by the change.
- */
+/** The member and org a valid, unexpired v3 cookie names; null otherwise (older cookies sign in again, card 135). */
 export function sessionOf(token: string | undefined, now = Date.now()): Session | null {
   if (!token || !loginConfigured()) return null;
   const i = token.lastIndexOf(".");
@@ -51,10 +47,6 @@ export function sessionOf(token: string | undefined, now = Date.now()): Session 
   if (parts[0] === "v3" && parts.length === 4) {
     const [, memberId, orgId, exp] = parts;
     return ID.test(memberId) && ID.test(orgId) && Number(exp) > now ? { memberId, orgId } : null;
-  }
-  if (parts[0] === "v2" && parts.length === 3) {
-    const [, memberId, exp] = parts;
-    return ID.test(memberId) && Number(exp) > now ? { memberId, orgId: HOME_ORG_ID } : null;
   }
   return null;
 }

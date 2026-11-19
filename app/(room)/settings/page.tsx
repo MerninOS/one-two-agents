@@ -15,7 +15,7 @@ import { ThemeToggle } from "@/dashboard/components/client";
 import { BusinessForm, CapForm, DailyNumbersForm, ProductFactsForm, SuppressForm, VendorForm, WhereForm } from "@/dashboard/components/settingsForms";
 import { saveBusinessProfile, saveDailyNumbers, saveProductFacts, saveWhereThingsGo } from "@/dashboard/orgActions";
 import { ownMeasureDefs } from "@/core/goals";
-import { ownSettings, settings } from "@/core/settings";
+import { settings } from "@/core/settings";
 import { NO_SETTINGS, type BusinessSettings } from "@/core/settings-rules";
 import { loadBusiness } from "@/core/business";
 import { UNKNOWN_BUSINESS } from "@/core/business-rules";
@@ -24,11 +24,9 @@ import { extensions } from "@/core/extensions";
 export default async function Settings({ searchParams }: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
   const query = Object.fromEntries(Object.entries(await searchParams).map(([k, v]) => [k, Array.isArray(v) ? v[0] : v]));
   const [f, caps, lists, me, members, biz] = await Promise.all([getFloor(), capLines(), getVendorsAndSuppressions(), requireSession(), listMembers().catch(() => null), loadBusiness().catch(() => UNKNOWN_BUSINESS)]);
-  const [own, eff, ownNumbers] = await Promise.all([ownSettings().catch(() => NO_SETTINGS), settings().catch(() => NO_SETTINGS), ownMeasureDefs().catch(() => [])]);
+  const [own, ownNumbers] = await Promise.all([settings().catch(() => NO_SETTINGS), ownMeasureDefs().catch(() => [])]);
   const asText = (b: BusinessSettings) => ({ ownerEmail: b.ownerEmail ?? "", siteUrl: b.siteUrl ?? "", shopifyDomain: b.shopifyDomain ?? "", shopifyClientId: b.shopifyClientId ?? "", mercuryAccountIds: b.mercuryAccountIds.join(", "), notionBriefParent: b.notionBriefParent ?? "", notionBriefsDb: b.notionBriefsDb ?? "", notionLeadsParent: b.notionLeadsParent ?? "", notionBooksParent: b.notionBooksParent ?? "" });
-  const ownText = asText(own), effText = asText(eff);
-  // what the home org still takes from the app-wide settings in Vercel, shown as hints
-  const starting = Object.fromEntries(Object.entries(effText).filter(([k, v]) => v && !ownText[k as keyof typeof ownText]));
+  const ownText = asText(own);
   const audit = await listAudit(100).then((rows) => ({ rows, problem: null as string | null }), (e: unknown) => ({ rows: [], problem: e instanceof Error ? e.message : String(e) }));
   const when = (at: string) => new Date(at).toLocaleString("en-US", { timeZone: "America/Chicago", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
   const facts = (d: Record<string, unknown> | null) => (d ? Object.entries(d).map(([k, v]) => `${k.replace(/_/g, " ")} ${typeof v === "string" ? v : JSON.stringify(v)}`).join(" · ") : "");
@@ -57,7 +55,7 @@ export default async function Settings({ searchParams }: { searchParams: Promise
       <div className="card" style={{ padding: "16px 22px", gap: 10 }}>
         <span className="card-t">Where things go</span>
         <span className="sub">This business’s own addresses: where the brief and alerts are emailed, its website, its Shopify store and Mercury accounts, and the Notion pages reports go under. Sign-ins and keys stay on Connections.</span>
-        <WhereForm initial={ownText} starting={starting} owners={(members ?? []).filter((m) => m.role === "owner").map((m) => m.email)} canEdit={me.role === "owner"} save={saveWhereThingsGo} />
+        <WhereForm initial={ownText} owners={(members ?? []).filter((m) => m.role === "owner").map((m) => m.email)} canEdit={me.role === "owner"} save={saveWhereThingsGo} />
       </div>
 
       <div className="card" style={{ padding: "16px 22px", gap: 10 }}>

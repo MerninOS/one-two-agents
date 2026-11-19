@@ -2,7 +2,6 @@
 // The current business's plan, read from its ee_subscriptions row through db() (scoped to the org).
 import "server-only";
 import { db } from "@/core/db";
-import { HOME_ORG_ID, orgId } from "@/core/tenancy";
 import type { PlanAsk } from "@/core/extension-types";
 import { planBlockFor, planState, type PlanState, type SubStatus, type Subscription } from "./plan-rules";
 
@@ -16,10 +15,9 @@ export async function subscription(): Promise<Subscription | null> {
   };
 }
 
-/** The home org is never billed, so it never reads a row (and can't be paused by one). */
+/** The current business's plan, from its row; a comped row means no charge and no limits. */
 export async function currentPlan(now = Date.now()): Promise<PlanState> {
-  if ((await orgId()) === HOME_ORG_ID) return planState(null, { home: true, now });
-  return planState(await subscription(), { home: false, now });
+  return planState(await subscription(), { now });
 }
 
 export async function planBlock(ask: PlanAsk): Promise<string | null> {

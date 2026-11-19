@@ -11,6 +11,7 @@ import { stripeReady } from "./stripe";
 import { addCard, manageBilling } from "./billing-actions";
 import { createSignupCode, revokeSignupCode } from "./signup-actions";
 import { listCodes } from "./signup";
+import { adminOrgId } from "./admin";
 
 export async function BillingCard({ query }: { query: Readonly<Record<string, string | undefined>> }) {
   const [me, plan, sub, people] = await Promise.all([
@@ -19,9 +20,9 @@ export async function BillingCard({ query }: { query: Readonly<Record<string, st
     subscription().catch(() => null),
     listMembers().then((m) => Math.max(1, m.length), () => 1),
   ]);
-  const billed = plan.p && plan.p.kind !== "exempt";
-  // OPERATOR's own business makes the sign-up codes (sign-up is invite-only)
-  const codes = plan.p?.kind === "exempt" && me.role === "owner" ? await listCodes().then((rows) => ({ rows, problem: null as string | null }), (e: unknown) => ({ rows: [], problem: e instanceof Error ? e.message : String(e) })) : null;
+  const billed = plan.p && plan.p.kind !== "comped";
+  // the admin business makes the sign-up codes (sign-up is invite-only, ee/admin.ts)
+  const codes = me.orgId === adminOrgId() && me.role === "owner" ? await listCodes().then((rows) => ({ rows, problem: null as string | null }), (e: unknown) => ({ rows: [], problem: e instanceof Error ? e.message : String(e) })) : null;
   const when = (at: string) => new Date(at).toLocaleDateString("en-US", { timeZone: "America/Chicago", month: "short", day: "numeric" });
   const codeState = (c: { used_at: string | null; expires_at: string; open: boolean }) => (c.used_at ? `used ${when(c.used_at)}` : c.open ? `open until ${when(c.expires_at)}` : "ended");
   const hasCard = !!sub?.hasCard && sub.status !== "canceled";

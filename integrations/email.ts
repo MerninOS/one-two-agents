@@ -2,8 +2,7 @@ import "server-only";
 // Email to the owner, and only to the owner: the morning brief and (later) alerts. It goes through
 // Resend's API from a sending address on the app's own domain, so no agent ever holds a
 // Gmail send scope. There is deliberately no recipient argument: the address is the business's owner
-// email (Settings, always one of its owners' sign-in addresses; BRIEF_TO is the home org's starting
-// value), and nothing a model, a web page or an inbound email says can change it.
+// email (Settings, always one of its owners' sign-in addresses), and nothing a model, a web page or an inbound email says can change it.
 // Messages to anyone else are gateway action types (core/gateway), not this file.
 import { env } from "@/core/env";
 import { settings } from "@/core/settings";

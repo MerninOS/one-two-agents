@@ -10,7 +10,8 @@ import type { PlanAsk } from "@/core/extension-types";
 export const PLAN = { baseUsd: 20, seatUsd: 5, trialDays: 14, graceDays: 7 } as const;
 const DAY = 86_400_000;
 
-export type SubStatus = "trialing" | "active" | "past_due" | "canceled";
+/** A Stripe-kept status, or "comped": set by us for a business that is never billed (card 135). */
+export type SubStatus = "trialing" | "active" | "past_due" | "canceled" | "comped";
 export interface Subscription {
   status: SubStatus;
   trialEndsAt: string | null;
@@ -22,7 +23,7 @@ export interface Subscription {
 
 export type Lapse = "trial_over" | "unpaid" | "canceled";
 export type PlanState =
-  | { kind: "exempt" }
+  | { kind: "comped" }
   | { kind: "none" }
   | { kind: "trial"; until: string; daysLeft: number }
   | { kind: "active"; renews: string | null }
@@ -32,10 +33,10 @@ export type PlanState =
 /** The monthly price for a team of `people` (the owner is included in the base). */
 export const monthlyUsd = (people: number) => PLAN.baseUsd + PLAN.seatUsd * Math.max(0, Math.floor(people) - 1);
 
-/** Where a business stands. The home org is never billed; a business with no row has no plan. */
-export function planState(sub: Subscription | null, opts: { home: boolean; now: number }): PlanState {
-  if (opts.home) return { kind: "exempt" };
+/** Where a business stands. A comped row is never billed; a business with no row has no plan. */
+export function planState(sub: Subscription | null, opts: { now: number }): PlanState {
   if (!sub) return { kind: "none" };
+  if (sub.status === "comped") return { kind: "comped" };
   const at = (s: string | null) => (s ? Date.parse(s) : NaN);
   if (sub.status === "active") return { kind: "active", renews: sub.currentPeriodEnd };
   if (sub.status === "trialing") {
@@ -77,7 +78,7 @@ export function planBlockFor(state: PlanState, ask: PlanAsk): string | null {
 export function planWords(state: PlanState, people: number): string {
   const price = `$${monthlyUsd(people)}/month for ${people} ${people === 1 ? "person" : "people"} ($${PLAN.baseUsd} with the owner, plus $${PLAN.seatUsd} for each other person)`;
   switch (state.kind) {
-    case "exempt": return "This is OPERATOR’s own business: no plan and no limits.";
+    case "comped": return "Comped: no charge and no limits.";
     case "none": return `No plan yet. ${price}.`;
     case "trial": return `Free trial: ${state.daysLeft} day${state.daysLeft === 1 ? "" : "s"} left. Then ${price}.`;
     case "active": return `Active: ${price}.`;
