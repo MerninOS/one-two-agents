@@ -5,11 +5,11 @@ import Link from "next/link";
 import { CUSTOM_WARNING, cantTurnOn, type CustomServer, type CustomTool } from "@/core/custom-mcp-rules";
 import type { McpLogRow, McpStatus } from "@/integrations/mcp";
 import type { KnownServer } from "@/core/connector-rules";
-import { customAdd, customCheck, customKey, customPause, customRemove, customScopes, customToolOff, customToolOn } from "@/dashboard/connectionActions";
+import { customAdd, customCheck, customKey, customNumber, customPause, customRemove, customScopes, customToolOff, customToolOn } from "@/dashboard/connectionActions";
 import { when } from "@/dashboard/format";
 import { Icon } from "./Icon";
 import { ActionButton, KeyForm } from "./client";
-import { AddServerForm, ScopesAndConnect, ToolOnForm } from "./customClient";
+import { AddServerForm, GoalNumberForm, ScopesAndConnect, ToolOnForm } from "./customClient";
 
 export const EVENT_LABEL: Record<McpLogRow["event"], string> = {
   connected: "Connected", refreshed: "Sign-in renewed", refresh_failed: "Renewal failed, paused", refused: "Server refused the sign-in, paused",
@@ -113,6 +113,7 @@ function ToolRow({ c, t, paused, controls }: { c: CustomServer; t: CustomTool; p
         <span className="pill sm" style={why ? { background: "var(--red-soft)", color: "var(--red-ink)" } : { background: "var(--card)", color: "var(--ink2)" }}>{why ? (t.readOnly ? "Odd inputs" : "Changes things") : "Reads"}</span>
       </span>
       {on && <span style={{ fontSize: 12.5, lineHeight: 1.5 }}>Agents read: “{on.line}”{pins.length ? ` Pinned: ${pins.map(([k, v]) => `${k} = ${String(v)}`).join(", ")}.` : ""}</span>}
+      {on?.number && <span style={{ fontSize: 12.5, lineHeight: 1.5 }}>Goal number: “{on.number.label}”, read from <code>{on.number.field}</code>.</span>}
       {t.about && <span className="ink2" style={{ fontSize: 12.5, lineHeight: 1.5 }}><span className="muted">The server says: </span>{t.about}</span>}
       {t.inputs.length > 0 && <span className="muted" style={{ fontSize: 12 }}>Inputs: {t.inputs.map((i) => `${i.name}${i.required ? "" : "?"} (${i.kind === "other" ? "list or object" : i.kind})`).join(", ")}</span>}
       {why && <span className="muted" style={{ fontSize: 12 }}>{why}</span>}
@@ -122,6 +123,8 @@ function ToolRow({ c, t, paused, controls }: { c: CustomServer; t: CustomTool; p
             initial={{ label: on?.label ?? (t.title || t.name).slice(0, 60), line: on?.line ?? t.about.slice(0, 300), pins: Object.fromEntries(pins.map(([k, v]) => [k, String(v)])) }}
             save={customToolOn.bind(null, c.id, t.name)} />
           {on && <ActionButton className="btn ghost sm" action={customToolOff.bind(null, c.id, t.name)}>Turn off</ActionButton>}
+          {on && !changed && <GoalNumberForm tool={t.name} controls={controls} initial={on.number ? { ...on.number } : null}
+            save={customNumber.bind(null, c.id, t.name)} stop={customNumber.bind(null, c.id, t.name, null)} />}
         </span>
       )}
       {(why || paused) && on && <span className="row"><ActionButton className="btn ghost sm" action={customToolOff.bind(null, c.id, t.name)}>Turn off</ActionButton></span>}

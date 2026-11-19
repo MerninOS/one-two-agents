@@ -31,6 +31,7 @@ import {
   CUSTOM_ID, MAX_CUSTOM_SERVERS, acceptTools, cantTurnOn, customArgs, customReply, checkAddress, checkCustomTools, checkLabel, checkLine, checkPins, checkScopes, checkServerName, customCheckNote, isCustomId, isPublicIp, looksLikeKey, readToolList,
   type CustomAuth, type CustomServer, type CustomTool, type ToolOn,
 } from "@/core/custom-mcp-rules";
+import { checkGoalNumber, unpinned } from "@/core/goal-number-rules";
 
 const TIMEOUT_MS = 25_000;
 /** A custom server gets less time per call than a built-in one. */
@@ -885,9 +886,36 @@ export async function setCustomTool(id: string, tool: string, on: { label: strin
   const pins = checkPins(t.inputs, on.pins);
   if ("problem" in pins) throw new Error(pins.problem);
   const was = !!next[tool];
+  // a goal number stays while its required inputs stay pinned
+  const number = next[tool]?.number;
   next[tool] = { label: l.label, line: ln.line, pins: pins.pins, fingerprint: t.fingerprint };
+  if (number && !unpinned(t, next[tool]).length) next[tool].number = number;
   await updateCustom(id, { tools_on: next });
   await logEvent(id, "tool_on", `${tool}${was ? " (edited)" : ""} as “${l.label}”${Object.keys(pins.pins).length ? `, pinned ${Object.keys(pins.pins).join(", ")}` : ""}`);
+}
+
+/**
+ * Uses a turned-on tool as a goal number (core/goal-number-rules.ts), or stops (`n` null). Only
+ * while it is on, with every required input pinned, so code can call it with no model.
+ */
+export async function setCustomNumber(id: string, tool: string, n: { field: unknown; label: unknown; unit: unknown; shape: unknown } | null): Promise<void> {
+  const c = await getCustomServer(id);
+  if (!c) throw new Error("That server isn't on Connections any more.");
+  const on = c.toolsOn[tool], t = c.tools.find((x) => x.name === tool);
+  if (!on || !t) throw new Error("Turn the tool on first.");
+  const next = { ...c.toolsOn, [tool]: { ...on } };
+  if (!n) {
+    if (!on.number) return;
+    delete next[tool].number;
+    await updateCustom(id, { tools_on: next });
+    await logEvent(id, "tool_on", `${tool}: no longer a goal number`);
+    return;
+  }
+  const r = checkGoalNumber(n, t, on);
+  if ("problem" in r) throw new Error(r.problem);
+  next[tool].number = r.number;
+  await updateCustom(id, { tools_on: next });
+  await logEvent(id, "tool_on", `${tool}: goal number “${r.number.label}” from ${r.number.field}`);
 }
 
 // ---- Slice 2: agents call turned-on custom tools. Only core/tools/custom.ts calls these.
@@ -922,6 +950,11 @@ export async function readyCustomServers(ids: readonly string[]): Promise<Custom
  * cut to the limit, for the runner to hand over as untrusted data.
  */
 export async function callCustomTool(id: string, tool: string, checked: Record<string, string | number>): Promise<string> {
+  return customReply(await callCustomToolData(id, tool, checked));
+}
+
+/** The same call, with the reply as the server sent it (parsed), for code that reads one field of it: a goal number. */
+export async function callCustomToolData(id: string, tool: string, checked: Record<string, string | number>): Promise<unknown> {
   const c = await getCustomServer(id);
   if (!c) throw new Error("That server isn't on Connections any more.");
   const on = c.toolsOn[tool], t = c.tools.find((x) => x.name === tool);
@@ -932,7 +965,7 @@ export async function callCustomTool(id: string, tool: string, checked: Record<s
   return traced("tool_call", { "operator.server": "custom", "operator.tool": tool, "operator.tool_kind": "custom" }, () => withSession(customProf(c), async (call) => {
     const out = toolPayload(await call("tools/call", { name: tool, arguments: a.args }));
     if ("error" in out) throw new Error(`${c.name} ${tool}: ${out.error.slice(0, 200)}`);
-    return customReply(out.data);
+    return out.data;
   }));
 }
 

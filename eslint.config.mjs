@@ -27,8 +27,8 @@ const SSRV = { paths: ["@/integrations/shopify-server", "./shopify-server", "../
 const MCPW_MSG = "Only core/gateway calls an MCP write tool, after an approver approves.";
 const MCPW = { name: "@/integrations/mcp", importNames: ["callWriteTool"], message: MCPW_MSG };
 // Custom-server tools (docs/custom-servers.md, slice 2): only the tool list for a run calls one.
-const MCPC_MSG = "Only core/tools/custom.ts calls a custom server's tool, as a read tool granted for a run.";
-const MCPC = { name: "@/integrations/mcp", importNames: ["callCustomTool"], message: MCPC_MSG };
+const MCPC_MSG = "Only core/tools/custom.ts calls a custom server's tool: as a read tool granted for a run, or for a goal number.";
+const MCPC = { name: "@/integrations/mcp", importNames: ["callCustomTool", "callCustomToolData"], message: MCPC_MSG };
 const MEMORY_MSG = "Memory is notes, never authority: the gateway and integrations must not read it.";
 const MEMORY_RULE = { name: "@/core/memory", message: MEMORY_MSG };
 const MEMORY_PATTERN = { group: ["**/core/memory", "../memory", "./memory"], message: MEMORY_MSG };

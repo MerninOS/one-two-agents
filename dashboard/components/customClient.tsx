@@ -142,3 +142,59 @@ export function ToolOnForm({ tool, inputs, initial, save, controls, editing }: {
     </div>
   );
 }
+
+export interface NumberFormValue { field: string; label: string; unit: string; shape: string }
+
+/**
+ * Use a turned-on tool as a goal number (core/goal-number-rules.ts): which field of its reply holds
+ * the number, its name, unit and shape. Code checks everything again on save.
+ */
+export function GoalNumberForm({ tool, initial, save, stop, controls }: { tool: string; initial: NumberFormValue | null; save: (f: NumberFormValue) => Promise<ActionResult>; stop: () => Promise<ActionResult>; controls: boolean }) {
+  const [open, setOpen] = useState(false);
+  const [f, setF] = useState<NumberFormValue>(initial ?? { field: "", label: "", unit: "count", shape: "floor" });
+  const [toast, setToast] = useState<ActionResult | null>(null);
+  const [busy, start] = useTransition();
+  const router = useRouter();
+  const run = (act: () => Promise<ActionResult>) => start(async () => {
+    let r: ActionResult;
+    try { r = await act(); } catch (e) { r = { ok: false, text: e instanceof Error ? e.message : "Something went wrong." }; }
+    setToast(r);
+    if (r.ok) { setOpen(false); router.refresh(); }
+  });
+  const sid = tool.replace(/[^A-Za-z0-9_-]/g, "-");
+  if (!open) return (
+    <>
+      <button className="btn ghost sm" disabled={!controls} title={!controls ? "DASHBOARD_CONTROLS is off" : "Code calls it with its pinned inputs and reads one number for a goal"} onClick={() => setOpen(true)}>{initial ? "Edit goal number" : "Use as a goal number"}</button>
+      {initial && <button className="btn ghost sm" disabled={busy || !controls} onClick={() => run(stop)}>Stop using as a goal number</button>}
+      <Toast t={toast} onDone={() => setToast(null)} />
+    </>
+  );
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 8, width: "100%", paddingTop: 4 }}>
+      <span className="muted" style={{ fontSize: 12, lineHeight: 1.5 }}>Code calls this tool with only its pinned inputs, reads one number from its reply, and shows it on goals. Every needed input has to be pinned.</span>
+      <label style={{ display: "flex", flexDirection: "column", gap: 4, fontSize: 12.5, fontWeight: 600 }}>Field in the reply
+        <input id={`num-${sid}-field`} className="input" value={f.field} maxLength={200} placeholder="numbers.lowest_days_of_cover" onChange={(e) => setF({ ...f, field: e.target.value })} style={input} />
+      </label>
+      <label style={{ display: "flex", flexDirection: "column", gap: 4, fontSize: 12.5, fontWeight: 600 }}>Name on goals
+        <input id={`num-${sid}-label`} className="input" value={f.label} maxLength={60} placeholder="Lowest days of green cover" onChange={(e) => setF({ ...f, label: e.target.value })} style={input} />
+      </label>
+      <span className="row wrap" style={{ gap: 8 }}>
+        <label style={{ display: "flex", flexDirection: "column", gap: 4, fontSize: 12.5, fontWeight: 600, flex: "1 1 140px" }}>It counts
+          <select id={`num-${sid}-unit`} className="input" value={f.unit} onChange={(e) => setF({ ...f, unit: e.target.value })} style={input}>
+            <option value="count">A count</option><option value="usd">Dollars</option><option value="days">Days</option><option value="months">Months</option>
+          </select>
+        </label>
+        <label style={{ display: "flex", flexDirection: "column", gap: 4, fontSize: 12.5, fontWeight: 600, flex: "1 1 180px" }}>A goal on it is
+          <select id={`num-${sid}-shape`} className="input" value={f.shape} onChange={(e) => setF({ ...f, shape: e.target.value })} style={input}>
+            <option value="floor">A level to stay at or above</option><option value="total">A total to reach by a date</option>
+          </select>
+        </label>
+      </span>
+      <span className="row wrap" style={{ gap: 8 }}>
+        <button className="btn dark sm" disabled={busy || !f.field.trim() || !f.label.trim()} onClick={() => run(() => save(f))}>{busy ? "Saving…" : "Save"}</button>
+        <button className="btn ghost sm" disabled={busy} onClick={() => setOpen(false)}>Cancel</button>
+      </span>
+      <Toast t={toast} onDone={() => setToast(null)} />
+    </div>
+  );
+}

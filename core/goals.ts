@@ -6,7 +6,8 @@ import "server-only";
 import { db } from "@/core/db";
 import { chicagoDate } from "@/core/time";
 import { MAX_GOALS_PER_DEPT, measureOf, planGoal, progress, STATUS_WORDS, type GoalInput, type GoalRow, type GoalState, type Progress } from "@/core/goal-rules";
-import { readMeasures, type Detail } from "@/core/measures";
+import { ownMeasures, readMeasures, type Detail } from "@/core/measures";
+import type { MeasureDef } from "@/core/goal-rules";
 import { headOf, loadOrg, seatOf, type Org } from "@/core/org";
 
 export interface Goal extends GoalRow { id: string; department_id: string; title: string; created_at: string; updated_at: string }
@@ -36,30 +37,37 @@ export async function getGoal(id: string): Promise<Goal | null> {
 
 /** Each goal with its measure read once and its pace worked out in code. */
 export async function goalsNow(goals: Goal[], now = new Date()): Promise<GoalNow[]> {
-  const reads = await readMeasures(goals.map((g) => g.measure), now);
+  const own = await ownMeasures();
+  const reads = await readMeasures(goals.map((g) => g.measure), now, own);
   const today = chicagoDate(0, now);
-  return goals.map((g) => ({ goal: g, progress: progress(g, g.measure ? reads[g.measure]?.reading ?? null : null, today), detail: g.measure ? reads[g.measure]?.detail ?? null : null }));
+  return goals.map((g) => ({ goal: g, progress: progress(g, g.measure ? reads[g.measure]?.reading ?? null : null, today, own.defs), detail: g.measure ? reads[g.measure]?.detail ?? null : null }));
+}
+
+/** Every measure a goal can use here: core's, the packs', and the business's own goal numbers. */
+export async function ownMeasureDefs(): Promise<MeasureDef[]> {
+  return (await ownMeasures()).defs;
 }
 
 /** Where a total measure stands now, so pace counts from the day the goal was set. Null when it can't be read. */
-async function startOf(measure: string | null): Promise<number | null> {
-  const m = measureOf(measure);
+async function startOf(measure: string | null, own: Awaited<ReturnType<typeof ownMeasures>>): Promise<number | null> {
+  const m = measureOf(measure, own.defs);
   if (!m?.available || m.shape !== "total") return null;
-  const r = (await readMeasures([m.key]))[m.key]?.reading;
+  const r = (await readMeasures([m.key], new Date(), own))[m.key]?.reading;
   return r && "value" in r ? r.value : null;
 }
 
 export async function createGoal(deptId: string, input: GoalInput): Promise<string> {
   const org = await loadOrg();
   if (!org?.departments.some((d) => d.id === deptId)) throw new Error("That department isn’t on the chart.");
-  const got = planGoal(input, chicagoDate(0));
+  const own = await ownMeasures();
+  const got = planGoal(input, chicagoDate(0), own.defs);
   if ("error" in got) throw new Error(got.error);
   const open = await listGoals([deptId]);
   if (open == null) throw new Error(GOALS_MISSING);
   if (open.length >= MAX_GOALS_PER_DEPT) throw new Error(`A department holds ${MAX_GOALS_PER_DEPT} goals at most. Mark one done or remove it first.`);
   const p = got.plan;
   const { data, error } = await db().from("goals").insert({
-    department_id: deptId, title: p.title, measure: p.measure, target: p.target, due_on: p.dueOn, start_value: await startOf(p.measure),
+    department_id: deptId, title: p.title, measure: p.measure, target: p.target, due_on: p.dueOn, start_value: await startOf(p.measure, own),
   }).select("id").single();
   if (error) throw new Error(/goals/.test(error.message) ? GOALS_MISSING : error.message);
   return data.id as string;
@@ -69,13 +77,14 @@ export async function createGoal(deptId: string, input: GoalInput): Promise<stri
 export async function editGoal(id: string, input: GoalInput): Promise<void> {
   const g = await getGoal(id);
   if (!g || g.state === "dropped") throw new Error("That goal isn’t there any more.");
-  const got = planGoal(input, chicagoDate(0));
+  const own = await ownMeasures();
+  const got = planGoal(input, chicagoDate(0), own.defs);
   if ("error" in got) throw new Error(got.error);
   const p = got.plan;
   const fresh = p.measure !== g.measure;
   const { error } = await db().from("goals").update({
     title: p.title, measure: p.measure, target: p.target, due_on: p.dueOn, updated_at: new Date().toISOString(),
-    ...(fresh ? { start_value: await startOf(p.measure), paced_from: new Date().toISOString() } : {}),
+    ...(fresh ? { start_value: await startOf(p.measure, own), paced_from: new Date().toISOString() } : {}),
   }).eq("id", id);
   if (error) throw new Error(error.message);
 }
@@ -113,10 +122,10 @@ export async function goalProgress(agentId: string) {
   const depts = seat.departmentId ? org.departments.filter((d) => d.id === seat.departmentId) : org.departments;
   const goals = await listGoals(depts.map((d) => d.id));
   if (goals == null) throw new Error(GOALS_MISSING);
-  const rows = await goalsNow(goals);
+  const [rows, defs] = await Promise.all([goalsNow(goals), ownMeasureDefs()]);
   const numbers: Record<string, number> = { goals: rows.length };
   const data = rows.map(({ goal: g, progress: p, detail }, i) => {
-    const k = `g${i + 1}`, m = measureOf(g.measure);
+    const k = `g${i + 1}`, m = measureOf(g.measure, defs);
     if (p.value != null) numbers[`${k}_value`] = p.value;
     if (g.target != null) numbers[`${k}_target`] = g.target;
     if (detail && "funnel" in detail) for (const [s, n] of Object.entries(detail.funnel)) numbers[`${k}_${s}`] = n;
@@ -124,7 +133,6 @@ export async function goalProgress(agentId: string) {
       key: k, department: depts.find((d) => d.id === g.department_id)?.name ?? g.department_id, goal: g.title,
       measure: m ? m.label : null, measuredHow: m?.how ?? null, status: STATUS_WORDS[p.status], progress: p.line, pace: p.pace,
       dueOn: g.due_on, paused: g.state === "paused",
-      ...(detail && "lots" in detail ? { lots: detail.lots } : {}),
     };
   });
   numbers.goals_behind = rows.filter((r) => r.progress.status === "behind" || r.progress.status === "missed").length;

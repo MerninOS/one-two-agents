@@ -131,3 +131,28 @@ Migration `20261201090000_connector_requests.sql` (table, RLS on with no policie
    its Build Board card.
 5. When a built-in connector for it is merged, tap **A built-in connector is ready** on its request
    (or **Close** if you no longer need it).
+
+## Goal numbers: measure a goal with a number from your own tool (card 133)
+
+A turned-on tool can be marked **Use as a goal number** on its server's page. The number then shows
+in the goal picker under **From your own tools**, and a goal on it is read the same way every time.
+
+| Step | What happens | Where |
+|---|---|---|
+| Set up | The owner gives the field in the reply (up to three names joined by dots, like `numbers.lowest_days_of_cover`), a name, what it counts (a count, dollars, days or months) and the shape (a level to stay at or above, or a total to reach by a date). Owner only, Controls on. Every required input must be pinned first, because code calls the tool on its own. Stored on the tool's row (`tools_on.<tool>.number`); no new table. | `GoalNumberForm`, `customNumber`, `setCustomNumber`, `checkGoalNumber` |
+| Key | `n_` and 12 characters of a hash of the server, the tool and the field, so renaming the tool or the number keeps every goal on it. | `numberKey` |
+| Picker | Each number is a measure for this business only (`numberDefs`), passed to `measureOf`, `planGoal` and `progress` beside core's list. | `ownMeasures`, `ownMeasureDefs`, `GoalForm` |
+| Reading | The server must be on Connections, connected, not paused and pass its tool check right then (the same check as before a run). The tool is called with its pins only, through `core/tools/custom.ts`, the only file that may call a custom tool. Code reads the field: only a plain finite number within ±1 billion counts. Anything else shows Couldn't read, with why. | `readOwnNumber`, `callCustomToolData`, `numberFrom` |
+| Changes | Any change to the tool pauses the server, so its goals show Couldn't read until the owner accepts the change; accepting keeps the goal number. Turning the tool off, or unpinning a needed input, ends it. | `acceptTools`, `setCustomTool` |
+
+A goal decides nothing an agent may do, so a number from an outside server can only move its goal's
+own line; it never chooses a recipient, URL, product or category. Tests: `npm run check:goal-numbers`.
+No migration.
+
+### Using a tool as a goal number (click by click)
+
+1. In the Control Room, open **Connections** and tap your server under **Your servers**.
+2. Under **Tools**, find a tool that's **On**. If it has inputs marked "(needed)", tap **Edit** and pin them first.
+3. Tap **Use as a goal number**.
+4. Type the **Field in the reply** (the server's docs say which), a **Name on goals**, pick what **It counts** and what **A goal on it is**, and tap **Save**.
+5. Open **Crew**, tap **New goal**, and pick it under **From your own tools**.

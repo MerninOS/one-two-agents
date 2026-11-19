@@ -8,6 +8,7 @@
 // https host. Its profile is a row the owner edits (mcp_custom_servers); these limits are code.
 
 import { createHash } from "node:crypto";
+import type { GoalNumber } from "./goal-number-rules";
 import type { Param } from "@/core/tools/types";
 
 /** A custom server's id: also its row in mcp_connections, so the vault, pause and log work as they do for built-in servers. */
@@ -102,7 +103,11 @@ export interface ToolInput { name: string; kind: "text" | "number" | "integer" |
 export interface CustomTool { name: string; title: string; about: string; readOnly: boolean; inputs: ToolInput[]; fingerprint: string }
 
 /** A turned-on tool: what agents see it as, pinned inputs, and the fingerprint it was turned on with. */
-export interface ToolOn { label: string; line: string; pins: Record<string, string | number | boolean>; fingerprint: string }
+export interface ToolOn {
+  label: string; line: string; pins: Record<string, string | number | boolean>; fingerprint: string;
+  /** Set when the owner uses the tool as a goal number (core/goal-number-rules.ts). */
+  number?: GoalNumber;
+}
 
 type Json = Record<string, unknown>;
 const obj = (x: unknown): Json => (x && typeof x === "object" && !Array.isArray(x) ? (x as Json) : {});
