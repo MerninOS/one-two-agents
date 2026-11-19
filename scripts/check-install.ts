@@ -1,10 +1,10 @@
-// The template installer (docs/templates.md, slice 4): a pack's crew is valid and installs switched
+// The template installer (docs/templates.md): a crew is valid and installs switched
 // off. Run: npm run check:install
 import assert from "node:assert/strict";
 import { crewProblems, installRows } from "../core/install-rules";
 import { readSpec } from "../core/agent-spec";
 import { SAMPLE_CREW } from "./fixtures/sample-crew";
-import type { PackCrew } from "../templates/types";
+import type { Crew } from "../core/template-rules";
 
 const crew = SAMPLE_CREW;
 assert.deepEqual(crewProblems(crew), [], "the sample crew installs cleanly");
@@ -17,7 +17,7 @@ assert.ok(rows.agent_playbooks.every((p) => p.status === "proposed" && p.auto ==
 assert.ok((rows.crew_flow[0].flow as { chains: { on: boolean }[] }).chains.every((c) => c.on === false), "every chain installs off");
 assert.ok(rows.goals.every((g) => g.due_on === null && g.state === "active"), "goals install with no due date");
 assert.ok(rows.agent_defs.every((d) => d.version === 1 && d.active === true && d.created_by === "template:sample"));
-// a spec installs exactly as the pack wrote it: readSpec dropped nothing
+// a spec installs exactly as the template wrote it: readSpec dropped nothing
 for (const a of crew.agents) assert.deepEqual(readSpec(crew.specs[a.id], a.id).spec, crew.specs[a.id], `${a.id}'s spec installs as written`);
 // seats: parents first, ids remapped
 const seen = new Set<unknown>();
@@ -27,8 +27,8 @@ assert.equal(rows.seats.length, crew.seats.length);
 assert.deepEqual(Object.keys(rows).sort(), ["agent_defs", "agent_playbooks", "agents", "crew_flow", "departments", "goals", "seats"]);
 
 // a broken crew is refused, not half installed
-const broken = (f: (c: PackCrew) => void) => { const c = structuredClone(crew) as PackCrew; f(c); return c; };
-const refuses = (c: PackCrew, why: RegExp) => { assert.match(crewProblems(c).join("; "), why); assert.throws(() => installRows("x", c), why); };
+const broken = (f: (c: Crew) => void) => { const c = structuredClone(crew) as Crew; f(c); return c; };
+const refuses = (c: Crew, why: RegExp) => { assert.match(crewProblems(c).join("; "), why); assert.throws(() => installRows("x", c), why); };
 refuses(broken((c) => { c.playbooks.cfo = [{ tool: "no_such_tool", input: {} }]; }), /isn't a tool/);
 refuses(broken((c) => { c.playbooks.cfo = [{ tool: "web_search", input: {} }]; }), /isn't one of its tools/);
 refuses(broken((c) => { c.seats[1].parent = "nowhere"; }), /no parent/);

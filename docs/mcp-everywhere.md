@@ -198,8 +198,7 @@ No migration.
 Shopify's own MCP servers are for storefronts and building apps, not a read-only Admin view of one
 store, so Shopify runs on our own server in the app, like Notion and Gmail:
 
-- **`core/shopify-rules.ts`** (pure) holds the rules and core's queries (a day's orders); a template
-  pack adds its own fixed queries in its code, listed in `templates/registry.ts`.
+- **`core/shopify-rules.ts`** (pure) holds the rules and every query, one fixed read per tool.
   **`core/shopify-queries.ts`** lists them all, one per tool, and builds each tool's variables from
   checked inputs (`shopifyVariables`). No tool takes GraphQL or a search string: a pack's searches
   and settings are fixed in its code, dates must

@@ -5,10 +5,9 @@
 //
 //   npx supabase start   (applies supabase/migrations to a local database)
 //   docker exec supabase_db_<project> pg_dump -U postgres --schema-only --schema=public --no-owner --no-comments \
-//     -T public.<pack table> ... postgres | node scripts/baseline.mjs > supabase/baseline/operator_baseline.sql
+//     -T 'public.ee_*' postgres | node scripts/baseline.mjs > supabase/baseline/operator_baseline.sql
 //
-// Leave out each template pack's own tables with -T (the `tables` in templates/<pack>/index.ts), and
-// the paid layer's ee_* tables (-T 'public.ee_*'): they are the pack's or ee/'s, not core's. `npm run check:baseline` fails when the baseline has a table core
+// Leave out the paid layer's ee_* tables (-T 'public.ee_*'): they are ee/'s, not core's. `npm run check:baseline` fails when the baseline has a table core
 // doesn't, or misses one it does.
 import { readFileSync } from "node:fs";
 import { brandWords } from "./lib/brand.mjs";
@@ -43,7 +42,7 @@ ${body}
 -- Receipt files (private): the Bookkeeper's receipts and the gateway's attachments.
 INSERT INTO storage.buckets (id, name, public) VALUES ('receipts', 'receipts', false) ON CONFLICT (id) DO NOTHING;
 
--- The home org (HOME_ORG_ID in core/tenancy.ts), empty: the owner names it on Settings and picks a
--- template pack, or starts from nothing, on the Desk. OPERATOR_OWNER_EMAIL becomes its first owner.
+-- The home org (HOME_ORG_ID in core/tenancy.ts), empty: the owner names it on Settings and picks
+-- department templates, or starts from nothing, on the Desk. OPERATOR_OWNER_EMAIL becomes its first owner.
 INSERT INTO public.orgs (id, slug, name) VALUES ('${HOME}', 'home', 'My business') ON CONFLICT (id) DO NOTHING;
 `);

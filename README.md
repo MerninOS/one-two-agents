@@ -38,7 +38,7 @@ core/                the runner, agent specs, the tool list (core/tools), the to
 dashboard/           Control Room data, server actions (each checks the member's role) and components
 integrations/        mcp.ts (the one MCP client) and our own MCP servers (Notion, Gmail, Shopify,
                      Mercury receipt files)
-templates/           template packs: a kind of business's tools, tables and starting crew
+templates/           department templates as data (JSON): a department, its agents, seats, routines and goal
 supabase/migrations/ the schema, starting from one squashed migration
 ee/                  the commercial layer (its own license; see ee/README.md), plugged in through
                      the extension slots in core/extensions.ts (docs/extensions.md)
@@ -48,7 +48,7 @@ ee/                  the commercial layer (its own license; see ee/README.md), p
 
 `docs/` holds a spec per part: the agent builder and builder flow, agent memory, company mode, the
 org chart and schedule, the books, every integration over MCP, custom MCP servers, building a connector,
-template packs, tenancy, usage and traces, self-hosting, and the extension slots the paid layer fills.
+department templates, tenancy, usage and traces, self-hosting, and the extension slots the paid layer fills.
 
 ## Checks
 

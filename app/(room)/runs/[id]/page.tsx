@@ -34,7 +34,7 @@ export default async function Replay({ params }: { params: Promise<{ id: string 
     reactable ? getRunReactions(run.id) : Promise.resolve({} as Awaited<ReturnType<typeof getRunReactions>>), reactable ? getReactRules(a.id) : null,
   ]);
   const leads = items ? items.length : null;
-  const map = mf && mapOf({ agentId: a.id, spec: mf.spec, menu: builderMenu(f.built, f.health, await customMenuFor()), schedule: null, chain: null, usedBy: mf.usedBy, edit: null, run: mapRunOf(run, steps) });
+  const map = mf && mapOf({ agentId: a.id, spec: mf.spec, menu: builderMenu(f.crew, f.health, await customMenuFor()), schedule: null, chain: null, usedBy: mf.usedBy, edit: null, run: mapRunOf(run, steps) });
   const chain = run.trigger === "chain" ? await getChainRuns(run.id) : null;
   const asked = run.trigger === "chat" ? await askedIn(run.id).catch(() => null) : null;
   const look = RUN_LOOK[run.status];

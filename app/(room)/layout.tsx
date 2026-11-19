@@ -42,7 +42,7 @@ export default async function RoomLayout({ children }: { children: React.ReactNo
   const nav = [
     { href: "/", match: "/", icon: "layout-dashboard", label: "Desk" },
     { href: "/approvals", match: ["/approvals", "/proposals*"], icon: "inbox", label: "Approvals", count: waiting ? String(waiting) : undefined },
-    { href: "/crew", match: ["/crew", "/agents/*", "/build*"], icon: "users", label: "Crew", count: `${floor.built.length} + ${floor.planned.length}` },
+    { href: "/crew", match: ["/crew", "/agents/*", "/build*"], icon: "users", label: "Crew", count: `${floor.crew.length}` },
     { href: "/runs", match: "/runs*", icon: "history", label: "Runs" },
     { href: "/connections", match: "/connections", icon: "plug", label: "Connections", note: notSetUp ? `${notSetUp} to fix` : undefined, noteColor: "var(--red-ink)" },
   ];
@@ -56,9 +56,7 @@ export default async function RoomLayout({ children }: { children: React.ReactNo
             <span style={{ display: "flex", flexDirection: "column", lineHeight: 1.2 }}><span style={{ fontWeight: 700, fontSize: 17, letterSpacing: "-.02em" }}>{biz.name}</span><span style={{ fontSize: 12 }} className="muted">Mission control</span></span>
           </Link>
           <nav className="rail" aria-label="Crew">
-            {rail.filter((r) => r.a.built).map(({ a, st, badge }) => <RailLink key={a.id} id={a.id} name={a.name} icon={a.icon} title={`${a.name} · ${a.role} · ${stateLook(st, floor.org.on).label}`} running={st === "running"} badge={badge} />)}
-            <span className="rail-sep" />
-            {rail.filter((r) => !r.a.built).map(({ a, st }) => <RailLink key={a.id} id={a.id} name={a.name} icon={a.icon} title={`${a.name} · ${a.role} · ${stateLook(st, floor.org.on).label}`} planned />)}
+            {rail.map(({ a, st, badge }) => <RailLink key={a.id} id={a.id} name={a.name} icon={a.icon} title={`${a.name} · ${a.role} · ${stateLook(st, floor.org.on).label}`} running={st === "running"} badge={badge} />)}
           </nav>
           <div className="top-right">
             <span className="wide-only"><ThemeToggle initial={theme} /></span>

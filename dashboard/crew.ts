@@ -1,7 +1,6 @@
-// How the Control Room shows an agent, the planned seats that have no agent yet, and the hard rules.
-// Every agent that exists comes from the database (dashboard/roster.ts: its agents row, live saved
-// version, runs, seat and schedule), whether it started in code or was built in the app. Only the
-// planned roster below is written here, until each one is built (docs/agent-roster.md).
+// How the Control Room shows an agent, and the hard rules. Every agent comes from the database
+// (dashboard/roster.ts: its agents row, live saved version, runs, seat and schedule), whether it
+// started from a template or was built in the app (docs/agent-roster.md).
 
 import type { Days } from "@/core/flow-rules";
 
@@ -24,9 +23,6 @@ export interface CrewMember {
   tier: Tier;
   mandate: string;
   job: string;
-  /** In the `agents` table with a live version. False for the planned roster. */
-  built: boolean;
-  phase?: number;
   hue?: string;
   /** When it joined, "Oct 29" (agents.created_at). */
   since?: string;

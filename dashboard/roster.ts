@@ -1,8 +1,8 @@
 // The crew as the Control Room shows it, built from data (docs/agent-roster.md): each agent's row in
 // `agents` (role, avatar, since, by hand only), its live saved version (name, job, tools, cost cap),
 // its recent runs (what a run costs), its seat on the org chart (its role when the row has none) and
-// Crew > Schedule (when it runs). No agent is written in code; the planned seats that have no agent
-// yet come from the org's template pack (core/install.ts plannedSeats). Pure: no database, so `npm run check:roster` can test it.
+// Crew > Schedule (when it runs). No agent is written in code; a seat with no agent yet is an open
+// seat on the org chart. Pure: no database, so `npm run check:roster` can test it.
 import type { CrewMember, Schedule, Tier } from "./crew";
 import type { Chain } from "@/core/flow-rules";
 
@@ -53,7 +53,7 @@ export function memberOf(row: RosterRow, spec: RosterSpec | null, o: { tools: Re
     role: row.role?.trim() || o.seatTitle || "Built in the app",
     icon: row.icon || "cpu",
     hue: row.hue || hueFor(row.id),
-    tier, mandate: job, job, built: !!spec,
+    tier, mandate: job, job,
     since: sinceLabel(row.created_at),
     estCostLabel: costLabel(o.avgCost, spec?.maxCostUsd),
     writes: hands.length ? hands.join(", ") : "its result, saved for other agents to read",
@@ -65,13 +65,9 @@ export function memberOf(row: RosterRow, spec: RosterSpec | null, o: { tools: Re
   };
 }
 
-/** Every agent with a live version (in the order given: oldest first), then the planned seats that no agent with the same id has taken. */
-export function buildCrew(members: CrewMember[], plannedSeats: readonly CrewMember[] = []): { crew: CrewMember[]; built: CrewMember[]; planned: CrewMember[]; byId: Record<string, CrewMember> } {
-  const built = members.filter((m) => m.built);
-  const ids = new Set(built.map((m) => m.id));
-  const planned = plannedSeats.filter((p) => !ids.has(p.id));
-  const crew = [...built, ...planned];
-  return { crew, built, planned, byId: Object.fromEntries(crew.map((m) => [m.id, m])) };
+/** Every agent with a live version, in the order given (oldest first), and the same by id. */
+export function buildCrew(members: CrewMember[]): { crew: CrewMember[]; byId: Record<string, CrewMember> } {
+  return { crew: members, byId: Object.fromEntries(members.map((m) => [m.id, m])) };
 }
 
 /** Average cost of an agent's last real runs (finished, not a try), or null when it has none. */

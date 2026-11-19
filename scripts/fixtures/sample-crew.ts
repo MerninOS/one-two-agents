@@ -1,13 +1,13 @@
 // A small made-up crew for the installer's checks (check:install): two departments, a chief of
-// staff, a head and a specialist, using only core tools and measures. Not a template pack.
-import type { PackCrew } from "../../templates/types";
+// staff, a head and a specialist, using only core tools and measures. Not a template.
+import type { Crew } from "../../core/template-rules";
 
 const spec = (name: string, tools: string[], directive: string) => ({
   name, model: "claude-haiku-5-5", effort: "low", tools, limits: { maxSteps: 8, maxCostUsd: 0.25 },
   mandate: `${name}'s job`, directive, goodResult: "", notionPages: [], outputName: name, readsFrom: [], reportPage: null,
 });
 
-export const SAMPLE_CREW: PackCrew = {
+export const SAMPLE_CREW: Crew = {
   departments: [
     { id: "finance", name: "Finance", sort: 1, lead_checks_drafts: false },
     { id: "sales", name: "Sales", sort: 2, lead_checks_drafts: true },

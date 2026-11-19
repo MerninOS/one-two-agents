@@ -1,15 +1,13 @@
 // Every tool our own Shopify MCP server serves (docs/mcp-everywhere.md, slice 7): core's
-// (core/shopify-rules.ts) and each template pack's (templates/registry.ts), one fixed read query
-// each. Pure, so `npm run check:mcp` can test them. The Shopify profile's read tools
+// (core/shopify-rules.ts), one fixed read query each. Pure, so `npm run check:mcp` can test them. The Shopify profile's read tools
 // (core/mcp-rules.ts) are exactly these names.
 import { CORE_SHOPIFY, type ShopifyCtx, type ShopifyQuery } from "@/core/shopify-rules";
-import { PACK_SHOPIFY } from "@/templates/registry";
 
 export { WHO, assertReadOnly, gql, shopifyKeyKind, writeScopes } from "@/core/shopify-rules";
 
-/** Core's tools, then each pack's. A pack never replaces a core tool or another pack's. */
+/** Core's tools, each named shopify_… and served once. */
 export const SHOPIFY_QUERIES: readonly ShopifyQuery[] = (() => {
-  const all = [...CORE_SHOPIFY, ...PACK_SHOPIFY];
+  const all = [...CORE_SHOPIFY];
   const seen = new Set<string>();
   for (const q of all) {
     if (!/^shopify_[a-z_]{2,60}$/.test(q.tool)) throw new Error(`${q.tool}: a Shopify tool is named shopify_…`);

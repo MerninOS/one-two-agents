@@ -1,0 +1,174 @@
+{
+  "id": "finance",
+  "name": "Finance",
+  "about": "A CFO who works out yesterday's numbers and runway each morning, and a Bookkeeper who matches receipts and suggests categories in Mercury, each as an approval card.",
+  "departments": [
+    {
+      "id": "finance",
+      "name": "Finance",
+      "sort": 1,
+      "lead_checks_drafts": true
+    }
+  ],
+  "agents": [
+    {
+      "id": "cfo",
+      "name": "Morgan",
+      "role": "CFO",
+      "model": "claude-sonnet-5-5",
+      "icon": "calculator",
+      "hue": "#6CC69A",
+      "daily_budget_usd": 0.5,
+      "manual_only": false
+    },
+    {
+      "id": "bookkeeper",
+      "name": "Quinn",
+      "role": "Bookkeeper",
+      "model": "claude-sonnet-5-5",
+      "icon": "receipt",
+      "hue": "#F6B8C9",
+      "daily_budget_usd": 1,
+      "manual_only": false
+    }
+  ],
+  "specs": {
+    "cfo": {
+      "name": "Morgan",
+      "model": "claude-sonnet-5-5",
+      "effort": "medium",
+      "tools": [
+        "calc_daily_snapshot",
+        "calc_burn_rate",
+        "report_kpi_snapshot",
+        "goal_progress",
+        "week_plan",
+        "plan_week",
+        "propose"
+      ],
+      "limits": {
+        "maxSteps": 12,
+        "maxCostUsd": 0.75
+      },
+      "mandate": "Yesterday's numbers in code, saved to the daily numbers, and a line on burn rate",
+      "directive": "Each morning, write one or two short plain sentences for the owner on the burn rate and runway and what is driving them, using only the numbers from Burn rate and runway and the Daily numbers snapshot. Do not restate every number; say what matters. Then list the key numbers in finish: revenue, orders, cash, net burn per 30 days and runway months when there is one.\n\nEach week, read This week first. When there is no plan for this week yet, plan it: read Goal progress, then hand in one line per job with Plan and review (who: a teammate under you, an open seat in your department, or the owner; at most 8 lines, one per teammate) and write the plan in your result. When this week's plan exists, review it: hand in no lines, and say in your result how your team did against the plan and the goals. If the plan needs someone your department doesn't have, propose a hire to the owner with Propose to the owner. Plans and focus notes are words only: they never let anyone send, buy or post.",
+      "goodResult": "On a daily run, two sentences at most. On a planning or review run, the plan or the review in a few short lines. Every number exactly as a tool gave it.",
+      "outputName": "daily numbers",
+      "readsFrom": [],
+      "reportPage": null,
+      "notionPages": []
+    },
+    "bookkeeper": {
+      "name": "Quinn",
+      "model": "claude-sonnet-5-5",
+      "effort": "medium",
+      "tools": [
+        "mercury_charges",
+        "mercury_categories",
+        "mercury_propose_annotation",
+        "report_books_sync"
+      ],
+      "limits": {
+        "maxSteps": 14,
+        "maxCostUsd": 0.3
+      },
+      "mandate": "Receipts matched to Mercury charges and categories suggested, each as an approval card",
+      "directive": "You keep the books for the business (see what it does in About the business). Code has already synced the charges and matched receipts (Sync the books and match receipts). Your part is categories.\n\nFor each charge in Charges that is money out (amountUsd below 0), has no category, is not marked categoryProposed, and is not a transfer between the business's own accounts, propose the one category from Expense categories that fits best with Propose a category or memo on a charge, with a one-line why. Newest first, at most 10. No memos.\n\nLeave a charge out when it could be personal, is ambiguous, or nothing fits: the owner reviews every suggestion, and a wrong category costs more than a blank one.\n\nThen call finish with one line: how many you proposed and how many you left for the owner.",
+      "goodResult": "Only categories from Expense categories, only on charges with none, each with a one-line why. Blank rather than a guess.",
+      "outputName": "books",
+      "readsFrom": [],
+      "reportPage": null,
+      "notionPages": []
+    }
+  },
+  "playbooks": {
+    "cfo": [
+      {
+        "tool": "calc_burn_rate",
+        "input": {
+          "days": 90
+        }
+      },
+      {
+        "tool": "calc_daily_snapshot",
+        "input": {
+          "days": 1
+        }
+      }
+    ],
+    "bookkeeper": [
+      {
+        "tool": "mercury_charges",
+        "input": {
+          "days": 30
+        }
+      },
+      {
+        "tool": "mercury_categories",
+        "input": {}
+      }
+    ]
+  },
+  "seats": [
+    {
+      "key": "cfo",
+      "parent": null,
+      "department": "finance",
+      "title": "CFO",
+      "sub": "Numbers, runway",
+      "holder": "agent",
+      "agent": "cfo",
+      "sort": 0
+    },
+    {
+      "key": "bookkeeper",
+      "parent": "cfo",
+      "department": "finance",
+      "title": "Bookkeeper",
+      "sub": "Receipts, categories",
+      "holder": "agent",
+      "agent": "bookkeeper",
+      "sort": 1
+    }
+  ],
+  "chains": [
+    {
+      "on": false,
+      "key": "morning",
+      "name": "Morning",
+      "start": {
+        "days": "daily",
+        "time": "07:00",
+        "type": "schedule"
+      },
+      "steps": [
+        {
+          "agent": "cfo"
+        }
+      ]
+    },
+    {
+      "on": false,
+      "key": "solo-bookkeeper",
+      "name": "Books",
+      "start": {
+        "days": "weekdays",
+        "time": "06:30",
+        "type": "schedule"
+      },
+      "steps": [
+        {
+          "agent": "bookkeeper"
+        }
+      ]
+    }
+  ],
+  "goals": [
+    {
+      "department": "finance",
+      "title": "Grow months of runway to 1 year",
+      "measure": "runway_months",
+      "target": 12
+    }
+  ]
+}

@@ -9,7 +9,7 @@ type Q = { agent?: string; status?: string; trigger?: string; q?: string };
 export default async function Runs({ searchParams }: { searchParams: Promise<Q> }) {
   const sp = await searchParams;
   const f = await getFloor();
-  const agent = f.built.some((a) => a.id === sp.agent) ? sp.agent! : "all";
+  const agent = f.crew.some((a) => a.id === sp.agent) ? sp.agent! : "all";
   const status = ["ok", "failed", "skipped", "running"].includes(sp.status ?? "") ? sp.status! : "all";
   const trigger = ["cron", "manual", "approval", "chain"].includes(sp.trigger ?? "") ? sp.trigger! : "all";
   const q = (sp.q ?? "").trim().slice(0, 100);
@@ -32,7 +32,7 @@ export default async function Runs({ searchParams }: { searchParams: Promise<Q> 
     <>
       <div style={{ display: "flex", flexDirection: "column", gap: 4 }}><h1 className="h1">Runs</h1><span style={{ fontSize: 13.5 }} className="muted">Every real run, every agent, last 60 days. Tap one to replay it. Dry runs and tries from the builder aren’t listed here.</span></div>
       <div className="row wrap" style={{ gap: 14 }}>
-        {seg("agent", agent, [["all", "All agents"], ...f.built.map((a) => [a.id, a.name] as [string, string])])}
+        {seg("agent", agent, [["all", "All agents"], ...f.crew.map((a) => [a.id, a.name] as [string, string])])}
         {seg("status", status, [["all", "Any status"], ["ok", "OK"], ["failed", "Failed"], ["skipped", "Skipped"]])}
         {seg("trigger", trigger, [["all", "Any trigger"], ["cron", "Schedule"], ["manual", "Manual"], ["approval", "Approval"], ["chain", "Chain"]])}
         <form action="/runs" style={{ flex: 1, minWidth: 200, display: "flex" }}>

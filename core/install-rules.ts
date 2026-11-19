@@ -1,18 +1,18 @@
-// What installing a template pack's crew into an org writes (core/install.ts, docs/templates.md),
+// What installing picked department templates into an org writes (core/install.ts, docs/templates.md),
 // worked out in code with no database, so check:install can test it. Always switched off: every
 // agent off duty, every chain off, every playbook proposed for the owner to approve, goals with no
-// due date. Specs pick only from code (readSpec), so a pack can never give an agent a new ability.
+// due date. Specs pick only from code (readSpec), so a template can never give an agent a new ability.
 import { randomUUID } from "node:crypto";
 import { readSpec } from "@/core/agent-spec";
 import { readFlow, type Flow } from "@/core/flow-rules";
 import { measureOf } from "@/core/goal-rules";
 import { TOOLS } from "@/core/tools/catalog";
-import type { PackCrew } from "@/templates/types";
+import type { Crew } from "@/core/template-rules";
 
 const ID = /^[a-z0-9_]{1,60}$/;
 
-/** Everything wrong with a pack's crew. An install refuses a crew with any problem. */
-export function crewProblems(crew: PackCrew): string[] {
+/** Everything wrong with a crew. An install refuses a crew with any problem. */
+export function crewProblems(crew: Crew): string[] {
   const out: string[] = [];
   const depts = new Set(crew.departments.map((d) => d.id));
   const agents = new Set(crew.agents.map((a) => a.id));
@@ -78,10 +78,10 @@ export interface InstallRows {
 }
 
 /** The rows an install writes, in the order it writes them. Throws on a crew with problems. */
-export function installRows(packId: string, crew: PackCrew, makeId: () => string = randomUUID): InstallRows {
+export function installRows(from: string, crew: Crew, makeId: () => string = randomUUID): InstallRows {
   const problems = crewProblems(crew);
-  if (problems.length) throw new Error(`The ${packId} pack's crew can't be installed: ${problems.join("; ")}`);
-  const by = `template:${packId}`;
+  if (problems.length) throw new Error(`These templates can't be installed: ${problems.join("; ")}`);
+  const by = `template:${from}`;
   const ids = new Map(crew.seats.map((s) => [s.key, makeId()]));
   const placed = new Set<string>(), seats: Record<string, unknown>[] = [];
   while (placed.size < crew.seats.length) {
@@ -95,10 +95,10 @@ export function installRows(packId: string, crew: PackCrew, makeId: () => string
   return {
     departments: crew.departments.map((d) => ({ id: d.id, name: d.name, sort: d.sort, lead_checks_drafts: d.lead_checks_drafts })),
     agents: crew.agents.map((a) => ({ id: a.id, name: a.name, role: a.role, model: a.model, icon: a.icon, hue: a.hue, daily_budget_usd: a.daily_budget_usd, manual_only: a.manual_only, enabled: false, in_org: true })),
-    agent_defs: crew.agents.map((a) => ({ agent_id: a.id, version: 1, spec: readSpec(crew.specs[a.id], a.id).spec, note: `From the ${packId} template`, created_by: by, active: true })),
-    agent_playbooks: Object.entries(crew.playbooks).map(([agentId, steps]) => ({ agent_id: agentId, version: 1, steps, status: "proposed", changes: `From the ${packId} template`, auto: false })),
+    agent_defs: crew.agents.map((a) => ({ agent_id: a.id, version: 1, spec: readSpec(crew.specs[a.id], a.id).spec, note: `From the ${from} template`, created_by: by, active: true })),
+    agent_playbooks: Object.entries(crew.playbooks).map(([agentId, steps]) => ({ agent_id: agentId, version: 1, steps, status: "proposed", changes: `From the ${from} template`, auto: false })),
     seats,
-    crew_flow: [{ version: 1, flow: { chains: flow.chains.map((c) => ({ ...c, on: false })) }, note: `From the ${packId} template`, created_by: by, active: true }],
+    crew_flow: [{ version: 1, flow: { chains: flow.chains.map((c) => ({ ...c, on: false })) }, note: `From the ${from} template`, created_by: by, active: true }],
     goals: crew.goals.map((g) => ({ department_id: g.department, title: g.title, measure: g.measure, target: g.target, start_value: null, due_on: null, state: "active" })),
   };
 }

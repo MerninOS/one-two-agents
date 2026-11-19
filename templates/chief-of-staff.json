@@ -1,0 +1,101 @@
+{
+  "id": "chief-of-staff",
+  "name": "Chief of Staff",
+  "about": "The company seat under you: reads every department and sends you one morning brief with today's focus, what's waiting on you and the numbers.",
+  "departments": [],
+  "agents": [
+    {
+      "id": "chief_of_staff",
+      "name": "Avery",
+      "role": "Chief of Staff",
+      "model": "claude-sonnet-5-5",
+      "icon": "clipboard-list",
+      "hue": "#F2884B",
+      "daily_budget_usd": 3,
+      "manual_only": false
+    }
+  ],
+  "specs": {
+    "chief_of_staff": {
+      "name": "Avery",
+      "model": "claude-sonnet-5-5",
+      "effort": "medium",
+      "tools": [
+        "kpi_snapshots",
+        "shopify_open_orders",
+        "department_reports",
+        "approvals_waiting",
+        "report_morning_brief"
+      ],
+      "limits": {
+        "maxSteps": 8,
+        "maxCostUsd": 0.3
+      },
+      "mandate": "One morning brief for the owner: today's focus, what is waiting, the numbers, what to watch",
+      "directive": "You are the Chief of Staff for the business (see what it does in About the business). Each weekday morning, read today's facts with your tools and write the Watch list and one recommended focus for the owner.\n\n- Watch items are things that need attention or could go wrong soon: orders waiting too long, an agent run that failed, a goal falling behind, a sharp change in a number. At most five, one short plain sentence each. None is fine on a quiet day.\n- The focus is the single most useful thing the owner could do today, with the reason in one sentence. Prefer revenue and anything that blocks customers' orders.\n- Plain, direct words. No flattery, no exclamation marks.\n\nHand in your result in exactly this shape, one item per line:\nFocus: <the one action>. <why, in one sentence>\n- <a watch item>\n- <another watch item>\n\nCode builds the brief email and the Briefs row from your Focus and Watch lines plus the numbers and each department's goal status, which it works out itself.",
+      "goodResult": "A Focus line, then up to five lines starting with \"- \". Every number exactly as a tool gave it.",
+      "outputName": "morning brief",
+      "readsFrom": [],
+      "reportPage": null,
+      "notionPages": []
+    }
+  },
+  "playbooks": {
+    "chief_of_staff": [
+      {
+        "tool": "kpi_snapshots",
+        "input": {
+          "days": 8
+        }
+      },
+      {
+        "tool": "shopify_open_orders",
+        "input": {}
+      },
+      {
+        "tool": "department_reports",
+        "input": {
+          "days": 1
+        }
+      },
+      {
+        "tool": "approvals_waiting",
+        "input": {}
+      }
+    ]
+  },
+  "seats": [
+    {
+      "key": "chief_of_staff",
+      "parent": null,
+      "department": null,
+      "title": "Chief of Staff",
+      "sub": "Reads each department, writes your brief",
+      "holder": "agent",
+      "agent": "chief_of_staff",
+      "sort": 0
+    }
+  ],
+  "chains": [
+    {
+      "on": false,
+      "key": "morning",
+      "name": "Morning",
+      "start": {
+        "days": "daily",
+        "time": "07:00",
+        "type": "schedule"
+      },
+      "steps": [
+        {
+          "days": "weekdays",
+          "when": "any",
+          "agent": "chief_of_staff",
+          "notBefore": "07:30",
+          "passAlong": true
+        }
+      ]
+    }
+  ],
+  "goals": []
+}

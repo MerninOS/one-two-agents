@@ -1,5 +1,5 @@
 {
-  "name": "one-two-agents",
+  "name": "operator",
   "version": "0.1.0",
   "private": true,
   "license": "AGPL-3.0-only",
@@ -25,7 +25,7 @@
     "check:tenancy": "npx --yes tsx scripts/check-tenancy.ts",
     "check:roles": "npx --yes tsx scripts/check-roles.ts",
     "check:jobs": "npx --yes tsx scripts/check-jobs.ts",
-    "check:packs": "npx --yes tsx scripts/check-packs.ts",
+    "check:templates": "npx --yes tsx --conditions=react-server scripts/check-templates.ts",
     "check:install": "npx --yes tsx --conditions=react-server scripts/check-install.ts",
     "check:audit": "npx --yes tsx scripts/check-audit.ts",
     "check:traces": "npx --yes tsx scripts/check-traces.ts",
@@ -40,7 +40,6 @@
     "check:daily-numbers": "npx --yes tsx scripts/check-daily-numbers.ts",
     "check:brief": "npx --yes tsx scripts/check-brief.ts",
     "check:ee": "npx --yes tsx ee/check.ts",
-    "check:pack-one-two": "npx --yes tsx --conditions=react-server templates/one-two/check.ts",
     "check:all": "node scripts/check-all.mjs",
     "org:new": "npx --yes tsx --conditions=react-server --env-file=.env.local scripts/new-org.ts",
     "check": "npm run typecheck && npm run lint && npm run validate:graphql"

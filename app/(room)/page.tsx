@@ -13,8 +13,8 @@ import { listProposals } from "@/core/proposals";
 import { KIND_WORDS } from "@/core/proposal-rules";
 import { agentNames } from "@/core/org";
 import { Icon } from "@/dashboard/components/Icon";
-import { ActionButton } from "@/dashboard/components/client";
-import { crewPacks } from "@/core/install";
+import { TemplatePicker } from "@/dashboard/components/client";
+import { templateList } from "@/core/templates";
 import { installTemplate } from "@/dashboard/orgActions";
 
 // The Desk (docs/company-mode.md, slice 5): home. Goals with where each stands and its head's latest
@@ -50,8 +50,8 @@ export default async function Desk() {
   const rest = open.filter((x) => x.href !== "/proposals");
   const groups = groupByDepartment(rest, (id) => (org ? deptOf(org, id) : null));
   const props = pending ?? [];
-  // a fresh org (no departments, no agents): start from a template pack's crew, or build from nothing
-  const fresh = f.ok && !!org && org.departments.length === 0 && f.built.length === 0;
+  // a fresh org (no departments, no agents): start from department templates, or build from nothing
+  const fresh = f.ok && !!org && org.departments.length === 0 && f.crew.length === 0;
 
   return (
     <>
@@ -66,13 +66,8 @@ export default async function Desk() {
       {fresh && (
         <section className="card" style={{ gap: 12 }} aria-labelledby="start-h">
           <h2 id="start-h" className="card-t">Start your crew</h2>
-          <span className="sub">Begin from a template: its departments, org chart, agents, routines and goals, every agent off duty until you approve its playbook. Or start empty and build each agent yourself. First, name the business on Settings: every agent is told who it works for.</span>
-          {crewPacks().map((p) => (
-            <div key={p.id} className="row wrap rule" style={{ gap: 12, justifyContent: "space-between", paddingTop: 12 }}>
-              <span style={{ display: "flex", flexDirection: "column", gap: 2, minWidth: 0, flex: 1 }}><b style={{ fontSize: 14 }}>{p.name}</b><span className="sub">{p.about}</span></span>
-              <ActionButton className="btn dark sm" action={installTemplate.bind(null, p.id)} confirm={{ title: `Start from ${p.name}?`, body: "Installs its departments, org chart, agents, routines and goals into this business. Nothing runs: every agent is off duty, every routine off, and each playbook waits for your approval.", confirmLabel: "Install", kind: "dark" }}>Use this template</ActionButton>
-            </div>
-          ))}
+          <span className="sub">Pick the departments to start from: each brings its seats on the org chart, agents, routines and a goal, every agent off duty until you approve its playbook. Or start empty and build each agent yourself. First, name the business on Settings: every agent is told who it works for.</span>
+          <TemplatePicker templates={templateList()} install={installTemplate} />
           <div className="row wrap rule" style={{ gap: 12, justifyContent: "space-between", paddingTop: 12 }}>
             <span style={{ display: "flex", flexDirection: "column", gap: 2 }}><b style={{ fontSize: 14 }}>Start empty</b><span className="sub">Add departments on Crew &gt; Org chart and build each agent in the builder.</span></span>
             <Link href="/build" className="btn outline sm">Build an agent</Link>

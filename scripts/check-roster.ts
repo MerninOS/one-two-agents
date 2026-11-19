@@ -14,7 +14,6 @@ const reese = memberOf({ id: "b_reese", name: "Reese", role: "", icon: null, hue
   { tools, avgCost: null, seatTitle: "Head of sales", chains: [morning] });
 assert.equal(reese.name, "Rico");
 assert.equal(reese.role, "Head of sales");
-assert.equal(reese.built, true);
 assert.equal(reese.tier, "Report");
 assert.equal(reese.icon, "cpu");
 assert.equal(reese.hue, hueFor("b_reese"));
@@ -33,7 +32,7 @@ assert.deepEqual(rowan.schedule, { kind: "manual" });
 assert.equal(memberOf({ id: "x", name: "X" }, { tools: [] }, { tools, avgCost: null, seatTitle: null, chains: [] }).role, "Built in the app");
 // before the roster migration there is no manual_only column: count it as by hand only
 assert.equal(memberOf({ id: "x", name: "X" }, { tools: [] }, { tools, avgCost: null, seatTitle: null, chains: [] }).manualOnly, true);
-assert.equal(memberOf({ id: "x", name: "X" }, null, { tools, avgCost: null, seatTitle: null, chains: [] }).built, false);
+assert.equal(memberOf({ id: "x", name: "X" }, null, { tools, avgCost: null, seatTitle: null, chains: [] }).job, "No job line yet");
 
 assert.equal(costLabel(0, 0.5), "$0");
 assert.equal(costLabel(0.0031, 0.5), "About $0.003");
@@ -51,14 +50,11 @@ assert.equal(avgCostOf([], "a"), null);
 // a chain on, preferred over an off one
 assert.equal(scheduleOf("cfo", [{ ...morning, key: "off", name: "Off", on: false, start: { type: "schedule", days: "weekdays", time: "09:00" } }, morning]).chain, "Morning");
 
-// the roster: agents first, then planned seats no agent has taken
-const PLANNED = [{ ...memberOf({ id: "blend_coach", name: "Coach" }, null, { tools, avgCost: null, seatTitle: "Coach", chains: [] }), built: false }, { ...memberOf({ id: "scout", name: "Scout" }, null, { tools, avgCost: null, seatTitle: "Scout", chains: [] }), built: false }];
-const r = buildCrew([reese, rowan, { ...PLANNED[0], id: "blend_coach", built: true }], PLANNED);
-assert.equal(r.built.length, 3);
-assert.equal(r.planned.some((p) => p.id === "blend_coach"), false);
-assert.equal(r.planned.length, PLANNED.length - 1);
+// the roster: every agent with a live version, in order; no planned seats (card 134: a seat with no agent is open)
+const r = buildCrew([reese, rowan]);
+assert.deepEqual(r.crew.map((m) => m.id), [reese.id, rowan.id]);
 assert.equal(r.byId.b_reese.name, "Rico");
-assert.equal(buildCrew([reese]).planned.length, 0, "no pack, no planned seats");
+assert.deepEqual(Object.keys(r).sort(), ["byId", "crew"]);
 
 // the flow picks from the crew; an agent that runs only by hand needs a Run chain start; any agent reads a hand-off
 const crew: Crew = { ids: ["b_reese", "cfo", "wholesale_hunter"], manualOnly: new Set(["wholesale_hunter"]) };

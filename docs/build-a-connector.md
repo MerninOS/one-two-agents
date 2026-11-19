@@ -31,8 +31,7 @@ Add an entry to `MCP_SERVERS` in `core/mcp-rules.ts`:
 
 ## 3. Tools agents see
 
-Give each read tool an entry in `core/tools/catalog.ts` (or a template pack's tools,
-`docs/templates.md`) with plain inputs. A tool's reply is untrusted data: it never chooses a
+Give each read tool an entry in `core/tools/catalog.ts` with plain inputs. A tool's reply is untrusted data: it never chooses a
 recipient, URL, product or category.
 
 ## 4. Test without an account
