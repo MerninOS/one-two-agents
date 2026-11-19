@@ -39,7 +39,7 @@ const q = CORE_SHOPIFY.find((x) => x.tool === "shopify_product_facts")!;
 assert.ok(q, "shopify_product_facts is a core Shopify tool");
 assert.doesNotThrow(() => assertReadOnly(q.doc));
 assert.ok(!/\b(email|phone|address|firstName|lastName|displayName|customer|order|cost|unitCost|inventoryItem)\b/i.test(q.doc), "reads no customer, order or cost data");
-const ctx = { stockCollection: "", productCollections: ["our-coffees", "wholesale"], productFields: ["custom.origin"] };
+const ctx = { productCollections: ["our-coffees", "wholesale"], productFields: ["custom.origin"] };
 const ok = shopifyVariables("shopify_product_facts", { collection: " Our-Coffees " }, ctx);
 assert.ok(!("problem" in ok) && ok.variables.handle === "our-coffees" && JSON.stringify(ok.variables.keys) === '["custom.origin"]');
 const other = shopifyVariables("shopify_product_facts", { collection: "secret-drops" }, ctx);

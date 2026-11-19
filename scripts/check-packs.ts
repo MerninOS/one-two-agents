@@ -56,9 +56,10 @@ assert.match(catalog, /\[\.\.\.TOOLS_LIST, \.\.\.packTools\(\)\]/, "the tool lis
 const tenancy = readFileSync("core/tenancy.ts", "utf8");
 let tables = 0, tools = 0;
 const seenTools = new Set<string>();
+// templates/registry.ts lists a pack's pure parts (Shopify reads, measure definitions) only when it has some.
+for (const m of pureRegistry.matchAll(/from "\.\/([a-z0-9-]+)\//g)) assert.ok(packDirs().includes(m[1]), `templates/registry.ts lists templates/${m[1]}, which isn't a pack`);
 for (const d of packDirs()) {
   assert.match(registry, new RegExp(`from "\\./${d}"`), `templates/${d} is a pack, so templates/index.ts registers it`);
-  assert.match(pureRegistry, new RegExp(`from "\\./${d}/`), `templates/${d} is a pack, so templates/registry.ts lists its pure parts`);
   // A pack's own tables are tenant tables like any other, and only the pack reads or writes them.
   const own = packTables(d);
   for (const t of own) {

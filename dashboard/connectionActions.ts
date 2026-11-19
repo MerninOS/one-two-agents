@@ -150,13 +150,13 @@ export async function customToolOn(id: string, tool: string, label: string, line
 }
 
 /** Uses a turned-on tool as a goal number, or stops (`f` null). Owner, Controls on to set one; stopping is always allowed. */
-export async function customNumber(id: string, tool: string, f: { field: string; label: string; unit: string; shape: string } | null): Promise<ActionResult> {
+export async function customNumber(id: string, tool: string, f: { field: string; label: string; unit: string; shape: string; brief?: boolean } | null): Promise<ActionResult> {
   const { me, no } = await asRole("owner"); if (no) return no;
   if (f && !controlsOn()) return CONTROLS_OFF;
   if (!isCustomId(id)) return unknown;
   if (typeof tool !== "string" || tool.length > 120 || (f != null && typeof f !== "object")) return { ok: false, text: "That isn’t a tool." };
   try {
-    await setCustomNumber(id, tool, f ? { field: f.field, label: f.label, unit: f.unit, shape: f.shape } : null);
+    await setCustomNumber(id, tool, f ? { field: f.field, label: f.label, unit: f.unit, shape: f.shape, brief: f.brief === true } : null);
     await audit(me, f ? "custom_goal_number" : "custom_goal_number_off", id, { tool, ...(f ? { field: String(f.field).slice(0, 80) } : {}) });
     return done(f ? "Saved. It shows in the goal picker under From your own tools." : "No longer a goal number. Goals on it show No measure yet.");
   } catch (e) { return fail(e); }

@@ -146,8 +146,8 @@ target, `start_value`, `due_on`, state active / paused / done / dropped, `paced_
 department removes its goals. Until it's applied, Crew and Today say so and Set a goal refuses.
 
 **Code.** `core/goal-rules.ts` (pure: the list, `planGoal`, `progress`), `core/measures.ts`,
-`core/goals.ts` (store, `goalProgress` for the tool), `templates/<pack>/green.ts` and `core/money.ts` (moved
-out of the tool list so the tools and the measures share one copy), `templates/<pack>/agents/cfo` `ordersBetween`,
+`core/goals.ts` (store, `goalProgress` for the tool), `core/money.ts` (moved out of the tool list so
+the tools and the measures share one copy), `integrations/shopify/orders.ts` `ordersBetween`,
 `dashboard/goals.ts`, `dashboard/goalActions.ts`, `dashboard/components/goals.tsx`,
 `dashboard/components/GoalForm.tsx`, `app/(room)/goals/`.
 

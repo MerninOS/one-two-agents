@@ -151,6 +151,48 @@ export function WhereForm({ initial, starting, owners, canEdit, save }: { initia
   );
 }
 
+type CostKey = "costSource" | "costNumber";
+
+/**
+ * Daily numbers (docs/daily-numbers.md): where cost of goods, and so margin, comes from. None,
+ * Shopify's unit cost, or a number in dollars from the business's own tool. Owners only.
+ */
+export function DailyNumbersForm({ initial, numbers, canEdit, save }: { initial: Record<CostKey, string>; numbers: { key: string; label: string }[]; canEdit: boolean; save: (f: Record<CostKey, string>) => Promise<ActionResult> }) {
+  const [f, setF] = useState(initial);
+  const { busy, run, toast } = useAct();
+  const changed = f.costSource !== initial.costSource || (f.costSource === "own" && f.costNumber !== initial.costNumber);
+  return (
+    <div className="stack" style={{ gap: 10 }}>
+      <label style={{ display: "flex", flexDirection: "column", gap: 4, fontSize: 13 }} className="ink2">
+        Cost of goods comes from
+        <select className="input" aria-label="Cost of goods comes from" value={f.costSource} disabled={!canEdit} onChange={(e) => setF({ ...f, costSource: e.target.value })}>
+          <option value="none">Nowhere: leave cost and margin out</option>
+          <option value="shopify">Shopify’s unit cost on each product</option>
+          <option value="own" disabled={!numbers.length}>A number from your own tool{numbers.length ? "" : " (none in dollars yet)"}</option>
+        </select>
+        <span className="muted" style={{ fontSize: 12 }}>{f.costSource === "shopify"
+          ? "Each line’s quantity times the cost on its product in Shopify today, not on the day of the order. The read-only app needs to be able to read inventory."
+          : f.costSource === "own"
+            ? "A number in dollars from a tool you turned on (Connections › Your servers › Use as a goal number). Code reads it each morning for yesterday."
+            : "Revenue, orders, average order, repeat rate and cash are read either way."}</span>
+      </label>
+      {f.costSource === "own" && (
+        <label style={{ display: "flex", flexDirection: "column", gap: 4, fontSize: 13 }} className="ink2">
+          The number
+          <select className="input" aria-label="The number" value={f.costNumber} disabled={!canEdit} onChange={(e) => setF({ ...f, costNumber: e.target.value })}>
+            <option value="">Pick one</option>
+            {numbers.map((n) => <option key={n.key} value={n.key}>{n.label}</option>)}
+          </select>
+        </label>
+      )}
+      <div className="row" style={{ gap: 8, justifyContent: "flex-end" }}>
+        <button className="btn dark sm" disabled={busy || !canEdit || !changed || (f.costSource === "own" && !f.costNumber)} title={canEdit ? "The next daily numbers use it" : "Owners only"} onClick={() => run(() => save(f))}>{busy ? "Saving…" : "Save"}</button>
+      </div>
+      {toast}
+    </div>
+  );
+}
+
 type ProductKey = "productCollections" | "productFields" | "offerTerms";
 
 /**

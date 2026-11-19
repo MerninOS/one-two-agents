@@ -12,6 +12,8 @@ export type OrderLines = { nodes: { quantity: number; sku: string | null; varian
 type Money = { shopMoney: { amount: string } };
 export type DayOrder = {
   id: string; name: string; tags: string[]; cancelledAt: string | null;
+  /** Shopify's own sales channel for the order ("web", "pos", "shopify_draft_order", an app's id). */
+  sourceName?: string | null;
   totalPriceSet: Money; subtotalPriceSet: Money | null;
   customer: { numberOfOrders: string } | null;
   lineItems: OrderLines;
@@ -28,5 +30,37 @@ export async function ordersBetween<T extends DayOrder = DayOrder>(start: string
     out.push(...r.orders.nodes);
     after = r.orders.pageInfo.hasNextPage ? r.orders.pageInfo.endCursor : null;
   } while (after && ++pages < 20);
+  return out.filter((o) => !o.cancelledAt);
+}
+
+// ---------- unit costs (cost of goods from Shopify, docs/daily-numbers.md) ----------
+export type CostOrder = { cancelledAt: string | null; lineItems: { nodes: { quantity: number; variant: { inventoryItem: { unitCost: { amount: string } | null } | null } | null }[] } };
+
+/** The same days' orders with each line's quantity and its product's unit cost in Shopify today. Cancelled ones left out. */
+export async function orderCostsBetween(start: string, endExclusive: string): Promise<CostOrder[]> {
+  const out: CostOrder[] = [];
+  let after: string | null = null, pages = 0;
+  do {
+    type R = { orders: { nodes: CostOrder[]; pageInfo: { hasNextPage: boolean; endCursor: string | null } } };
+    const r = (await callMcpTool("shopify", "shopify_order_costs", { start, end: endExclusive, after })) as R;
+    out.push(...r.orders.nodes);
+    after = r.orders.pageInfo.hasNextPage ? r.orders.pageInfo.endCursor : null;
+  } while (after && ++pages < 20);
+  return out.filter((o) => !o.cancelledAt);
+}
+
+// ---------- open orders (the morning brief) ----------
+export type OpenOrder = { name: string; cancelledAt: string | null; displayFulfillmentStatus: string };
+
+/** Open orders placed since a day that aren't fully shipped: number and Shopify's fulfillment status. */
+export async function openOrders(since: string): Promise<OpenOrder[]> {
+  const out: OpenOrder[] = [];
+  let after: string | null = null, pages = 0;
+  do {
+    type R = { orders: { nodes: OpenOrder[]; pageInfo: { hasNextPage: boolean; endCursor: string | null } } };
+    const r = (await callMcpTool("shopify", "shopify_open_orders", { since, after })) as R;
+    out.push(...r.orders.nodes);
+    after = r.orders.pageInfo.hasNextPage ? r.orders.pageInfo.endCursor : null;
+  } while (after && ++pages < 10);
   return out.filter((o) => !o.cancelledAt);
 }

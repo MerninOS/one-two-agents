@@ -3,15 +3,14 @@
 // templates/index.ts.
 import type { TemplatePack } from "@/templates/types";
 import { ONE_TWO_CREW } from "./crew";
-import { ONE_TWO_TOOLS } from "./tools";
 import { ONE_TWO_PLANNED } from "./planned";
 
 export const oneTwo: TemplatePack = {
   id: "one-two",
   name: "One Two Coffee Lab",
-  about: "A small-batch coffee roaster: daily numbers, the morning brief, books and receipts, wholesale leads.",
-  tools: ONE_TWO_TOOLS,
-  tables: ["kpi_snapshots"],
+  about: "A small-batch coffee roaster: daily numbers, the morning brief, books and receipts, wholesale leads. Its coffee numbers come from its own server (MerninOS/blended /api/agents-mcp).",
+  tools: [],
+  tables: [],
   crew: ONE_TWO_CREW,
   planned: ONE_TWO_PLANNED,
 };

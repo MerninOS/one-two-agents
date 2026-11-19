@@ -51,4 +51,5 @@ adds pack tools and `core/measures.ts` reads pack measures, both through it. A p
 public pieces (`db()`, time, the tool types, reads through `callMcpTool`) and proposes actions only
 through `core/gateway`'s front door (an approval card), never the vault, the gateway's insides, a write tool, a custom tool or one of our servers directly.
 `npm run check:packs` enforces this, checks pack tool ids, and checks that the old folders
-(`domain/`, `agents/cfo` and the rest, `core/green.ts`, the old Shopify reads) are gone.
+(`domain/`, `agents/cfo` and the rest, `core/green.ts`, the old Shopify reads) are gone. A pack
+may have no tools, tables or Shopify reads at all: its `index.ts` alone is enough.

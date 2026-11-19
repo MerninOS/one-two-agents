@@ -48,7 +48,7 @@ assert.equal(h.shopifyDomain, "mine.myshopify.com", "the org's own value wins");
 assert.equal(h.notionLeadsParent, DASHED, "leads fall back to the briefs page");
 
 // edits: the owner email is always one of the org's owners
-const edit = (p: Partial<SettingsEdit>): SettingsEdit => ({ ownerEmail: "", siteUrl: "", shopifyDomain: "", shopifyClientId: "", mercuryAccountIds: "", notionBriefParent: "", notionBriefsDb: "", notionLeadsParent: "", notionBooksParent: "", productCollections: "", productFields: "", offerTerms: "", ...p });
+const edit = (p: Partial<SettingsEdit>): SettingsEdit => ({ ownerEmail: "", siteUrl: "", shopifyDomain: "", shopifyClientId: "", mercuryAccountIds: "", notionBriefParent: "", notionBriefsDb: "", notionLeadsParent: "", notionBooksParent: "", productCollections: "", productFields: "", offerTerms: "", costSource: "", costNumber: "", ...p });
 const owners = ["owner@example.com"];
 assert.ok("problem" in checkSettingsEdit(edit({ ownerEmail: "someone@else.com" }), owners));
 assert.ok("settings" in checkSettingsEdit(edit({ ownerEmail: "Owner@Example.com" }), owners));
@@ -68,6 +68,21 @@ for (const dir of ["app", "core", "dashboard", "integrations", "agents", "templa
     assert.ok(!OLD.test(readFileSync(f, "utf8")), `${f} reads a business setting from the environment; use settings() (core/settings.ts)`);
   }
 }
+// cost of goods source (card 133.5): "own" needs a goal number key, anything else reads as none
+const KEY = "n_0123456789ab";
+assert.equal(readSettings({ costSource: "shopify" }).costSource, "shopify");
+assert.deepEqual([readSettings({ costSource: "own", costNumber: KEY }).costSource, readSettings({ costSource: "own", costNumber: KEY }).costNumber], ["own", KEY]);
+assert.equal(readSettings({ costSource: "own", costNumber: "green_cost" }).costSource, "none");
+assert.equal(readSettings({ costSource: "own" }).costSource, "none");
+assert.equal(readSettings({ costSource: "something" }).costSource, "none");
+assert.equal(readSettings({}).costSource, "none");
+assert.equal(readSettings({ costSource: "shopify", costNumber: KEY }).costNumber, null);
+assert.ok("problem" in checkSettingsEdit(edit({ costSource: "bogus" }), owners));
+assert.ok("problem" in checkSettingsEdit(edit({ costSource: "own" }), owners));
+assert.ok("problem" in checkSettingsEdit(edit({ costSource: "own", costNumber: "x" }), owners));
+const ownEdit = checkSettingsEdit(edit({ costSource: "own", costNumber: KEY }), owners);
+assert.ok("settings" in ownEdit && ownEdit.settings.costSource === "own" && ownEdit.settings.costNumber === KEY);
+assert.match(readFileSync("dashboard/orgActions.ts", "utf8"), /export async function saveDailyNumbers\([^\n]*\n\s+const \{ me, no \} = await asRole\("owner"\)/);
 // email to the owner still has no recipient argument
 assert.match(readFileSync("integrations/email.ts", "utf8"), /export async function emailOwner\(subject: string, html: string, text: string\)/);
 console.log("check:settings ok");

@@ -7,8 +7,8 @@ import { createHash } from "node:crypto";
 import type { CustomServer, CustomTool, ToolOn } from "./custom-mcp-rules";
 import type { MeasureDef, MeasureShape, Unit } from "./goal-rules";
 
-/** What the owner set on a tool to use it as a goal number. */
-export interface GoalNumber { field: string; label: string; unit: Unit; shape: Exclude<MeasureShape, "month"> }
+/** What the owner set on a tool to use it as a goal number. `brief`: also listed under Numbers in the morning brief (card 133.5). */
+export interface GoalNumber { field: string; label: string; unit: Unit; shape: Exclude<MeasureShape, "month">; brief?: true }
 
 export const NUMBER_UNITS: readonly Unit[] = ["count", "usd", "days", "months"];
 export const NUMBER_SHAPES: readonly GoalNumber["shape"][] = ["total", "floor"];
@@ -24,7 +24,7 @@ const clean = (s: unknown, max: number) => (typeof s === "string" ? s.replace(/[
 export const unpinned = (t: CustomTool, on: ToolOn): string[] => t.inputs.filter((i) => i.required && !(i.name in on.pins)).map((i) => i.name);
 
 /** Checks what the owner typed to use a tool as a goal number. */
-export function checkGoalNumber(raw: { field?: unknown; label?: unknown; unit?: unknown; shape?: unknown }, t: CustomTool, on: ToolOn): { number: GoalNumber } | { problem: string } {
+export function checkGoalNumber(raw: { field?: unknown; label?: unknown; unit?: unknown; shape?: unknown; brief?: unknown }, t: CustomTool, on: ToolOn): { number: GoalNumber } | { problem: string } {
   const field = clean(raw.field, 200);
   if (!FIELD.test(field)) return { problem: "The field is up to three names joined by dots, like numbers.lowest_days_of_cover." };
   const label = clean(raw.label, 60);
@@ -35,7 +35,8 @@ export function checkGoalNumber(raw: { field?: unknown; label?: unknown; unit?: 
   if (!NUMBER_SHAPES.includes(raw.shape as GoalNumber["shape"])) return { problem: "Pick whether it's a total to reach or a level to stay at or above." };
   const missing = unpinned(t, on);
   if (missing.length) return { problem: `Pin ${missing.join(", ")} first: code calls this tool on its own, with only the pinned inputs.` };
-  return { number: { field, label, unit: raw.unit as Unit, shape: raw.shape as GoalNumber["shape"] } };
+  const brief = raw.brief === true || raw.brief === "on";
+  return { number: { field, label, unit: raw.unit as Unit, shape: raw.shape as GoalNumber["shape"], ...(brief ? { brief: true as const } : {}) } };
 }
 
 /** The measure key for a server's tool and field: stable when the owner renames the tool or the number. */
@@ -66,6 +67,12 @@ export function numberSources(servers: readonly CustomServer[]): NumberSource[] 
   return servers.flatMap((c) => Object.entries(c.toolsOn).flatMap(([tool, on]) => on.number
     ? [{ key: numberKey(c.id, tool, on.number.field), serverId: c.id, server: c.name, tool, toolLabel: on.label, number: on.number }]
     : []));
+}
+
+/** A number as the brief shows it: "Orders to roast: 4", "Green cost: $1,234", "Cover: 21 days". */
+export function numberText(n: Pick<GoalNumber, "label" | "unit">, value: number): string {
+  const v = n.unit === "usd" ? `$${Math.round(value).toLocaleString("en-US")}` : n.unit === "count" ? Math.round(value).toLocaleString("en-US") : `${Math.round(value * 10) / 10} ${n.unit}`;
+  return `${n.label}: ${v}`;
 }
 
 /** Goal numbers as measures for the goal picker and the goal page. */

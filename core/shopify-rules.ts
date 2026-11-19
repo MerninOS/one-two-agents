@@ -14,7 +14,6 @@ type Json = Record<string, unknown>;
 export type ShopifyArgs = Json;
 /** Settings a query may use; they come from the business's settings, never a caller. */
 export type ShopifyCtx = {
-  stockCollection: string;
   /** The collections agents may read product facts from (Settings), by handle. */
   productCollections: readonly string[];
   /** The product fields (namespace.key) read with them (Settings). */
@@ -85,12 +84,38 @@ const BETWEEN = gql`
   query AgentOrdersBetween($query: String!, $after: String) {
     orders(first: 100, after: $after, sortKey: CREATED_AT, query: $query) {
       nodes {
-        id name tags cancelledAt
+        id name tags cancelledAt sourceName
         totalPriceSet { shopMoney { amount } }
         subtotalPriceSet { shopMoney { amount } }
         customer { numberOfOrders }
         lineItems(first: 100) { nodes { quantity sku variant { id } customAttributes { key value } } }
       }
+      pageInfo { hasNextPage endCursor }
+    }
+  }
+`;
+
+// The same days' orders with each line's quantity and its product's unit cost in Shopify (today's
+// cost), for cost of goods when the business picked Shopify's unit cost (docs/daily-numbers.md). A
+// separate tool, so a key that can't read inventory costs never stops the orders read above.
+const ORDER_COSTS = gql`
+  query AgentOrderCosts($query: String!, $after: String) {
+    orders(first: 100, after: $after, sortKey: CREATED_AT, query: $query) {
+      nodes {
+        cancelledAt
+        lineItems(first: 100) { nodes { quantity variant { inventoryItem { unitCost { amount } } } } }
+      }
+      pageInfo { hasNextPage endCursor }
+    }
+  }
+`;
+
+// Open orders that aren't fully shipped, by Shopify's own fulfillment status, for the morning brief.
+// Order numbers and status only: no customer, address or money fields.
+const OPEN_ORDERS = gql`
+  query AgentOpenOrders($query: String!, $after: String) {
+    orders(first: 100, after: $after, sortKey: CREATED_AT, reverse: true, query: $query) {
+      nodes { name cancelledAt displayFulfillmentStatus }
       pageInfo { hasNextPage endCursor }
     }
   }
@@ -125,6 +150,30 @@ export const CORE_SHOPIFY: readonly ShopifyQuery[] = [
       if (cur === undefined) return { problem: "after must be a cursor from the last page" };
       if (!start || !end || end <= start) return { problem: "start and end must be YYYY-MM-DD, end after start" };
       return { variables: { query: createdBetween(start, end), after: cur } };
+    },
+  },
+  {
+    tool: "shopify_order_costs",
+    description: "Orders from one day up to another, 100 a page, with each line's quantity and its product's unit cost in Shopify today. No names, addresses or prices.",
+    inputSchema: { type: "object", required: ["start", "end"], properties: { start: day, end: day, after } },
+    doc: ORDER_COSTS,
+    variables: (a) => {
+      const start = dayArg(a, "start"), end = dayArg(a, "end"), cur = afterArg(a);
+      if (cur === undefined) return { problem: "after must be a cursor from the last page" };
+      if (!start || !end || end <= start) return { problem: "start and end must be YYYY-MM-DD, end after start" };
+      return { variables: { query: createdBetween(start, end), after: cur } };
+    },
+  },
+  {
+    tool: "shopify_open_orders",
+    description: "Open orders placed since a day that aren't fully shipped, 100 a page: order number and Shopify's fulfillment status only.",
+    inputSchema: { type: "object", required: ["since"], properties: { since: day, after } },
+    doc: OPEN_ORDERS,
+    variables: (a) => {
+      const since = dayArg(a, "since"), cur = afterArg(a);
+      if (cur === undefined) return { problem: "after must be a cursor from the last page" };
+      if (!since) return { problem: "since must be YYYY-MM-DD" };
+      return { variables: { query: `status:open AND created_at:>='${since}T00:00:00${offsetOn(since)}' AND (fulfillment_status:unshipped OR fulfillment_status:partial)`, after: cur } };
     },
   },
   {

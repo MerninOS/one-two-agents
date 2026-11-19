@@ -31,7 +31,6 @@ export const env = {
   shopifyDomain: v("SHOPIFY_STORE_DOMAIN"),
   shopifyApiVersion: v("SHOPIFY_API_VERSION") || "2026-07",
   shopifyClientId: v("SHOPIFY_CLIENT_ID"),
-  shopifyStockCollection: v("SHOPIFY_STOCK_COLLECTION"),
 
   // Mercury's sign-ins (reads, category and memo, receipt files) are on Connections, in the vault.
   // Accounts that count as cash: "all" (every non-credit account) or comma-separated IDs; blank = cash not reported.

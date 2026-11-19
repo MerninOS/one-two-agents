@@ -379,8 +379,8 @@ its own on **Settings > Where things go** (owners only), stored as the `business
   without one sees them on Status only.
 
 App infrastructure stays in Vercel: Supabase, Claude, Resend and its sender (`BRIEF_FROM`), the
-vault key, the app's Google OAuth client, `SHOPIFY_API_VERSION`. A template pack's
-`SHOPIFY_STOCK_COLLECTION` and the Build Board's `NOTION_BUILD_BOARD_DB_ID` stay app-wide too.
+vault key, the app's Google OAuth client, `SHOPIFY_API_VERSION`. The Build Board's
+`NOTION_BUILD_BOARD_DB_ID` stays app-wide too.
 
 ## Slice 8.1c: each org's own Claude key
 

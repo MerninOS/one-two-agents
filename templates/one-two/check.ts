@@ -1,5 +1,5 @@
-// One Two's own checks: its crew installs cleanly, its planned seats show on the roster, and Avery's
-// brief helpers. No database, no network. Run: npm run check:pack-one-two
+// One Two's own checks: its crew installs cleanly, its planned seats show on the roster, and its
+// coffee code has left for its own server. No database, no network. Run: npm run check:pack-one-two
 import assert from "node:assert/strict";
 import { existsSync, readFileSync } from "node:fs";
 import { crewProblems, installRows } from "../../core/install-rules";
@@ -7,11 +7,6 @@ import { readSpec } from "../../core/agent-spec";
 import { buildCrew } from "../../dashboard/roster";
 import { ONE_TWO_CREW as crew } from "./crew";
 import { ONE_TWO_PLANNED as PLANNED } from "./planned";
-import { parseJudgment } from "./agents/chief-of-staff";
-import { deptLine, replyUrl } from "./agents/chief-of-staff/email";
-import { MCP_SERVERS } from "../../core/mcp-rules";
-import { SHOPIFY_TOOLS, assertReadOnly, shopifyVariables } from "../../core/shopify-queries";
-import { ONE_TWO_SHOPIFY } from "./shopify/queries";
 
 // the crew installs cleanly, switched off, exactly as written
 assert.deepEqual(crewProblems(crew), [], "the One Two pack's crew installs cleanly");
@@ -28,53 +23,24 @@ const r = buildCrew([{ ...PLANNED[0], id: "blend_coach", built: true }], PLANNED
 assert.equal(r.planned.some((p) => p.id === "blend_coach"), false);
 assert.equal(r.planned.length, PLANNED.length - 1);
 
-// Avery's focus and watch lines from a runner result
-assert.deepEqual(parseJudgment("Focus: Reorder Ethiopia Guji. It runs out first.\n- Guji has 9 days left.\n- 2 orders on QC hold.\nsomething else"), { focus: { action: "Reorder Ethiopia Guji", reason: "It runs out first." }, watch: ["Guji has 9 days left.", "2 orders on QC hold."] });
-assert.equal(parseJudgment("No focus here"), null);
-// department lines have no dash, so they never become watch items; counts come from code
-assert.deepEqual(parseJudgment("Focus: Ship it. Now.\n- one\nFinance: Cash is fine.")?.watch, ["one"]);
-assert.equal(deptLine({ name: "Finance", goals: ["Runway above 12 months: 14.3 months, at least 12 months, on track."], runs: 3, failed: 0, costUsd: 0.123 }), "Finance: Runway above 12 months: 14.3 months, at least 12 months, on track. 3 runs, all OK, $0.12, in the last 24 hours.");
-assert.equal(deptLine({ name: "Sales", goals: [], runs: 0, failed: 0, costUsd: 0 }), "Sales: No goal set. No runs in the last 24 hours.");
-assert.equal(deptLine({ name: "Ops", goals: ["A: 1 of 5 won, behind", "B: 2 days, at least 3 days, behind"], runs: 2, failed: 1, costUsd: 0.5 }), "Ops: A: 1 of 5 won, behind; B: 2 days, at least 3 days, behind. 2 runs, 1 failed, $0.50, in the last 24 hours.");
-
-// the brief's "Not right? Tell Avery" link opens the run's reactions, only when both parts are known
-const id = "3f1c2a4e-5b6d-4e7f-8a9b-0c1d2e3f4a5b";
-assert.equal(replyUrl({ dashboardUrl: "https://cr.example", runId: id }), `https://cr.example/runs/${id}#react`);
-assert.equal(replyUrl({ dashboardUrl: "https://cr.example" }), undefined);
-assert.equal(replyUrl({ runId: id }), undefined);
-
-// the storefront reads: served by our Shopify server, read-only, no customer details, no caller writes the search
-for (const q of ONE_TWO_SHOPIFY) {
-  assert.ok(SHOPIFY_TOOLS.includes(q.tool) && (MCP_SERVERS.shopify.readTools as readonly string[]).includes(q.tool), `${q.tool} is on the Shopify profile`);
-  assert.doesNotThrow(() => assertReadOnly(q.doc), q.tool);
-  assert.ok(!/\b(email|phone|address|firstName|lastName|displayName)\b/.test(q.doc), `${q.tool} reads no customer details`);
-}
-const ctx = { stockCollection: "", productCollections: [], productFields: [] };
-assert.deepEqual(shopifyVariables("shopify_green_lots", { query: "status:any" }, ctx), { tool: "shopify_green_lots", doc: ONE_TWO_SHOPIFY[0].doc, variables: { query: "tag:blended-green AND -status:archived" } }, "a caller never writes the search");
-const stock = shopifyVariables("shopify_stock_coffees", { handle: "secret-drops" }, ctx);
-assert.ok(!("problem" in stock) && stock.variables.handle === "our-coffees", "the collection comes from settings");
-const stock2 = shopifyVariables("shopify_stock_coffees", {}, { ...ctx, stockCollection: "fall-coffees" });
-assert.ok(!("problem" in stock2) && stock2.variables.handle === "fall-coffees");
-const board = shopifyVariables("shopify_board_orders", { since: "2026-08-18" }, ctx);
-assert.ok(!("problem" in board) && board.variables.query === "tag:blended created_at:>=2026-08-18" && board.variables.after === null);
-const green = shopifyVariables("shopify_green_orders_between", { start: "2026-11-15", end: "2026-11-16" }, ctx);
-assert.ok(!("problem" in green) && /created_at:>='2026-11-15T00:00:00-06:00'/.test(String(green.variables.query)));
-for (const [tool, args, why] of [
-  ["shopify_recent_orders", { since: "2026-11-01 OR tag:x" }, /since/],
-  ["shopify_board_orders", { since: "2026-11-01", after: "x' OR '1" }, /after/],
-  ["shopify_green_orders_between", { start: "2026-11-16", end: "2026-11-15" }, /end after start/],
-] as const) { const r = shopifyVariables(tool, args, ctx); assert.ok("problem" in r && why.test(r.problem), tool); }
+// card 133.5: the daily numbers, the morning brief and open orders are core's (core/daily-numbers.ts,
+// core/brief, the shopify_open_orders tool); One Two's green cost and roasting stages come from its own
+// server. The pack keeps no tools, tables, Shopify reads or coffee domain code of its own.
+for (const f of ["tools.ts", "agents", "domain", "shopify", "docs/avery-email.md", "docs/avery-briefs-database.md"]) assert.ok(!existsSync(`templates/one-two/${f}`), `templates/one-two/${f} is gone`);
+const index = readFileSync("templates/one-two/index.ts", "utf8");
+assert.match(index, /tools: \[\],\n  tables: \[\],/, "the pack adds no tools or tables");
+assert.match(readFileSync("templates/registry.ts", "utf8"), /PACK_SHOPIFY: readonly ShopifyQuery\[\] = \[\];/, "the pack adds no Shopify reads");
 
 // card 133: green lots, use, cover and reorder come from One Two's own server (MerninOS/blended
 // /api/agents-mcp, a custom server on Connections), and the cover goal is a goal number from it
 for (const f of ["green.ts", "measures.ts", "measure-defs.ts"]) assert.ok(!existsSync(`templates/one-two/${f}`), `${f} is gone`);
-for (const f of ["templates/one-two/tools.ts", "templates/one-two/crew.json", "templates/registry.ts"]) {
-  assert.ok(!/calc_green_use|calc_green_cover|calc_reorder_amount|lowest_cover_days|"shopify_green_lots"/.test(readFileSync(f, "utf8").replace(/callMcpTool\("shopify", "shopify_green_lots"/g, "")), `${f} keeps no coffee tool or measure`);
+for (const f of ["templates/one-two/crew.json", "templates/registry.ts"]) {
+  assert.ok(!/calc_green_use|calc_green_cover|calc_reorder_amount|lowest_cover_days|shopify_green_lots/.test(readFileSync(f, "utf8")), `${f} keeps no coffee tool or measure`);
 }
 
 // card 132: Rowan's offer is core's Product facts; the pack keeps no offer of its own
 assert.ok(!existsSync("templates/one-two/agents/wholesale-hunter"), "the pack's wholesale offer is gone");
-for (const f of ["templates/one-two/tools.ts", "templates/one-two/crew.json", "templates/one-two/domain/coffee.ts"]) {
+for (const f of ["templates/one-two/crew.json"]) {
   assert.ok(!/wholesale_offer|PL_MIN|PL_BAGS|PL_PACK|wholesaleOf/.test(readFileSync(f, "utf8")), `${f} keeps no offer of its own`);
 }
 console.log(`check:pack-one-two ok (${crew.agents.length} agents, ${PLANNED.length} planned seats)`);
