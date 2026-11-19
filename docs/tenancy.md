@@ -394,3 +394,22 @@ never shown, logged or put in a prompt.
 without one, **only the home org** falls back to the app's key, and any other org's run stops with
 a note to paste a key. Managed credits (card 128, slice 4) will let an org with credits use the
 app's key, metered. Only `integrations/anthropic.ts` opens the key (`check:mcp`).
+
+## Card 135: no home business
+
+The first org was special in seven places. Each is replaced by something that works the same for
+every business, so the first business (and the one this deployment was built for) is an ordinary
+customer.
+
+| Before | After |
+| --- | --- |
+| Settings fell back to `BRIEF_TO`, `SITE_URL`, `SHOPIFY_STORE_DOMAIN`, `SHOPIFY_CLIENT_ID`, `MERCURY_ACCOUNT_IDS` and the `NOTION_*` page ids for the first org (slice 8.1b). | Every business uses only what it saved on Settings. Those settings are gone from `core/env.ts` and `.env.example`; `check:settings` fails if one comes back. Lead and books run pages still fall back to the briefs page, for every business. |
+| The first org's runs fell back to the app's `ANTHROPIC_API_KEY` (slice 8.1c). | Every business uses its own key from the vault, or the run is refused with the same note. The app has no Claude key; managed credits (card 128 slice 4) will add one, metered, through the paid layer. |
+| The first org was never billed, by a line in `ee/plan.ts`. | A plan row can be `comped` (migration `20261217090000_comped_plan.sql`): no charge, no limits, and the webhook never writes over it. Any business can be comped. |
+| The first org's owners made sign-up codes. | The admin business makes them: `OPERATOR_ADMIN_ORG_ID` (`ee/admin.ts`). Unset, sign-up is closed. |
+| A `v2` cookie (slice 8.1) meant the first org. | `v2` cookies are refused; people sign in again. |
+| Work with no business named (a script, a call with the cron secret, a signed-out page) ran as the first org. | It is refused: `orgId()` throws `NO_ORG`, and a query outside `withOrg` with nobody signed in never reaches the database. `/api/agents/<id>` and `/api/health` take `?org=<org id>`. Checks run as `TEST_ORG` (`scripts/lib/test-org.ts`). |
+
+`HOME_ORG_ID` is now only the fresh install's first business: the baseline makes its row, and while
+an address belongs to no business, `OPERATOR_OWNER_EMAIL` becomes its first owner
+(`dashboard/signin.ts`). `check:tenancy` fails on any other use.

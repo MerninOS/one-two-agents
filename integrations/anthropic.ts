@@ -4,7 +4,6 @@ import "server-only";
 import Anthropic from "@anthropic-ai/sdk";
 import { modelDef } from "./models";
 import { claudeKey } from "./mcp";
-import { HOME_ORG_ID, orgId } from "@/core/tenancy";
 
 export { Anthropic };
 
@@ -25,15 +24,13 @@ export const NO_CLAUDE_KEY = "This business has no Claude API key yet. Paste one
 
 /**
  * The Claude client for the current business (docs/tenancy.md, slice 8.1c): its own key from the
- * vault when it pasted one, so Anthropic bills it directly. Without one, only the home org may use
- * the app's own key (ANTHROPIC_API_KEY); any other org is refused rather than run on our bill.
- * Managed credits (card 128, slice 4) will let an org with credits use the app's key, metered.
+ * vault, so Anthropic bills it directly. Without one, the run is refused, the same for every business
+ * (card 135). Managed credits (card 128, slice 4) will add a metered way through the paid layer.
  */
 export async function claude(): Promise<Anthropic> {
   const own = await claudeKey();
-  if (own) return new Anthropic({ apiKey: own });
-  if ((await orgId()) !== HOME_ORG_ID) throw new Error(NO_CLAUDE_KEY);
-  return new Anthropic(); // reads ANTHROPIC_API_KEY
+  if (!own) throw new Error(NO_CLAUDE_KEY);
+  return new Anthropic({ apiKey: own });
 }
 
 /** Every input token a response billed, cache reads and writes included. */

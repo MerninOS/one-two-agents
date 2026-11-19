@@ -52,7 +52,7 @@ sign-up and Stripe's webhook; the app only reads it.
 
 | Where it stands | What the plan check says |
 | --- | --- |
-| The home org | Never billed and never paused; it doesn't read a row |
+| Comped (a row we set, never Stripe) | Never billed and never paused; the webhook never writes over it |
 | Trial, active, or within 7 days of a failed payment | Nothing is blocked |
 | No row, trial over, unpaid after the grace period, or canceled | Runs pause, agents can't go on duty, adding people and servers stops |
 
@@ -69,7 +69,7 @@ next) and `STRIPE_WEBHOOK_SECRET`, set in the deployment's settings like Supabas
   People; what is left of the 14-day trial carries over when it is more than 48 hours.
 - **Manage billing** opens Stripe's customer portal: change the card, see invoices, cancel.
 - **The webhook**, `POST /api/ee/stripe`, checks Stripe's signature and records the subscription on
-  the row of the org id we put on it at checkout (never the home org). Listen for
+  the row of the org id we put on it at checkout (never a comped row). Listen for
   `checkout.session.completed` and `customer.subscription.created`, `.updated` and `.deleted`. A
   failed payment or a cancel emails the owner through `integrations/email.ts`.
 - **Seats** follow People: adding or removing a person updates the subscription's quantity,
@@ -77,9 +77,12 @@ next) and `STRIPE_WEBHOOK_SECRET`, set in the deployment's settings like Supabas
 
 **Invite-only sign-up.** `/signup` asks for a sign-up code, the business's name, the owner's name
 and email. A code is 12 letters and digits (no 0, 1, I, L or O), works once, for 30 days, and only
-its hash is kept (`ee_signup_codes`, rows of the home org). Using it makes the business through
+its hash is kept (`ee_signup_codes`, rows of the admin business). Using it makes the business through
 `core/install`'s `newOrg`, the same path as `npm run org:new`: its owner, its owner email in
 Settings, a 14-day trial, every agent off duty and every action type at Draft. Then the owner gets
-the usual sign-in link. The home org's owners make and end codes on Settings > Billing; a code is
+the usual sign-in link. The admin business's owners make and end codes on Settings > Billing.
+Which business is the admin is one setting, `OPERATOR_ADMIN_ORG_ID` (an org id, not a secret); with
+it unset, nobody makes codes and `/signup` says sign-up is closed (`ee/admin.ts`). No business is the
+admin by being first; a code is
 ended, never deleted. Sign-up is the one server action with no role check, like signing in: the
 code is its check (check:roles).

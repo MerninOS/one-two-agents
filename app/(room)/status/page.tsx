@@ -50,7 +50,7 @@ export default async function Status() {
 
       <span className="sub">
         {emails ? `Red items also email you from the scheduler (every 15 minutes): once when they start, then at most every ${REALERT_HOURS} hours while they last.`
-          : "Red items show here. Alert emails go out once RESEND_API_KEY, BRIEF_FROM and BRIEF_TO are set (home business only, for now)."}
+          : "Red items show here. Alert emails go out once the app can send email (RESEND_API_KEY and BRIEF_FROM in Vercel) and an owner email is picked on Settings > Where things go."}
       </span>
     </div>
   );

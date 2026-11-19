@@ -7,7 +7,6 @@ import { Icon } from "@/dashboard/components/Icon";
 import { Avatar, LockList } from "@/dashboard/components/ui";
 import { ActionButton, KeyForm } from "@/dashboard/components/client";
 import { claudeRemoveKey, claudeSaveKey } from "@/dashboard/connectionActions";
-import { HOME_ORG_ID, orgId } from "@/core/tenancy";
 import { MCP_SERVERS, type McpId } from "@/core/mcp-rules";
 import { CLAUDE_KEY_ID, MCP_MISSING, VAULT_MISSING, getCustomServer, listCustomServers, mcpLog, mcpStatus, vaultState, type McpLogRow, type McpStatus, type VaultState } from "@/integrations/mcp";
 import { AddServerCard, CustomDetail, CustomTiles, SignInLog } from "@/dashboard/components/CustomServers";
@@ -276,10 +275,9 @@ export default async function Connections({ searchParams }: { searchParams: Prom
 
 /** The business's own Claude API key (docs/tenancy.md, slice 8.1c): agents' model calls are billed to it. */
 async function ClaudeKeyCard({ owner }: { owner: boolean }) {
-  const [st, org] = await Promise.all([mcpStatus(CLAUDE_KEY_ID), orgId()]);
+  const st = await mcpStatus(CLAUDE_KEY_ID);
   const own = !!st?.connected, paused = !!st?.paused;
-  const appKey = org === HOME_ORG_ID && !!process.env.ANTHROPIC_API_KEY;
-  const ok = (own && !paused) || appKey;
+  const ok = own && !paused;
   return (
     <div className="card" style={{ gap: 10 }}>
       <span className="row" style={{ gap: 8, justifyContent: "space-between" }}>
@@ -288,8 +286,7 @@ async function ClaudeKeyCard({ owner }: { owner: boolean }) {
       </span>
       <span className="ink2" style={{ fontSize: 12.5 }}>
         {own ? (paused ? `Paused: ${st?.lastError ?? "Anthropic stopped accepting the key"}. Paste a new one.` : "Agents think with this business’s own Claude key, locked in the vault. Anthropic bills it directly; spend also shows in the run log.")
-          : appKey ? "Agents use the app’s own Claude key (ANTHROPIC_API_KEY in Vercel). Paste this business’s key to bill model calls to it instead."
-            : "Paste a Claude API key from the Claude Console (Settings > API keys). Until then agents can’t think, so runs stop with a note."}
+          : "Paste a Claude API key from the Claude Console (Settings > API keys). Until then agents can’t think, so runs stop with a note."}
       </span>
       {owner && <KeyForm label="Claude API key" save={claudeSaveKey} placeholder="sk-ant-…" replace={own} />}
       {owner && own && <ActionButton className="btn outline sm" action={claudeRemoveKey} confirm={{ title: "Forget the Claude key?", body: "The key is forgotten here. Delete it in the Claude Console too if it shouldn’t work anywhere.", confirmLabel: "Forget it", kind: "danger" }}>Forget the key</ActionButton>}

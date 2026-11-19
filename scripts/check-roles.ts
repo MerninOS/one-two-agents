@@ -50,11 +50,11 @@ const run = async () => {
   assert.equal(s.sessionOf(`v3.${ID}.${HOME}.${exp}.${mac}`, now), null, "another org fails the signature");
   assert.equal(s.sessionOf(`v3.0e1a7c4e-00bb-4000-8000-0000000000bb.${ORG}.${exp}.${mac}`, now), null, "another member id fails the signature");
   assert.equal(s.sessionOf(`v1.${Date.now() + 1e9}.${mac}`, now), null, "old password cookies don't work");
-  // a cookie from before orgs had their own sign-in still works, for the home org
+  // a correctly signed cookie from before orgs had their own sign-in no longer opens any business (card 135)
   const { createHash, createHmac } = await import("node:crypto");
   const k = createHash("sha256").update(`operator-session:${"a".repeat(44)}`).digest();
   const v2 = `v2.${ID}.${now + 864e5}`;
-  assert.deepEqual(s.sessionOf(`${v2}.${createHmac("sha256", k).update(v2).digest("base64url")}`, now), { memberId: ID, orgId: HOME });
+  assert.equal(s.sessionOf(`${v2}.${createHmac("sha256", k).update(v2).digest("base64url")}`, now), null, "v2 cookies sign in again");
   // the pick cookie: signed, short-lived, only the memberships it lists
   const pick = s.newPickToken([{ memberId: ID, orgId: ORG }, { memberId: ID, orgId: HOME }], now);
   assert.deepEqual(s.pickChoices(pick, now + 1000), [{ memberId: ID, orgId: ORG }, { memberId: ID, orgId: HOME }]);

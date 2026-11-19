@@ -15,7 +15,7 @@ import { installTemplates } from "@/core/install";
 import { getFloor, asRole } from "./data";
 import { controlsOn } from "./session";
 import { saveBusiness } from "@/core/business";
-import { ownSettings, saveSettings } from "@/core/settings";
+import { saveSettings, settings } from "@/core/settings";
 import { OFFER_TERMS_MAX, checkSettingsEdit, editOf, type BusinessSettings, type SettingsEdit } from "@/core/settings-rules";
 import { listMembers } from "@/core/members";
 import { businessProblem } from "@/core/business-rules";
@@ -202,7 +202,7 @@ const COST_KEYS = ["costSource", "costNumber"] as const;
 
 /** One Settings card's fields over what the org already saved, so the other card's fields stay; checked, then saved. */
 async function saveSettingsCard(f: Partial<SettingsEdit>, keys: readonly (keyof SettingsEdit)[], max: (k: keyof SettingsEdit) => number): Promise<{ problem: string } | { settings: BusinessSettings }> {
-  const e = { ...editOf(await ownSettings()), ...Object.fromEntries(keys.map((k) => [k, String(f?.[k] ?? "").slice(0, max(k))])) } as SettingsEdit;
+  const e = { ...editOf(await settings()), ...Object.fromEntries(keys.map((k) => [k, String(f?.[k] ?? "").slice(0, max(k))])) } as SettingsEdit;
   const owners = (await listMembers()).filter((m) => m.role === "owner").map((m) => m.email);
   const checked = checkSettingsEdit(e, owners);
   if ("settings" in checked) await saveSettings(checked.settings);

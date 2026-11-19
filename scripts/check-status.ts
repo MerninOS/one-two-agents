@@ -36,7 +36,7 @@ assert.match(m.html, /&lt;b&gt;Roast&lt;\/b&gt; &amp; co/);
 assert.match(m.text, /Status: https:\/\/app\.example\/status/);
 assert.match(alertEmail(ps.slice(0, 3), "https://a.b").subject, /3 things need a look/);
 
-// alerts go only through integrations/email.ts, only for the home org, and the scheduler sends them
+// alerts go only through integrations/email.ts, to each business's own owner email, and the scheduler sends them
 const src = readFileSync("core/status.ts", "utf8");
 assert.match(src, /if \(!\(await hasEmail\(\)\)\) return \[\];/);
 assert.match(readFileSync("app/api/dispatch/route.ts", "utf8"), /sendStatusAlerts\(origin, now\)\.catch/);

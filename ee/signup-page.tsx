@@ -4,12 +4,20 @@
 import { SignInCard } from "@/app/login/card";
 import { signUp } from "./signup-actions";
 import { PLAN } from "./plan-rules";
+import { SIGNUP_CLOSED, adminOrgId } from "./admin";
 
 export function SignupPage({ query }: { query: Readonly<Record<string, string | undefined>> }) {
   if (query.sent) {
     return (
       <SignInCard>
         <span className="ink2" style={{ fontSize: 14 }}>Your business is ready. We emailed a sign-in link to {query.sent.slice(0, 200)}. Open it on this device to start.</span>
+      </SignInCard>
+    );
+  }
+  if (!adminOrgId()) {
+    return (
+      <SignInCard>
+        <span className="ink2" style={{ fontSize: 14 }}>{SIGNUP_CLOSED} Already have an account? <a href="/login">Sign in</a>.</span>
       </SignInCard>
     );
   }

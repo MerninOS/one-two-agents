@@ -1,6 +1,8 @@
 // Checks the runner's limits and refusals with a stand-in model: no network, no database, no cost.
 // Run: npm run check:runner
 import assert from "node:assert/strict";
+import { withOrg } from "../core/tenancy";
+import { TEST_ORG } from "./lib/test-org";
 import { checkInput } from "../core/tools/types";
 import { readSpec, specLooser } from "../core/agent-spec";
 import { draftSteps, sameSteps, stepChanges } from "../core/playbook";
@@ -256,4 +258,4 @@ async function main() {
   console.log("check-runner: all passed");
 }
 
-main().catch((e) => { console.error(e); process.exit(1); });
+withOrg(TEST_ORG, main).catch((e) => { console.error(e); process.exit(1); });

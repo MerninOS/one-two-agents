@@ -12,7 +12,7 @@ import { PICK_COOKIE, SESSION_COOKIE, newPickToken, newSessionToken, pickChoices
 
 /**
  * The memberships a verified address opens, each tied to its auth user. A membership already tied
- * to another auth user is left out. While no org has the address as a member, the home org's first
+ * to another auth user is left out. While no org has the address as a member, a fresh install's first
  * owner (OPERATOR_OWNER_EMAIL) is made here, as before.
  */
 export async function openableMemberships(email: string): Promise<Membership[]> {

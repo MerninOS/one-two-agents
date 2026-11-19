@@ -72,7 +72,7 @@ export async function customMenuFor(): Promise<CustomMenu> {
 /** The pick-lists the builder offers, all from code, plus the tools turned on on servers the owner added (`custom`). */
 /** What the builder offers. `crew` names the agents (the Floor's roster) where a rule names one by id. */
 export function builderMenu(crew: readonly { id: string; name: string }[] = [], h: Record<IntegrationId, boolean> = health(), custom: CustomMenu = { tools: [], conns: [] }) {
-  const SETTING: Record<string, unknown> = { ...SETTINGS, BRIEF_TO: h.email, SHOPIFY_CONNECTED: h.shopify, KLAVIYO_CONNECTED: h.klaviyo, NOTION_CONNECTED: h.notion, MERCURY_CONNECTED: h.mercury, GMAIL_CONNECTED: h.gmail };
+  const SETTING: Record<string, unknown> = { ...SETTINGS, OWNER_EMAIL: h.email, SHOPIFY_CONNECTED: h.shopify, KLAVIYO_CONNECTED: h.klaviyo, NOTION_CONNECTED: h.notion, MERCURY_CONNECTED: h.mercury, GMAIL_CONNECTED: h.gmail };
   return {
     tools: [...TOOL_LIST.map((t): BuildTool => ({ id: t.id, label: t.label, detail: t.detail, kind: t.kind, group: t.group, conn: connOf(t), trusted: t.trusted, needs: [...t.needs], connected: t.needs.every((k) => !!SETTING[k]), grantable: GRANTABLE.has(t.kind), agents: t.agents ? [...t.agents] : null, seat: t.seat ?? null })), ...custom.tools],
     agentNames: Object.fromEntries(crew.map((a) => [a.id, `${a.name} (${a.id})`])) as Record<string, string>,

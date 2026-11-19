@@ -127,21 +127,6 @@ function costOf(source: unknown, num: unknown): Pick<BusinessSettings, "costSour
   return { costSource: source === "shopify" ? "shopify" : "none", costNumber: null };
 }
 
-/** The settings an org works with: its own, and only for the home org, the old app-wide values where it has none. */
-export function effectiveSettings(own: BusinessSettings, homeDefaults: BusinessSettings | null): BusinessSettings {
-  if (!homeDefaults) return own;
-  const pick = <K extends keyof BusinessSettings>(k: K): BusinessSettings[K] => {
-    const v = own[k];
-    return (Array.isArray(v) ? v.length : v) ? v : homeDefaults[k];
-  };
-  const out = { ...own };
-  for (const k of Object.keys(own) as (keyof BusinessSettings)[]) (out as Record<string, unknown>)[k] = pick(k);
-  // leads and books pages fall back to the briefs page, as the old settings did
-  out.notionLeadsParent ??= out.notionBriefParent;
-  out.notionBooksParent ??= out.notionBriefParent;
-  return out;
-}
-
 export interface SettingsEdit {
   ownerEmail: string; siteUrl: string; shopifyDomain: string; shopifyClientId: string; mercuryAccountIds: string;
   notionBriefParent: string; notionBriefsDb: string; notionLeadsParent: string; notionBooksParent: string;

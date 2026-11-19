@@ -22,35 +22,35 @@ assert.equal(monthlyUsd(3), 30);
 assert.equal(monthlyUsd(0), 20, "never below the base");
 assert.deepEqual(PLAN, { baseUsd: 20, seatUsd: 5, trialDays: 14, graceDays: 7 });
 
-// the home org is never billed, whatever its row says
-assert.deepEqual(planState(sub({ status: "canceled" }), { home: true, now }), { kind: "exempt" });
-assert.ok(blocksNone(planState(null, { home: true, now })), "nothing pauses the home org");
+// a comped row is never billed and never paused (card 135): no business is exempt by being first
+assert.deepEqual(planState(sub({ status: "comped" }), { now }), { kind: "comped" });
+assert.ok(blocksNone(planState(sub({ status: "comped", trialEndsAt: iso(now - DAY) }), { now })), "nothing pauses a comped business");
 
 // no row: no plan, so the crew can't run or grow
-assert.deepEqual(planState(null, { home: false, now }), { kind: "none" });
-assert.ok(blocksAll(planState(null, { home: false, now })));
+assert.deepEqual(planState(null, { now }), { kind: "none" });
+assert.ok(blocksAll(planState(null, { now })));
 
 // trial: live until its end, then over; a trial with no end date isn't live
-const trial = planState(sub({ trialEndsAt: iso(now + 3.5 * DAY) }), { home: false, now });
+const trial = planState(sub({ trialEndsAt: iso(now + 3.5 * DAY) }), { now });
 assert.deepEqual(trial, { kind: "trial", until: iso(now + 3.5 * DAY), daysLeft: 4 });
 assert.ok(blocksNone(trial));
-assert.deepEqual(planState(sub({ trialEndsAt: iso(now - 1) }), { home: false, now }), { kind: "lapsed", why: "trial_over" });
-assert.deepEqual(planState(sub({}), { home: false, now }), { kind: "lapsed", why: "trial_over" });
+assert.deepEqual(planState(sub({ trialEndsAt: iso(now - 1) }), { now }), { kind: "lapsed", why: "trial_over" });
+assert.deepEqual(planState(sub({}), { now }), { kind: "lapsed", why: "trial_over" });
 
 // active, grace for 7 days after a failed payment, then paused; canceled pauses
-assert.ok(blocksNone(planState(sub({ status: "active" }), { home: false, now })));
-const grace = planState(sub({ status: "past_due", pastDueSince: iso(now - 6 * DAY) }), { home: false, now });
+assert.ok(blocksNone(planState(sub({ status: "active" }), { now })));
+const grace = planState(sub({ status: "past_due", pastDueSince: iso(now - 6 * DAY) }), { now });
 assert.equal(grace.kind, "grace");
 assert.ok(blocksNone(grace), "the grace period pauses nothing");
-assert.deepEqual(planState(sub({ status: "past_due", pastDueSince: iso(now - 8 * DAY) }), { home: false, now }), { kind: "lapsed", why: "unpaid" });
-assert.equal(planState(sub({ status: "past_due" }), { home: false, now }).kind, "grace", "no date yet: the grace period starts now");
-assert.ok(blocksAll(planState(sub({ status: "canceled" }), { home: false, now })));
+assert.deepEqual(planState(sub({ status: "past_due", pastDueSince: iso(now - 8 * DAY) }), { now }), { kind: "lapsed", why: "unpaid" });
+assert.equal(planState(sub({ status: "past_due" }), { now }).kind, "grace", "no date yet: the grace period starts now");
+assert.ok(blocksAll(planState(sub({ status: "canceled" }), { now })));
 
 // what the owner reads: says what's paused and that nothing was deleted
 const no = planBlockFor({ kind: "lapsed", why: "trial_over" }, ASKS[0])!;
 assert.match(no, /trial is over\. Runs are paused\. .*nothing has been deleted/);
 assert.match(planWords(trial, 3), /4 days left\. Then \$30\/month for 3 people/);
-assert.match(planWords({ kind: "exempt" }, 1), /no plan and no limits/);
+assert.match(planWords({ kind: "comped" }, 1), /Comped: no charge and no limits/);
 
 // a plan never reaches past its slot: no vault, no gateway, no write tools, no deletes, no send
 for (const f of ["ee/plan-rules.ts", "ee/plan.ts", "ee/billing-card.tsx", "ee/index.ts"]) {
@@ -58,7 +58,8 @@ for (const f of ["ee/plan-rules.ts", "ee/plan.ts", "ee/billing-card.tsx", "ee/in
   assert.doesNotMatch(s, /core\/vault|core\/gateway|callWriteTool|callMcpTool|\.delete\(|\.update\(|\.insert\(|\.upsert\(/, `${f} only reads`);
   assert.match(s, /^\/\/ Copyright Operator Enterprises and Technologies, LLC\. Licensed under ee\/LICENSE/, `${f} carries the ee license line`);
 }
-assert.match(readFileSync("ee/plan.ts", "utf8"), /=== HOME_ORG_ID\) return planState\(null, \{ home: true/, "the home org never reads a row");
+for (const f of readdirSync("ee").filter((f) => /\.tsx?$/.test(f) && f !== "check.ts")) assert.doesNotMatch(readFileSync(`ee/${f}`, "utf8"), /HOME_ORG_ID/, `ee/${f}: no business is special by being first (card 135)`);
+assert.match(readFileSync("supabase/migrations/20261217090000_comped_plan.sql", "utf8"), /'comped'\)\)/, "the database allows a comped row");
 
 // Stripe: signatures, encoding, and the row a subscription leaves
 {
@@ -100,7 +101,9 @@ assert.match(readFileSync("ee/stripe.ts", "utf8"), /scrubSecrets\(/, "errors nev
 const billing = readFileSync("ee/billing.ts", "utf8");
 assert.doesNotMatch(billing, /core\/vault|core\/gateway|callWriteTool|callMcpTool|\.delete\(/, "billing touches no vault, gateway or tool, and deletes nothing");
 assert.deepEqual([...billing.matchAll(/db\(\)\.from\("(\w+)"\)/g)].map((m) => m[1]).filter((t, i, a) => a.indexOf(t) === i).sort(), ["ee_subscriptions", "orgs"], "billing reads only its row and whether the org exists");
-assert.match(billing, /if \(org === HOME_ORG_ID\) return "the home org is never billed"/, "the webhook never writes the home org");
+assert.match(billing, /if \(prev\?\.status === "comped"\) return "a comped business is never billed"/, "the webhook never writes over a comped row");
+assert.ok(billing.indexOf('prev?.status === "comped"') < billing.indexOf("rowFromSubscription(s, prev"), "checked before anything is written");
+assert.match(billing, /if \(r\?\.status === "comped"\) throw/, "a comped business can't open Checkout");
 assert.match(readFileSync("ee/billing-actions.ts", "utf8"), /^"use server";/);
 
 // Invite-only sign-up: codes, the form, and one code making one business
@@ -128,7 +131,12 @@ assert.match(readFileSync("ee/billing-actions.ts", "utf8"), /^"use server";/);
   assert.doesNotMatch(signup, /\.delete\(|core\/vault|core\/gateway/, "codes are ended, never deleted");
   const actions = readFileSync("ee/signup-actions.ts", "utf8");
   assert.ok(actions.indexOf("checkSignup(") < actions.indexOf("signUpBusiness(ok)"), "the form is checked first");
-  assert.equal(actions.match(/if \(me\.orgId !== HOME_ORG_ID\)/g)?.length, 2, "only OPERATOR's own business makes and ends codes");
+  assert.equal(actions.match(/if \(me\.orgId !== adminOrgId\(\)\)/g)?.length, 2, "only the admin business makes and ends codes");
+  assert.equal(signup.match(/withOrg\(/g)?.length, 2, "codes are read and written only as the admin business (asAdmin), and the new business as itself");
+  assert.match(signup, /if \(!admin\) return Promise\.reject\(new Error\(SIGNUP_CLOSED\)\)/, "no admin business: sign-up is closed");
+  const admin = readFileSync("ee/admin.ts", "utf8");
+  assert.match(admin, /process\.env\.OPERATOR_ADMIN_ORG_ID/, "the admin business is one setting");
+  assert.match(readFileSync("ee/signup-page.tsx", "utf8"), /if \(!adminOrgId\(\)\)/, "/signup says when sign-up is closed");
 }
 
-console.log("check:ee ok (plan, trial, grace, home org exempt, Stripe signatures and rows, sign-up codes)");
+console.log("check:ee ok (plan, trial, grace, comped, Stripe signatures and rows, sign-up codes)");

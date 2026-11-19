@@ -49,7 +49,7 @@ async function readOne(key: MeasureKey, today: string, shared: { month?: ReturnT
     }
     case "runway_months": {
       const b = await burnRate(90);
-      if (b.cashUsd == null) return { reading: { error: "cash isn't set up (MERCURY_ACCOUNT_IDS)" }, detail: null };
+      if (b.cashUsd == null) return { reading: { error: "cash isn't set up (Mercury accounts on Settings)" }, detail: null };
       if (b.runwayMonths == null) return { reading: { value: 0, unbounded: true }, detail: null };
       return { reading: { value: b.runwayMonths }, detail: null };
     }

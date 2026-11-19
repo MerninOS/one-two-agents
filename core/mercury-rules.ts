@@ -25,7 +25,7 @@ export function readAccounts(payload: unknown): MercuryAccount[] {
 const r2 = (n: number) => Math.round(n * 100) / 100;
 
 /**
- * Cash across the accounts MERCURY_ACCOUNT_IDS names ("all": every open account that isn't credit).
+ * Cash across the accounts the business picked on Settings ("all": every open account that isn't credit).
  * Throws when a named account isn't there, so a missing account never reads as $0.
  */
 export function cashOf(accounts: readonly MercuryAccount[], ids: readonly string[]): number {
@@ -33,7 +33,7 @@ export function cashOf(accounts: readonly MercuryAccount[], ids: readonly string
   const ours = all
     ? accounts.filter((a) => a.status !== "archived" && a.status !== "deleted" && !a.isCredit && a.kind !== "creditCard")
     : accounts.filter((a) => ids.includes(a.id));
-  if (!all && ours.length !== ids.length) throw new Error("Mercury: an account in MERCURY_ACCOUNT_IDS was not found");
+  if (!all && ours.length !== ids.length) throw new Error("Mercury: an account picked on Settings was not found");
   return r2(ours.reduce((s, a) => s + a.availableBalance, 0));
 }
 

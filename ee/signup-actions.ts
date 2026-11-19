@@ -1,10 +1,10 @@
 "use server";
 // Copyright Operator Enterprises and Technologies, LLC. Licensed under ee/LICENSE, not the AGPL-3.0.
 // Sign-up (no member yet, like signing in, so no role to check: the sign-up code is the check) and
-// the home org owner's sign-up codes.
+// the admin business's sign-up codes (ee/admin.ts).
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
-import { HOME_ORG_ID } from "@/core/tenancy";
+import { adminOrgId } from "./admin";
 import { audit } from "@/core/audit";
 import { asRole } from "@/dashboard/data";
 import { signIn } from "@/dashboard/authActions";
@@ -24,11 +24,11 @@ export async function signUp(form: FormData): Promise<void> {
   redirect(sent.error ? `/login?problem=${encodeURIComponent(`Your business is made. ${sent.error}`)}` : `/signup?sent=${encodeURIComponent(ok.email)}`);
 }
 
-const homeOnly = { ok: false as const, text: "Sign-up codes are made by OPERATOR’s own business." };
+const adminOnly = { ok: false as const, text: "Sign-up codes are made by the admin business." };
 
 export async function createSignupCode(form: FormData): Promise<void> {
   const { me, no } = await asRole("owner"); if (no) redirect(`/settings?billing_problem=${encodeURIComponent(no.text)}`);
-  if (me.orgId !== HOME_ORG_ID) redirect(`/settings?billing_problem=${encodeURIComponent(homeOnly.text)}`);
+  if (me.orgId !== adminOrgId()) redirect(`/settings?billing_problem=${encodeURIComponent(adminOnly.text)}`);
   const code = await makeCode(String(form.get("note") ?? ""), me.email);
   await audit(me, "signup_code_add", null, { note: String(form.get("note") ?? "").slice(0, 60) });
   redirect(`/settings?new_code=${encodeURIComponent(code)}#billing`);
@@ -36,7 +36,7 @@ export async function createSignupCode(form: FormData): Promise<void> {
 
 export async function revokeSignupCode(form: FormData): Promise<void> {
   const { me, no } = await asRole("owner"); if (no) redirect(`/settings?billing_problem=${encodeURIComponent(no.text)}`);
-  if (me.orgId !== HOME_ORG_ID) redirect(`/settings?billing_problem=${encodeURIComponent(homeOnly.text)}`);
+  if (me.orgId !== adminOrgId()) redirect(`/settings?billing_problem=${encodeURIComponent(adminOnly.text)}`);
   const id = String(form.get("id") ?? "");
   if (/^[0-9a-f-]{36}$/.test(id)) { await revokeCode(id); await audit(me, "signup_code_revoke", id); }
   revalidatePath("/settings");

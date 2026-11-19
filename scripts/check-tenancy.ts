@@ -5,9 +5,11 @@ import { createPublicKey, generateKeyPairSync, verify } from "node:crypto";
 import { REFRESH_MS, TOKEN_MS, orgToken, parseSigningKey } from "../core/org-token";
 import { join } from "node:path";
 import { hasHistory } from "./lib/schema";
-import { HOME_ORG_ID, ORGS_TABLE, TENANT_TABLES, conflictColumns, orgId, scopeClient, setRequestOrg, stampRows, updateValues, withOrg } from "../core/tenancy";
+import { TEST_ORG } from "./lib/test-org";
+import { NO_ORG, ORGS_TABLE, TENANT_TABLES, conflictColumns, orgId, scopeClient, setRequestOrg, stampRows, updateValues, withOrg } from "../core/tenancy";
 
 const OTHER = "0e1a7c4e-0002-4000-8000-000000000002";
+const ME = TEST_ORG;
 
 // A fake client: records every call made on it, the way supabase-js chains them.
 type Call = [string, ...unknown[]];
@@ -30,77 +32,77 @@ function fake() {
 }
 
 // select, update and delete are filtered by the current org; the caller's own filters follow
-{
+withOrg(ME, () => {
   const { calls, client } = fake();
   const db = scopeClient(client);
   db.from("agents").select("id, enabled").eq("id", "cfo");
-  assert.deepEqual(calls, [["from", "agents"], ["select", "id, enabled"], ["eq", "org_id", HOME_ORG_ID], ["eq", "id", "cfo"]]);
-}
-{
+  assert.deepEqual(calls, [["from", "agents"], ["select", "id, enabled"], ["eq", "org_id", ME], ["eq", "id", "cfo"]]);
+});
+withOrg(ME, () => {
   const { calls, client } = fake();
   scopeClient(client).from("agent_memory").update({ state: "kept" }).eq("id", "m1");
-  assert.deepEqual(calls, [["from", "agent_memory"], ["update", { state: "kept" }, undefined], ["eq", "org_id", HOME_ORG_ID], ["eq", "id", "m1"]]);
-}
-{
+  assert.deepEqual(calls, [["from", "agent_memory"], ["update", { state: "kept" }, undefined], ["eq", "org_id", ME], ["eq", "id", "m1"]]);
+});
+withOrg(ME, () => {
   const { calls, client } = fake();
   scopeClient(client).from("jobs").delete().eq("id", "w1");
-  assert.deepEqual(calls.slice(1, 3), [["delete", undefined], ["eq", "org_id", HOME_ORG_ID]]);
-}
+  assert.deepEqual(calls.slice(1, 3), [["delete", undefined], ["eq", "org_id", ME]]);
+});
 
 // insert and upsert stamp every row; upsert conflict columns start with org_id
-{
+withOrg(ME, () => {
   const { calls, client } = fake();
   const db = scopeClient(client);
   db.from("agent_runs").insert({ agent_id: "cfo" });
   db.from("run_steps").insert([{ idx: 0 }, { idx: 1 }]);
   db.from("mcp_connections").upsert({ id: "mercury" }, { onConflict: "id" });
   db.from("policies").upsert({ key: "org" });
-  assert.deepEqual(calls[1], ["insert", { agent_id: "cfo", org_id: HOME_ORG_ID }, undefined]);
-  assert.deepEqual(calls[3], ["insert", [{ idx: 0, org_id: HOME_ORG_ID }, { idx: 1, org_id: HOME_ORG_ID }], undefined]);
-  assert.deepEqual(calls[5], ["upsert", { id: "mercury", org_id: HOME_ORG_ID }, { onConflict: "org_id,id" }]);
-  assert.deepEqual(calls[7], ["upsert", { key: "org", org_id: HOME_ORG_ID }, { onConflict: undefined }]);
-}
+  assert.deepEqual(calls[1], ["insert", { agent_id: "cfo", org_id: ME }, undefined]);
+  assert.deepEqual(calls[3], ["insert", [{ idx: 0, org_id: ME }, { idx: 1, org_id: ME }], undefined]);
+  assert.deepEqual(calls[5], ["upsert", { id: "mercury", org_id: ME }, { onConflict: "org_id,id" }]);
+  assert.deepEqual(calls[7], ["upsert", { key: "org", org_id: ME }, { onConflict: undefined }]);
+});
 assert.equal(conflictColumns("department_id,week_of"), "org_id,department_id,week_of");
 assert.equal(conflictColumns(" org_id , id "), "org_id,id");
 assert.equal(conflictColumns(undefined), undefined);
 
 // another org's rows are refused, never moved; a row read back and saved again keeps working
-assert.throws(() => stampRows({ id: "x", org_id: OTHER }, HOME_ORG_ID), /another org/);
-assert.throws(() => stampRows([{ id: "a" }, { id: "b", org_id: OTHER }], HOME_ORG_ID), /another org/);
-assert.deepEqual(stampRows({ id: "x", org_id: HOME_ORG_ID }, HOME_ORG_ID), { id: "x", org_id: HOME_ORG_ID });
-assert.throws(() => stampRows("nope", HOME_ORG_ID));
-assert.deepEqual(updateValues({ merchant: "Canva", org_id: HOME_ORG_ID }, HOME_ORG_ID), { merchant: "Canva" });
-assert.throws(() => updateValues({ org_id: OTHER }, HOME_ORG_ID), /can't be changed/);
-{
+assert.throws(() => stampRows({ id: "x", org_id: OTHER }, ME), /another org/);
+assert.throws(() => stampRows([{ id: "a" }, { id: "b", org_id: OTHER }], ME), /another org/);
+assert.deepEqual(stampRows({ id: "x", org_id: ME }, ME), { id: "x", org_id: ME });
+assert.throws(() => stampRows("nope", ME));
+assert.deepEqual(updateValues({ merchant: "Canva", org_id: ME }, ME), { merchant: "Canva" });
+assert.throws(() => updateValues({ org_id: OTHER }, ME), /can't be changed/);
+withOrg(ME, () => {
   const { client } = fake();
   assert.throws(() => scopeClient(client).from("expense_docs").update({ org_id: OTHER }), /can't be changed/);
-}
+});
 
 // unknown tables, rpc and schema are refused; orgs reads only the current org and is never written
-{
+withOrg(ME, () => {
   const { calls, client } = fake();
   const db = scopeClient(client);
   assert.throws(() => db.from("auth_users"), /isn't a tenant table/);
   assert.throws(() => (db as unknown as { rpc: () => void }).rpc(), /skips org scoping/);
   db.from(ORGS_TABLE).select("name");
-  assert.deepEqual(calls.slice(-2), [["select", "name"], ["eq", "id", HOME_ORG_ID]]);
+  assert.deepEqual(calls.slice(-2), [["select", "name"], ["eq", "id", ME]]);
   for (const verb of ["insert", "upsert", "update", "delete"] as const) {
     assert.throws(() => (db.from(ORGS_TABLE) as unknown as Record<string, (x?: unknown) => unknown>)[verb]({ name: "x" }), /not written/);
   }
   assert.deepEqual(db.storage.from("receipts"), { bucket: "receipts" }, "storage passes through");
-}
+});
 
 // slice 2b: with tablesFor, tables go through the org's own client; storage stays on the base client
-{
+withOrg(ME, () => {
   const base = fake(), mine = fake(), theirs = fake();
-  const db = scopeClient(base.client, (org) => (org === HOME_ORG_ID ? mine.client : theirs.client));
+  const db = scopeClient(base.client, (org) => (org === ME ? mine.client : theirs.client));
   db.from("agents").select("id");
   withOrg(OTHER, () => db.from("agents").select("id"));
   assert.deepEqual(base.calls, [], "tables never use the base client");
-  assert.deepEqual(mine.calls, [["from", "agents"], ["select", "id"], ["eq", "org_id", HOME_ORG_ID]]);
+  assert.deepEqual(mine.calls, [["from", "agents"], ["select", "id"], ["eq", "org_id", ME]]);
   assert.deepEqual(theirs.calls, [["from", "agents"], ["select", "id"], ["eq", "org_id", OTHER]]);
   assert.deepEqual(db.storage.from("receipts"), { bucket: "receipts" });
-}
+});
 
 // org tokens: ES256, signed by our key, holding one org, expiring
 {
@@ -122,26 +124,32 @@ assert.throws(() => updateValues({ org_id: OTHER }, HOME_ORG_ID), /can't be chan
   assert.throws(() => parseSigningKey(JSON.stringify({ ...jwk, kid: undefined })), /kid/);
 }
 
-// the current org: home by default, withOrg for the work inside it (sync and async), nested, then restored
+// the current org: none by default (work is refused, card 135), withOrg for the work inside it (sync
+// and async), nested, then restored
 assert.throws(() => withOrg("not-a-uuid", () => 1), /uuid/);
 const asyncCheck = (async () => {
-  assert.equal(await orgId(), HOME_ORG_ID);
+  await assert.rejects(orgId(), (e: Error) => e.message === NO_ORG, "no business named: refused");
+  {
+    const { calls, client } = fake();
+    await assert.rejects(async () => { await scopeClient(client).from("agents").select("id"); }, /no business named/);
+    assert.deepEqual(calls, [], "a query with no business never reaches the database");
+  }
   const { calls, client } = fake();
   const db = scopeClient(client);
   await withOrg(OTHER, async () => {
     await new Promise((r) => setTimeout(r, 5));
     assert.equal(await orgId(), OTHER);
     db.from("goals").select("id");
-    withOrg(HOME_ORG_ID, () => db.from("goals").select("id"));
+    withOrg(ME, () => db.from("goals").select("id"));
     db.from("goals").insert({ id: "g" });
   });
-  assert.equal(await orgId(), HOME_ORG_ID);
+  await assert.rejects(orgId(), /no business named/, "restored: none again");
   assert.deepEqual(calls.filter((c) => c[0] === "eq" || c[0] === "insert"), [
-    ["eq", "org_id", OTHER], ["eq", "org_id", HOME_ORG_ID], ["insert", { id: "g", org_id: OTHER }, undefined],
+    ["eq", "org_id", OTHER], ["eq", "org_id", ME], ["insert", { id: "g", org_id: OTHER }, undefined],
   ]);
 
   // slice 8.1: in a request, the org comes from the signed-in member's session, read when the query
-  // is awaited; withOrg still wins; a request with nobody signed in runs as the home org
+  // is awaited; withOrg still wins; a request with nobody signed in is refused
   let fromCookie: string | null = OTHER;
   setRequestOrg(async () => fromCookie);
   const r = fake();
@@ -153,20 +161,38 @@ const asyncCheck = (async () => {
   r.calls.length = 0;
   await rdb.from("goals").insert({ id: "g2" }).select("id");
   assert.deepEqual(r.calls[1], ["insert", { id: "g2", org_id: OTHER }, undefined], "inserts are stamped with the member's org");
-  await assert.rejects(async () => { await rdb.from("goals").insert({ id: "g3", org_id: HOME_ORG_ID }); }, /another org/);
+  await assert.rejects(async () => { await rdb.from("goals").insert({ id: "g3", org_id: ME }); }, /another org/);
   r.calls.length = 0;
-  withOrg(HOME_ORG_ID, () => rdb.from("goals").select("id"));
-  assert.deepEqual(r.calls.slice(0, 3), [["from", "goals"], ["select", "id"], ["eq", "org_id", HOME_ORG_ID]], "withOrg runs at once, as before");
+  withOrg(ME, () => rdb.from("goals").select("id"));
+  assert.deepEqual(r.calls.slice(0, 3), [["from", "goals"], ["select", "id"], ["eq", "org_id", ME]], "withOrg runs at once, as before");
   assert.equal(await orgId(), OTHER);
   fromCookie = null;
-  assert.equal(await orgId(), HOME_ORG_ID, "nobody signed in: the home org");
+  await assert.rejects(orgId(), /no business named/, "nobody signed in: refused, never the first business");
+  await assert.rejects(async () => { await rdb.from("agents").select("id"); }, /no business named/);
   fromCookie = "not-a-uuid";
-  assert.equal(await orgId(), HOME_ORG_ID);
+  await assert.rejects(orgId(), /no business named/);
   // no file guesses the org synchronously
   for (const f of ["core/jobs.ts", "core/business.ts", "core/trace.ts", "core/status.ts", "integrations/mcp.ts", "dashboard/actions.ts"]) {
     assert.ok(!/currentOrgId/.test(readFileSync(f, "utf8")), `${f} reads the org with await orgId()`);
   }
 })();
+
+// No business is special by being first (card 135): HOME_ORG_ID is the fresh install's first business,
+// named only where it is made (the baseline) and where its first owner is made (dashboard/signin.ts)
+{
+  // the checks themselves name it to look for it
+  const ALLOWED = new Set(["core/tenancy.ts", "dashboard/signin.ts", "scripts/baseline.mjs"]);
+  const isCheck = (f: string) => /^scripts\/check-[a-z-]+\.ts$/.test(f) || f === "ee/check.ts";
+  const walk = (d: string): string[] => readdirSync(d, { withFileTypes: true }).flatMap((e) => {
+    const p = join(d, e.name);
+    return e.isDirectory() ? (e.name === "node_modules" || e.name.startsWith(".") ? [] : walk(p)) : /\.(ts|tsx|mjs)$/.test(e.name) ? [p] : [];
+  });
+  const users = ["app", "core", "dashboard", "integrations", "agents", "ee", "scripts"].flatMap(walk).filter((f) => /HOME_ORG_ID/.test(readFileSync(f, "utf8")) && !isCheck(f));
+  assert.deepEqual(users.filter((f) => !ALLOWED.has(f)), [], "only the first owner and the baseline name the first business");
+  const signin = readFileSync("dashboard/signin.ts", "utf8");
+  assert.equal(signin.match(/HOME_ORG_ID/g)?.length, 2, "signin.ts imports it and uses it once: the first owner");
+  assert.match(signin, /if \(found\.length\) return found;\n\s+const first = await withOrg\(HOME_ORG_ID, \(\) => memberToSignIn\(email\)\);/, "only while the address belongs to no business");
+}
 
 // The migration history (the public repo ships only the baseline: check:baseline covers it there)
 if (hasHistory) {
