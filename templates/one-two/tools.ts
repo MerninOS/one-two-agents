@@ -1,6 +1,6 @@
 import "server-only";
-// One Two Coffee Lab's own tools (docs/templates.md): coffee math, Morgan's daily numbers, Avery's
-// brief and Rowan's wholesale offer. Registered with the tool list through
+// One Two Coffee Lab's own tools (docs/templates.md): coffee math, Morgan's daily numbers and
+// Avery's brief. Registered with the tool list through
 // templates/index.ts; the same rules hold as for every tool in core/tools/catalog.ts (Read and
 // Calculate write nothing, numbers are worked out in code, reports reach only the owner or our own
 // stores after a finished run).
@@ -13,7 +13,6 @@ import { getInventoryLots } from "@/templates/one-two/shopify/lots";
 import { getBoardOrders } from "@/templates/one-two/shopify/orders";
 import { snapshot } from "./agents/cfo";
 import { deliverBrief } from "./agents/chief-of-staff";
-import { offer } from "./agents/wholesale-hunter";
 import { cover, greenUse, lb } from "./green";
 
 export const ONE_TWO_TOOLS: ToolDef[] = [
@@ -87,14 +86,6 @@ export const ONE_TWO_TOOLS: ToolDef[] = [
       if (s.green_margin != null) numbers.green_margin = s.green_margin;
       if (s.cash_usd != null) numbers.cash_usd = s.cash_usd;
       return { data: s, numbers };
-    },
-  },
-  {
-    id: "wholesale_offer", label: "Wholesale offer", detail: "What One Two offers a wholesale customer, from Shopify: private label minimum, bags and packaging, our coffees and green lots with wholesale prices per lb. The only facts an outreach email may claim",
-    kind: "read", group: "shopify", params: [], trusted: true, needs: SHOPIFY, costUsd: 0,
-    run: async () => {
-      const o = await offer();
-      return { data: o, numbers: { coffees: o.ourCoffees.length, green_lots: o.greenLots.length, private_label_min_lb: o.privateLabel.minimumLb } };
     },
   },
 

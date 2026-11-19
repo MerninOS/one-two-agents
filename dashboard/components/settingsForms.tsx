@@ -150,3 +150,37 @@ export function WhereForm({ initial, starting, owners, canEdit, save }: { initia
     </div>
   );
 }
+
+type ProductKey = "productCollections" | "productFields" | "offerTerms";
+
+/**
+ * What agents may say about the products (docs/product-facts.md): the Shopify collections and product
+ * fields agents read, and the owner's own offer terms. Outside messages may claim only these facts.
+ * Owners only.
+ */
+export function ProductFactsForm({ initial, canEdit, save }: { initial: Record<ProductKey, string>; canEdit: boolean; save: (f: Record<ProductKey, string>) => Promise<ActionResult> }) {
+  const [f, setF] = useState(initial);
+  const { busy, run, toast } = useAct();
+  const changed = (Object.keys(initial) as ProductKey[]).some((k) => f[k] !== initial[k]);
+  const label = (text: string, hint: string, control: React.ReactNode) => (
+    <label style={{ display: "flex", flexDirection: "column", gap: 4, fontSize: 13 }} className="ink2">
+      {text}
+      {control}
+      <span className="muted" style={{ fontSize: 12 }}>{hint}</span>
+    </label>
+  );
+  return (
+    <div className="stack" style={{ gap: 10 }}>
+      {label("Shopify collections", "Up to 5 collection handles, separated by commas, like our-coffees. Only active, in-stock products in them are read.",
+        <input className="input" aria-label="Shopify collections" value={f.productCollections} maxLength={600} disabled={!canEdit} placeholder="our-coffees, wholesale" onChange={(e) => setF({ ...f, productCollections: e.target.value })} />)}
+      {label("Product fields", "Up to 20 metafields written namespace.key, like custom.origin. Leave out costs and anything you wouldn’t put in an email.",
+        <input className="input" aria-label="Product fields" value={f.productFields} maxLength={1000} disabled={!canEdit} placeholder="custom.origin, custom.process" onChange={(e) => setF({ ...f, productFields: e.target.value })} />)}
+      {label("Offer terms", "Your own words on what you offer: minimums, sizes, prices, terms, the page to send people to. Plain text; links must start with https://.",
+        <textarea className="input" rows={6} aria-label="Offer terms" value={f.offerTerms} maxLength={1500} disabled={!canEdit} placeholder={"Minimum order 5 lb.\nBags: 12 oz, 2 lb, 5 lb.\nMore at https://example.com/wholesale"} onChange={(e) => setF({ ...f, offerTerms: e.target.value })} />)}
+      <div className="row" style={{ gap: 8, justifyContent: "flex-end" }}>
+        <button className="btn dark sm" disabled={busy || !canEdit || !changed} title={canEdit ? "Agents use the new facts from their next run" : "Owners only"} onClick={() => run(() => save(f))}>{busy ? "Saving…" : "Save"}</button>
+      </div>
+      {toast}
+    </div>
+  );
+}

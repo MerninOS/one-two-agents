@@ -20,6 +20,12 @@ export interface BusinessSettings {
   notionBriefsDb: string | null;
   notionLeadsParent: string | null;
   notionBooksParent: string | null;
+  /** What agents may say about the products (docs/product-facts.md): the Shopify collections they read, by handle. */
+  productCollections: string[];
+  /** The product fields (metafields, as namespace.key) read from those products. No other field leaves Shopify. */
+  productFields: string[];
+  /** The owner's own words on what the business offers (minimums, sizes, terms, the page to send people to). */
+  offerTerms: string | null;
 }
 
 export const SETTINGS_KEY = "business_settings";
@@ -27,7 +33,26 @@ export const SETTINGS_KEY = "business_settings";
 export const NO_SETTINGS: BusinessSettings = {
   ownerEmail: null, siteUrl: null, shopifyDomain: null, shopifyClientId: null, mercuryAccountIds: [],
   notionBriefParent: null, notionBriefsDb: null, notionLeadsParent: null, notionBooksParent: null,
+  productCollections: [], productFields: [], offerTerms: null,
 };
+
+export const MAX_COLLECTIONS = 5, MAX_PRODUCT_FIELDS = 20, OFFER_TERMS_MAX = 1500;
+const HANDLE = /^[a-z0-9][a-z0-9-]{0,99}$/;
+const FIELD = /^[A-Za-z0-9_-]{1,64}\.[A-Za-z0-9_-]{1,64}$/;
+const listOf = (v: unknown): string[] => (Array.isArray(v) ? v.map(String) : text(v).split(/[\s,]+/)).map((s) => s.trim()).filter(Boolean);
+
+/** Shopify collection handles, lower case, at most five; anything else is dropped. */
+export const collectionHandles = (v: unknown): string[] => [...new Set(listOf(v).map((s) => s.toLowerCase()).filter((s) => HANDLE.test(s)))].slice(0, MAX_COLLECTIONS);
+/** Product fields as namespace.key, at most twenty; anything else is dropped. */
+export const productFields = (v: unknown): string[] => [...new Set(listOf(v).filter((s) => FIELD.test(s)))].slice(0, MAX_PRODUCT_FIELDS);
+/** The owner's offer terms: plain text with line breaks, no control characters, every link https; null when empty or unsafe. */
+export function offerTerms(v: unknown): string | null {
+  const t = (typeof v === "string" ? v : "").replace(/\r\n?/g, "\n").replace(/[^\S\n]+/g, " ").replace(/\n{3,}/g, "\n\n").trim();
+  if (!t || t.length > OFFER_TERMS_MAX) return null;
+  if (/[\u0000-\u0008\u000b-\u001f\u007f]/.test(t)) return null;
+  if (/\b(?!https:)[a-z][a-z0-9+.-]*:\/\//i.test(t) || /\b(javascript|data|vbscript):/i.test(t)) return null;
+  return t;
+}
 
 const EMAIL = /^[^\s@<>()",;:]+@[^\s@<>()",;:]+\.[a-z]{2,}$/i;
 const SHOP = /^[a-z0-9][a-z0-9-]*\.myshopify\.com$/;
@@ -80,6 +105,9 @@ export function readSettings(raw: unknown): BusinessSettings {
     notionBriefsDb: notionId(r.notionBriefsDb),
     notionLeadsParent: notionId(r.notionLeadsParent),
     notionBooksParent: notionId(r.notionBooksParent),
+    productCollections: collectionHandles(r.productCollections),
+    productFields: productFields(r.productFields),
+    offerTerms: offerTerms(r.offerTerms),
   };
 }
 
@@ -101,7 +129,16 @@ export function effectiveSettings(own: BusinessSettings, homeDefaults: BusinessS
 export interface SettingsEdit {
   ownerEmail: string; siteUrl: string; shopifyDomain: string; shopifyClientId: string; mercuryAccountIds: string;
   notionBriefParent: string; notionBriefsDb: string; notionLeadsParent: string; notionBooksParent: string;
+  productCollections: string; productFields: string; offerTerms: string;
 }
+
+/** Stored settings as Settings' text fields: what one card keeps when another card saves. */
+export const editOf = (b: BusinessSettings): SettingsEdit => ({
+  ownerEmail: b.ownerEmail ?? "", siteUrl: b.siteUrl ?? "", shopifyDomain: b.shopifyDomain ?? "", shopifyClientId: b.shopifyClientId ?? "",
+  mercuryAccountIds: b.mercuryAccountIds.join(", "), notionBriefParent: b.notionBriefParent ?? "", notionBriefsDb: b.notionBriefsDb ?? "",
+  notionLeadsParent: b.notionLeadsParent ?? "", notionBooksParent: b.notionBooksParent ?? "",
+  productCollections: b.productCollections.join(", "), productFields: b.productFields.join(", "), offerTerms: b.offerTerms ?? "",
+});
 
 /**
  * What's wrong with an edit from Settings, or the settings to save. The owner email must be one of
@@ -118,5 +155,12 @@ export function checkSettingsEdit(e: SettingsEdit, ownerEmails: readonly string[
   for (const [k, label] of [["notionBriefParent", "briefs page"], ["notionBriefsDb", "briefs database"], ["notionLeadsParent", "leads page"], ["notionBooksParent", "books page"]] as const) {
     if (text(e[k]) && !s[k]) return { problem: `The Notion ${label} needs a Notion link or page id.` };
   }
+  const asked = (k: "productCollections" | "productFields") => listOf(e[k]);
+  if (asked("productCollections").length > MAX_COLLECTIONS) return { problem: `At most ${MAX_COLLECTIONS} collections.` };
+  if (asked("productCollections").length !== s.productCollections.length) return { problem: "Collections are Shopify collection handles, like our-coffees, separated by commas." };
+  if (asked("productFields").length > MAX_PRODUCT_FIELDS) return { problem: `At most ${MAX_PRODUCT_FIELDS} product fields.` };
+  if (asked("productFields").length !== s.productFields.length) return { problem: "Product fields are metafields written namespace.key, like custom.origin, separated by commas." };
+  if (text(e.offerTerms).length > OFFER_TERMS_MAX) return { problem: `Offer terms are at most ${OFFER_TERMS_MAX} characters.` };
+  if (text(e.offerTerms) && !s.offerTerms) return { problem: "Offer terms are plain text; any link in them must start with https://." };
   return { settings: s };
 }

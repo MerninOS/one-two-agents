@@ -12,8 +12,20 @@ export const gql = String.raw;
 type Json = Record<string, unknown>;
 /** What a query's variables builder sees: the caller's raw input, already an object. */
 export type ShopifyArgs = Json;
-/** Settings a query may use; they come from the app's settings, never a caller. */
-export type ShopifyCtx = { stockCollection: string };
+/** Settings a query may use; they come from the business's settings, never a caller. */
+export type ShopifyCtx = {
+  stockCollection: string;
+  /** The collections agents may read product facts from (Settings), by handle. */
+  productCollections: readonly string[];
+  /** The product fields (namespace.key) read with them (Settings). */
+  productFields: readonly string[];
+};
+
+/**
+ * Shopify returns every metafield when `keys` is empty, so a business that chose no fields sends a
+ * key no store can have (namespaces must be at least 3 characters): no field leaves Shopify.
+ */
+export const NO_FIELDS_KEY = "__.none";
 export type ShopifyVars = { variables: Record<string, unknown> } | { problem: string };
 
 /** One tool on our Shopify server: one fixed read query and the checks on its inputs. */
@@ -84,6 +96,23 @@ const BETWEEN = gql`
   }
 `;
 
+// The products in one collection the business chose, with only the product fields it chose. No
+// customer, order or cost data, unless the business itself lists a cost field (Settings says not to).
+const PRODUCT_FACTS = gql`
+  query AgentProductFacts($handle: String!, $keys: [String!]!) {
+    collectionByIdentifier(identifier: { handle: $handle }) {
+      handle title
+      products(first: 100, sortKey: COLLECTION_DEFAULT) {
+        nodes {
+          handle title description productType vendor tags status tracksInventory totalInventory
+          priceRangeV2 { minVariantPrice { amount currencyCode } maxVariantPrice { amount currencyCode } }
+          metafields(first: 20, keys: $keys) { nodes { namespace key value } }
+        }
+      }
+    }
+  }
+`;
+
 /** Core's Shopify tools: what every business on Shopify can read. */
 export const CORE_SHOPIFY: readonly ShopifyQuery[] = [
   {
@@ -96,6 +125,18 @@ export const CORE_SHOPIFY: readonly ShopifyQuery[] = [
       if (cur === undefined) return { problem: "after must be a cursor from the last page" };
       if (!start || !end || end <= start) return { problem: "start and end must be YYYY-MM-DD, end after start" };
       return { variables: { query: createdBetween(start, end), after: cur } };
+    },
+  },
+  {
+    tool: "shopify_product_facts",
+    description: "The active products in one collection the business chose on Settings, with only the product fields it chose. The collection must be one of those; nothing else is read.",
+    inputSchema: { type: "object", required: ["collection"], properties: { collection: { type: "string", maxLength: 100 } } },
+    doc: PRODUCT_FACTS,
+    variables: (a, ctx) => {
+      const handle = typeof a.collection === "string" ? a.collection.trim().toLowerCase() : "";
+      if (!ctx.productCollections.length) return { problem: "no collections are chosen on Settings › What agents may say about your products" };
+      if (!ctx.productCollections.includes(handle)) return { problem: "collection must be one of the collections chosen on Settings" };
+      return { variables: { handle, keys: ctx.productFields.length ? [...ctx.productFields] : [NO_FIELDS_KEY] } };
     },
   },
 ];

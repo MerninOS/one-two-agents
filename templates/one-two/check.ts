@@ -1,6 +1,7 @@
 // One Two's own checks: its crew installs cleanly, its planned seats show on the roster, and Avery's
 // brief helpers. No database, no network. Run: npm run check:pack-one-two
 import assert from "node:assert/strict";
+import { existsSync, readFileSync } from "node:fs";
 import { crewProblems, installRows } from "../../core/install-rules";
 import { readSpec } from "../../core/agent-spec";
 import { buildCrew } from "../../dashboard/roster";
@@ -50,11 +51,11 @@ for (const q of ONE_TWO_SHOPIFY) {
   assert.doesNotThrow(() => assertReadOnly(q.doc), q.tool);
   assert.ok(!/\b(email|phone|address|firstName|lastName|displayName)\b/.test(q.doc), `${q.tool} reads no customer details`);
 }
-const ctx = { stockCollection: "" };
+const ctx = { stockCollection: "", productCollections: [], productFields: [] };
 assert.deepEqual(shopifyVariables("shopify_green_lots", { query: "status:any" }, ctx), { tool: "shopify_green_lots", doc: ONE_TWO_SHOPIFY[0].doc, variables: { query: "tag:blended-green AND -status:archived" } }, "a caller never writes the search");
 const stock = shopifyVariables("shopify_stock_coffees", { handle: "secret-drops" }, ctx);
 assert.ok(!("problem" in stock) && stock.variables.handle === "our-coffees", "the collection comes from settings");
-const stock2 = shopifyVariables("shopify_stock_coffees", {}, { stockCollection: "fall-coffees" });
+const stock2 = shopifyVariables("shopify_stock_coffees", {}, { ...ctx, stockCollection: "fall-coffees" });
 assert.ok(!("problem" in stock2) && stock2.variables.handle === "fall-coffees");
 const board = shopifyVariables("shopify_board_orders", { since: "2026-08-18" }, ctx);
 assert.ok(!("problem" in board) && board.variables.query === "tag:blended created_at:>=2026-08-18" && board.variables.after === null);
@@ -74,4 +75,10 @@ assert.equal(progress(cover, { value: 62 }, "2026-11-18").status, "on_track");
 const behind = progress(cover, { value: 40 }, "2026-11-18");
 assert.deepEqual([behind.status, behind.line], ["behind", "40 days, at least 45 days"]);
 
+// card 132: Rowan's offer is core's Product facts; the pack keeps no offer of its own
+assert.ok(!existsSync("templates/one-two/agents/wholesale-hunter"), "the pack's wholesale offer is gone");
+for (const f of ["templates/one-two/tools.ts", "templates/one-two/crew.json", "templates/one-two/domain/coffee.ts"]) {
+  assert.ok(!/wholesale_offer|PL_MIN|PL_BAGS|PL_PACK|wholesaleOf/.test(readFileSync(f, "utf8")), `${f} keeps no offer of its own`);
+}
 console.log(`check:pack-one-two ok (${crew.agents.length} agents, ${PLANNED.length} planned seats)`);
+

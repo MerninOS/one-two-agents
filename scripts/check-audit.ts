@@ -19,7 +19,7 @@ const AUDITED = [
   // people and roles
   "peopleAdd", "peopleSetRole", "peopleRemove",
   // the business's own words, which every agent is told
-  "saveBusinessProfile", "saveWhereThingsGo", "installTemplate",
+  "saveBusinessProfile", "saveWhereThingsGo", "saveProductFacts", "installTemplate",
   // the org chart: budgets, email caps, who holds a seat, drafts routing
   "orgSetDeptBudget", "orgSetDeptEmails", "placeAgent", "orgSetHolder", "orgSetLeadChecks",
   // proposals change an agent's spec or routine

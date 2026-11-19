@@ -1,22 +1,11 @@
 // Coffee constants and pricing the agents need. Copied from the storefront
 // (MerninOS/blended web/src/lib/domain/coffee.ts); keep the numbers in step with it.
 // If a value here changes on the storefront, change it here too.
-import type { GreenLot, ShopSizeId } from "./types";
+import type { ShopSizeId } from "./types";
 import { round2 } from "@/core/num";
 
 export const G_PER_LB = 453.592;
 export { round2 };
-
-export const roastName = (r: number) =>
-  ["LIGHT", "LIGHT", "MED-LIGHT", "MEDIUM", "MED-DARK", "DARK"][Math.max(0, Math.min(5, Math.round(r)))];
-
-// ---- pricing ----
-export const WHOLESALE_X = 1.85, ROAST_LOSS = 0.84;
-const roastedCost = (greenPrice: number) => greenPrice / ROAST_LOSS;
-const nickel = (n: number) => Math.round(n * 20) / 20;
-/** Wholesale price per roasted lb (what private label accounts pay); the lot can override it. */
-export const wholesaleOf = (lot: GreenLot | undefined) =>
-  lot ? (lot.wholesale != null ? lot.wholesale : nickel(roastedCost(lot.price) * WHOLESALE_X)) : 0;
 
 // ---- retail bag sizes ----
 export const SHOP_SIZES: { id: ShopSizeId; label: string; lb: number }[] = [
@@ -36,19 +25,6 @@ export const sizeFromOption = (v: string): ShopSizeId | null => {
   if (/^5lb/.test(t)) return "5lb";
   return null;
 };
-
-// ---- private label (wholesale) offer, as the storefront's /wholesale page sells it ----
-export const PL_MIN = 5; // lb per order
-export const PL_BAGS = [
-  { id: "12oz", label: "12 oz" },
-  { id: "2lb", label: "2 lb" },
-  { id: "5lb", label: "5 lb" },
-];
-export const PL_PACK = [
-  { id: "stock", title: "Our stock bags", rate: "material + $0.55/bag fill" },
-  { id: "label", title: "Your label, our bags", rate: "+ $0.42/bag label · $85 plate setup" },
-  { id: "own", title: "You supply the bags", rate: "$0.35/bag handling, no material" },
-];
 
 /** Hidden line-item property the storefront's checkout puts a custom blend's recipe JSON in. */
 export const BLEND_PROP = "_blend";

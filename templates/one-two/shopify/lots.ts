@@ -10,7 +10,7 @@ type MF = { value: string } | null;
 type Node = {
   id: string; handle: string; title: string; status: string;
   variants: { nodes: { inventoryQuantity: number | null }[] };
-  origin: MF; lot_code: MF; process: MF; roast_level: MF; green_price: MF; wholesale_price: MF; retail_price: MF;
+  origin: MF; lot_code: MF; process: MF; roast_level: MF; green_price: MF;
 };
 
 const num = (v: string | null | undefined, d: number | null = null) => {
@@ -29,8 +29,6 @@ function lotFromProduct(p: Node): GreenLot {
     process: p.process?.value || "Washed",
     roast: num(p.roast_level?.value, 3)!,
     price: num(p.green_price?.value, 0)!,
-    wholesale: num(p.wholesale_price?.value),
-    retail: num(p.retail_price?.value),
     avail: Math.round((grams / G_PER_LB) * 10) / 10,
     availG: grams,
     listed: p.status === "ACTIVE",
